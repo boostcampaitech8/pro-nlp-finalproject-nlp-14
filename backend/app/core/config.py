@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +15,12 @@ class Settings(BaseSettings):
 
     # 앱 설정
     app_name: str = "Mit API"
+    app_env: str = "development"  # development, production
     debug: bool = False
+
+    # 서버 설정
+    host: str = "0.0.0.0"
+    port: int = 8000
 
     # 데이터베이스
     database_url: str = "postgresql+asyncpg://mit:mitpassword@localhost:5432/mit"
@@ -28,8 +34,20 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
-    # CORS
+    # CORS - 쉼표로 구분된 문자열 또는 리스트
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """쉼표로 구분된 문자열을 리스트로 변환"""
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env == "production"
 
 
 @lru_cache

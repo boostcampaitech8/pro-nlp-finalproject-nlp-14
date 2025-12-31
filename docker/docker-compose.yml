@@ -47,6 +47,29 @@ services:
       timeout: 20s
       retries: 3
 
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: mit-backend
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mit}:${POSTGRES_PASSWORD:-mitpassword}@postgres:5432/${POSTGRES_DB:-mit}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-key}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4040,http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

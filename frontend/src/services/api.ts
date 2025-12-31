@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+// 환경변수에서 API URL 가져오기 (기본값: 상대 경로)
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -29,7 +32,7 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refreshToken');
       if (refreshToken) {
         try {
-          const response = await axios.post('/api/v1/auth/refresh', {
+          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
             refreshToken,
           });
 
