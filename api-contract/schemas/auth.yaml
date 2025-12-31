@@ -1,0 +1,133 @@
+components:
+  schemas:
+    # 인증 제공자 타입
+    AuthProvider:
+      type: string
+      enum:
+        - local
+        - google
+        - github
+      default: local
+      description: 인증 제공자
+
+    # 사용자 기본 정보
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - authProvider
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        name:
+          type: string
+          minLength: 2
+          maxLength: 50
+          example: "John Doe"
+        authProvider:
+          $ref: '#/components/schemas/AuthProvider'
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+
+    # 회원가입 요청
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 100
+          example: "securePassword123"
+        name:
+          type: string
+          minLength: 2
+          maxLength: 50
+          example: "John Doe"
+
+    # 로그인 요청
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          example: "securePassword123"
+
+    # 토큰 응답
+    TokenResponse:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+        - tokenType
+        - expiresIn
+      properties:
+        accessToken:
+          type: string
+          description: JWT access token
+        refreshToken:
+          type: string
+          description: JWT refresh token
+        tokenType:
+          type: string
+          enum: [Bearer]
+          default: Bearer
+        expiresIn:
+          type: integer
+          description: Access token 만료 시간 (초)
+          example: 1800
+
+    # 인증 응답 (토큰 + 사용자 정보)
+    AuthResponse:
+      type: object
+      required:
+        - user
+        - tokens
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        tokens:
+          $ref: '#/components/schemas/TokenResponse'
+
+    # 토큰 갱신 요청
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          description: JWT refresh token
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token

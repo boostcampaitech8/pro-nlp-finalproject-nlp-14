@@ -1,0 +1,64 @@
+openapi: 3.0.3
+info:
+  title: Mit API
+  description: |
+    Mit - Collaborative organization knowledge system API
+
+    Git이 코드의 진실을 관리하듯, 조직 회의의 진실을 관리하는 협업 기반 조직 지식 시스템
+  version: 0.1.0
+  contact:
+    name: Mit Team
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+
+tags:
+  - name: Auth
+    description: 인증 관련 API
+
+# 공통 스키마 참조
+components:
+  schemas:
+    # Common
+    ErrorResponse:
+      $ref: './schemas/common.yaml#/components/schemas/ErrorResponse'
+    PaginationMeta:
+      $ref: './schemas/common.yaml#/components/schemas/PaginationMeta'
+    UUID:
+      $ref: './schemas/common.yaml#/components/schemas/UUID'
+    Timestamp:
+      $ref: './schemas/common.yaml#/components/schemas/Timestamp'
+
+    # Auth
+    AuthProvider:
+      $ref: './schemas/auth.yaml#/components/schemas/AuthProvider'
+    User:
+      $ref: './schemas/auth.yaml#/components/schemas/User'
+    RegisterRequest:
+      $ref: './schemas/auth.yaml#/components/schemas/RegisterRequest'
+    LoginRequest:
+      $ref: './schemas/auth.yaml#/components/schemas/LoginRequest'
+    TokenResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/TokenResponse'
+    AuthResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/AuthResponse'
+    RefreshTokenRequest:
+      $ref: './schemas/auth.yaml#/components/schemas/RefreshTokenRequest'
+
+  securitySchemes:
+    BearerAuth:
+      $ref: './schemas/auth.yaml#/components/securitySchemes/BearerAuth'
+
+# API 경로 참조
+paths:
+  /api/v1/auth/register:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1register'
+  /api/v1/auth/login:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1login'
+  /api/v1/auth/refresh:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1refresh'
+  /api/v1/auth/logout:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1logout'
+  /api/v1/auth/me:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1me'

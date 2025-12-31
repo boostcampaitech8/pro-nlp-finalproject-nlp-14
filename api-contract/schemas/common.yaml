@@ -1,0 +1,60 @@
+components:
+  schemas:
+    # 에러 응답
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: 에러 코드
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: 에러 메시지
+          example: "Invalid input data"
+        details:
+          type: object
+          additionalProperties: true
+          description: 추가 에러 정보
+
+    # 페이지네이션 메타
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - limit
+        - total
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        total:
+          type: integer
+          minimum: 0
+          example: 100
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 5
+
+    # UUID 타입
+    UUID:
+      type: string
+      format: uuid
+      example: "123e4567-e89b-12d3-a456-426614174000"
+
+    # 타임스탬프
+    Timestamp:
+      type: string
+      format: date-time
+      example: "2024-12-31T12:00:00Z"
