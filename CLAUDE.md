@@ -21,7 +21,8 @@
 ```
 mit/
 ├── CLAUDE.md                    # (이 파일) AI 컨텍스트
-├── api-contract/                # API 명세 (SSOT) ⭐
+├── Makefile                     # 편의 명령어
+├── api-contract/                # API 명세 (SSOT)
 │   ├── openapi.yaml
 │   ├── schemas/
 │   └── paths/
@@ -34,18 +35,25 @@ mit/
 │   │   ├── hooks/
 │   │   ├── services/
 │   │   └── stores/
-│   └── package.json
+│   ├── .env.example
+│   └── .env.production.example
 ├── backend/                     # FastAPI + Python 3.11
 │   ├── app/
 │   │   ├── api/v1/
 │   │   ├── core/
 │   │   ├── models/
 │   │   ├── schemas/
-│   │   ├── services/
-│   │   └── webrtc/
-│   └── requirements.txt
+│   │   └── services/
+│   ├── alembic/
+│   ├── pyproject.toml           # uv 의존성 정의
+│   ├── uv.lock
+│   ├── Dockerfile
+│   └── .env.example
 ├── docker/
-└── scripts/
+│   ├── docker-compose.yml       # infra + backend
+│   └── .env.example
+├── scripts/
+└── docs/
 ```
 
 ---
@@ -88,7 +96,7 @@ API 변경은 명세 + BE + FE를 **한 커밋 또는 한 PR**에서 함께 수�
 | Vite | 빌드 도구 |
 | Zustand | 상태 관리 |
 | Tailwind CSS | 스타일링 |
-| React Router 6 | 라우팅 |
+| React Router 7 | 라우팅 |
 | Axios | HTTP 클라이언트 |
 
 ### Backend
@@ -96,14 +104,14 @@ API 변경은 명세 + BE + FE를 **한 커밋 또는 한 PR**에서 함께 수�
 |------|------|
 | FastAPI | 웹 프레임워크 |
 | Python 3.11 | 런타임 |
+| uv | 패키지 관리 |
 | SQLAlchemy 2.0 | ORM (async) |
 | PostgreSQL 15 | 데이터베이스 |
 | Redis | 캐시, Pub/Sub |
-| aiortc | WebRTC (SFU) |
-| Celery | 백그라운드 작업 |
+| Alembic | DB 마이그레이션 |
 
-### WebRTC 아키텍처
-- **SFU 방식**: 서버가 모든 미디어 스트림 수신 → 녹음 가능
+### WebRTC 아키텍처 (예정)
+- **SFU 방식**: 서버가 모든 미디어 스트림 수신 -> 녹음 가능
 - aiortc의 `MediaRecorder`로 서버 사이드 녹음
 - 시그널링: FastAPI WebSocket
 
@@ -111,27 +119,69 @@ API 변경은 명세 + BE + FE를 **한 커밋 또는 한 PR**에서 함께 수�
 
 ## 자주 사용하는 명령어
 
+### Makefile (권장)
 ```bash
-# 개발 환경 실행
-pnpm run dev              # FE + BE 동시 실행
-pnpm run dev:fe           # FE만 (http://localhost:5173)
-pnpm run dev:be           # BE만 (http://localhost:8000)
+make help              # 전체 명령어 보기
 
-# 타입 생성 (API 명세 변경 후 필수)
-pnpm run generate:types
+# 개발 (로컬)
+make install           # 의존성 설치
+make dev               # FE + BE 로컬 실행
+make dev-fe            # Frontend만 (http://localhost:5173)
+make dev-be            # Backend만 (http://localhost:8000)
 
-# 검증
-pnpm run typecheck        # 타입 체크
-pnpm run lint             # 린트
-pnpm run test             # 테스트
-
-# Docker (DB, Redis, MinIO)
-docker-compose -f docker/docker-compose.yml up -d
+# Docker
+make infra-up          # 인프라만 (DB, Redis, MinIO)
+make docker-up         # 전체 (infra + backend)
+make docker-down       # 전체 중지
+make docker-logs       # 로그 보기
+make docker-rebuild    # Backend 이미지 재빌드
 
 # DB 마이그레이션
-cd backend && alembic upgrade head
-cd backend && alembic revision --autogenerate -m "설명"
+make db-migrate m="설명"  # 마이그레이션 생성
+make db-upgrade           # 마이그레이션 적용
+make db-downgrade         # 롤백
+
+# 빌드
+make build             # Frontend 프로덕션 빌드
 ```
+
+### uv 명령어 (Backend)
+```bash
+cd backend
+uv sync                # 의존성 설치
+uv add <package>       # 패키지 추가
+uv run uvicorn app.main:app --reload --port 8000
+uv run alembic upgrade head
+uv run pytest
+```
+
+### pnpm 명령어
+```bash
+pnpm run dev              # FE + BE 동시 실행
+pnpm run generate:types   # OpenAPI -> TypeScript 타입 생성
+pnpm run typecheck        # 타입 체크
+pnpm run lint             # 린트
+```
+
+---
+
+## 환경변수 파일
+
+| 파일 | 용도 |
+|------|------|
+| `docker/.env.example` | 프로덕션 (Docker Compose) |
+| `backend/.env.example` | 로컬 개발 |
+| `frontend/.env.example` | 로컬 개발 |
+| `frontend/.env.production.example` | 프론트엔드 빌드 |
+
+---
+
+## 배포 구성
+
+| 서비스 | URL | 실행 방식 |
+|--------|-----|----------|
+| Frontend | `http://meetmit.duckdns.org:4040` | serve 또는 nginx |
+| Backend | `http://meetmit.duckdns.org:3000` | Docker Compose |
 
 ---
 
@@ -141,7 +191,7 @@ cd backend && alembic revision --autogenerate -m "설명"
 
 | 주차 | 기능 | 상태 | 비고 |
 |------|------|------|------|
-| Week 1 | 프로젝트 초기화 | 완료 | 모노레포 설정 |
+| Week 1 | 프로젝트 초기화 | 완료 | 모노레포, uv, Docker |
 | Week 1 | 인증 (로그인/회원가입) | 완료 | JWT 기반 |
 | Week 2 | 회의 CRUD | 대기 | |
 | Week 2 | 참여자 관리 | 대기 | |
@@ -185,6 +235,7 @@ cd backend && alembic revision --autogenerate -m "설명"
 ---
 
 ## 주의사항
+
 ### 코드 스타일
 - DO NOT use Emoji.
 - 코드의 주석은 한글로 추가한다.
@@ -195,7 +246,7 @@ cd backend && alembic revision --autogenerate -m "설명"
 - UUID 사용 (auto-increment ID 사용 금지)
 
 ### WebRTC
-- 순수 P2P 불가 (서버 녹음 필요) → SFU 아키텍처
+- 순수 P2P 불가 (서버 녹음 필요) -> SFU 아키텍처
 - STUN 서버: `stun:stun.l.google.com:19302` (개발용)
 - TURN 서버: 프로덕션에서 별도 설정 필요
 
@@ -212,10 +263,8 @@ cd backend && alembic revision --autogenerate -m "설명"
 
 ## 참고 문서
 
-- `docs/Mit_Frontend_req.md` - FE 상세 스펙
-- `docs/Mit_Backend_req.md` - BE 상세 스펙
-- `docs/Mit_mono-repo_guide.md` - 개발 프로세스
 - `api-contract/openapi.yaml` - API 명세 (SSOT)
+- `README.md` - 설치 및 실행 가이드
 
 ---
 
@@ -226,10 +275,12 @@ cd backend && alembic revision --autogenerate -m "설명"
 ```
 [2024-12-31] Phase 1 - Week 1 완료
 - 모노레포 구조 설정 완료 (pnpm workspace)
-- Docker Compose 설정 완료 (PostgreSQL, Redis, MinIO)
+- Docker Compose 설정 완료 (PostgreSQL, Redis, MinIO, Backend)
 - API Contract 작성 완료 (인증 API)
 - shared-types 패키지 설정 완료
-- Backend 초기화 완료 (FastAPI + SQLAlchemy + JWT)
+- Backend 초기화 완료 (FastAPI + SQLAlchemy + JWT + uv)
 - Frontend 초기화 완료 (Vite + React + Tailwind + Zustand)
+- Makefile 추가 (편의 명령어)
+- 프로덕션 배포 설정 (meetmit.duckdns.org:3000/4040)
 - 다음: Week 2 - 회의 CRUD 및 참여자 관리
 ```
