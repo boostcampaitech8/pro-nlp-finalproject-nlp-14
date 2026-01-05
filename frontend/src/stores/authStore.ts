@@ -1,7 +1,24 @@
-import type { LoginRequest, RegisterRequest, User } from '@/types';
+import type { ErrorResponse, LoginRequest, RegisterRequest, User } from '@/types';
+import axios from 'axios';
 import { create } from 'zustand';
 
 import { authService } from '@/services/authService';
+
+// API 에러에서 사용자 친화적 메시지 추출
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error) && error.response?.data) {
+    const data = error.response.data;
+    // FastAPI HTTPException 형태: { detail: { error, message } }
+    if (data.detail?.message) {
+      return data.detail.message;
+    }
+    // 일반 ErrorResponse 형태: { error, message }
+    if ((data as ErrorResponse).message) {
+      return (data as ErrorResponse).message;
+    }
+  }
+  return fallback;
+}
 
 interface AuthState {
   user: User | null;
@@ -31,7 +48,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem('refreshToken', response.tokens.refreshToken);
       set({ user: response.user, isAuthenticated: true, isLoading: false });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Registration failed';
+      const message = getErrorMessage(error, 'Registration failed');
       set({ error: message, isLoading: false });
       throw error;
     }
@@ -45,7 +62,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem('refreshToken', response.tokens.refreshToken);
       set({ user: response.user, isAuthenticated: true, isLoading: false });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Login failed';
+      const message = getErrorMessage(error, 'Login failed');
       set({ error: message, isLoading: false });
       throw error;
     }
