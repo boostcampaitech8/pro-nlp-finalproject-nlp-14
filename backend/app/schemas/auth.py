@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -42,7 +43,7 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     """사용자 응답"""
 
-    id: str
+    id: UUID
     email: str
     name: str
     auth_provider: str = Field(serialization_alias="authProvider")
