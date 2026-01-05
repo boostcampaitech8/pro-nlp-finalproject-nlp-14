@@ -28,6 +28,7 @@ def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthServic
 @router.post(
     "/register",
     response_model=AuthResponse,
+    response_model_by_alias=True,
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"model": ErrorResponse},
@@ -57,6 +58,7 @@ async def register(
 @router.post(
     "/login",
     response_model=AuthResponse,
+    response_model_by_alias=True,
     responses={401: {"model": ErrorResponse}},
 )
 async def login(
@@ -76,6 +78,7 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenResponse,
+    response_model_by_alias=True,
     responses={401: {"model": ErrorResponse}},
 )
 async def refresh_token(
@@ -108,6 +111,7 @@ async def logout(
 @router.get(
     "/me",
     response_model=UserResponse,
+    response_model_by_alias=True,
     responses={401: {"model": ErrorResponse}},
 )
 async def get_current_user(

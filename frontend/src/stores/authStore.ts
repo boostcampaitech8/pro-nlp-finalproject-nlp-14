@@ -34,11 +34,19 @@ interface AuthState {
   clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  isAuthenticated: !!localStorage.getItem('accessToken'),
-  isLoading: false,
-  error: null,
+export const useAuthStore = create<AuthState>((set) => {
+  // 토큰 갱신 실패 시 자동 로그아웃 처리
+  if (typeof window !== 'undefined') {
+    window.addEventListener('auth:logout', () => {
+      set({ user: null, isAuthenticated: false });
+    });
+  }
+
+  return {
+    user: null,
+    isAuthenticated: !!localStorage.getItem('accessToken'),
+    isLoading: false,
+    error: null,
 
   register: async (data) => {
     set({ isLoading: true, error: null });
@@ -99,4 +107,4 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   clearError: () => set({ error: null }),
-}));
+}});

@@ -36,6 +36,7 @@ api.interceptors.response.use(
             refreshToken,
           });
 
+          // 백엔드에서 camelCase로 반환됨
           const { accessToken, refreshToken: newRefreshToken } = response.data;
           localStorage.setItem('accessToken', accessToken);
           localStorage.setItem('refreshToken', newRefreshToken);
@@ -46,12 +47,14 @@ api.interceptors.response.use(
           // 갱신 실패 시 로그아웃
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
-          // Promise를 reject하여 호출자가 에러를 처리할 수 있게 함
+          // 커스텀 이벤트를 통해 authStore에 로그아웃 알림
+          window.dispatchEvent(new CustomEvent('auth:logout'));
           return Promise.reject(refreshError);
         }
       } else {
         // refreshToken이 없으면 토큰 제거
         localStorage.removeItem('accessToken');
+        window.dispatchEvent(new CustomEvent('auth:logout'));
       }
     }
 
