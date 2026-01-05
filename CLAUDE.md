@@ -116,6 +116,7 @@ API 변경은 명세 + BE + FE를 **한 커밋 또는 한 PR**에서 함께 수�
 - **SFU 방식**: 서버가 모든 미디어 스트림 수신 -> 녹음 가능
 - aiortc의 `MediaRecorder`로 서버 사이드 녹음
 - 시그널링: FastAPI WebSocket
+- **발화자 구분 녹음**: 각 참여자의 오디오 트랙을 개별 파일로 저장
 
 ---
 
@@ -210,11 +211,13 @@ docker compose up -d --build
 |------|------|------|------|
 | Week 1 | 프로젝트 초기화 | 완료 | 모노레포, uv, Docker |
 | Week 1 | 인증 (로그인/회원가입) | 완료 | JWT 기반 |
-| Week 2 | 회의 CRUD | 대기 | |
-| Week 2 | 참여자 관리 | 대기 | |
+| Week 2 | 팀 CRUD | 완료 | API + UI |
+| Week 2 | 회의 CRUD | 완료 | API + UI |
+| Week 2 | 팀 멤버 관리 | 완료 | 초대/역할변경/제거 |
+| Week 2 | 회의 참여자 관리 | 완료 | 추가/역할변경/제거 |
 | Week 3 | WebRTC 시그널링 | 대기 | FastAPI WebSocket |
 | Week 3 | 실시간 회의 (SFU) | 대기 | aiortc |
-| Week 4 | 서버 사이드 녹음 | 대기 | MediaRecorder |
+| Week 4 | 서버 사이드 녹음 | 대기 | 발화자별 개별 트랙 녹음 |
 | Week 4 | 회의록 기본 기능 | 대기 | |
 
 ### Phase 2: PR Review 시스템 (4주)
@@ -238,15 +241,14 @@ docker compose up -d --build
 ## 다음 작업
 
 ```
-현재 목표: Phase 1 - Week 2 완료
+현재 목표: Phase 1 - Week 3 시작
 
 다음 해야 할 작업:
-1. [ ] 회의(Meeting) API 명세 작성
-2. [ ] 회의 CRUD API 구현 (BE)
-3. [ ] 회의 목록/상세 UI 구현 (FE)
-4. [ ] 참여자 관리 API 명세 작성
-5. [ ] 참여자 관리 API 구현 (BE)
-6. [ ] 참여자 관리 UI 구현 (FE)
+1. [ ] WebRTC 시그널링 API 명세 작성
+2. [ ] WebSocket 엔드포인트 구현 (BE)
+3. [ ] aiortc 기반 SFU 서버 구현 (BE)
+4. [ ] WebRTC 클라이언트 구현 (FE)
+5. [ ] 실시간 회의 UI 구현 (FE)
 ```
 
 ---
@@ -276,6 +278,35 @@ docker compose up -d --build
 - 녹음 파일: MinIO (S3 호환) 저장
 - 최대 파일 크기: 500MB
 
+### 녹음
+- 서버 사이드 녹음 시 **발화자 구분 필수**
+- SFU에서 각 참여자의 오디오 트랙을 개별 파일로 저장
+- 파일 경로 형식: `{meeting_id}/{user_id}_{timestamp}.webm`
+- 녹음 메타데이터(시작/종료 시각, 발화자)를 DB에 저장
+- MeetingRecording 모델: meeting_id, user_id, file_path, started_at, ended_at, duration_ms
+
+---
+
+## 트러블슈팅
+
+### 브라우저 "오류 코드: 5" (렌더러 크래시)
+- **원인**: localStorage에 손상된 데이터가 남아 있을 때 발생
+- **해결**: 개발자 도구 > Console에서 `localStorage.clear()` 실행 후 새로고침
+
+### 배포 후 변경사항 미반영 (304 Not Modified)
+- **원인**: 브라우저가 이전 버전 캐시 사용
+- **해결**:
+  1. nginx.conf에서 index.html 캐시 방지 헤더 설정
+  2. 하드 리프레시 (Cmd+Shift+R)
+
+### shared-types 타입 인식 오류
+- **원인**: shared-types 패키지가 빌드되지 않음
+- **해결**: `pnpm --filter @mit/shared-types build` 실행
+
+### 토큰 갱신 실패 시 페이지 먹통
+- **원인**: api.ts에서 Promise reject 없이 redirect만 수행
+- **해결**: `return Promise.reject(error)` 추가하여 에러 전파
+
 ---
 
 ## 참고 문서
@@ -290,6 +321,16 @@ docker compose up -d --build
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-06] Phase 1 - Week 2 완료
+- Team API 구현: CRUD + 멤버 관리 (초대/역할변경/제거)
+- Meeting API 구현: CRUD + 참여자 관리 (추가/역할변경/제거)
+- Frontend UI 구현: 팀 목록/상세, 회의 목록/상세
+- 멤버/참여자 관리 UI 구현: 초대 폼, 역할 수정, 제거 기능
+- 버그 수정: 토큰 갱신 실패 시 Promise reject 처리 (api.ts)
+- 버그 수정: index.html 캐시 방지 헤더 추가 (nginx.conf)
+- 버그 수정: favicon 404 에러 수정 (inline SVG data URI)
+- 트러블슈팅: 브라우저 오류 코드 5 해결 (localStorage.clear())
+
 [2025-01-05] 통합 배포 구성 완료
 - Frontend Dockerfile 추가 (nginx 기반 멀티스테이지 빌드)
 - Frontend nginx.conf 추가 (SPA 라우팅 + /api 프록시)

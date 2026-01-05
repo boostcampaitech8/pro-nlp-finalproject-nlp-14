@@ -2,6 +2,22 @@
 
 Git이 코드의 진실을 관리하듯, **조직 회의의 진실을 관리하는** 협업 기반 조직 지식 시스템
 
+## 목차
+
+- [프로젝트 구조](#프로젝트-구조)
+- [빠른 시작](#빠른-시작)
+- [초기 설정 가이드](#초기-설정-가이드)
+- [Makefile 명령어](#makefile-명령어)
+- [개발 서버](#개발-서버)
+- [Frontend](#frontend)
+- [Backend](#backend)
+- [Docker](#docker)
+- [프로덕션 배포](#프로덕션-배포)
+- [API 목록](#api-목록)
+- [트러블슈팅](#트러블슈팅)
+
+---
+
 ## 프로젝트 구조
 
 ```
@@ -12,6 +28,7 @@ mit/
 │   ├── Dockerfile          # nginx 기반 프로덕션 이미지
 │   └── nginx.conf          # SPA 라우팅 + API 프록시
 ├── backend/                # FastAPI + Python 3.11 + uv
+│   ├── alembic/            # DB 마이그레이션
 │   └── Dockerfile          # 프로덕션 이미지
 ├── docker/                 # Docker Compose
 └── Makefile                # 편의 명령어
@@ -19,51 +36,150 @@ mit/
 
 ---
 
-## 시작하기
-
-### 사전 요구사항
-
-- Node.js 20+
-- pnpm 9+
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) (Python 패키지 관리)
-- Docker & Docker Compose
-
-### 설치 (Makefile 사용)
+## 빠른 시작
 
 ```bash
-# 전체 설치
+# 1. 의존성 설치
 make install
 
-# 인프라 실행 (PostgreSQL, Redis, MinIO)
+# 2. 인프라 실행 (PostgreSQL, Redis, MinIO)
 make infra-up
 
-# DB 마이그레이션
+# 3. DB 마이그레이션
 make db-upgrade
 
-# 개발 서버 실행
+# 4. 개발 서버 실행
 make dev
 ```
 
-### 수동 설치
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000
+- API 문서: http://localhost:8000/docs
+
+---
+
+## 초기 설정 가이드
+
+처음 프로젝트를 시작할 때 아래 단계를 순서대로 진행하세요.
+
+### 1. 사전 요구사항 설치
+
+| 도구 | 버전 | 설치 방법 |
+|------|------|----------|
+| Node.js | 20+ | https://nodejs.org |
+| pnpm | 9+ | `npm install -g pnpm` |
+| Python | 3.11+ | https://python.org |
+| uv | 최신 | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Docker | 최신 | https://docker.com |
+
+### 2. 저장소 클론
 
 ```bash
-# 1. Node.js 의존성
-pnpm install
-pnpm --filter @mit/shared-types build
+git clone <repository-url>
+cd mit
+```
 
-# 2. Backend 의존성 (uv)
-cd backend && uv sync && cd ..
+### 3. 환경변수 설정
 
-# 3. 환경변수 설정
+```bash
+# Backend 환경변수
 cp backend/.env.example backend/.env
 
-# 4. 인프라 실행
+# Docker 환경변수 (Docker로 실행 시)
+cp docker/.env.example docker/.env
+```
+
+**backend/.env 주요 설정:**
+```bash
+# 데이터베이스 (로컬 개발 시 Docker 인프라 사용)
+DATABASE_URL=postgresql+asyncpg://mit:mitpassword@localhost:5432/mit
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# JWT 시크릿 (프로덕션에서는 반드시 변경)
+JWT_SECRET_KEY=change-this-secret-key
+
+# CORS 허용 출처
+CORS_ORIGINS=["http://localhost:3000"]
+```
+
+### 4. 의존성 설치
+
+```bash
+# 전체 설치 (권장)
+make install
+
+# 또는 수동 설치
+pnpm install                           # Node.js 의존성
+pnpm --filter @mit/shared-types build  # 공유 타입 빌드
+cd backend && uv sync && cd ..         # Python 의존성
+```
+
+### 5. 인프라 실행 (Docker)
+
+```bash
+# PostgreSQL, Redis, MinIO 실행
 make infra-up
 
-# 5. DB 마이그레이션
+# 실행 확인
+docker ps
+```
+
+| 서비스 | 포트 | 용도 |
+|--------|------|------|
+| PostgreSQL | 5432 | 데이터베이스 |
+| Redis | 6379 | 캐시, 세션 |
+| MinIO | 9000, 9001 | 파일 스토리지 |
+
+### 6. 데이터베이스 초기화
+
+```bash
+# 마이그레이션 적용 (테이블 생성)
+make db-upgrade
+
+# 또는 수동 실행
 cd backend
 uv run alembic upgrade head
+```
+
+**마이그레이션 명령어:**
+```bash
+# 새 마이그레이션 생성 (모델 변경 후)
+make db-migrate m="add user table"
+
+# 마이그레이션 적용
+make db-upgrade
+
+# 마이그레이션 롤백
+make db-downgrade
+
+# 마이그레이션 이력 확인
+cd backend && uv run alembic history
+```
+
+### 7. 개발 서버 실행
+
+```bash
+# Frontend + Backend 동시 실행
+make dev
+
+# 또는 개별 실행
+make dev-fe   # Frontend: http://localhost:3000
+make dev-be   # Backend:  http://localhost:8000
+```
+
+### 8. 정상 동작 확인
+
+```bash
+# Backend 헬스 체크
+curl http://localhost:8000/health
+
+# API 문서 확인
+open http://localhost:8000/docs
+
+# Frontend 접속
+open http://localhost:3000
 ```
 
 ---
@@ -135,6 +251,18 @@ make dev-be   # Backend:  http://localhost:8000
 ```bash
 # frontend/.env.example
 VITE_API_URL=           # 비워두면 /api/v1 (Vite 프록시)
+```
+
+### 명령어
+
+```bash
+cd frontend
+
+pnpm dev          # 개발 서버
+pnpm build        # 프로덕션 빌드
+pnpm preview      # 빌드 미리보기
+pnpm lint         # ESLint
+pnpm typecheck    # 타입 체크
 ```
 
 ---
@@ -216,6 +344,19 @@ cp docker/.env.example docker/.env
 # JWT_SECRET_KEY 등 수정
 ```
 
+### 전체 실행 (Docker Compose)
+
+```bash
+# 전체 서비스 실행
+make docker-up
+
+# 로그 확인
+make docker-logs
+
+# 중지
+make docker-down
+```
+
 ---
 
 ## 프로덕션 배포
@@ -236,10 +377,13 @@ cp .env.example .env
 # .env 수정:
 #   JWT_SECRET_KEY=<openssl rand -hex 32>
 
-# 2. Docker 실행
+# 2. shared-types 빌드 (최초 1회)
+pnpm --filter @mit/shared-types build
+
+# 3. Docker 실행
 docker compose up -d --build
 
-# 3. 마이그레이션 (최초 1회)
+# 4. 마이그레이션 (최초 1회)
 make db-upgrade
 ```
 
@@ -275,7 +419,7 @@ server {
 
 ---
 
-## API Contract
+## API 목록
 
 API 명세: `api-contract/openapi.yaml`
 
@@ -288,6 +432,44 @@ API 명세: `api-contract/openapi.yaml`
 | POST | /api/v1/auth/refresh | 토큰 갱신 |
 | POST | /api/v1/auth/logout | 로그아웃 |
 | GET | /api/v1/auth/me | 현재 사용자 |
+
+### 팀 API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/teams | 팀 목록 |
+| POST | /api/v1/teams | 팀 생성 |
+| GET | /api/v1/teams/{id} | 팀 상세 |
+| PATCH | /api/v1/teams/{id} | 팀 수정 |
+| DELETE | /api/v1/teams/{id} | 팀 삭제 |
+
+### 팀 멤버 API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/teams/{id}/members | 멤버 목록 |
+| POST | /api/v1/teams/{id}/members | 멤버 초대 |
+| PATCH | /api/v1/teams/{id}/members/{userId} | 멤버 역할 변경 |
+| DELETE | /api/v1/teams/{id}/members/{userId} | 멤버 제거 |
+
+### 회의 API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/meetings | 회의 목록 |
+| POST | /api/v1/meetings | 회의 생성 |
+| GET | /api/v1/meetings/{id} | 회의 상세 |
+| PATCH | /api/v1/meetings/{id} | 회의 수정 |
+| DELETE | /api/v1/meetings/{id} | 회의 삭제 |
+
+### 회의 참여자 API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/meetings/{id}/participants | 참여자 목록 |
+| POST | /api/v1/meetings/{id}/participants | 참여자 추가 |
+| PATCH | /api/v1/meetings/{id}/participants/{userId} | 참여자 역할 변경 |
+| DELETE | /api/v1/meetings/{id}/participants/{userId} | 참여자 제거 |
 
 ### 타입 생성
 
@@ -313,6 +495,71 @@ pnpm run generate:types
 - Python: snake_case (변수/함수), PascalCase (클래스)
 - API 경로: kebab-case (`/api/v1/meeting-reviews`)
 - DB 테이블/컬럼: snake_case
+
+---
+
+## 트러블슈팅
+
+### 브라우저 "오류 코드: 5" (페이지 크래시)
+
+**원인**: localStorage에 손상된 데이터가 남아 있을 때 발생
+
+**해결**:
+```javascript
+// 개발자 도구 > Console에서 실행
+localStorage.clear()
+// 이후 새로고침
+```
+
+### 배포 후 변경사항이 반영되지 않음
+
+**원인**: 브라우저 캐시가 이전 버전 사용
+
+**해결**:
+1. 하드 리프레시: `Cmd+Shift+R` (Mac) / `Ctrl+Shift+R` (Windows)
+2. 개발자 도구 > Network > "Disable cache" 체크
+
+### shared-types 타입을 찾을 수 없음
+
+**원인**: shared-types 패키지가 빌드되지 않음
+
+**해결**:
+```bash
+pnpm --filter @mit/shared-types build
+```
+
+### DB 연결 오류
+
+**원인**: 인프라가 실행되지 않았거나 환경변수가 잘못됨
+
+**해결**:
+```bash
+# 인프라 상태 확인
+docker ps
+
+# 인프라 재시작
+make infra-up
+
+# 환경변수 확인
+cat backend/.env | grep DATABASE_URL
+```
+
+### 마이그레이션 충돌
+
+**원인**: 여러 브랜치에서 마이그레이션이 생성됨
+
+**해결**:
+```bash
+cd backend
+
+# 현재 상태 확인
+uv run alembic history
+
+# 헤드로 이동
+uv run alembic upgrade head
+
+# 충돌 시 수동으로 마이그레이션 파일 정리 필요
+```
 
 ---
 
