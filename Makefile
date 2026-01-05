@@ -1,6 +1,6 @@
 .PHONY: help install dev dev-fe dev-be build clean
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
-.PHONY: db-migrate db-upgrade db-downgrade
+.PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
 .PHONY: infra-up infra-down backend-up backend-down frontend-up frontend-down
 
 # 기본 변수
@@ -39,6 +39,10 @@ help:
 	@echo "  make db-migrate m=MSG - Create new migration"
 	@echo "  make db-upgrade     - Apply migrations"
 	@echo "  make db-downgrade   - Rollback last migration"
+	@echo "  make db-shell       - Open psql shell"
+	@echo "  make db-users       - Show all users"
+	@echo "  make db-tables      - Show all tables"
+	@echo "  make db-query q=SQL - Run custom SQL query"
 	@echo ""
 	@echo "Build:"
 	@echo "  make build          - Build frontend for production"
@@ -123,6 +127,18 @@ db-upgrade:
 
 db-downgrade:
 	cd backend && uv run alembic downgrade -1
+
+db-shell:
+	docker exec -it mit-postgres psql -U mit -d mit
+
+db-users:
+	@docker exec mit-postgres psql -U mit -d mit -c "SELECT id, email, name, auth_provider, created_at FROM users;"
+
+db-tables:
+	@docker exec mit-postgres psql -U mit -d mit -c "\dt"
+
+db-query:
+	@docker exec mit-postgres psql -U mit -d mit -c "$(q)"
 
 # ===================
 # Build & Clean
