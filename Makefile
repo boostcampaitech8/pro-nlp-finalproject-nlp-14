@@ -1,10 +1,10 @@
 .PHONY: help install dev dev-fe dev-be build clean
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
 .PHONY: db-migrate db-upgrade db-downgrade
-.PHONY: infra-up infra-down backend-up backend-down
+.PHONY: infra-up infra-down backend-up backend-down frontend-up frontend-down
 
 # 기본 변수
-DOCKER_COMPOSE = docker-compose -f docker/docker-compose.yml
+DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
 
 # ===================
 # Help
@@ -15,21 +15,25 @@ help:
 	@echo "Setup:"
 	@echo "  make install        - Install all dependencies"
 	@echo "  make dev            - Run dev servers (FE + BE locally)"
-	@echo "  make dev-fe         - Run frontend dev server"
-	@echo "  make dev-be         - Run backend dev server"
+	@echo "  make dev-fe         - Run frontend dev server (http://localhost:3000)"
+	@echo "  make dev-be         - Run backend dev server (http://localhost:8000)"
 	@echo ""
 	@echo "Docker (All services):"
-	@echo "  make docker-up      - Start all services (infra + backend)"
+	@echo "  make docker-up      - Start all services (infra + frontend + backend)"
 	@echo "  make docker-down    - Stop all services"
 	@echo "  make docker-logs    - View all logs"
-	@echo "  make docker-build   - Build backend image"
-	@echo "  make docker-rebuild - Rebuild backend image (no cache)"
+	@echo "  make docker-build   - Build all images"
+	@echo "  make docker-rebuild - Rebuild all images (no cache)"
 	@echo ""
 	@echo "Docker (Selective):"
 	@echo "  make infra-up       - Start infra only (DB, Redis, MinIO)"
 	@echo "  make infra-down     - Stop infra only"
 	@echo "  make backend-up     - Start backend container"
 	@echo "  make backend-down   - Stop backend container"
+	@echo "  make backend-logs   - View backend logs"
+	@echo "  make frontend-up    - Start frontend container"
+	@echo "  make frontend-down  - Stop frontend container"
+	@echo "  make frontend-logs  - View frontend logs"
 	@echo ""
 	@echo "Database:"
 	@echo "  make db-migrate m=MSG - Create new migration"
@@ -70,10 +74,10 @@ docker-logs:
 	$(DOCKER_COMPOSE) logs -f
 
 docker-build:
-	$(DOCKER_COMPOSE) build backend
+	$(DOCKER_COMPOSE) build
 
 docker-rebuild:
-	$(DOCKER_COMPOSE) build --no-cache backend
+	$(DOCKER_COMPOSE) build --no-cache
 
 # ===================
 # Docker - Infra Only
@@ -95,6 +99,18 @@ backend-down:
 
 backend-logs:
 	$(DOCKER_COMPOSE) logs -f backend
+
+# ===================
+# Docker - Frontend Only
+# ===================
+frontend-up:
+	$(DOCKER_COMPOSE) up -d frontend
+
+frontend-down:
+	$(DOCKER_COMPOSE) stop frontend
+
+frontend-logs:
+	$(DOCKER_COMPOSE) logs -f frontend
 
 # ===================
 # Database Migrations

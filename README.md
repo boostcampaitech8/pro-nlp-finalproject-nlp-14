@@ -9,7 +9,10 @@ mit/
 ├── api-contract/           # API 명세 (OpenAPI 3.0) - SSOT
 ├── packages/shared-types/  # FE/BE 공유 타입 (자동 생성)
 ├── frontend/               # React + TypeScript + Vite
+│   ├── Dockerfile          # nginx 기반 프로덕션 이미지
+│   └── nginx.conf          # SPA 라우팅 + API 프록시
 ├── backend/                # FastAPI + Python 3.11 + uv
+│   └── Dockerfile          # 프로덕션 이미지
 ├── docker/                 # Docker Compose
 └── Makefile                # 편의 명령어
 ```
@@ -36,7 +39,6 @@ make install
 make infra-up
 
 # DB 마이그레이션
-make db-migrate m="create users table"
 make db-upgrade
 
 # 개발 서버 실행
@@ -61,7 +63,6 @@ make infra-up
 
 # 5. DB 마이그레이션
 cd backend
-uv run alembic revision --autogenerate -m "create users table"
 uv run alembic upgrade head
 ```
 
@@ -75,15 +76,22 @@ make help              # 전체 명령어 보기
 # 개발 (로컬)
 make install           # 의존성 설치
 make dev               # FE + BE 로컬 실행
-make dev-fe            # Frontend만
-make dev-be            # Backend만
+make dev-fe            # Frontend만 (http://localhost:3000)
+make dev-be            # Backend만 (http://localhost:8000)
 
-# Docker
-make infra-up          # 인프라만 (DB, Redis, MinIO)
-make docker-up         # 전체 (infra + backend)
+# Docker (전체)
+make docker-up         # 전체 (infra + frontend + backend)
 make docker-down       # 전체 중지
 make docker-logs       # 로그 보기
-make docker-rebuild    # Backend 이미지 재빌드
+make docker-build      # 이미지 빌드
+make docker-rebuild    # 이미지 재빌드 (no cache)
+
+# Docker (선택적)
+make infra-up          # 인프라만 (DB, Redis, MinIO)
+make backend-up        # Backend만
+make backend-logs      # Backend 로그
+make frontend-up       # Frontend만
+make frontend-logs     # Frontend 로그
 
 # DB 마이그레이션
 make db-migrate m="설명"  # 마이그레이션 생성
@@ -102,7 +110,7 @@ make clean             # 빌드 아티팩트 정리
 ```bash
 make dev
 # 또는
-make dev-fe   # Frontend: http://localhost:5173
+make dev-fe   # Frontend: http://localhost:3000
 make dev-be   # Backend:  http://localhost:8000
 ```
 
@@ -178,7 +186,7 @@ PORT=8000
 DATABASE_URL=postgresql+asyncpg://mit:mitpassword@localhost:5432/mit
 REDIS_URL=redis://localhost:6379/0
 JWT_SECRET_KEY=change-this-secret-key
-CORS_ORIGINS=http://localhost:5173,http://localhost:4040
+CORS_ORIGINS=["http://localhost:3000"]
 ```
 
 ### API 문서
@@ -197,7 +205,8 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:4040
 | PostgreSQL | 5432 | 데이터베이스 |
 | Redis | 6379 | 캐시, 세션 |
 | MinIO | 9000, 9001 | 파일 스토리지 |
-| Backend | 3000 | API 서버 (프로덕션) |
+| Frontend | 3000 | nginx (정적 파일 + API 프록시) |
+| Backend | 8000 (내부) | API 서버 |
 
 ### 환경변수
 
@@ -211,41 +220,57 @@ cp docker/.env.example docker/.env
 
 ## 프로덕션 배포
 
-### 서버 구성
+### 아키텍처
 
-| 서비스 | URL |
-|--------|-----|
-| Frontend | `http://meetmit.duckdns.org:4040` |
-| Backend | `http://meetmit.duckdns.org:3000` |
+```
+[Client] --> [Host nginx:443 SSL] --> [Docker nginx:3000] --> /api/* --> [backend:8000]
+             (snsn.kr)                                    --> /*     --> static files
+```
 
-### Backend 배포 (Docker)
+### 배포 방법
 
 ```bash
 # 1. 환경변수 설정
-cp docker/.env.example docker/.env
-# docker/.env 수정:
+cd docker
+cp .env.example .env
+# .env 수정:
 #   JWT_SECRET_KEY=<openssl rand -hex 32>
-#   CORS_ORIGINS=http://meetmit.duckdns.org:4040
 
-# 2. 실행
-make docker-up
+# 2. Docker 실행
+docker compose up -d --build
 
 # 3. 마이그레이션 (최초 1회)
 make db-upgrade
 ```
 
-### Frontend 배포
+### Host nginx 설정 예시
 
-```bash
-# 1. 환경변수 설정
-cp frontend/.env.production.example frontend/.env.production
-# VITE_API_URL=http://meetmit.duckdns.org:3000/api/v1
+```nginx
+server {
+    listen 80;
+    server_name snsn.kr;
+    return 301 https://$server_name$request_uri;
+}
 
-# 2. 빌드
-make build
+server {
+    listen 443 ssl;
+    server_name snsn.kr;
 
-# 3. 서빙 (포트 4040)
-cd frontend && npx serve -s dist -l 4040
+    ssl_certificate /etc/letsencrypt/live/snsn.kr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/snsn.kr/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 ```
 
 ---

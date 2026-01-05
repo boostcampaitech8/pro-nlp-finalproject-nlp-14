@@ -35,6 +35,8 @@ mit/
 │   │   ├── hooks/
 │   │   ├── services/
 │   │   └── stores/
+│   ├── Dockerfile               # nginx 기반 프로덕션 이미지
+│   ├── nginx.conf               # SPA 라우팅 + API 프록시
 │   ├── .env.example
 │   └── .env.production.example
 ├── backend/                     # FastAPI + Python 3.11
@@ -50,7 +52,7 @@ mit/
 │   ├── Dockerfile
 │   └── .env.example
 ├── docker/
-│   ├── docker-compose.yml       # infra + backend
+│   ├── docker-compose.yml       # infra + frontend + backend
 │   └── .env.example
 ├── scripts/
 └── docs/
@@ -288,6 +290,14 @@ docker compose up -d --build
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2025-01-05] 통합 배포 구성 완료
+- Frontend Dockerfile 추가 (nginx 기반 멀티스테이지 빌드)
+- Frontend nginx.conf 추가 (SPA 라우팅 + /api 프록시)
+- Docker Compose에 frontend 서비스 추가
+- 아키텍처: Host nginx(443 SSL) -> Docker nginx(3000) -> backend(8000)
+- 도메인: snsn.kr
+- Makefile 업데이트 (frontend 명령어 추가)
+
 [2024-12-31] Phase 1 - Week 1 완료
 - 모노레포 구조 설정 완료 (pnpm workspace)
 - Docker Compose 설정 완료 (PostgreSQL, Redis, MinIO, Backend)
@@ -296,6 +306,5 @@ docker compose up -d --build
 - Backend 초기화 완료 (FastAPI + SQLAlchemy + JWT + uv)
 - Frontend 초기화 완료 (Vite + React + Tailwind + Zustand)
 - Makefile 추가 (편의 명령어)
-- 프로덕션 배포 설정 (meetmit.duckdns.org:3000/4040)
 - 다음: Week 2 - 회의 CRUD 및 참여자 관리
 ```
