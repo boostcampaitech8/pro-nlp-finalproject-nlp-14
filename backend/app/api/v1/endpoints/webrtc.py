@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,6 +31,26 @@ from app.services.sfu_service import sfu_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["WebRTC"])
+security = HTTPBearer()
+
+
+def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
+    """AuthService 의존성"""
+    return AuthService(db)
+
+
+async def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> User:
+    """현재 사용자 조회"""
+    try:
+        return await auth_service.get_current_user(credentials.credentials)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
+        )
 
 
 # ===== REST 엔드포인트 =====
@@ -39,7 +60,7 @@ router = APIRouter(prefix="/meetings", tags=["WebRTC"])
 async def get_meeting_room(
     meeting_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(AuthService.get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """회의실 정보 조회"""
     # 회의 조회
@@ -75,7 +96,7 @@ async def get_meeting_room(
 async def start_meeting(
     meeting_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(AuthService.get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """회의 시작 (host만 가능)"""
     # 회의 조회
@@ -125,7 +146,7 @@ async def start_meeting(
 async def end_meeting(
     meeting_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(AuthService.get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """회의 종료 (host만 가능)"""
     # 회의 조회

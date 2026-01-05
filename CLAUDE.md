@@ -308,6 +308,16 @@ docker compose up -d --build
 - **원인**: api.ts에서 Promise reject 없이 redirect만 수행
 - **해결**: `return Promise.reject(error)` 추가하여 에러 전파
 
+### useAuth 무한 루프 (checkAuth 반복 호출)
+- **원인**: useEffect 의존성 배열에 `store` 전체가 포함되어, `set()` 호출 시마다 재실행
+- **해결**:
+  1. `useRef`로 중복 호출 방지 (`isCheckingRef`)
+  2. 의존성 배열을 `[store.isAuthenticated, store.user, store.checkAuth]`로 변경
+
+### WebRTC 엔드포인트 422 에러
+- **원인**: `AuthService.get_current_user`를 인스턴스 메서드인데 클래스 메서드처럼 사용
+- **해결**: 올바른 FastAPI 의존성 주입 패턴 사용 (`get_auth_service` + `get_current_user` 함수)
+
 ---
 
 ## 참고 문서
@@ -322,6 +332,11 @@ docker compose up -d --build
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-06] 버그 수정
+- useAuth 무한 루프 수정: useEffect 의존성 배열 개선 + useRef로 중복 호출 방지
+- WebRTC 엔드포인트 422 에러 수정: FastAPI 의존성 주입 패턴 수정
+- 콘솔 디버깅 로그 추가 (main.tsx, authStore.ts, api.ts, useAuth.ts, App.tsx)
+
 [2026-01-06] Phase 1 - Week 3 완료
 - WebRTC 시그널링 API 명세 작성: api-contract/schemas/webrtc.yaml, paths/webrtc.yaml
 - Backend WebSocket 시그널링 구현: signaling_service.py, sfu_service.py, webrtc.py

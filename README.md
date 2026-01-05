@@ -471,6 +471,15 @@ API 명세: `api-contract/openapi.yaml`
 | PATCH | /api/v1/meetings/{id}/participants/{userId} | 참여자 역할 변경 |
 | DELETE | /api/v1/meetings/{id}/participants/{userId} | 참여자 제거 |
 
+### WebRTC API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/meetings/{id}/room | 회의실 정보 |
+| POST | /api/v1/meetings/{id}/start | 회의 시작 (host) |
+| POST | /api/v1/meetings/{id}/end | 회의 종료 (host) |
+| WS | /api/v1/meetings/{id}/ws?token=... | WebSocket 시그널링 |
+
 ### 타입 생성
 
 ```bash
@@ -560,6 +569,14 @@ uv run alembic upgrade head
 
 # 충돌 시 수동으로 마이그레이션 파일 정리 필요
 ```
+
+### 페이지 로드 안됨 (무한 로딩)
+
+**원인**: useAuth hook에서 checkAuth가 무한 호출됨
+
+**해결**:
+1. 브라우저 콘솔에서 `[useAuth] Calling checkAuth...`가 반복되는지 확인
+2. 최신 코드로 업데이트 (useRef로 중복 호출 방지됨)
 
 ---
 
