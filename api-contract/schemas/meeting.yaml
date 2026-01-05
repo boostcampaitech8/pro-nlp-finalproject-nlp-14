@@ -1,0 +1,204 @@
+components:
+  schemas:
+    # 회의 상태
+    MeetingStatus:
+      type: string
+      enum:
+        - scheduled
+        - ongoing
+        - completed
+        - in_review
+        - confirmed
+        - cancelled
+      description: |
+        회의 상태
+        - scheduled: 예정됨
+        - ongoing: 진행 중
+        - completed: 완료됨
+        - in_review: 회의록 검토 중 (Phase 2)
+        - confirmed: 회의록 확정됨 (Phase 2)
+        - cancelled: 취소됨
+
+    # 회의 참여자 역할
+    ParticipantRole:
+      type: string
+      enum:
+        - host
+        - participant
+      description: |
+        회의 참여자 역할
+        - host: 회의 주최자 (회의 수정/삭제, 참여자 관리)
+        - participant: 참여자 (회의 참여, Review 권한)
+
+    # 회의 기본 정보
+    Meeting:
+      type: object
+      required:
+        - id
+        - teamId
+        - title
+        - createdBy
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        teamId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "Weekly Standup"
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+          example: "Weekly team standup meeting"
+        createdBy:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: '#/components/schemas/MeetingStatus'
+        scheduledAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+
+    # 회의 참여자 정보
+    MeetingParticipant:
+      type: object
+      required:
+        - id
+        - meetingId
+        - userId
+        - role
+        - joinedAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        userId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        user:
+          $ref: './auth.yaml#/components/schemas/User'
+        role:
+          $ref: '#/components/schemas/ParticipantRole'
+        joinedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+
+    # 회의 상세 정보 (참여자 포함)
+    MeetingWithParticipants:
+      type: object
+      required:
+        - id
+        - teamId
+        - title
+        - createdBy
+        - status
+        - createdAt
+        - updatedAt
+        - participants
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        teamId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "Weekly Standup"
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+          example: "Weekly team standup meeting"
+        createdBy:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: '#/components/schemas/MeetingStatus'
+        scheduledAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingParticipant'
+
+    # 회의 생성 요청
+    CreateMeetingRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "Weekly Standup"
+        description:
+          type: string
+          maxLength: 2000
+          example: "Weekly team standup meeting"
+        scheduledAt:
+          type: string
+          format: date-time
+          example: "2024-12-31T14:00:00Z"
+
+    # 회의 수정 요청
+    UpdateMeetingRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "Weekly Standup"
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+          example: "Weekly team standup meeting"
+        scheduledAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          $ref: '#/components/schemas/MeetingStatus'
+
+    # 회의 목록 응답
+    MeetingListResponse:
+      type: object
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Meeting'
+        meta:
+          $ref: './common.yaml#/components/schemas/PaginationMeta'

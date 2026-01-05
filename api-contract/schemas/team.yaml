@@ -1,0 +1,145 @@
+components:
+  schemas:
+    # 팀 멤버 역할
+    TeamRole:
+      type: string
+      enum:
+        - owner
+        - admin
+        - member
+      description: |
+        팀 멤버 역할
+        - owner: 팀 소유자 (팀 삭제, 설정 변경, 멤버 관리)
+        - admin: 관리자 (멤버 관리, 회의 생성)
+        - member: 일반 멤버 (회의 참여)
+
+    # 팀 기본 정보
+    Team:
+      type: object
+      required:
+        - id
+        - name
+        - createdBy
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Development Team"
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: "Backend development team"
+        createdBy:
+          $ref: './common.yaml#/components/schemas/UUID'
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+
+    # 팀 멤버 정보
+    TeamMember:
+      type: object
+      required:
+        - id
+        - teamId
+        - userId
+        - role
+        - joinedAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        teamId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        userId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        user:
+          $ref: './auth.yaml#/components/schemas/User'
+        role:
+          $ref: '#/components/schemas/TeamRole'
+        joinedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+
+    # 팀 상세 정보 (멤버 포함)
+    TeamWithMembers:
+      type: object
+      required:
+        - id
+        - name
+        - createdBy
+        - createdAt
+        - updatedAt
+        - members
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Development Team"
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: "Backend development team"
+        createdBy:
+          $ref: './common.yaml#/components/schemas/UUID'
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMember'
+
+    # 팀 생성 요청
+    CreateTeamRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Development Team"
+        description:
+          type: string
+          maxLength: 500
+          example: "Backend development team"
+
+    # 팀 수정 요청
+    UpdateTeamRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Development Team"
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: "Backend development team"
+
+    # 팀 목록 응답
+    TeamListResponse:
+      type: object
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+        meta:
+          $ref: './common.yaml#/components/schemas/PaginationMeta'

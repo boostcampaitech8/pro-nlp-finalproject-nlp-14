@@ -4,7 +4,9 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
+import { MeetingDetailPage } from '@/pages/MeetingDetailPage';
 import { RegisterPage } from '@/pages/RegisterPage';
+import { TeamDetailPage } from '@/pages/TeamDetailPage';
 
 // 인증된 사용자만 접근 가능
 function PrivateRoute({ children }: { children: ReactNode }) {
@@ -27,6 +29,22 @@ function App() {
         element={
           <PrivateRoute>
             <HomePage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/teams/:teamId"
+        element={
+          <PrivateRoute>
+            <TeamDetailPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/meetings/:meetingId"
+        element={
+          <PrivateRoute>
+            <MeetingDetailPage />
           </PrivateRoute>
         }
       />

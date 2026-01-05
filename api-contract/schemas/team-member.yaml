@@ -1,0 +1,27 @@
+components:
+  schemas:
+    # 팀 멤버 초대 요청
+    InviteTeamMemberRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: 초대할 사용자의 이메일
+          example: "newmember@example.com"
+        role:
+          $ref: './team.yaml#/components/schemas/TeamRole'
+          default: member
+          description: 멤버 역할 (기본값 member)
+
+    # 팀 멤버 역할 수정 요청
+    UpdateTeamMemberRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          $ref: './team.yaml#/components/schemas/TeamRole'
+          description: 새로운 역할

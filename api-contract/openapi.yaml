@@ -16,6 +16,14 @@ servers:
 tags:
   - name: Auth
     description: 인증 관련 API
+  - name: Teams
+    description: 팀 관련 API
+  - name: TeamMembers
+    description: 팀 멤버 관련 API
+  - name: Meetings
+    description: 회의 관련 API
+  - name: MeetingParticipants
+    description: 회의 참여자 관련 API
 
 # 공통 스키마 참조
 components:
@@ -46,6 +54,52 @@ components:
     RefreshTokenRequest:
       $ref: './schemas/auth.yaml#/components/schemas/RefreshTokenRequest'
 
+    # Team
+    TeamRole:
+      $ref: './schemas/team.yaml#/components/schemas/TeamRole'
+    Team:
+      $ref: './schemas/team.yaml#/components/schemas/Team'
+    TeamMember:
+      $ref: './schemas/team.yaml#/components/schemas/TeamMember'
+    TeamWithMembers:
+      $ref: './schemas/team.yaml#/components/schemas/TeamWithMembers'
+    CreateTeamRequest:
+      $ref: './schemas/team.yaml#/components/schemas/CreateTeamRequest'
+    UpdateTeamRequest:
+      $ref: './schemas/team.yaml#/components/schemas/UpdateTeamRequest'
+    TeamListResponse:
+      $ref: './schemas/team.yaml#/components/schemas/TeamListResponse'
+
+    # Meeting
+    MeetingStatus:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingStatus'
+    ParticipantRole:
+      $ref: './schemas/meeting.yaml#/components/schemas/ParticipantRole'
+    Meeting:
+      $ref: './schemas/meeting.yaml#/components/schemas/Meeting'
+    MeetingParticipant:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingParticipant'
+    MeetingWithParticipants:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingWithParticipants'
+    CreateMeetingRequest:
+      $ref: './schemas/meeting.yaml#/components/schemas/CreateMeetingRequest'
+    UpdateMeetingRequest:
+      $ref: './schemas/meeting.yaml#/components/schemas/UpdateMeetingRequest'
+    MeetingListResponse:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingListResponse'
+
+    # TeamMember
+    InviteTeamMemberRequest:
+      $ref: './schemas/team-member.yaml#/components/schemas/InviteTeamMemberRequest'
+    UpdateTeamMemberRequest:
+      $ref: './schemas/team-member.yaml#/components/schemas/UpdateTeamMemberRequest'
+
+    # MeetingParticipant
+    AddMeetingParticipantRequest:
+      $ref: './schemas/meeting-participant.yaml#/components/schemas/AddMeetingParticipantRequest'
+    UpdateMeetingParticipantRequest:
+      $ref: './schemas/meeting-participant.yaml#/components/schemas/UpdateMeetingParticipantRequest'
+
   securitySchemes:
     BearerAuth:
       $ref: './schemas/auth.yaml#/components/securitySchemes/BearerAuth'
@@ -62,3 +116,27 @@ paths:
     $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1logout'
   /api/v1/auth/me:
     $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1me'
+
+  # Teams
+  /api/v1/teams:
+    $ref: './paths/teams.yaml#/paths/~1api~1v1~1teams'
+  /api/v1/teams/{teamId}:
+    $ref: './paths/teams.yaml#/paths/~1api~1v1~1teams~1{teamId}'
+
+  # TeamMembers
+  /api/v1/teams/{teamId}/members:
+    $ref: './paths/team-members.yaml#/paths/~1api~1v1~1teams~1{teamId}~1members'
+  /api/v1/teams/{teamId}/members/{userId}:
+    $ref: './paths/team-members.yaml#/paths/~1api~1v1~1teams~1{teamId}~1members~1{userId}'
+
+  # Meetings
+  /api/v1/teams/{teamId}/meetings:
+    $ref: './paths/meetings.yaml#/paths/~1api~1v1~1teams~1{teamId}~1meetings'
+  /api/v1/meetings/{meetingId}:
+    $ref: './paths/meetings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}'
+
+  # MeetingParticipants
+  /api/v1/meetings/{meetingId}/participants:
+    $ref: './paths/meeting-participants.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1participants'
+  /api/v1/meetings/{meetingId}/participants/{userId}:
+    $ref: './paths/meeting-participants.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1participants~1{userId}'

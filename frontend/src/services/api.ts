@@ -42,12 +42,16 @@ api.interceptors.response.use(
 
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
           return api(originalRequest);
-        } catch {
+        } catch (refreshError) {
           // 갱신 실패 시 로그아웃
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
-          window.location.href = '/login';
+          // Promise를 reject하여 호출자가 에러를 처리할 수 있게 함
+          return Promise.reject(refreshError);
         }
+      } else {
+        // refreshToken이 없으면 토큰 제거
+        localStorage.removeItem('accessToken');
       }
     }
 
