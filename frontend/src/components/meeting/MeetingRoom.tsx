@@ -15,19 +15,42 @@ interface MeetingRoomProps {
   onLeave?: () => void;
 }
 
+/**
+ * 원격 오디오 재생 컴포넌트
+ */
+function RemoteAudio({ stream, odId }: { stream: MediaStream; odId: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (audioRef.current && stream) {
+      console.log('[RemoteAudio] Attaching stream for:', odId);
+      audioRef.current.srcObject = stream;
+      audioRef.current.play().catch((e) => {
+        console.error('[RemoteAudio] Failed to play:', e);
+      });
+    }
+  }, [stream, odId]);
+
+  return <audio ref={audioRef} autoPlay playsInline />;
+}
+
 export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: MeetingRoomProps) {
+  console.log('[MeetingRoom] Rendering - meetingId:', meetingId, 'userId:', userId);
   const navigate = useNavigate();
   const hasJoinedRef = useRef(false);
 
   const {
     connectionState,
     participants,
+    remoteStreams,
     isAudioMuted,
     error,
     joinRoom,
     leaveRoom,
     toggleMute,
   } = useWebRTC(meetingId);
+
+  console.log('[MeetingRoom] connectionState:', connectionState, 'error:', error, 'participants:', participants.size);
 
   // 회의 참여
   useEffect(() => {
@@ -81,6 +104,11 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
+      {/* 원격 오디오 재생 (숨김) */}
+      {Array.from(remoteStreams.entries()).map(([odId, stream]) => (
+        <RemoteAudio key={odId} stream={stream} odId={odId} />
+      ))}
+
       {/* 헤더 */}
       <header className="bg-gray-800 px-6 py-4 flex items-center justify-between">
         <div>

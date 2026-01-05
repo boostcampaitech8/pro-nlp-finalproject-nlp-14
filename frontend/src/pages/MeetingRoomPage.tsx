@@ -10,9 +10,12 @@ import { meetingService } from '@/services/meetingService';
 import type { MeetingWithParticipants } from '@mit/shared-types';
 
 export default function MeetingRoomPage() {
+  console.log('[MeetingRoomPage] Rendering...');
   const { meetingId } = useParams<{ meetingId: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+
+  console.log('[MeetingRoomPage] meetingId:', meetingId, 'isAuthenticated:', isAuthenticated, 'user:', user?.id);
 
   const [meeting, setMeeting] = useState<MeetingWithParticipants | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,7 +23,9 @@ export default function MeetingRoomPage() {
 
   // 인증 확인
   useEffect(() => {
+    console.log('[MeetingRoomPage] Auth check - isAuthenticated:', isAuthenticated);
     if (!isAuthenticated) {
+      console.log('[MeetingRoomPage] Not authenticated, navigating to /login');
       navigate('/login');
     }
   }, [isAuthenticated, navigate]);
@@ -31,20 +36,22 @@ export default function MeetingRoomPage() {
 
     const fetchMeeting = async () => {
       try {
+        console.log('[MeetingRoomPage] Fetching meeting:', meetingId);
         setLoading(true);
         const data = await meetingService.getMeeting(meetingId);
+        console.log('[MeetingRoomPage] Meeting data:', data.title, 'status:', data.status);
         setMeeting(data);
 
         // 회의 상태 확인
         if (data.status !== 'ongoing') {
-          setError(
-            data.status === 'scheduled'
-              ? '아직 시작되지 않은 회의입니다.'
-              : '이미 종료된 회의입니다.'
-          );
+          const errorMsg = data.status === 'scheduled'
+            ? '아직 시작되지 않은 회의입니다.'
+            : '이미 종료된 회의입니다.';
+          console.log('[MeetingRoomPage] Meeting not ongoing:', errorMsg);
+          setError(errorMsg);
         }
       } catch (err) {
-        console.error('Failed to fetch meeting:', err);
+        console.error('[MeetingRoomPage] Failed to fetch meeting:', err);
         setError('회의 정보를 불러올 수 없습니다.');
       } finally {
         setLoading(false);
@@ -54,8 +61,11 @@ export default function MeetingRoomPage() {
     fetchMeeting();
   }, [meetingId]);
 
+  console.log('[MeetingRoomPage] State - loading:', loading, 'error:', error, 'meeting:', meeting?.title);
+
   // 로딩 중
   if (loading) {
+    console.log('[MeetingRoomPage] Showing loading UI');
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -68,6 +78,7 @@ export default function MeetingRoomPage() {
 
   // 에러
   if (error || !meeting) {
+    console.log('[MeetingRoomPage] Showing error UI - error:', error);
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -87,8 +98,11 @@ export default function MeetingRoomPage() {
 
   // 유저 정보 확인
   if (!user) {
+    console.log('[MeetingRoomPage] No user, returning null');
     return null;
   }
+
+  console.log('[MeetingRoomPage] Rendering MeetingRoom component');
 
   return (
     <MeetingRoom
