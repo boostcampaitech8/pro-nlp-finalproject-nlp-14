@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
-    # CORS - 쉼표로 구분된 문자열 또는 리스트
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # CORS - JSON 배열 형식
+    cors_origins: list[str] = ["http://localhost:3000"]
 
     @field_validator("cors_origins", mode="before")
     @classmethod

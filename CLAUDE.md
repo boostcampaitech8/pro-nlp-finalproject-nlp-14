@@ -126,15 +126,15 @@ make help              # 전체 명령어 보기
 # 개발 (로컬)
 make install           # 의존성 설치
 make dev               # FE + BE 로컬 실행
-make dev-fe            # Frontend만 (http://localhost:5173)
+make dev-fe            # Frontend만 (http://localhost:3000)
 make dev-be            # Backend만 (http://localhost:8000)
 
 # Docker
 make infra-up          # 인프라만 (DB, Redis, MinIO)
-make docker-up         # 전체 (infra + backend)
+make docker-up         # 전체 (infra + frontend + backend)
 make docker-down       # 전체 중지
 make docker-logs       # 로그 보기
-make docker-rebuild    # Backend 이미지 재빌드
+make docker-rebuild    # 이미지 재빌드
 
 # DB 마이그레이션
 make db-migrate m="설명"  # 마이그레이션 생성
@@ -178,10 +178,25 @@ pnpm run lint             # 린트
 
 ## 배포 구성
 
-| 서비스 | URL | 실행 방식 |
-|--------|-----|----------|
-| Frontend | `http://meetmit.duckdns.org:4040` | serve 또는 nginx |
-| Backend | `http://meetmit.duckdns.org:3000` | Docker Compose |
+### 통합 배포 (권장)
+```bash
+# Docker Compose로 FE + BE 통합 배포
+cd docker
+cp .env.example .env
+# .env에서 JWT_SECRET_KEY 변경
+docker compose up -d --build
+```
+
+| 구성 | URL | 설명 |
+|------|-----|------|
+| 프로덕션 | `https://snsn.kr` | Host nginx SSL 종료 |
+| 로컬 테스트 | `http://localhost:3000` | Docker nginx |
+
+### 아키텍처
+```
+[Client] --> [Host nginx:443 SSL] --> [Docker nginx:3000] --> /api/* --> [backend:8000]
+             (snsn.kr)                                    --> /*     --> static files
+```
 
 ---
 

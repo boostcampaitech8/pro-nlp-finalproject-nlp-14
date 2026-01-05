@@ -52,8 +52,9 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: mit-backend
-    ports:
-      - "${BACKEND_PORT:-3000}:3000"
+    # 내부 네트워크에서만 접근 (frontend nginx가 프록시)
+    expose:
+      - "8000"
     environment:
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-false}
@@ -62,12 +63,35 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-key}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4040,http://localhost:5173}
+      CORS_ORIGINS: '["https://snsn.kr","http://localhost:3000"]'
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    container_name: mit-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
 volumes:

@@ -21,7 +21,7 @@ RUN uv sync --frozen --no-dev
 COPY . .
 
 # 포트 노출
-EXPOSE 3000
+EXPOSE 8000
 
 # 실행
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3000"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
