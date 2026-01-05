@@ -1,0 +1,84 @@
+components:
+  schemas:
+    RecordingStatus:
+      type: string
+      enum:
+        - recording
+        - completed
+        - failed
+      description: 녹음 상태
+
+    Recording:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        meetingId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        userName:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/RecordingStatus'
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+        durationMs:
+          type: integer
+          nullable: true
+          description: 녹음 길이 (밀리초)
+        fileSizeBytes:
+          type: integer
+          nullable: true
+          description: 파일 크기 (바이트)
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - meetingId
+        - userId
+        - status
+        - startedAt
+        - createdAt
+
+    RecordingListResponse:
+      type: object
+      properties:
+        recordings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recording'
+        total:
+          type: integer
+      required:
+        - recordings
+        - total
+
+    RecordingDownloadResponse:
+      type: object
+      properties:
+        recordingId:
+          type: string
+          format: uuid
+        downloadUrl:
+          type: string
+          format: uri
+          description: Presigned URL for downloading
+        expiresInSeconds:
+          type: integer
+          default: 3600
+          description: URL 만료 시간 (초)
+      required:
+        - recordingId
+        - downloadUrl
+        - expiresInSeconds

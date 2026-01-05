@@ -1,4 +1,5 @@
 from app.models.meeting import Meeting, MeetingParticipant, MeetingStatus, ParticipantRole
+from app.models.recording import MeetingRecording, RecordingStatus
 from app.models.team import Team, TeamMember, TeamRole
 from app.models.user import User
 
@@ -11,4 +12,6 @@ __all__ = [
     "MeetingParticipant",
     "MeetingStatus",
     "ParticipantRole",
+    "MeetingRecording",
+    "RecordingStatus",
 ]

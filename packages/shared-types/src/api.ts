@@ -370,6 +370,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meetings/{meetingId}/recordings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 회의 녹음 목록 조회
+         * @description 특정 회의의 모든 녹음 목록을 조회합니다. 회의 참여자만 조회 가능합니다.
+         */
+        get: operations["getMeetingRecordings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meetings/{meetingId}/recordings/{recordingId}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 녹음 다운로드 URL 조회
+         * @description 특정 녹음의 다운로드 URL을 조회합니다.
+         *     Presigned URL은 1시간 동안 유효합니다.
+         *     회의 참여자만 다운로드 가능합니다.
+         */
+        get: operations["getRecordingDownloadUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -684,6 +726,49 @@ export interface components {
             meetingId: components["schemas"]["UUID"];
             status: components["schemas"]["MeetingStatus"];
             endedAt: components["schemas"]["Timestamp"];
+        };
+        /**
+         * @description 녹음 상태
+         * @enum {string}
+         */
+        RecordingStatus: "recording" | "completed" | "failed";
+        Recording: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            meetingId: string;
+            /** Format: uuid */
+            userId: string;
+            userName?: string | null;
+            status: components["schemas"]["RecordingStatus"];
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            endedAt?: string | null;
+            /** @description 녹음 길이 (밀리초) */
+            durationMs?: number | null;
+            /** @description 파일 크기 (바이트) */
+            fileSizeBytes?: number | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RecordingListResponse: {
+            recordings: components["schemas"]["Recording"][];
+            total: number;
+        };
+        RecordingDownloadResponse: {
+            /** Format: uuid */
+            recordingId: string;
+            /**
+             * Format: uri
+             * @description Presigned URL for downloading
+             */
+            downloadUrl: string;
+            /**
+             * @description URL 만료 시간 (초)
+             * @default 3600
+             */
+            expiresInSeconds: number;
         };
     };
     responses: never;
@@ -1982,6 +2067,114 @@ export interface operations {
             };
             /** @description 회의를 찾을 수 없음 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMeetingRecordings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 녹음 목록 조회 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingListResponse"];
+                };
+            };
+            /** @description 인증 실패 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 권한 없음 (참여자가 아님) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 회의를 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRecordingDownloadUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meetingId: string;
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 다운로드 URL 조회 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingDownloadResponse"];
+                };
+            };
+            /** @description 인증 실패 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 권한 없음 (참여자가 아님) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 회의 또는 녹음을 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 스토리지 오류 */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

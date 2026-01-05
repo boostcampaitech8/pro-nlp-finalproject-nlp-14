@@ -217,7 +217,7 @@ docker compose up -d --build
 | Week 2 | 회의 참여자 관리 | 완료 | 추가/역할변경/제거 |
 | Week 3 | WebRTC 시그널링 | 완료 | FastAPI WebSocket |
 | Week 3 | 실시간 회의 (SFU) | 완료 | Mesh 시그널링 (SFU는 Week 4) |
-| Week 4 | 서버 사이드 녹음 | 대기 | 발화자별 개별 트랙 녹음 |
+| Week 4 | 서버 사이드 녹음 | 완료 | 하이브리드 아키텍처 (Mesh + 녹음) |
 | Week 4 | 회의록 기본 기능 | 대기 | |
 
 ### Phase 2: PR Review 시스템 (4주)
@@ -241,15 +241,12 @@ docker compose up -d --build
 ## 다음 작업
 
 ```
-현재 목표: Phase 1 - Week 4 시작
+현재 목표: Phase 1 - Week 4 완료, 회의록 기본 기능 시작
 
 다음 해야 할 작업:
-1. [ ] MeetingRecording 모델 생성 (DB 스키마)
-2. [ ] Alembic 마이그레이션 작성
-3. [ ] aiortc 기반 실제 SFU 구현 (서버 측 미디어 처리)
-4. [ ] 발화자별 개별 트랙 녹음 기능
-5. [ ] MinIO 파일 저장 서비스 구현
-6. [ ] 녹음 파일 조회/다운로드 API
+1. [ ] 회의록 기본 기능 구현
+2. [ ] 녹음 파일 STT 변환 (Whisper API 등)
+3. [ ] 회의록 조회/수정 API
 ```
 
 ---
@@ -318,6 +315,17 @@ docker compose up -d --build
 - **원인**: `AuthService.get_current_user`를 인스턴스 메서드인데 클래스 메서드처럼 사용
 - **해결**: 올바른 FastAPI 의존성 주입 패턴 사용 (`get_auth_service` + `get_current_user` 함수)
 
+### useWebRTC 무한 루프 (React error #185: Maximum update depth exceeded)
+- **원인**: `useCallback` 의존성 배열에 `store` 전체 객체 포함 -> store 변경 시 콜백 재생성 -> useEffect 재실행 -> 무한 루프
+- **해결**:
+  1. 전체 store 대신 **개별 selector** 사용: `useMeetingRoomStore((s) => s.connectionState)`
+  2. `hasCleanedUpRef`로 cleanup 중복 실행 방지
+  3. `useEffect` cleanup에서 `useMeetingRoomStore.getState().reset()` 직접 호출 (빈 의존성 배열)
+
+### 회의실 페이지 접근 시 에러 화면
+- **원인**: 회의 상태가 `ongoing`이 아니면 에러 메시지 표시
+- **해결**: 회의 상세 페이지에서 "Start Meeting" 버튼 클릭하여 회의 시작 필요
+
 ---
 
 ## 참고 문서
@@ -332,7 +340,27 @@ docker compose up -d --build
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
-[2026-01-06] 버그 수정
+[2026-01-06] Phase 1 - Week 4 녹음 기능 완료
+- 하이브리드 아키텍처: 기존 Mesh P2P 유지 + 녹음 전용 서버 연결
+- Backend:
+  - MinIO 스토리지 서비스 (storage.py)
+  - MeetingRecording 모델 + Alembic 마이그레이션
+  - aiortc 기반 RecordingSession, SFURoom, SFUService (sfu_service.py)
+  - WebSocket 녹음 핸들러 (recording-offer, recording-ice, recording-answer)
+  - 녹음 API 엔드포인트 (GET /meetings/{id}/recordings, GET .../download)
+- Frontend:
+  - 녹음 메시지 타입 추가 (webrtc.ts)
+  - useWebRTC 훅에 startRecording, stopRecording 기능 추가
+  - MeetingRoom에 녹음 버튼 UI 추가
+- API Contract: recording.yaml 스키마/경로 추가
+- 파일 경로: recordings/{meeting_id}/{user_id}_{timestamp}.webm
+
+[2026-01-06] 버그 수정 (2차)
+- useWebRTC 무한 루프 수정 (React error #185): 전체 store 대신 개별 selector 사용
+- hasCleanedUpRef 추가로 cleanup 중복 실행 방지
+- RemoteAudio 컴포넌트 추가 (원격 오디오 재생)
+
+[2026-01-06] 버그 수정 (1차)
 - useAuth 무한 루프 수정: useEffect 의존성 배열 개선 + useRef로 중복 호출 방지
 - WebRTC 엔드포인트 422 에러 수정: FastAPI 의존성 주입 패턴 수정
 - 콘솔 디버깅 로그 추가 (main.tsx, authStore.ts, api.ts, useAuth.ts, App.tsx)

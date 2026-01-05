@@ -3,7 +3,7 @@
  * 시그널링 및 피어 연결 관리
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { signalingClient } from '@/services/signalingService';
 import { webrtcService } from '@/services/webrtcService';
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
@@ -38,6 +38,10 @@ export function useWebRTC(meetingId: string) {
 
   const currentUserIdRef = useRef<string>('');
   const hasCleanedUpRef = useRef(false);
+
+  // 녹음 관련 상태
+  const [isRecording, setIsRecording] = useState(false);
+  const recordingPcRef = useRef<RTCPeerConnection | null>(null);
 
   /**
    * 회의실 정보 조회
@@ -217,6 +221,31 @@ export function useWebRTC(meetingId: string) {
           setError(message.message);
           break;
         }
+
+        // 녹음 관련 메시지
+        case 'recording-answer': {
+          console.log('[useWebRTC] Received recording answer');
+          if (recordingPcRef.current) {
+            await webrtcService.setRemoteDescription(recordingPcRef.current, message.sdp);
+          }
+          break;
+        }
+
+        case 'recording-started': {
+          console.log('[useWebRTC] Recording started for user:', message.userId);
+          if (message.userId === currentUserIdRef.current) {
+            setIsRecording(true);
+          }
+          break;
+        }
+
+        case 'recording-stopped': {
+          console.log('[useWebRTC] Recording stopped for user:', message.userId);
+          if (message.userId === currentUserIdRef.current) {
+            setIsRecording(false);
+          }
+          break;
+        }
       }
     },
     [setParticipants, setConnectionState, addParticipant, removeParticipant, updateParticipantMute, setError, createPeerConnectionForUser]
@@ -297,10 +326,87 @@ export function useWebRTC(meetingId: string) {
   }, [setAudioMuted]);
 
   /**
+   * 녹음 시작 - 서버로 오디오를 전송하는 PeerConnection 생성
+   */
+  const startRecording = useCallback(async () => {
+    if (isRecording || recordingPcRef.current) {
+      console.log('[useWebRTC] Already recording');
+      return;
+    }
+
+    const currentState = useMeetingRoomStore.getState();
+    if (!currentState.localStream) {
+      console.error('[useWebRTC] No local stream for recording');
+      return;
+    }
+
+    try {
+      console.log('[useWebRTC] Starting recording...');
+
+      // 녹음 전용 PeerConnection 생성
+      const pc = webrtcService.createPeerConnection(
+        currentState.iceServers,
+        // ICE Candidate 콜백
+        (candidate) => {
+          signalingClient.send({
+            type: 'recording-ice',
+            candidate: candidate.toJSON(),
+          });
+        },
+        // Track 수신 콜백 (녹음에서는 사용 안 함)
+        () => {},
+        // 연결 상태 변경 콜백
+        (state) => {
+          console.log('[useWebRTC] Recording connection state:', state);
+          if (state === 'failed' || state === 'disconnected') {
+            setIsRecording(false);
+            recordingPcRef.current = null;
+          }
+        }
+      );
+
+      recordingPcRef.current = pc;
+
+      // 로컬 스트림의 오디오 트랙 추가
+      currentState.localStream.getAudioTracks().forEach((track) => {
+        pc.addTrack(track, currentState.localStream!);
+      });
+
+      // Offer 생성 및 전송
+      const offer = await webrtcService.createOffer(pc);
+      signalingClient.send({
+        type: 'recording-offer',
+        sdp: offer,
+      });
+    } catch (err) {
+      console.error('[useWebRTC] Failed to start recording:', err);
+      recordingPcRef.current = null;
+    }
+  }, [isRecording]);
+
+  /**
+   * 녹음 중지 - 녹음용 PeerConnection 종료
+   */
+  const stopRecording = useCallback(() => {
+    if (recordingPcRef.current) {
+      console.log('[useWebRTC] Stopping recording...');
+      recordingPcRef.current.close();
+      recordingPcRef.current = null;
+      setIsRecording(false);
+    }
+  }, []);
+
+  /**
    * cleanup - 빈 의존성 배열로 마운트/언마운트 시에만 실행
    */
   useEffect(() => {
     return () => {
+      // 녹음 정리
+      if (recordingPcRef.current) {
+        recordingPcRef.current.close();
+        recordingPcRef.current = null;
+      }
+
       // 직접 store 접근하여 cleanup
       if (!hasCleanedUpRef.current) {
         hasCleanedUpRef.current = true;
@@ -323,10 +429,13 @@ export function useWebRTC(meetingId: string) {
     isAudioMuted,
     error,
     meetingStatus,
+    isRecording,
 
     // 액션
     joinRoom,
     leaveRoom,
     toggleMute,
+    startRecording,
+    stopRecording,
   };
 }

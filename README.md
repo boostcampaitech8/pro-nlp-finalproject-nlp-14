@@ -578,6 +578,23 @@ uv run alembic upgrade head
 1. 브라우저 콘솔에서 `[useAuth] Calling checkAuth...`가 반복되는지 확인
 2. 최신 코드로 업데이트 (useRef로 중복 호출 방지됨)
 
+### React error #185: Maximum update depth exceeded
+
+**원인**: useWebRTC hook에서 store 전체 객체를 useCallback 의존성에 포함하여 무한 루프 발생
+
+**해결**:
+1. 브라우저 콘솔에서 에러 메시지 확인
+2. 최신 코드로 업데이트 (개별 selector 사용으로 수정됨)
+
+### 회의실 페이지(/meetings/{id}/room) 접근 시 에러 화면
+
+**원인**: 회의 상태가 `ongoing`이 아니면 에러 메시지 표시
+
+**해결**:
+1. 회의 상세 페이지(`/meetings/{id}`)로 이동
+2. Host가 "Start Meeting" 버튼 클릭하여 회의 시작
+3. 회의 상태가 `ongoing`으로 변경되면 회의실 페이지 접근 가능
+
 ---
 
 ## 라이선스

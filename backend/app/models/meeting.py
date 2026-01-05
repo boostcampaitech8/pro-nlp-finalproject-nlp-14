@@ -91,6 +91,11 @@ class Meeting(Base):
         back_populates="meeting",
         cascade="all, delete-orphan",
     )
+    recordings: Mapped[list["MeetingRecording"]] = relationship(
+        "MeetingRecording",
+        back_populates="meeting",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Meeting {self.title}>"
@@ -136,5 +141,6 @@ class MeetingParticipant(Base):
 
 
 # 순환 import 방지
+from app.models.recording import MeetingRecording  # noqa: E402
 from app.models.team import Team  # noqa: E402
 from app.models.user import User  # noqa: E402

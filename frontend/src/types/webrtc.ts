@@ -15,7 +15,13 @@ export type SignalingMessageType =
   | 'participant-left'
   | 'participant-muted'
   | 'meeting-ended'
-  | 'error';
+  | 'error'
+  // 녹음 관련
+  | 'recording-offer'
+  | 'recording-ice'
+  | 'recording-answer'
+  | 'recording-started'
+  | 'recording-stopped';
 
 // 회의실 참여자 정보
 export interface RoomParticipant {
@@ -88,13 +94,26 @@ export interface MuteMessage {
   muted: boolean;
 }
 
+// 녹음 관련 (Client -> Server)
+export interface RecordingOfferMessage {
+  type: 'recording-offer';
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface RecordingIceMessage {
+  type: 'recording-ice';
+  candidate: RTCIceCandidateInit;
+}
+
 export type ClientMessage =
   | JoinMessage
   | OfferMessage
   | AnswerMessage
   | IceCandidateMessage
   | LeaveMessage
-  | MuteMessage;
+  | MuteMessage
+  | RecordingOfferMessage
+  | RecordingIceMessage;
 
 // ===== Server -> Client 메시지 =====
 
@@ -148,6 +167,22 @@ export interface ErrorMessage {
   message: string;
 }
 
+// 녹음 관련 (Server -> Client)
+export interface RecordingAnswerMessage {
+  type: 'recording-answer';
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface RecordingStartedMessage {
+  type: 'recording-started';
+  userId: string;
+}
+
+export interface RecordingStoppedMessage {
+  type: 'recording-stopped';
+  userId: string;
+}
+
 export type ServerMessage =
   | JoinedMessage
   | ParticipantJoinedMessage
@@ -157,7 +192,10 @@ export type ServerMessage =
   | ServerIceCandidateMessage
   | ParticipantMutedMessage
   | MeetingEndedMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | RecordingAnswerMessage
+  | RecordingStartedMessage
+  | RecordingStoppedMessage;
 
 // 연결 상태
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';

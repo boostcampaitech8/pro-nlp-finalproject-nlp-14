@@ -16,12 +16,19 @@ class SignalingMessageType(str, Enum):
     ICE_CANDIDATE = "ice-candidate"
     LEAVE = "leave"
     MUTE = "mute"
+    # 녹음 관련 (Client -> Server)
+    RECORDING_OFFER = "recording-offer"
+    RECORDING_ICE = "recording-ice"
     # Server -> Client
     JOINED = "joined"
     PARTICIPANT_JOINED = "participant-joined"
     PARTICIPANT_LEFT = "participant-left"
     PARTICIPANT_MUTED = "participant-muted"
     ERROR = "error"
+    # 녹음 관련 (Server -> Client)
+    RECORDING_ANSWER = "recording-answer"
+    RECORDING_STARTED = "recording-started"
+    RECORDING_STOPPED = "recording-stopped"
 
 
 class RoomParticipant(BaseModel):

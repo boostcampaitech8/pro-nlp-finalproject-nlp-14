@@ -45,9 +45,12 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     remoteStreams,
     isAudioMuted,
     error,
+    isRecording,
     joinRoom,
     leaveRoom,
     toggleMute,
+    startRecording,
+    stopRecording,
   } = useWebRTC(meetingId);
 
   console.log('[MeetingRoom] connectionState:', connectionState, 'error:', error, 'participants:', participants.size);
@@ -160,12 +163,37 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
       </main>
 
       {/* 하단 컨트롤 */}
-      <footer className="bg-gray-800 px-6 py-4 flex items-center justify-center">
+      <footer className="bg-gray-800 px-6 py-4 flex items-center justify-center gap-4">
         <AudioControls
           isAudioMuted={isAudioMuted}
           onToggleMute={toggleMute}
           disabled={connectionState !== 'connected'}
         />
+
+        {/* 녹음 버튼 */}
+        <button
+          onClick={isRecording ? stopRecording : startRecording}
+          disabled={connectionState !== 'connected'}
+          className={`p-4 rounded-full transition-colors ${
+            isRecording
+              ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+              : 'bg-gray-700 hover:bg-gray-600'
+          } ${connectionState !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title={isRecording ? '녹음 중지' : '녹음 시작'}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6 text-white"
+            fill={isRecording ? 'currentColor' : 'none'}
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <circle cx="12" cy="12" r="6" strokeWidth={2} />
+          </svg>
+        </button>
+        {isRecording && (
+          <span className="text-red-400 text-sm">녹음 중...</span>
+        )}
       </footer>
     </div>
   );

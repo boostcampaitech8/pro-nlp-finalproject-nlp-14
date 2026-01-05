@@ -1,0 +1,99 @@
+paths:
+  /api/v1/meetings/{meetingId}/recordings:
+    get:
+      tags:
+        - Recordings
+      summary: 회의 녹음 목록 조회
+      description: 특정 회의의 모든 녹음 목록을 조회합니다. 회의 참여자만 조회 가능합니다.
+      operationId: getMeetingRecordings
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 녹음 목록 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/RecordingListResponse'
+        '401':
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음 (참여자가 아님)
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/meetings/{meetingId}/recordings/{recordingId}/download:
+    get:
+      tags:
+        - Recordings
+      summary: 녹음 다운로드 URL 조회
+      description: |
+        특정 녹음의 다운로드 URL을 조회합니다.
+        Presigned URL은 1시간 동안 유효합니다.
+        회의 참여자만 다운로드 가능합니다.
+      operationId: getRecordingDownloadUrl
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 다운로드 URL 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/RecordingDownloadResponse'
+        '401':
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음 (참여자가 아님)
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의 또는 녹음을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+        '500':
+          description: 스토리지 오류
+          content:
+            application/json:
+              schema:
+                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'

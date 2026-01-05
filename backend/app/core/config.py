@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # CORS - JSON 배열 형식
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # MinIO (Object Storage)
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_secure: bool = False
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):

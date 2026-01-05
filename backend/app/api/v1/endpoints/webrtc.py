@@ -321,6 +321,13 @@ async def handle_websocket_messages(
         elif msg_type == SignalingMessageType.MUTE:
             await handle_mute(meeting_id, user_id, data)
 
+        # 녹음 관련 메시지
+        elif msg_type == SignalingMessageType.RECORDING_OFFER:
+            await handle_recording_offer(meeting_id, user_id, data)
+
+        elif msg_type == SignalingMessageType.RECORDING_ICE:
+            await handle_recording_ice(meeting_id, user_id, data)
+
         else:
             logger.warning(f"Unknown message type: {msg_type}")
 
@@ -450,3 +457,76 @@ async def handle_mute(meeting_id: UUID, user_id: UUID, data: dict) -> None:
         },
         exclude_user_id=user_id,
     )
+
+
+# ===== 녹음 관련 핸들러 =====
+
+
+async def handle_recording_offer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
+    """녹음용 offer 메시지 처리
+
+    클라이언트가 서버로 오디오를 전송하기 위한 PeerConnection offer
+    """
+    sdp = data.get("sdp")
+    if not sdp:
+        logger.warning(f"[Recording] No SDP in recording offer from user {user_id}")
+        return
+
+    room = sfu_service.get_room(meeting_id)
+    if not room:
+        logger.warning(f"[Recording] Room not found for meeting {meeting_id}")
+        return
+
+    try:
+        # SFU에서 answer 생성
+        answer = await room.handle_recording_offer(user_id, sdp)
+
+        # 클라이언트에게 answer 전송
+        await connection_manager.send_to_user(
+            meeting_id,
+            user_id,
+            {
+                "type": SignalingMessageType.RECORDING_ANSWER,
+                "sdp": answer,
+            },
+        )
+
+        # 녹음 시작 알림
+        await connection_manager.send_to_user(
+            meeting_id,
+            user_id,
+            {
+                "type": SignalingMessageType.RECORDING_STARTED,
+                "userId": str(user_id),
+            },
+        )
+
+        logger.info(f"[Recording] Started for user {user_id} in meeting {meeting_id}")
+
+    except Exception as e:
+        logger.error(f"[Recording] Failed to handle offer: {e}")
+        await connection_manager.send_to_user(
+            meeting_id,
+            user_id,
+            {
+                "type": SignalingMessageType.ERROR,
+                "code": "RECORDING_FAILED",
+                "message": "녹음 시작에 실패했습니다.",
+            },
+        )
+
+
+async def handle_recording_ice(meeting_id: UUID, user_id: UUID, data: dict) -> None:
+    """녹음용 ICE candidate 메시지 처리"""
+    candidate = data.get("candidate")
+    if not candidate:
+        return
+
+    room = sfu_service.get_room(meeting_id)
+    if not room:
+        return
+
+    try:
+        await room.handle_recording_ice(user_id, candidate)
+    except Exception as e:
+        logger.warning(f"[Recording] Failed to handle ICE candidate: {e}")

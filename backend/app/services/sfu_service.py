@@ -1,89 +1,353 @@
-"""SFU (Selective Forwarding Unit) 서비스
-현재는 Mesh 시그널링으로 구현, Week 4에서 실제 SFU + 녹음 기능 추가 예정
+"""SFU (Selective Forwarding Unit) 서비스 - aiortc 기반 녹음
+
+하이브리드 아키텍처:
+- 실시간 통화: 기존 Mesh P2P (클라이언트 간 직접 연결)
+- 녹음: 서버로 별도 연결 (aiortc RTCPeerConnection + MediaRecorder)
 """
 
+import asyncio
 import logging
+import os
+import tempfile
+from datetime import datetime, timezone
 from uuid import UUID
+
+from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc.contrib.media import MediaRecorder
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.storage import storage_service
+from app.core.webrtc_config import ICE_SERVERS
+from app.models.recording import MeetingRecording, RecordingStatus
 
 logger = logging.getLogger(__name__)
 
 
+class RecordingSession:
+    """개별 사용자의 녹음 세션
+
+    각 참여자는 서버와 별도의 PeerConnection을 맺어 오디오를 전송하고,
+    서버는 MediaRecorder로 webm 파일로 녹음합니다.
+    """
+
+    def __init__(self, meeting_id: UUID, user_id: UUID):
+        self.meeting_id = meeting_id
+        self.user_id = user_id
+        self.pc: RTCPeerConnection | None = None
+        self.recorder: MediaRecorder | None = None
+        self.temp_file: str | None = None
+        self.started_at: datetime | None = None
+        self.recording_id: UUID | None = None
+        self._track_received = asyncio.Event()
+
+    async def setup(self) -> RTCPeerConnection:
+        """PeerConnection 설정"""
+        # ICE 서버 설정
+        config = {"iceServers": [{"urls": server["urls"]} for server in ICE_SERVERS]}
+        self.pc = RTCPeerConnection(configuration=config)
+
+        # 임시 파일 생성
+        fd, self.temp_file = tempfile.mkstemp(suffix=".webm")
+        os.close(fd)
+
+        # Track 수신 시 MediaRecorder 설정
+        @self.pc.on("track")
+        async def on_track(track):
+            if track.kind == "audio":
+                logger.info(f"[RecordingSession] Audio track received from user {self.user_id}")
+                self.recorder = MediaRecorder(self.temp_file, format="webm")
+                self.recorder.addTrack(track)
+                await self.recorder.start()
+                self.started_at = datetime.now(timezone.utc)
+                self._track_received.set()
+
+                # Track 종료 시 처리
+                @track.on("ended")
+                async def on_ended():
+                    logger.info(f"[RecordingSession] Track ended for user {self.user_id}")
+
+        # 연결 상태 로깅
+        @self.pc.on("connectionstatechange")
+        async def on_connection_state_change():
+            logger.info(
+                f"[RecordingSession] Connection state: {self.pc.connectionState} "
+                f"for user {self.user_id}"
+            )
+
+        return self.pc
+
+    async def handle_offer(self, sdp: dict) -> dict:
+        """클라이언트 Offer 처리 및 Answer 반환
+
+        Args:
+            sdp: {"sdp": "...", "type": "offer"}
+
+        Returns:
+            Answer SDP: {"sdp": "...", "type": "answer"}
+        """
+        if not self.pc:
+            await self.setup()
+
+        offer = RTCSessionDescription(sdp=sdp["sdp"], type=sdp["type"])
+        await self.pc.setRemoteDescription(offer)
+
+        answer = await self.pc.createAnswer()
+        await self.pc.setLocalDescription(answer)
+
+        logger.info(f"[RecordingSession] Answer created for user {self.user_id}")
+
+        return {
+            "sdp": self.pc.localDescription.sdp,
+            "type": self.pc.localDescription.type,
+        }
+
+    async def handle_ice_candidate(self, candidate: dict) -> None:
+        """ICE Candidate 추가
+
+        Args:
+            candidate: ICE candidate 객체
+        """
+        if self.pc and candidate:
+            try:
+                from aiortc import RTCIceCandidate
+
+                # candidate 파싱
+                ice_candidate = RTCIceCandidate(
+                    component=candidate.get("component", 1),
+                    foundation=candidate.get("foundation", ""),
+                    ip=candidate.get("address") or candidate.get("ip", ""),
+                    port=candidate.get("port", 0),
+                    priority=candidate.get("priority", 0),
+                    protocol=candidate.get("protocol", "udp"),
+                    type=candidate.get("type", "host"),
+                    sdpMid=candidate.get("sdpMid"),
+                    sdpMLineIndex=candidate.get("sdpMLineIndex"),
+                )
+                await self.pc.addIceCandidate(ice_candidate)
+            except Exception as e:
+                logger.warning(f"[RecordingSession] Failed to add ICE candidate: {e}")
+
+    async def stop_and_save(self, db: AsyncSession) -> MeetingRecording | None:
+        """녹음 중지 및 MinIO 저장
+
+        Args:
+            db: 데이터베이스 세션
+
+        Returns:
+            저장된 MeetingRecording 또는 None
+        """
+        if not self.recorder or not self.temp_file:
+            logger.warning(f"[RecordingSession] No recorder for user {self.user_id}")
+            return None
+
+        try:
+            # 녹음 중지
+            await self.recorder.stop()
+            ended_at = datetime.now(timezone.utc)
+
+            # 파일 크기 확인
+            if not os.path.exists(self.temp_file):
+                logger.warning(f"[RecordingSession] Temp file not found for user {self.user_id}")
+                return None
+
+            file_size = os.path.getsize(self.temp_file)
+            if file_size == 0:
+                logger.warning(f"[RecordingSession] Empty recording for user {self.user_id}")
+                return None
+
+            # MinIO 업로드
+            timestamp = self.started_at.strftime("%Y%m%d_%H%M%S") if self.started_at else "unknown"
+            file_path = storage_service.upload_recording_file(
+                meeting_id=str(self.meeting_id),
+                user_id=str(self.user_id),
+                timestamp=timestamp,
+                file_path=self.temp_file,
+            )
+
+            # DB 저장
+            duration_ms = (
+                int((ended_at - self.started_at).total_seconds() * 1000)
+                if self.started_at
+                else 0
+            )
+            recording = MeetingRecording(
+                meeting_id=self.meeting_id,
+                user_id=self.user_id,
+                file_path=file_path,
+                status=RecordingStatus.COMPLETED.value,
+                started_at=self.started_at or ended_at,
+                ended_at=ended_at,
+                duration_ms=duration_ms,
+                file_size_bytes=file_size,
+            )
+            db.add(recording)
+            await db.commit()
+            await db.refresh(recording)
+
+            logger.info(
+                f"[RecordingSession] Recording saved: {file_path} "
+                f"({duration_ms}ms, {file_size} bytes)"
+            )
+            return recording
+
+        except Exception as e:
+            logger.error(f"[RecordingSession] Failed to save recording: {e}")
+            raise
+        finally:
+            # 임시 파일 정리
+            if self.temp_file and os.path.exists(self.temp_file):
+                try:
+                    os.unlink(self.temp_file)
+                except Exception as e:
+                    logger.warning(f"[RecordingSession] Failed to delete temp file: {e}")
+
+    async def close(self) -> None:
+        """리소스 정리"""
+        if self.recorder:
+            try:
+                await self.recorder.stop()
+            except Exception:
+                pass
+            self.recorder = None
+
+        if self.pc:
+            try:
+                await self.pc.close()
+            except Exception:
+                pass
+            self.pc = None
+
+        if self.temp_file and os.path.exists(self.temp_file):
+            try:
+                os.unlink(self.temp_file)
+            except Exception:
+                pass
+            self.temp_file = None
+
+
 class SFURoom:
-    """단일 회의실의 SFU 관리
+    """단일 회의실의 녹음 관리
 
-    현재 구현:
-    - Mesh 시그널링: 클라이언트 간 직접 PeerConnection
-    - 서버는 시그널링만 중계
-
-    추후 구현 (Week 4):
-    - 서버 측 PeerConnection (aiortc)
-    - 각 참여자 오디오 트랙 수신
-    - 발화자별 개별 녹음
+    하이브리드 구조:
+    - 기존 Mesh 시그널링은 webrtc.py에서 처리 (변경 없음)
+    - 여기서는 녹음 전용 연결만 관리
     """
 
     def __init__(self, meeting_id: UUID):
         self.meeting_id = meeting_id
-        # user_id -> peer_connection (추후 aiortc RTCPeerConnection)
+        # 녹음 세션: user_id -> RecordingSession
+        self._recording_sessions: dict[str, RecordingSession] = {}
+        # 기존 Mesh용 피어 추적 (호환성 유지)
         self._peer_connections: dict[str, object] = {}
-        # user_id -> audio_track (추후 MediaStreamTrack)
-        self._audio_tracks: dict[str, object] = {}
+
+    def get_or_create_recording_session(self, user_id: UUID) -> RecordingSession:
+        """사용자 녹음 세션 조회 또는 생성"""
+        user_key = str(user_id)
+        if user_key not in self._recording_sessions:
+            self._recording_sessions[user_key] = RecordingSession(self.meeting_id, user_id)
+            logger.info(f"[SFURoom] Recording session created for user {user_id}")
+        return self._recording_sessions[user_key]
+
+    async def handle_recording_offer(self, user_id: UUID, sdp: dict) -> dict:
+        """녹음용 Offer 처리
+
+        Args:
+            user_id: 사용자 ID
+            sdp: SDP Offer
+
+        Returns:
+            SDP Answer
+        """
+        session = self.get_or_create_recording_session(user_id)
+        return await session.handle_offer(sdp)
+
+    async def handle_recording_ice(self, user_id: UUID, candidate: dict) -> None:
+        """녹음용 ICE Candidate 처리
+
+        Args:
+            user_id: 사용자 ID
+            candidate: ICE Candidate
+        """
+        user_key = str(user_id)
+        if user_key in self._recording_sessions:
+            await self._recording_sessions[user_key].handle_ice_candidate(candidate)
+
+    async def stop_user_recording(self, user_id: UUID, db: AsyncSession) -> MeetingRecording | None:
+        """특정 사용자 녹음 중지 및 저장
+
+        Args:
+            user_id: 사용자 ID
+            db: 데이터베이스 세션
+
+        Returns:
+            저장된 MeetingRecording 또는 None
+        """
+        user_key = str(user_id)
+        if user_key in self._recording_sessions:
+            session = self._recording_sessions[user_key]
+            recording = await session.stop_and_save(db)
+            await session.close()
+            del self._recording_sessions[user_key]
+            logger.info(f"[SFURoom] Recording stopped for user {user_id}")
+            return recording
+        return None
+
+    # === 기존 Mesh 호환성 유지 ===
 
     async def add_peer(self, user_id: UUID) -> None:
-        """피어 추가 (추후 PeerConnection 생성)"""
+        """피어 추가 (Mesh 호환)"""
         user_key = str(user_id)
-        self._peer_connections[user_key] = None  # 추후 RTCPeerConnection
-        logger.info(f"Peer added: {user_id} in meeting {self.meeting_id}")
+        self._peer_connections[user_key] = None
+        logger.info(f"[SFURoom] Peer added: {user_id}")
 
     async def remove_peer(self, user_id: UUID) -> None:
-        """피어 제거 및 정리"""
+        """피어 제거 (Mesh 호환)"""
         user_key = str(user_id)
-
-        # 트랙 정리
-        if user_key in self._audio_tracks:
-            del self._audio_tracks[user_key]
-
-        # PeerConnection 정리
         if user_key in self._peer_connections:
-            # 추후: pc.close() 호출
             del self._peer_connections[user_key]
-
-        logger.info(f"Peer removed: {user_id} from meeting {self.meeting_id}")
+        logger.info(f"[SFURoom] Peer removed: {user_id}")
 
     async def handle_offer(self, user_id: UUID, sdp: dict) -> dict | None:
-        """SDP Offer 처리 (Mesh 모드에서는 중계만)
-
-        추후 구현:
-        - aiortc RTCPeerConnection 생성
-        - setRemoteDescription(offer)
-        - createAnswer()
-        - setLocalDescription(answer)
-        - answer 반환
-        """
-        # Mesh 모드: offer는 다른 클라이언트로 전달됨
+        """SDP Offer 처리 (Mesh 모드: 중계만)"""
         return None
 
     async def handle_answer(self, user_id: UUID, sdp: dict) -> None:
-        """SDP Answer 처리 (Mesh 모드에서는 중계만)
-
-        추후 구현:
-        - setRemoteDescription(answer)
-        """
+        """SDP Answer 처리 (Mesh 모드: 중계만)"""
         pass
 
     async def handle_ice_candidate(self, user_id: UUID, candidate: dict) -> None:
-        """ICE Candidate 처리 (Mesh 모드에서는 중계만)
-
-        추후 구현:
-        - addIceCandidate(candidate)
-        """
+        """ICE Candidate 처리 (Mesh 모드: 중계만)"""
         pass
 
-    async def close(self) -> None:
-        """회의실 종료 및 모든 리소스 정리"""
-        for user_key in list(self._peer_connections.keys()):
-            await self.remove_peer(UUID(user_key))
+    async def close(self, db: AsyncSession | None = None) -> list[MeetingRecording]:
+        """회의실 종료 및 모든 녹음 저장
 
-        logger.info(f"SFU room closed: {self.meeting_id}")
+        Args:
+            db: 데이터베이스 세션 (녹음 저장용)
+
+        Returns:
+            저장된 녹음 목록
+        """
+        recordings = []
+
+        # 녹음 세션 정리
+        for user_key in list(self._recording_sessions.keys()):
+            session = self._recording_sessions[user_key]
+            try:
+                if db:
+                    recording = await session.stop_and_save(db)
+                    if recording:
+                        recordings.append(recording)
+                await session.close()
+            except Exception as e:
+                logger.error(f"[SFURoom] Failed to close recording session: {e}")
+            del self._recording_sessions[user_key]
+
+        # Mesh 피어 정리
+        self._peer_connections.clear()
+
+        logger.info(f"[SFURoom] Room closed: {self.meeting_id}, {len(recordings)} recordings saved")
+        return recordings
 
 
 class SFUService:
@@ -98,7 +362,7 @@ class SFUService:
         meeting_key = str(meeting_id)
         if meeting_key not in self._rooms:
             self._rooms[meeting_key] = SFURoom(meeting_id)
-            logger.info(f"SFU room created: {meeting_id}")
+            logger.info(f"[SFUService] Room created: {meeting_id}")
         return self._rooms[meeting_key]
 
     def get_room(self, meeting_id: UUID) -> SFURoom | None:
@@ -106,13 +370,25 @@ class SFUService:
         meeting_key = str(meeting_id)
         return self._rooms.get(meeting_key)
 
-    async def close_room(self, meeting_id: UUID) -> None:
-        """회의실 종료"""
+    async def close_room(self, meeting_id: UUID, db: AsyncSession | None = None) -> list[MeetingRecording]:
+        """회의실 종료 및 모든 녹음 저장
+
+        Args:
+            meeting_id: 회의 ID
+            db: 데이터베이스 세션
+
+        Returns:
+            저장된 녹음 목록
+        """
         meeting_key = str(meeting_id)
+        recordings = []
+
         if meeting_key in self._rooms:
-            await self._rooms[meeting_key].close()
+            recordings = await self._rooms[meeting_key].close(db)
             del self._rooms[meeting_key]
-            logger.info(f"SFU room removed: {meeting_id}")
+            logger.info(f"[SFUService] Room removed: {meeting_id}")
+
+        return recordings
 
 
 # 싱글톤 인스턴스
