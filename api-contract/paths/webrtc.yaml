@@ -1,0 +1,147 @@
+paths:
+  /api/v1/meetings/{meetingId}/room:
+    get:
+      tags:
+        - WebRTC
+      summary: 회의실 정보 조회
+      description: |
+        실시간 회의에 필요한 정보를 조회합니다.
+        - 현재 참여 중인 사용자 목록
+        - ICE 서버 설정
+        - 최대 참여자 수
+      operationId: getMeetingRoom
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 회의실 정보 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/webrtc.yaml#/components/schemas/MeetingRoomResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음 (회의 참여자만 조회 가능)
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/meetings/{meetingId}/start:
+    post:
+      tags:
+        - WebRTC
+      summary: 회의 시작
+      description: |
+        회의를 시작합니다. host만 시작 가능합니다.
+        회의 상태가 scheduled -> ongoing으로 변경됩니다.
+      operationId: startMeeting
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 회의 시작 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/webrtc.yaml#/components/schemas/StartMeetingResponse'
+        '400':
+          description: 이미 진행 중이거나 종료된 회의
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음 (host만 시작 가능)
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/meetings/{meetingId}/end:
+    post:
+      tags:
+        - WebRTC
+      summary: 회의 종료
+      description: |
+        회의를 종료합니다. host만 종료 가능합니다.
+        회의 상태가 ongoing -> completed로 변경됩니다.
+        모든 참여자의 WebSocket 연결이 종료됩니다.
+      operationId: endMeeting
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 회의 종료 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/webrtc.yaml#/components/schemas/EndMeetingResponse'
+        '400':
+          description: 진행 중인 회의가 아님
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음 (host만 종료 가능)
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'

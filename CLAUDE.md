@@ -215,8 +215,8 @@ docker compose up -d --build
 | Week 2 | 회의 CRUD | 완료 | API + UI |
 | Week 2 | 팀 멤버 관리 | 완료 | 초대/역할변경/제거 |
 | Week 2 | 회의 참여자 관리 | 완료 | 추가/역할변경/제거 |
-| Week 3 | WebRTC 시그널링 | 대기 | FastAPI WebSocket |
-| Week 3 | 실시간 회의 (SFU) | 대기 | aiortc |
+| Week 3 | WebRTC 시그널링 | 완료 | FastAPI WebSocket |
+| Week 3 | 실시간 회의 (SFU) | 완료 | Mesh 시그널링 (SFU는 Week 4) |
 | Week 4 | 서버 사이드 녹음 | 대기 | 발화자별 개별 트랙 녹음 |
 | Week 4 | 회의록 기본 기능 | 대기 | |
 
@@ -241,14 +241,15 @@ docker compose up -d --build
 ## 다음 작업
 
 ```
-현재 목표: Phase 1 - Week 3 시작
+현재 목표: Phase 1 - Week 4 시작
 
 다음 해야 할 작업:
-1. [ ] WebRTC 시그널링 API 명세 작성
-2. [ ] WebSocket 엔드포인트 구현 (BE)
-3. [ ] aiortc 기반 SFU 서버 구현 (BE)
-4. [ ] WebRTC 클라이언트 구현 (FE)
-5. [ ] 실시간 회의 UI 구현 (FE)
+1. [ ] MeetingRecording 모델 생성 (DB 스키마)
+2. [ ] Alembic 마이그레이션 작성
+3. [ ] aiortc 기반 실제 SFU 구현 (서버 측 미디어 처리)
+4. [ ] 발화자별 개별 트랙 녹음 기능
+5. [ ] MinIO 파일 저장 서비스 구현
+6. [ ] 녹음 파일 조회/다운로드 API
 ```
 
 ---
@@ -321,6 +322,15 @@ docker compose up -d --build
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-06] Phase 1 - Week 3 완료
+- WebRTC 시그널링 API 명세 작성: api-contract/schemas/webrtc.yaml, paths/webrtc.yaml
+- Backend WebSocket 시그널링 구현: signaling_service.py, sfu_service.py, webrtc.py
+- Frontend WebRTC 구현: signalingService.ts, webrtcService.ts, useWebRTC.ts
+- 회의실 UI 구현: MeetingRoom.tsx, AudioControls.tsx, ParticipantList.tsx
+- MeetingRoomPage 추가: /meetings/:meetingId/room 라우트
+- MeetingDetailPage 수정: 회의 시작/참여/종료 버튼 추가
+- 현재 Mesh 시그널링으로 동작, Week 4에서 실제 SFU + 녹음 구현 예정
+
 [2026-01-06] Phase 1 - Week 2 완료
 - Team API 구현: CRUD + 멤버 관리 (초대/역할변경/제거)
 - Meeting API 구현: CRUD + 참여자 관리 (추가/역할변경/제거)

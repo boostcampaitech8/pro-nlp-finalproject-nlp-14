@@ -1,18 +1,23 @@
 import type { ReactNode } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useAuth } from '@/hooks/useAuth';
 import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { MeetingDetailPage } from '@/pages/MeetingDetailPage';
+import MeetingRoomPage from '@/pages/MeetingRoomPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { TeamDetailPage } from '@/pages/TeamDetailPage';
 
 // 인증된 사용자만 접근 가능
 function PrivateRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
+  const location = useLocation();
+
+  console.log('[PrivateRoute] path:', location.pathname, 'isAuthenticated:', isAuthenticated);
 
   if (!isAuthenticated) {
+    console.log('[PrivateRoute] Redirecting to /login');
     return <Navigate to="/login" replace />;
   }
 
@@ -45,6 +50,14 @@ function App() {
         element={
           <PrivateRoute>
             <MeetingDetailPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/meetings/:meetingId/room"
+        element={
+          <PrivateRoute>
+            <MeetingRoomPage />
           </PrivateRoute>
         }
       />

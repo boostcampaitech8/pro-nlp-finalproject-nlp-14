@@ -1,0 +1,117 @@
+components:
+  schemas:
+    # WebRTC 참여자 정보 (실시간 회의용)
+    RoomParticipant:
+      type: object
+      required:
+        - userId
+        - userName
+        - role
+        - audioMuted
+      properties:
+        userId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        userName:
+          type: string
+          example: "John Doe"
+        role:
+          $ref: './meeting.yaml#/components/schemas/ParticipantRole'
+        audioMuted:
+          type: boolean
+          default: false
+          description: 오디오 음소거 상태
+
+    # ICE 서버 설정
+    IceServer:
+      type: object
+      required:
+        - urls
+      properties:
+        urls:
+          type: string
+          example: "stun:stun.l.google.com:19302"
+        username:
+          type: string
+          nullable: true
+        credential:
+          type: string
+          nullable: true
+
+    # 회의실 정보 응답
+    MeetingRoomResponse:
+      type: object
+      required:
+        - meetingId
+        - status
+        - participants
+        - iceServers
+        - maxParticipants
+      properties:
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: './meeting.yaml#/components/schemas/MeetingStatus'
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoomParticipant'
+        iceServers:
+          type: array
+          items:
+            $ref: '#/components/schemas/IceServer'
+        maxParticipants:
+          type: integer
+          default: 10
+          description: 최대 참여자 수
+
+    # 회의 시작 응답
+    StartMeetingResponse:
+      type: object
+      required:
+        - meetingId
+        - status
+        - startedAt
+      properties:
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: './meeting.yaml#/components/schemas/MeetingStatus'
+        startedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+
+    # 회의 종료 응답
+    EndMeetingResponse:
+      type: object
+      required:
+        - meetingId
+        - status
+        - endedAt
+      properties:
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: './meeting.yaml#/components/schemas/MeetingStatus'
+        endedAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+
+    # ===== WebSocket 시그널링 메시지 (참고용, OpenAPI는 WebSocket 미지원) =====
+    #
+    # Client -> Server 메시지:
+    # - join: { type: "join" }
+    # - offer: { type: "offer", sdp: RTCSessionDescriptionInit }
+    # - answer: { type: "answer", sdp: RTCSessionDescriptionInit, targetUserId: string }
+    # - ice-candidate: { type: "ice-candidate", candidate: RTCIceCandidateInit, targetUserId?: string }
+    # - leave: { type: "leave" }
+    # - mute: { type: "mute", muted: boolean }
+    #
+    # Server -> Client 메시지:
+    # - joined: { type: "joined", participants: RoomParticipant[] }
+    # - participant-joined: { type: "participant-joined", participant: RoomParticipant }
+    # - participant-left: { type: "participant-left", userId: string }
+    # - offer: { type: "offer", sdp: RTCSessionDescriptionInit, fromUserId: string }
+    # - answer: { type: "answer", sdp: RTCSessionDescriptionInit, fromUserId: string }
+    # - ice-candidate: { type: "ice-candidate", candidate: RTCIceCandidateInit, fromUserId: string }
+    # - participant-muted: { type: "participant-muted", userId: string, muted: boolean }
+    # - error: { type: "error", code: string, message: string }
+    #
+    # WebSocket 엔드포인트: ws://host/api/v1/meetings/{meetingId}/ws?token={accessToken}

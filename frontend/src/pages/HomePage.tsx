@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
 
 export function HomePage() {
+  console.log('[HomePage] Rendering...');
   const { user, logout, isLoading: authLoading } = useAuth();
   const {
     teams,
@@ -15,6 +16,7 @@ export function HomePage() {
     fetchTeams,
     createTeam,
   } = useTeamStore();
+  console.log('[HomePage] user:', user?.email || 'null', 'authLoading:', authLoading);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');

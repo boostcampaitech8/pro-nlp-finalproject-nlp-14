@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
 import type { MeetingStatus, ParticipantRole, TeamMember } from '@/types';
 import { teamService } from '@/services/teamService';
+import api from '@/services/api';
 
 const STATUS_LABELS: Record<MeetingStatus, string> = {
   scheduled: 'Scheduled',
@@ -67,6 +68,10 @@ export function MeetingDetailPage() {
   const [adding, setAdding] = useState(false);
   const [editingParticipantId, setEditingParticipantId] = useState<string | null>(null);
   const [editParticipantRole, setEditParticipantRole] = useState<ParticipantRole>('participant');
+
+  // 회의 시작/참여 상태
+  const [starting, setStarting] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   useEffect(() => {
     if (meetingId) {
@@ -158,6 +163,49 @@ export function MeetingDetailPage() {
     } catch {
       // 에러는 스토어에서 처리
     }
+  };
+
+  // 회의 시작 (host만)
+  const handleStartMeeting = async () => {
+    if (!meetingId) return;
+
+    setStarting(true);
+    try {
+      await api.post(`/meetings/${meetingId}/start`);
+      // 회의 정보 다시 로드
+      await fetchMeeting(meetingId);
+      // 회의실로 이동
+      navigate(`/meetings/${meetingId}/room`);
+    } catch (error) {
+      console.error('Failed to start meeting:', error);
+      alert('회의를 시작할 수 없습니다.');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  // 회의 종료 (host만)
+  const handleEndMeeting = async () => {
+    if (!meetingId) return;
+    if (!confirm('회의를 종료하시겠습니까?')) return;
+
+    setEnding(true);
+    try {
+      await api.post(`/meetings/${meetingId}/end`);
+      // 회의 정보 다시 로드
+      await fetchMeeting(meetingId);
+    } catch (error) {
+      console.error('Failed to end meeting:', error);
+      alert('회의를 종료할 수 없습니다.');
+    } finally {
+      setEnding(false);
+    }
+  };
+
+  // 회의 참여 (ongoing 상태일 때)
+  const handleJoinMeeting = () => {
+    if (!meetingId) return;
+    navigate(`/meetings/${meetingId}/room`);
   };
 
   const currentUserParticipant = currentMeeting?.participants.find(
@@ -290,21 +338,45 @@ export function MeetingDetailPage() {
                       {STATUS_LABELS[currentMeeting.status as MeetingStatus]}
                     </span>
                   </div>
-                  {isHost && (
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => setIsEditing(true)}>
-                        Edit
+                  <div className="flex gap-2">
+                    {/* 회의 시작/참여/종료 버튼 */}
+                    {currentMeeting.status === 'scheduled' && isHost && (
+                      <Button onClick={handleStartMeeting} isLoading={starting}>
+                        Start Meeting
                       </Button>
+                    )}
+                    {currentMeeting.status === 'ongoing' && currentUserParticipant && (
+                      <Button onClick={handleJoinMeeting}>
+                        Join Meeting
+                      </Button>
+                    )}
+                    {currentMeeting.status === 'ongoing' && isHost && (
                       <Button
                         variant="outline"
-                        onClick={handleDelete}
-                        isLoading={deleting}
-                        className="text-red-600 border-red-300 hover:bg-red-50"
+                        onClick={handleEndMeeting}
+                        isLoading={ending}
+                        className="text-orange-600 border-orange-300 hover:bg-orange-50"
                       >
-                        Delete
+                        End Meeting
                       </Button>
-                    </div>
-                  )}
+                    )}
+                    {/* Edit/Delete 버튼 (host만) */}
+                    {isHost && (
+                      <>
+                        <Button variant="outline" onClick={() => setIsEditing(true)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={handleDelete}
+                          isLoading={deleting}
+                          className="text-red-600 border-red-300 hover:bg-red-50"
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {currentMeeting.description && (

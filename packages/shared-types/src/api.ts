@@ -304,6 +304,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meetings/{meetingId}/room": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 회의실 정보 조회
+         * @description 실시간 회의에 필요한 정보를 조회합니다.
+         *     - 현재 참여 중인 사용자 목록
+         *     - ICE 서버 설정
+         *     - 최대 참여자 수
+         */
+        get: operations["getMeetingRoom"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meetings/{meetingId}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 회의 시작
+         * @description 회의를 시작합니다. host만 시작 가능합니다.
+         *     회의 상태가 scheduled -> ongoing으로 변경됩니다.
+         */
+        post: operations["startMeeting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meetings/{meetingId}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 회의 종료
+         * @description 회의를 종료합니다. host만 종료 가능합니다.
+         *     회의 상태가 ongoing -> completed로 변경됩니다.
+         *     모든 참여자의 WebSocket 연결이 종료됩니다.
+         */
+        post: operations["endMeeting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -580,6 +646,44 @@ export interface components {
         UpdateMeetingParticipantRequest: {
             /** @description 새로운 역할 */
             role: components["schemas"]["ParticipantRole"];
+        };
+        RoomParticipant: {
+            userId: components["schemas"]["UUID"];
+            /** @example John Doe */
+            userName: string;
+            role: components["schemas"]["ParticipantRole"];
+            /**
+             * @description 오디오 음소거 상태
+             * @default false
+             */
+            audioMuted: boolean;
+        };
+        IceServer: {
+            /** @example stun:stun.l.google.com:19302 */
+            urls: string;
+            username?: string | null;
+            credential?: string | null;
+        };
+        MeetingRoomResponse: {
+            meetingId: components["schemas"]["UUID"];
+            status: components["schemas"]["MeetingStatus"];
+            participants: components["schemas"]["RoomParticipant"][];
+            iceServers: components["schemas"]["IceServer"][];
+            /**
+             * @description 최대 참여자 수
+             * @default 10
+             */
+            maxParticipants: number;
+        };
+        StartMeetingResponse: {
+            meetingId: components["schemas"]["UUID"];
+            status: components["schemas"]["MeetingStatus"];
+            startedAt: components["schemas"]["Timestamp"];
+        };
+        EndMeetingResponse: {
+            meetingId: components["schemas"]["UUID"];
+            status: components["schemas"]["MeetingStatus"];
+            endedAt: components["schemas"]["Timestamp"];
         };
     };
     responses: never;
@@ -1712,6 +1816,171 @@ export interface operations {
                 };
             };
             /** @description 회의 또는 참여자를 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMeetingRoom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 회의실 정보 조회 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRoomResponse"];
+                };
+            };
+            /** @description 인증 필요 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 권한 없음 (회의 참여자만 조회 가능) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 회의를 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    startMeeting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 회의 시작 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartMeetingResponse"];
+                };
+            };
+            /** @description 이미 진행 중이거나 종료된 회의 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 인증 필요 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 권한 없음 (host만 시작 가능) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 회의를 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    endMeeting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 회의 종료 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndMeetingResponse"];
+                };
+            };
+            /** @description 진행 중인 회의가 아님 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 인증 필요 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 권한 없음 (host만 종료 가능) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 회의를 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;

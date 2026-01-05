@@ -24,6 +24,8 @@ tags:
     description: 회의 관련 API
   - name: MeetingParticipants
     description: 회의 참여자 관련 API
+  - name: WebRTC
+    description: 실시간 회의 관련 API (시그널링, 회의 시작/종료)
 
 # 공통 스키마 참조
 components:
@@ -100,6 +102,18 @@ components:
     UpdateMeetingParticipantRequest:
       $ref: './schemas/meeting-participant.yaml#/components/schemas/UpdateMeetingParticipantRequest'
 
+    # WebRTC
+    RoomParticipant:
+      $ref: './schemas/webrtc.yaml#/components/schemas/RoomParticipant'
+    IceServer:
+      $ref: './schemas/webrtc.yaml#/components/schemas/IceServer'
+    MeetingRoomResponse:
+      $ref: './schemas/webrtc.yaml#/components/schemas/MeetingRoomResponse'
+    StartMeetingResponse:
+      $ref: './schemas/webrtc.yaml#/components/schemas/StartMeetingResponse'
+    EndMeetingResponse:
+      $ref: './schemas/webrtc.yaml#/components/schemas/EndMeetingResponse'
+
   securitySchemes:
     BearerAuth:
       $ref: './schemas/auth.yaml#/components/securitySchemes/BearerAuth'
@@ -140,3 +154,11 @@ paths:
     $ref: './paths/meeting-participants.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1participants'
   /api/v1/meetings/{meetingId}/participants/{userId}:
     $ref: './paths/meeting-participants.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1participants~1{userId}'
+
+  # WebRTC
+  /api/v1/meetings/{meetingId}/room:
+    $ref: './paths/webrtc.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1room'
+  /api/v1/meetings/{meetingId}/start:
+    $ref: './paths/webrtc.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1start'
+  /api/v1/meetings/{meetingId}/end:
+    $ref: './paths/webrtc.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1end'

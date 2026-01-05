@@ -5,11 +5,15 @@ import { LoginForm } from '@/components/auth/LoginForm';
 import { useAuth } from '@/hooks/useAuth';
 
 export function LoginPage() {
+  console.log('[LoginPage] Rendering...');
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  console.log('[LoginPage] isAuthenticated:', isAuthenticated);
 
   useEffect(() => {
+    console.log('[LoginPage] useEffect - isAuthenticated:', isAuthenticated);
     if (isAuthenticated) {
+      console.log('[LoginPage] Already authenticated, navigating to /');
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
