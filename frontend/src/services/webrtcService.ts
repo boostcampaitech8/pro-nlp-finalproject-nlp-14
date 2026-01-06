@@ -42,14 +42,63 @@ export function createPeerConnection(
 }
 
 /**
- * 로컬 오디오 스트림 획득
+ * GainNode를 적용한 오디오 스트림 생성 결과
  */
-export async function getLocalAudioStream(): Promise<MediaStream> {
+export interface ProcessedAudioStream {
+  processedStream: MediaStream;
+  gainNode: GainNode;
+  audioContext: AudioContext;
+  cleanup: () => void;
+}
+
+/**
+ * GainNode를 적용한 오디오 스트림 생성
+ * @param stream 원본 MediaStream
+ * @param initialGain 초기 gain 값 (기본값 1.0)
+ */
+export function createProcessedAudioStream(
+  stream: MediaStream,
+  initialGain: number = 1.0
+): ProcessedAudioStream {
+  const audioContext = new AudioContext();
+  const source = audioContext.createMediaStreamSource(stream);
+  const gainNode = audioContext.createGain();
+  const destination = audioContext.createMediaStreamDestination();
+
+  // gain 값 설정
+  gainNode.gain.value = initialGain;
+
+  // 연결: source -> gainNode -> destination
+  source.connect(gainNode);
+  gainNode.connect(destination);
+
+  const cleanup = () => {
+    source.disconnect();
+    gainNode.disconnect();
+    audioContext.close();
+  };
+
+  return {
+    processedStream: destination.stream,
+    gainNode,
+    audioContext,
+    cleanup,
+  };
+}
+
+/**
+ * 로컬 오디오 스트림 획득
+ * @param deviceId 특정 마이크 장치 ID (선택사항)
+ */
+export async function getLocalAudioStream(deviceId?: string): Promise<MediaStream> {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+    const constraints: MediaStreamConstraints = {
+      audio: deviceId
+        ? { deviceId: { exact: deviceId } }
+        : true,
       video: false, // 오디오만
-    });
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     return stream;
   } catch (error) {
     console.error('[WebRTC] Failed to get local audio stream:', error);
@@ -142,6 +191,7 @@ export function stopStream(stream: MediaStream): void {
 // 서비스 객체로 export
 export const webrtcService = {
   createPeerConnection,
+  createProcessedAudioStream,
   getLocalAudioStream,
   createOffer,
   createAnswer,

@@ -23,8 +23,18 @@ interface MeetingRoomState {
   localStream: MediaStream | null;
   isAudioMuted: boolean;
 
+  // 장치 선택
+  audioInputDeviceId: string | null;
+  audioOutputDeviceId: string | null;
+
+  // 마이크 gain (1.0 = 100%, 0.0 ~ 2.0 범위, 20% 단위)
+  micGain: number;
+
   // 원격 스트림
   remoteStreams: Map<string, MediaStream>;
+
+  // 원격 참여자별 볼륨 (userId -> volume, 0.0 ~ 2.0)
+  remoteVolumes: Map<string, number>;
 
   // 피어 연결
   peerConnections: Map<string, RTCPeerConnection>;
@@ -42,8 +52,13 @@ interface MeetingRoomState {
   setLocalStream: (stream: MediaStream | null) => void;
   setAudioMuted: (muted: boolean) => void;
 
+  setAudioInputDeviceId: (deviceId: string | null) => void;
+  setAudioOutputDeviceId: (deviceId: string | null) => void;
+  setMicGain: (gain: number) => void;
+
   addRemoteStream: (userId: string, stream: MediaStream) => void;
   removeRemoteStream: (userId: string) => void;
+  setRemoteVolume: (userId: string, volume: number) => void;
 
   addPeerConnection: (userId: string, pc: RTCPeerConnection) => void;
   removePeerConnection: (userId: string) => void;
@@ -62,7 +77,11 @@ const initialState = {
   participants: new Map<string, RoomParticipant>(),
   localStream: null,
   isAudioMuted: false,
+  audioInputDeviceId: null,
+  audioOutputDeviceId: null,
+  micGain: 1.0,
   remoteStreams: new Map<string, MediaStream>(),
+  remoteVolumes: new Map<string, number>(),
   peerConnections: new Map<string, RTCPeerConnection>(),
 };
 
@@ -129,6 +148,18 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
     }
   },
 
+  setAudioInputDeviceId: (audioInputDeviceId) => {
+    set({ audioInputDeviceId });
+  },
+
+  setAudioOutputDeviceId: (audioOutputDeviceId) => {
+    set({ audioOutputDeviceId });
+  },
+
+  setMicGain: (micGain) => {
+    set({ micGain });
+  },
+
   addRemoteStream: (userId, stream) => {
     const remoteStreams = new Map(get().remoteStreams);
     remoteStreams.set(userId, stream);
@@ -143,6 +174,17 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
       remoteStreams.delete(userId);
       set({ remoteStreams });
     }
+
+    // 볼륨 설정도 함께 제거
+    const remoteVolumes = new Map(get().remoteVolumes);
+    remoteVolumes.delete(userId);
+    set({ remoteVolumes });
+  },
+
+  setRemoteVolume: (userId, volume) => {
+    const remoteVolumes = new Map(get().remoteVolumes);
+    remoteVolumes.set(userId, volume);
+    set({ remoteVolumes });
   },
 
   addPeerConnection: (userId, pc) => {

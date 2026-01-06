@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { signalingClient } from '@/services/signalingService';
-import { webrtcService } from '@/services/webrtcService';
+import { webrtcService, type ProcessedAudioStream } from '@/services/webrtcService';
 import { recordingService } from '@/services/recordingService';
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
 import type { ServerMessage, RoomParticipant, MeetingRoomResponse } from '@/types/webrtc';
@@ -32,13 +32,25 @@ export function useWebRTC(meetingId: string) {
   const updateParticipantMute = useMeetingRoomStore((s) => s.updateParticipantMute);
   const setLocalStream = useMeetingRoomStore((s) => s.setLocalStream);
   const setAudioMuted = useMeetingRoomStore((s) => s.setAudioMuted);
+  const audioInputDeviceId = useMeetingRoomStore((s) => s.audioInputDeviceId);
+  const audioOutputDeviceId = useMeetingRoomStore((s) => s.audioOutputDeviceId);
+  const micGain = useMeetingRoomStore((s) => s.micGain);
+  const setAudioInputDeviceId = useMeetingRoomStore((s) => s.setAudioInputDeviceId);
+  const setAudioOutputDeviceId = useMeetingRoomStore((s) => s.setAudioOutputDeviceId);
+  const setMicGain = useMeetingRoomStore((s) => s.setMicGain);
   const addRemoteStream = useMeetingRoomStore((s) => s.addRemoteStream);
+  const remoteVolumes = useMeetingRoomStore((s) => s.remoteVolumes);
+  const setRemoteVolume = useMeetingRoomStore((s) => s.setRemoteVolume);
   const addPeerConnection = useMeetingRoomStore((s) => s.addPeerConnection);
   const removePeerConnection = useMeetingRoomStore((s) => s.removePeerConnection);
   const reset = useMeetingRoomStore((s) => s.reset);
 
   const currentUserIdRef = useRef<string>('');
   const hasCleanedUpRef = useRef(false);
+
+  // GainNode 처리 관련 ref
+  const processedAudioRef = useRef<ProcessedAudioStream | null>(null);
+  const rawStreamRef = useRef<MediaStream | null>(null);
 
   // 녹음 관련 상태 (클라이언트 측 MediaRecorder)
   const [isRecording, setIsRecording] = useState(false);
@@ -244,9 +256,17 @@ export function useWebRTC(meetingId: string) {
         // 1. 회의실 정보 조회
         await fetchRoomInfo();
 
-        // 2. 로컬 오디오 스트림 획득
-        const stream = await webrtcService.getLocalAudioStream();
-        setLocalStream(stream);
+        // 2. 로컬 오디오 스트림 획득 및 GainNode 처리
+        const rawStream = await webrtcService.getLocalAudioStream();
+        rawStreamRef.current = rawStream;
+
+        // GainNode를 통해 처리된 스트림 생성
+        const currentMicGain = useMeetingRoomStore.getState().micGain;
+        const processed = webrtcService.createProcessedAudioStream(rawStream, currentMicGain);
+        processedAudioRef.current = processed;
+
+        // 처리된 스트림을 로컬 스트림으로 사용
+        setLocalStream(processed.processedStream);
 
         // 3. 토큰 가져오기
         const token = localStorage.getItem('accessToken');
@@ -310,6 +330,88 @@ export function useWebRTC(meetingId: string) {
       signalingClient.send({ type: 'mute', muted: newMuted });
     }
   }, [setAudioMuted]);
+
+  /**
+   * 마이크 입력 장치 변경
+   */
+  const changeAudioInputDevice = useCallback(async (deviceId: string) => {
+    try {
+      console.log('[useWebRTC] Changing audio input device to:', deviceId);
+
+      // 1. 새 장치로 스트림 획득
+      const newStream = await webrtcService.getLocalAudioStream(deviceId);
+
+      // 2. 현재 음소거 상태 유지
+      const currentMuted = useMeetingRoomStore.getState().isAudioMuted;
+      if (currentMuted) {
+        newStream.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+      }
+
+      // 3. 기존 스트림 정리
+      const currentState = useMeetingRoomStore.getState();
+      if (currentState.localStream) {
+        currentState.localStream.getTracks().forEach((track) => track.stop());
+      }
+
+      // 4. 모든 피어 연결에 새 트랙 교체 (RTCRtpSender.replaceTrack)
+      const newTrack = newStream.getAudioTracks()[0];
+      currentState.peerConnections.forEach((pc, peerId) => {
+        const senders = pc.getSenders();
+        const audioSender = senders.find((s) => s.track?.kind === 'audio');
+        if (audioSender) {
+          audioSender.replaceTrack(newTrack).catch((err) => {
+            console.error(`[useWebRTC] Failed to replace track for peer ${peerId}:`, err);
+          });
+        }
+      });
+
+      // 5. 스토어 업데이트
+      setLocalStream(newStream);
+      setAudioInputDeviceId(deviceId);
+
+      console.log('[useWebRTC] Audio input device changed successfully');
+    } catch (err) {
+      console.error('[useWebRTC] Failed to change audio input device:', err);
+      throw err;
+    }
+  }, [setLocalStream, setAudioInputDeviceId]);
+
+  /**
+   * 스피커 출력 장치 변경
+   */
+  const changeAudioOutputDevice = useCallback((deviceId: string) => {
+    setAudioOutputDeviceId(deviceId);
+    console.log('[useWebRTC] Audio output device changed to:', deviceId);
+  }, [setAudioOutputDeviceId]);
+
+  /**
+   * 마이크 gain 변경
+   */
+  const changeMicGain = useCallback((gain: number) => {
+    // gain 값 범위 제한 (0.0 ~ 2.0)
+    const clampedGain = Math.max(0, Math.min(2, gain));
+
+    // GainNode 값 업데이트
+    if (processedAudioRef.current) {
+      processedAudioRef.current.gainNode.gain.value = clampedGain;
+    }
+
+    // 스토어 업데이트
+    setMicGain(clampedGain);
+    console.log('[useWebRTC] Mic gain changed to:', clampedGain);
+  }, [setMicGain]);
+
+  /**
+   * 원격 참여자 볼륨 변경
+   */
+  const changeRemoteVolume = useCallback((userId: string, volume: number) => {
+    // 볼륨 값 범위 제한 (0.0 ~ 2.0)
+    const clampedVolume = Math.max(0, Math.min(2, volume));
+    setRemoteVolume(userId, clampedVolume);
+    console.log(`[useWebRTC] Remote volume for ${userId} changed to:`, clampedVolume);
+  }, [setRemoteVolume]);
 
   /**
    * 녹음 시작 (내부 함수) - 회의 연결 시 자동 호출
@@ -464,6 +566,18 @@ export function useWebRTC(meetingId: string) {
         mediaRecorderRef.current = null;
       }
 
+      // GainNode 리소스 정리
+      if (processedAudioRef.current) {
+        processedAudioRef.current.cleanup();
+        processedAudioRef.current = null;
+      }
+
+      // Raw 스트림 정리
+      if (rawStreamRef.current) {
+        rawStreamRef.current.getTracks().forEach((track) => track.stop());
+        rawStreamRef.current = null;
+      }
+
       // 직접 store 접근하여 cleanup
       if (!hasCleanedUpRef.current) {
         hasCleanedUpRef.current = true;
@@ -489,10 +603,18 @@ export function useWebRTC(meetingId: string) {
     isRecording,
     recordingError,
     isUploading,
+    audioInputDeviceId,
+    audioOutputDeviceId,
+    micGain,
+    remoteVolumes,
 
     // 액션
     joinRoom,
     leaveRoom,
     toggleMute,
+    changeAudioInputDevice,
+    changeAudioOutputDevice,
+    changeMicGain,
+    changeRemoteVolume,
   };
 }

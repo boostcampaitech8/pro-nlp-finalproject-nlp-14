@@ -17,22 +17,81 @@ interface MeetingRoomProps {
 }
 
 /**
- * 원격 오디오 재생 컴포넌트
+ * 원격 오디오 재생 컴포넌트 (Web Audio API 사용)
+ * - GainNode를 통한 볼륨 조절 지원
+ * - setSinkId를 통한 출력 장치 선택 지원
  */
-function RemoteAudio({ stream, odId }: { stream: MediaStream; odId: string }) {
+function RemoteAudio({
+  stream,
+  odId,
+  outputDeviceId,
+  volume,
+}: {
+  stream: MediaStream;
+  odId: string;
+  outputDeviceId: string | null;
+  volume: number;
+}) {
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Web Audio API로 오디오 재생 및 GainNode 연결
   useEffect(() => {
-    if (audioRef.current && stream) {
-      console.log('[RemoteAudio] Attaching stream for:', odId);
-      audioRef.current.srcObject = stream;
-      audioRef.current.play().catch((e) => {
-        console.error('[RemoteAudio] Failed to play:', e);
-      });
-    }
+    if (!stream) return;
+
+    console.log('[RemoteAudio] Setting up audio for:', odId);
+
+    // AudioContext 생성
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const gainNode = audioContext.createGain();
+
+    // 연결: source -> gainNode -> destination
+    source.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    audioContextRef.current = audioContext;
+    gainNodeRef.current = gainNode;
+    sourceRef.current = source;
+
+    return () => {
+      console.log('[RemoteAudio] Cleaning up audio for:', odId);
+      source.disconnect();
+      gainNode.disconnect();
+      audioContext.close();
+      audioContextRef.current = null;
+      gainNodeRef.current = null;
+      sourceRef.current = null;
+    };
   }, [stream, odId]);
 
-  return <audio ref={audioRef} autoPlay playsInline />;
+  // 볼륨 변경
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = volume;
+    }
+  }, [volume]);
+
+  // 출력 장치 변경 (setSinkId 지원 브라우저만)
+  // Note: Web Audio API의 AudioContext는 setSinkId를 직접 지원하지 않음
+  // 대안: 숨겨진 <audio> 요소를 통해 출력 장치 설정 (완벽하지 않음)
+  useEffect(() => {
+    if (audioRef.current && outputDeviceId) {
+      const audioElement = audioRef.current as HTMLAudioElement & {
+        setSinkId?: (sinkId: string) => Promise<void>;
+      };
+      if (audioElement.setSinkId) {
+        audioElement.setSinkId(outputDeviceId).catch((err) => {
+          console.error('[RemoteAudio] Failed to set output device:', err);
+        });
+      }
+    }
+  }, [outputDeviceId]);
+
+  // setSinkId를 위한 숨겨진 오디오 요소 (출력 장치 선택용)
+  return <audio ref={audioRef} style={{ display: 'none' }} />;
 }
 
 export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: MeetingRoomProps) {
@@ -48,9 +107,17 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     error,
     isRecording,
     isUploading,
+    audioInputDeviceId,
+    audioOutputDeviceId,
+    micGain,
+    remoteVolumes,
     joinRoom,
     leaveRoom,
     toggleMute,
+    changeAudioInputDevice,
+    changeAudioOutputDevice,
+    changeMicGain,
+    changeRemoteVolume,
   } = useWebRTC(meetingId);
 
   // 오디오 레벨 분석 (발화 인디케이터용)
@@ -111,7 +178,13 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     <div className="min-h-screen bg-gray-900 flex flex-col">
       {/* 원격 오디오 재생 (숨김) */}
       {Array.from(remoteStreams.entries()).map(([odId, stream]) => (
-        <RemoteAudio key={odId} stream={stream} odId={odId} />
+        <RemoteAudio
+          key={odId}
+          stream={stream}
+          odId={odId}
+          outputDeviceId={audioOutputDeviceId}
+          volume={remoteVolumes.get(odId) ?? 1.0}
+        />
       ))}
 
       {/* 헤더 */}
@@ -164,6 +237,9 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
             participants={participants}
             currentUserId={userId}
             audioLevels={audioLevels}
+            localMuteState={isAudioMuted}
+            remoteVolumes={remoteVolumes}
+            onVolumeChange={changeRemoteVolume}
           />
         </aside>
       </main>
@@ -174,6 +250,12 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
           isAudioMuted={isAudioMuted}
           onToggleMute={toggleMute}
           disabled={connectionState !== 'connected'}
+          audioInputDeviceId={audioInputDeviceId}
+          audioOutputDeviceId={audioOutputDeviceId}
+          onAudioInputChange={changeAudioInputDevice}
+          onAudioOutputChange={changeAudioOutputDevice}
+          micGain={micGain}
+          onMicGainChange={changeMicGain}
         />
 
         {/* 녹음 상태 인디케이터 (자동 녹음) */}
