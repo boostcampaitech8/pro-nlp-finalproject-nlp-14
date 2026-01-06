@@ -6,6 +6,17 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class RecordingUploadRequest(BaseModel):
+    """녹음 업로드 메타데이터 요청"""
+
+    started_at: datetime = Field(alias="startedAt")
+    ended_at: datetime = Field(alias="endedAt")
+    duration_ms: int = Field(alias="durationMs")
+
+    class Config:
+        populate_by_name = True
+
+
 class RecordingResponse(BaseModel):
     """녹음 정보 응답"""
 

@@ -1,9 +1,27 @@
 """WebRTC 관련 설정"""
 
+import os
+
+# TURN 서버 설정 (환경변수에서 읽거나 기본값 사용)
+TURN_SERVER_HOST = os.getenv("TURN_SERVER_HOST", "snsn.kr")
+TURN_USERNAME = os.getenv("TURN_USERNAME", "mit")
+TURN_PASSWORD = os.getenv("TURN_PASSWORD", "mitturnpassword")
+
 # ICE 서버 설정 (STUN/TURN)
 ICE_SERVERS = [
     {"urls": "stun:stun.l.google.com:19302"},
     {"urls": "stun:stun1.l.google.com:19302"},
+    # TURN 서버 (NAT traversal 필수)
+    {
+        "urls": f"turn:{TURN_SERVER_HOST}:3478",
+        "username": TURN_USERNAME,
+        "credential": TURN_PASSWORD,
+    },
+    {
+        "urls": f"turn:{TURN_SERVER_HOST}:3478?transport=tcp",
+        "username": TURN_USERNAME,
+        "credential": TURN_PASSWORD,
+    },
 ]
 
 # 최대 참여자 수

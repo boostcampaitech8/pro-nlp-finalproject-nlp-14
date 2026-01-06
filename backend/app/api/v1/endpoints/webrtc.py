@@ -183,8 +183,9 @@ async def end_meeting(
     # 모든 WebSocket 연결 종료
     await connection_manager.close_all_connections(meeting_id, "회의가 종료되었습니다.")
 
-    # SFU 룸 종료
+    # SFU 룸 종료 (녹음은 클라이언트 측에서 HTTP로 업로드)
     await sfu_service.close_room(meeting_id)
+    logger.info(f"Meeting {meeting_id} ended")
 
     return EndMeetingResponse(
         meeting_id=meeting.id,
@@ -273,7 +274,7 @@ async def websocket_endpoint(
 
         try:
             # 메시지 처리 루프
-            await handle_websocket_messages(websocket, meeting_id, user_uuid)
+            await handle_websocket_messages(websocket, meeting_id, user_uuid, db)
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected: user={user_id}, meeting={meeting_id}")
         except Exception as e:
@@ -297,6 +298,7 @@ async def handle_websocket_messages(
     websocket: WebSocket,
     meeting_id: UUID,
     user_id: UUID,
+    db: AsyncSession,
 ) -> None:
     """WebSocket 메시지 처리"""
     while True:
@@ -321,12 +323,8 @@ async def handle_websocket_messages(
         elif msg_type == SignalingMessageType.MUTE:
             await handle_mute(meeting_id, user_id, data)
 
-        # 녹음 관련 메시지
-        elif msg_type == SignalingMessageType.RECORDING_OFFER:
-            await handle_recording_offer(meeting_id, user_id, data)
-
-        elif msg_type == SignalingMessageType.RECORDING_ICE:
-            await handle_recording_ice(meeting_id, user_id, data)
+        # 녹음은 클라이언트 측 MediaRecorder + HTTP 업로드로 변경됨
+        # aiortc 기반 서버 녹음은 더 이상 사용하지 않음
 
         else:
             logger.warning(f"Unknown message type: {msg_type}")
@@ -459,74 +457,6 @@ async def handle_mute(meeting_id: UUID, user_id: UUID, data: dict) -> None:
     )
 
 
-# ===== 녹음 관련 핸들러 =====
-
-
-async def handle_recording_offer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """녹음용 offer 메시지 처리
-
-    클라이언트가 서버로 오디오를 전송하기 위한 PeerConnection offer
-    """
-    sdp = data.get("sdp")
-    if not sdp:
-        logger.warning(f"[Recording] No SDP in recording offer from user {user_id}")
-        return
-
-    room = sfu_service.get_room(meeting_id)
-    if not room:
-        logger.warning(f"[Recording] Room not found for meeting {meeting_id}")
-        return
-
-    try:
-        # SFU에서 answer 생성
-        answer = await room.handle_recording_offer(user_id, sdp)
-
-        # 클라이언트에게 answer 전송
-        await connection_manager.send_to_user(
-            meeting_id,
-            user_id,
-            {
-                "type": SignalingMessageType.RECORDING_ANSWER,
-                "sdp": answer,
-            },
-        )
-
-        # 녹음 시작 알림
-        await connection_manager.send_to_user(
-            meeting_id,
-            user_id,
-            {
-                "type": SignalingMessageType.RECORDING_STARTED,
-                "userId": str(user_id),
-            },
-        )
-
-        logger.info(f"[Recording] Started for user {user_id} in meeting {meeting_id}")
-
-    except Exception as e:
-        logger.error(f"[Recording] Failed to handle offer: {e}")
-        await connection_manager.send_to_user(
-            meeting_id,
-            user_id,
-            {
-                "type": SignalingMessageType.ERROR,
-                "code": "RECORDING_FAILED",
-                "message": "녹음 시작에 실패했습니다.",
-            },
-        )
-
-
-async def handle_recording_ice(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """녹음용 ICE candidate 메시지 처리"""
-    candidate = data.get("candidate")
-    if not candidate:
-        return
-
-    room = sfu_service.get_room(meeting_id)
-    if not room:
-        return
-
-    try:
-        await room.handle_recording_ice(user_id, candidate)
-    except Exception as e:
-        logger.warning(f"[Recording] Failed to handle ICE candidate: {e}")
+# ===== 녹음 =====
+# 녹음은 클라이언트 측 MediaRecorder로 처리하고 HTTP API로 업로드합니다.
+# POST /api/v1/meetings/{meeting_id}/recordings 엔드포인트 참조

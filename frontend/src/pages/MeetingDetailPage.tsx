@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { RecordingList } from '@/components/meeting/RecordingList';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/hooks/useAuth';
@@ -569,6 +570,16 @@ export function MeetingDetailPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* 녹음 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
+        {currentMeeting && currentMeeting.status !== 'scheduled' && (
+          <div className="mt-8">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">
+              Recordings
+            </h3>
+            <RecordingList meetingId={currentMeeting.id} />
           </div>
         )}
 

@@ -19,6 +19,7 @@ export type SignalingMessageType =
   // 녹음 관련
   | 'recording-offer'
   | 'recording-ice'
+  | 'recording-stop'
   | 'recording-answer'
   | 'recording-started'
   | 'recording-stopped';
@@ -105,6 +106,10 @@ export interface RecordingIceMessage {
   candidate: RTCIceCandidateInit;
 }
 
+export interface RecordingStopMessage {
+  type: 'recording-stop';
+}
+
 export type ClientMessage =
   | JoinMessage
   | OfferMessage
@@ -113,7 +118,8 @@ export type ClientMessage =
   | LeaveMessage
   | MuteMessage
   | RecordingOfferMessage
-  | RecordingIceMessage;
+  | RecordingIceMessage
+  | RecordingStopMessage;
 
 // ===== Server -> Client 메시지 =====
 

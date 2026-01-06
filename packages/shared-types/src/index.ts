@@ -42,3 +42,9 @@ export type UpdateMeetingRequest = components['schemas']['UpdateMeetingRequest']
 export type MeetingListResponse = components['schemas']['MeetingListResponse'];
 export type AddMeetingParticipantRequest = components['schemas']['AddMeetingParticipantRequest'];
 export type UpdateMeetingParticipantRequest = components['schemas']['UpdateMeetingParticipantRequest'];
+
+// 녹음 타입 별칭
+export type RecordingStatus = components['schemas']['RecordingStatus'];
+export type Recording = components['schemas']['Recording'];
+export type RecordingListResponse = components['schemas']['RecordingListResponse'];
+export type RecordingDownloadResponse = components['schemas']['RecordingDownloadResponse'];

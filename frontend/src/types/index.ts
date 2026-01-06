@@ -32,4 +32,9 @@ export type {
   ParticipantRole,
   UpdateMeetingParticipantRequest,
   UpdateMeetingRequest,
+  // Recording
+  Recording,
+  RecordingDownloadResponse,
+  RecordingListResponse,
+  RecordingStatus,
 } from '@mit/shared-types';

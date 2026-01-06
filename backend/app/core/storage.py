@@ -188,6 +188,38 @@ class StorageService:
             expires=expires,
         )
 
+    def get_file(self, bucket: str, object_name: str) -> bytes:
+        """파일 다운로드
+
+        Args:
+            bucket: 버킷 이름
+            object_name: 객체 경로
+
+        Returns:
+            파일 데이터
+        """
+        client = self._get_client()
+        try:
+            response = client.get_object(bucket_name=bucket, object_name=object_name)
+            data = response.read()
+            response.close()
+            response.release_conn()
+            return data
+        except S3Error as e:
+            logger.error(f"Download failed: {e}")
+            raise
+
+    def get_recording_file(self, file_path: str) -> bytes:
+        """녹음 파일 다운로드
+
+        Args:
+            file_path: 녹음 파일 경로
+
+        Returns:
+            파일 데이터
+        """
+        return self.get_file(self.BUCKET_RECORDINGS, file_path)
+
     def delete_file(self, bucket: str, object_name: str) -> None:
         """파일 삭제
 

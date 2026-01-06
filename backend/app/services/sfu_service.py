@@ -12,7 +12,7 @@ import tempfile
 from datetime import datetime, timezone
 from uuid import UUID
 
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRecorder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,8 +42,17 @@ class RecordingSession:
 
     async def setup(self) -> RTCPeerConnection:
         """PeerConnection 설정"""
-        # ICE 서버 설정
-        config = {"iceServers": [{"urls": server["urls"]} for server in ICE_SERVERS]}
+        # ICE 서버 설정 (aiortc는 RTCConfiguration/RTCIceServer 객체 사용)
+        ice_servers = []
+        for server in ICE_SERVERS:
+            urls = server["urls"]
+            # urls가 문자열이면 리스트로 변환
+            if isinstance(urls, str):
+                urls = [urls]
+            ice_servers.append(RTCIceServer(urls=urls))
+
+        config = RTCConfiguration(iceServers=ice_servers)
+        logger.info(f"[RecordingSession] Creating RTCPeerConnection with {len(ice_servers)} ICE servers")
         self.pc = RTCPeerConnection(configuration=config)
 
         # 임시 파일 생성
@@ -85,47 +94,159 @@ class RecordingSession:
         Returns:
             Answer SDP: {"sdp": "...", "type": "answer"}
         """
+        logger.info(f"[RecordingSession] Handling offer for user {self.user_id}")
+
         if not self.pc:
+            logger.info(f"[RecordingSession] Setting up PeerConnection for user {self.user_id}")
             await self.setup()
 
-        offer = RTCSessionDescription(sdp=sdp["sdp"], type=sdp["type"])
+        # SDP에서 값 추출
+        sdp_str = sdp.get("sdp") if isinstance(sdp, dict) else None
+        sdp_type = sdp.get("type") if isinstance(sdp, dict) else None
+
+        if not sdp_str or not sdp_type:
+            raise ValueError(f"Invalid SDP format: sdp={bool(sdp_str)}, type={sdp_type}")
+
+        offer = RTCSessionDescription(sdp=sdp_str, type=sdp_type)
+        logger.info(f"[RecordingSession] Setting remote description for user {self.user_id}")
         await self.pc.setRemoteDescription(offer)
 
+        logger.info(f"[RecordingSession] Creating answer for user {self.user_id}")
         answer = await self.pc.createAnswer()
         await self.pc.setLocalDescription(answer)
 
-        logger.info(f"[RecordingSession] Answer created for user {self.user_id}")
+        # ICE gathering 완료 대기 (최대 5초)
+        logger.info(f"[RecordingSession] Waiting for ICE gathering to complete...")
+        await self._wait_for_ice_gathering(timeout=5.0)
+
+        logger.info(f"[RecordingSession] Answer created for user {self.user_id}, "
+                   f"ICE gathering state: {self.pc.iceGatheringState}")
 
         return {
             "sdp": self.pc.localDescription.sdp,
             "type": self.pc.localDescription.type,
         }
 
+    async def _wait_for_ice_gathering(self, timeout: float = 5.0) -> None:
+        """ICE gathering 완료 대기
+
+        Args:
+            timeout: 최대 대기 시간 (초)
+        """
+        if not self.pc:
+            return
+
+        if self.pc.iceGatheringState == "complete":
+            return
+
+        gathering_complete = asyncio.Event()
+
+        @self.pc.on("icegatheringstatechange")
+        async def on_ice_gathering_state_change():
+            logger.info(f"[RecordingSession] ICE gathering state: {self.pc.iceGatheringState}")
+            if self.pc.iceGatheringState == "complete":
+                gathering_complete.set()
+
+        try:
+            await asyncio.wait_for(gathering_complete.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"[RecordingSession] ICE gathering timeout after {timeout}s, "
+                          f"state: {self.pc.iceGatheringState}")
+
     async def handle_ice_candidate(self, candidate: dict) -> None:
         """ICE Candidate 추가
 
         Args:
-            candidate: ICE candidate 객체
+            candidate: ICE candidate 객체 (브라우저 형식)
+                {
+                    "candidate": "candidate:... typ host ...",
+                    "sdpMid": "0",
+                    "sdpMLineIndex": 0
+                }
         """
-        if self.pc and candidate:
-            try:
-                from aiortc import RTCIceCandidate
+        if not self.pc or not candidate:
+            return
 
-                # candidate 파싱
-                ice_candidate = RTCIceCandidate(
-                    component=candidate.get("component", 1),
-                    foundation=candidate.get("foundation", ""),
-                    ip=candidate.get("address") or candidate.get("ip", ""),
-                    port=candidate.get("port", 0),
-                    priority=candidate.get("priority", 0),
-                    protocol=candidate.get("protocol", "udp"),
-                    type=candidate.get("type", "host"),
-                    sdpMid=candidate.get("sdpMid"),
-                    sdpMLineIndex=candidate.get("sdpMLineIndex"),
-                )
+        # candidate 문자열이 비어있으면 무시 (end-of-candidates)
+        candidate_str = candidate.get("candidate", "")
+        if not candidate_str:
+            logger.debug(f"[RecordingSession] Empty candidate (end-of-candidates) for user {self.user_id}")
+            return
+
+        try:
+            # 브라우저 candidate 문자열 파싱
+            # 형식: "candidate:{foundation} {component} {protocol} {priority} {ip} {port} typ {type} ..."
+            ice_candidate = self._parse_ice_candidate(candidate_str, candidate)
+            if ice_candidate:
                 await self.pc.addIceCandidate(ice_candidate)
-            except Exception as e:
-                logger.warning(f"[RecordingSession] Failed to add ICE candidate: {e}")
+                logger.debug(f"[RecordingSession] Added ICE candidate for user {self.user_id}")
+        except Exception as e:
+            logger.warning(f"[RecordingSession] Failed to add ICE candidate: {e}, candidate={candidate_str[:100]}")
+
+    def _parse_ice_candidate(self, candidate_str: str, candidate_dict: dict):
+        """브라우저 ICE candidate 문자열을 aiortc RTCIceCandidate로 파싱
+
+        Args:
+            candidate_str: "candidate:..." 형식의 문자열
+            candidate_dict: sdpMid, sdpMLineIndex 포함 딕셔너리
+
+        Returns:
+            RTCIceCandidate 또는 None
+        """
+        from aiortc import RTCIceCandidate
+        import re
+
+        # "candidate:" 접두사 제거
+        if candidate_str.startswith("candidate:"):
+            candidate_str = candidate_str[10:]
+
+        # 기본 필드 파싱: foundation component protocol priority ip port typ type
+        parts = candidate_str.split()
+        if len(parts) < 8:
+            logger.warning(f"[RecordingSession] Invalid candidate format: {candidate_str[:50]}")
+            return None
+
+        try:
+            foundation = parts[0]
+            component = int(parts[1])
+            protocol = parts[2].lower()
+            priority = int(parts[3])
+            ip = parts[4]
+            port = int(parts[5])
+            # parts[6]은 "typ"
+            candidate_type = parts[7]
+
+            # 선택적 필드 파싱 (raddr, rport 등)
+            related_address = None
+            related_port = None
+
+            i = 8
+            while i < len(parts) - 1:
+                if parts[i] == "raddr":
+                    related_address = parts[i + 1]
+                    i += 2
+                elif parts[i] == "rport":
+                    related_port = int(parts[i + 1])
+                    i += 2
+                else:
+                    i += 1
+
+            return RTCIceCandidate(
+                component=component,
+                foundation=foundation,
+                ip=ip,
+                port=port,
+                priority=priority,
+                protocol=protocol,
+                type=candidate_type,
+                relatedAddress=related_address,
+                relatedPort=related_port,
+                sdpMid=candidate_dict.get("sdpMid"),
+                sdpMLineIndex=candidate_dict.get("sdpMLineIndex"),
+            )
+        except (ValueError, IndexError) as e:
+            logger.warning(f"[RecordingSession] Failed to parse candidate: {e}")
+            return None
 
     async def stop_and_save(self, db: AsyncSession) -> MeetingRecording | None:
         """녹음 중지 및 MinIO 저장

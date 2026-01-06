@@ -19,6 +19,7 @@ class SignalingMessageType(str, Enum):
     # 녹음 관련 (Client -> Server)
     RECORDING_OFFER = "recording-offer"
     RECORDING_ICE = "recording-ice"
+    RECORDING_STOP = "recording-stop"
     # Server -> Client
     JOINED = "joined"
     PARTICIPANT_JOINED = "participant-joined"

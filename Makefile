@@ -1,7 +1,9 @@
 .PHONY: help install dev dev-fe dev-be build clean
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
 .PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
-.PHONY: infra-up infra-down backend-up backend-down frontend-up frontend-down
+.PHONY: infra-up infra-down backend-up backend-down backend-rebuild backend-logs
+.PHONY: frontend-up frontend-down frontend-rebuild frontend-logs
+.PHONY: show-usage
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
@@ -26,14 +28,16 @@ help:
 	@echo "  make docker-rebuild - Rebuild all images (no cache)"
 	@echo ""
 	@echo "Docker (Selective):"
-	@echo "  make infra-up       - Start infra only (DB, Redis, MinIO)"
-	@echo "  make infra-down     - Stop infra only"
-	@echo "  make backend-up     - Start backend container"
-	@echo "  make backend-down   - Stop backend container"
-	@echo "  make backend-logs   - View backend logs"
-	@echo "  make frontend-up    - Start frontend container"
-	@echo "  make frontend-down  - Stop frontend container"
-	@echo "  make frontend-logs  - View frontend logs"
+	@echo "  make infra-up         - Start infra only (DB, Redis, MinIO)"
+	@echo "  make infra-down       - Stop infra only"
+	@echo "  make backend-up       - Start backend container"
+	@echo "  make backend-down     - Stop backend container"
+	@echo "  make backend-rebuild  - Rebuild and restart backend"
+	@echo "  make backend-logs     - View backend logs"
+	@echo "  make frontend-up      - Start frontend container"
+	@echo "  make frontend-down    - Stop frontend container"
+	@echo "  make frontend-rebuild - Rebuild and restart frontend"
+	@echo "  make frontend-logs    - View frontend logs"
 	@echo ""
 	@echo "Database:"
 	@echo "  make db-migrate m=MSG - Create new migration"
@@ -47,6 +51,9 @@ help:
 	@echo "Build:"
 	@echo "  make build          - Build frontend for production"
 	@echo "  make clean          - Clean build artifacts"
+	@echo ""
+	@echo "Monitoring:"
+	@echo "  make show-usage     - Show disk usage (MinIO, PostgreSQL)"
 
 # ===================
 # Setup & Development
@@ -82,6 +89,7 @@ docker-build:
 
 docker-rebuild:
 	$(DOCKER_COMPOSE) build --no-cache
+	$(DOCKER_COMPOSE) up -d
 
 # ===================
 # Docker - Infra Only
@@ -101,6 +109,10 @@ backend-up:
 backend-down:
 	$(DOCKER_COMPOSE) stop backend
 
+backend-rebuild:
+	$(DOCKER_COMPOSE) build --no-cache backend
+	$(DOCKER_COMPOSE) up -d backend
+
 backend-logs:
 	$(DOCKER_COMPOSE) logs -f backend
 
@@ -112,6 +124,10 @@ frontend-up:
 
 frontend-down:
 	$(DOCKER_COMPOSE) stop frontend
+
+frontend-rebuild:
+	$(DOCKER_COMPOSE) build --no-cache frontend
+	$(DOCKER_COMPOSE) up -d frontend
 
 frontend-logs:
 	$(DOCKER_COMPOSE) logs -f frontend
@@ -151,3 +167,33 @@ clean:
 	rm -rf backend/__pycache__
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+
+# ===================
+# Monitoring
+# ===================
+show-usage:
+	@echo ""
+	@echo "=========================================="
+	@echo "        Docker Volume Usage"
+	@echo "=========================================="
+	@printf "%-35s %s\n" "VOLUME" "SIZE"
+	@printf "%-35s %s\n" "-----------------------------------" "----------"
+	@docker system df -v 2>/dev/null | grep "docker_minio_data" | awk '{printf "%-35s %s\n", $$1, $$3}'
+	@docker system df -v 2>/dev/null | grep "docker_postgres_data" | awk '{printf "%-35s %s\n", $$1, $$3}'
+	@docker system df -v 2>/dev/null | grep "docker_redis_data" | awk '{printf "%-35s %s\n", $$1, $$3}'
+	@echo ""
+	@echo "=========================================="
+	@echo "        MinIO Bucket Usage"
+	@echo "=========================================="
+	@docker exec mit-minio sh -c 'mc alias set local http://localhost:9000 admin adminadmin >/dev/null 2>&1 && mc du local/ --depth 2' 2>/dev/null || echo "MinIO not running"
+	@echo ""
+	@echo "=========================================="
+	@echo "        PostgreSQL Table Sizes"
+	@echo "=========================================="
+	@docker exec mit-postgres psql -U mit -d mit -c "\
+		SELECT tablename AS table, \
+		       pg_size_pretty(pg_total_relation_size('public.' || tablename)) AS size \
+		FROM pg_tables \
+		WHERE schemaname = 'public' \
+		ORDER BY pg_total_relation_size('public.' || tablename) DESC;" 2>/dev/null || echo "PostgreSQL not running"
+	@echo ""

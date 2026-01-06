@@ -5,6 +5,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useMultiAudioLevels } from '@/hooks/useAudioLevel';
 import { AudioControls } from './AudioControls';
 import { ParticipantList } from './ParticipantList';
 
@@ -35,25 +36,25 @@ function RemoteAudio({ stream, odId }: { stream: MediaStream; odId: string }) {
 }
 
 export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: MeetingRoomProps) {
-  console.log('[MeetingRoom] Rendering - meetingId:', meetingId, 'userId:', userId);
   const navigate = useNavigate();
   const hasJoinedRef = useRef(false);
 
   const {
     connectionState,
     participants,
+    localStream,
     remoteStreams,
     isAudioMuted,
     error,
     isRecording,
+    isUploading,
     joinRoom,
     leaveRoom,
     toggleMute,
-    startRecording,
-    stopRecording,
   } = useWebRTC(meetingId);
 
-  console.log('[MeetingRoom] connectionState:', connectionState, 'error:', error, 'participants:', participants.size);
+  // 오디오 레벨 분석 (발화 인디케이터용)
+  const audioLevels = useMultiAudioLevels(remoteStreams, localStream, userId);
 
   // 회의 참여
   useEffect(() => {
@@ -87,7 +88,8 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     );
   }
 
-  if (connectionState === 'failed' || error) {
+  // 연결 실패일 때만 에러 화면 표시 (녹음 에러는 별도 처리)
+  if (connectionState === 'failed') {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -158,7 +160,11 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
 
         {/* 사이드바 - 참여자 목록 */}
         <aside className="w-80 bg-gray-850 p-4 border-l border-gray-700">
-          <ParticipantList participants={participants} currentUserId={userId} />
+          <ParticipantList
+            participants={participants}
+            currentUserId={userId}
+            audioLevels={audioLevels}
+          />
         </aside>
       </main>
 
@@ -170,29 +176,21 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
           disabled={connectionState !== 'connected'}
         />
 
-        {/* 녹음 버튼 */}
-        <button
-          onClick={isRecording ? stopRecording : startRecording}
-          disabled={connectionState !== 'connected'}
-          className={`p-4 rounded-full transition-colors ${
-            isRecording
-              ? 'bg-red-500 hover:bg-red-600 animate-pulse'
-              : 'bg-gray-700 hover:bg-gray-600'
-          } ${connectionState !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
-          title={isRecording ? '녹음 중지' : '녹음 시작'}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6 text-white"
-            fill={isRecording ? 'currentColor' : 'none'}
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <circle cx="12" cy="12" r="6" strokeWidth={2} />
-          </svg>
-        </button>
+        {/* 녹음 상태 인디케이터 (자동 녹음) */}
         {isRecording && (
-          <span className="text-red-400 text-sm">녹음 중...</span>
+          <div className="flex items-center gap-2 px-3 py-1 bg-red-900/50 rounded-full">
+            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            <span className="text-red-400 text-sm">녹음 중</span>
+          </div>
+        )}
+        {isUploading && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-blue-900/50 rounded-full">
+            <svg className="animate-spin h-4 w-4 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-blue-400 text-sm">저장 중...</span>
+          </div>
         )}
       </footer>
     </div>

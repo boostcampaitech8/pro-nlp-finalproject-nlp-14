@@ -159,16 +159,18 @@ class ConnectionManager:
             "reason": reason,
         }
 
-        for websocket in self._connections[meeting_key].values():
+        # 딕셔너리를 복사해서 순회 (순회 중 수정 방지)
+        websockets_to_close = list(self._connections[meeting_key].values())
+        for websocket in websockets_to_close:
             try:
                 await websocket.send_json(end_message)
                 await websocket.close(code=1000, reason=reason)
             except Exception:
                 pass
 
-        # 정리
-        del self._connections[meeting_key]
-        del self._participants[meeting_key]
+        # 정리 (이미 삭제되었을 수 있으므로 pop 사용)
+        self._connections.pop(meeting_key, None)
+        self._participants.pop(meeting_key, None)
 
         logger.info(f"All connections closed for meeting {meeting_id}")
 
