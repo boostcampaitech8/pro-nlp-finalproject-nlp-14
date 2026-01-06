@@ -263,9 +263,9 @@ docker compose up -d --build
 - UUID 사용 (auto-increment ID 사용 금지)
 
 ### WebRTC
-- 순수 P2P 불가 (서버 녹음 필요) -> SFU 아키텍처
-- STUN 서버: `stun:stun.l.google.com:19302` (개발용)
-- TURN 서버: 프로덕션에서 별도 설정 필요
+- Mesh P2P + 클라이언트 녹음 아키텍처
+- STUN 서버: Google 공용 STUN 서버 사용 (TURN 서버 미사용)
+- 제한적인 NAT(Symmetric NAT) 환경에서는 연결 실패 가능
 
 ### 보안
 - 비밀번호: bcrypt 해싱
