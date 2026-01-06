@@ -17,9 +17,12 @@ from app.models.meeting import Meeting, MeetingParticipant, MeetingStatus
 from app.models.recording import MeetingRecording, RecordingStatus
 from app.models.user import User
 from app.schemas.recording import (
+    RecordingConfirmRequest,
     RecordingDownloadResponse,
     RecordingListResponse,
     RecordingResponse,
+    RecordingUploadUrlRequest,
+    RecordingUploadUrlResponse,
 )
 from app.services.auth_service import AuthService
 
@@ -358,4 +361,210 @@ async def upload_recording(
         raise HTTPException(
             status_code=500,
             detail={"error": "UPLOAD_FAILED", "message": f"녹음 업로드에 실패했습니다: {str(e)}"},
+        )
+
+
+@router.post("/{meeting_id}/recordings/upload-url", response_model=RecordingUploadUrlResponse, status_code=status.HTTP_201_CREATED)
+async def get_recording_upload_url(
+    meeting_id: UUID,
+    request: RecordingUploadUrlRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """녹음 업로드용 Presigned URL 발급
+
+    클라이언트에서 대용량 녹음 파일을 직접 MinIO에 업로드하기 위한
+    Presigned URL을 발급합니다.
+
+    1. 이 엔드포인트로 presigned URL 요청
+    2. 반환된 uploadUrl로 파일 직접 업로드 (PUT)
+    3. /recordings/{recording_id}/confirm 으로 업로드 완료 확인
+    """
+    # 회의 조회 및 참여자 확인
+    query = (
+        select(Meeting)
+        .options(selectinload(Meeting.participants))
+        .where(Meeting.id == meeting_id)
+    )
+    result = await db.execute(query)
+    meeting = result.scalar_one_or_none()
+
+    if not meeting:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
+        )
+
+    # 참여자인지 확인
+    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
+    if not is_participant:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 업로드할 수 있습니다."},
+        )
+
+    # 파일 크기 제한 (500MB)
+    MAX_FILE_SIZE = 500 * 1024 * 1024
+    if request.file_size_bytes > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "BAD_REQUEST", "message": "파일 크기는 500MB를 초과할 수 없습니다."},
+        )
+
+    try:
+        # Presigned URL 생성
+        timestamp = request.started_at.strftime("%Y%m%d_%H%M%S")
+        upload_url, file_path = storage_service.get_recording_upload_url(
+            meeting_id=str(meeting_id),
+            user_id=str(current_user.id),
+            timestamp=timestamp,
+        )
+
+        # DB에 녹음 메타데이터 저장 (pending 상태)
+        recording = MeetingRecording(
+            meeting_id=meeting_id,
+            user_id=current_user.id,
+            file_path=file_path,
+            status=RecordingStatus.PENDING.value,
+            started_at=request.started_at,
+            ended_at=request.ended_at,
+            duration_ms=request.duration_ms,
+            file_size_bytes=request.file_size_bytes,
+        )
+        db.add(recording)
+        await db.commit()
+        await db.refresh(recording)
+
+        logger.info(
+            f"Recording upload URL generated: meeting={meeting_id}, user={current_user.id}, "
+            f"recording={recording.id}"
+        )
+
+        return RecordingUploadUrlResponse(
+            recording_id=recording.id,
+            upload_url=upload_url,
+            file_path=file_path,
+            expires_in_seconds=3600,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to generate upload URL: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "UPLOAD_URL_FAILED", "message": f"업로드 URL 생성에 실패했습니다: {str(e)}"},
+        )
+
+
+@router.post("/{meeting_id}/recordings/{recording_id}/confirm", response_model=RecordingResponse)
+async def confirm_recording_upload(
+    meeting_id: UUID,
+    recording_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    request: RecordingConfirmRequest | None = None,
+):
+    """녹음 업로드 완료 확인
+
+    Presigned URL로 MinIO에 직접 업로드한 후,
+    이 엔드포인트를 호출하여 업로드 완료를 확인합니다.
+
+    서버에서 파일 존재 여부를 확인하고 상태를 completed로 변경합니다.
+    """
+    # 회의 조회 및 참여자 확인
+    query = (
+        select(Meeting)
+        .options(selectinload(Meeting.participants))
+        .where(Meeting.id == meeting_id)
+    )
+    result = await db.execute(query)
+    meeting = result.scalar_one_or_none()
+
+    if not meeting:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
+        )
+
+    # 참여자인지 확인
+    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
+    if not is_participant:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 확인할 수 있습니다."},
+        )
+
+    # 녹음 조회
+    recording_query = select(MeetingRecording).where(
+        MeetingRecording.id == recording_id,
+        MeetingRecording.meeting_id == meeting_id,
+        MeetingRecording.user_id == current_user.id,
+    )
+    recording_result = await db.execute(recording_query)
+    recording = recording_result.scalar_one_or_none()
+
+    if not recording:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "NOT_FOUND", "message": "녹음을 찾을 수 없습니다."},
+        )
+
+    # 이미 완료된 경우
+    if recording.status == RecordingStatus.COMPLETED.value:
+        return RecordingResponse(
+            id=recording.id,
+            meeting_id=recording.meeting_id,
+            user_id=recording.user_id,
+            user_name=current_user.name,
+            status=recording.status,
+            started_at=recording.started_at,
+            ended_at=recording.ended_at,
+            duration_ms=recording.duration_ms,
+            file_size_bytes=recording.file_size_bytes,
+            created_at=recording.created_at,
+        )
+
+    # MinIO에서 파일 존재 확인
+    try:
+        file_info = storage_service.get_file_info(
+            bucket=storage_service.BUCKET_RECORDINGS,
+            object_name=recording.file_path,
+        )
+
+        if not file_info:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "FILE_NOT_FOUND", "message": "업로드된 파일을 찾을 수 없습니다. 업로드를 완료해주세요."},
+            )
+
+        # 파일 크기 업데이트 (실제 업로드된 크기로)
+        recording.file_size_bytes = file_info["size"]
+        recording.status = RecordingStatus.COMPLETED.value
+        await db.commit()
+        await db.refresh(recording)
+
+        logger.info(
+            f"Recording upload confirmed: meeting={meeting_id}, user={current_user.id}, "
+            f"recording={recording.id}, size={file_info['size']}"
+        )
+
+        return RecordingResponse(
+            id=recording.id,
+            meeting_id=recording.meeting_id,
+            user_id=recording.user_id,
+            user_name=current_user.name,
+            status=recording.status,
+            started_at=recording.started_at,
+            ended_at=recording.ended_at,
+            duration_ms=recording.duration_ms,
+            file_size_bytes=recording.file_size_bytes,
+            created_at=recording.created_at,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to confirm recording upload: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "CONFIRM_FAILED", "message": f"업로드 확인에 실패했습니다: {str(e)}"},
         )

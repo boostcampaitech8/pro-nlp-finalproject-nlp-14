@@ -7,11 +7,44 @@ from pydantic import BaseModel, Field
 
 
 class RecordingUploadRequest(BaseModel):
-    """녹음 업로드 메타데이터 요청"""
+    """녹음 업로드 메타데이터 요청 (기존 방식 - deprecated)"""
 
     started_at: datetime = Field(alias="startedAt")
     ended_at: datetime = Field(alias="endedAt")
     duration_ms: int = Field(alias="durationMs")
+
+    class Config:
+        populate_by_name = True
+
+
+class RecordingUploadUrlRequest(BaseModel):
+    """Presigned URL 요청"""
+
+    started_at: datetime = Field(alias="startedAt")
+    ended_at: datetime = Field(alias="endedAt")
+    duration_ms: int = Field(alias="durationMs")
+    file_size_bytes: int = Field(alias="fileSizeBytes")
+
+    class Config:
+        populate_by_name = True
+
+
+class RecordingUploadUrlResponse(BaseModel):
+    """Presigned URL 응답"""
+
+    recording_id: UUID = Field(serialization_alias="recordingId")
+    upload_url: str = Field(serialization_alias="uploadUrl")
+    file_path: str = Field(serialization_alias="filePath")
+    expires_in_seconds: int = Field(default=3600, serialization_alias="expiresInSeconds")
+
+    class Config:
+        populate_by_name = True
+
+
+class RecordingConfirmRequest(BaseModel):
+    """업로드 완료 확인 요청"""
+
+    file_size_bytes: int | None = Field(default=None, alias="fileSizeBytes")
 
     class Config:
         populate_by_name = True

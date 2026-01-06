@@ -2,12 +2,13 @@
  * 회의실 메인 컴포넌트
  */
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useMultiAudioLevels } from '@/hooks/useAudioLevel';
 import { AudioControls } from './AudioControls';
 import { ParticipantList } from './ParticipantList';
+import { ScreenShareView } from './ScreenShareView';
 
 interface MeetingRoomProps {
   meetingId: string;
@@ -111,6 +112,10 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     audioOutputDeviceId,
     micGain,
     remoteVolumes,
+    // 화면공유
+    isScreenSharing,
+    screenStream,
+    remoteScreenStreams,
     joinRoom,
     leaveRoom,
     toggleMute,
@@ -118,10 +123,33 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     changeAudioOutputDevice,
     changeMicGain,
     changeRemoteVolume,
+    // 화면공유
+    startScreenShare,
+    stopScreenShare,
   } = useWebRTC(meetingId);
 
   // 오디오 레벨 분석 (발화 인디케이터용)
   const audioLevels = useMultiAudioLevels(remoteStreams, localStream, userId);
+
+  // 화면공유 토글
+  const handleToggleScreenShare = useCallback(() => {
+    if (isScreenSharing) {
+      stopScreenShare();
+    } else {
+      startScreenShare().catch((err) => {
+        console.error('Failed to start screen share:', err);
+      });
+    }
+  }, [isScreenSharing, startScreenShare, stopScreenShare]);
+
+  // 참여자 이름 조회
+  const getUserName = useCallback((participantUserId: string) => {
+    const participant = participants.get(participantUserId);
+    return participant?.userName ?? 'Unknown';
+  }, [participants]);
+
+  // 화면공유 활성화 여부 (로컬 또는 원격 화면공유가 있는지)
+  const hasActiveScreenShare = screenStream !== null || remoteScreenStreams.size > 0;
 
   // 회의 참여
   useEffect(() => {
@@ -205,30 +233,39 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
 
       {/* 메인 컨텐츠 */}
       <main className="flex-1 flex">
-        {/* 중앙 영역 - 오디오 시각화 (추후 확장) */}
+        {/* 중앙 영역 - 화면공유 또는 오디오 시각화 */}
         <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-center">
-            <div className="w-32 h-32 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-4">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className={`h-16 w-16 ${isAudioMuted ? 'text-gray-500' : 'text-green-400'}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                />
-              </svg>
+          {hasActiveScreenShare ? (
+            <ScreenShareView
+              localScreenStream={screenStream}
+              remoteScreenStreams={remoteScreenStreams}
+              getUserName={getUserName}
+              currentUserId={userId}
+            />
+          ) : (
+            <div className="text-center">
+              <div className="w-32 h-32 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-4">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className={`h-16 w-16 ${isAudioMuted ? 'text-gray-500' : 'text-green-400'}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                  />
+                </svg>
+              </div>
+              <p className="text-gray-300 text-lg">음성 회의 진행 중</p>
+              <p className="text-gray-500 text-sm mt-1">
+                {participants.size}명 참여 중
+              </p>
             </div>
-            <p className="text-gray-300 text-lg">음성 회의 진행 중</p>
-            <p className="text-gray-500 text-sm mt-1">
-              {participants.size}명 참여 중
-            </p>
-          </div>
+          )}
         </div>
 
         {/* 사이드바 - 참여자 목록 */}
@@ -256,6 +293,8 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
           onAudioOutputChange={changeAudioOutputDevice}
           micGain={micGain}
           onMicGainChange={changeMicGain}
+          isScreenSharing={isScreenSharing}
+          onToggleScreenShare={handleToggleScreenShare}
         />
 
         {/* 녹음 상태 인디케이터 (자동 녹음) */}

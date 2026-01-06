@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
     minio_secure: bool = False
+    # 외부에서 접근 가능한 스토리지 URL (nginx 프록시 경로)
+    # 예: https://www.mit-hub.com/storage
+    storage_external_url: str = "http://localhost:3000/storage"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

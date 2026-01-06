@@ -18,6 +18,9 @@ interface AudioControlsProps {
   // 마이크 gain
   micGain: number;
   onMicGainChange: (gain: number) => void;
+  // 화면공유
+  isScreenSharing: boolean;
+  onToggleScreenShare: () => void;
 }
 
 export function AudioControls({
@@ -30,6 +33,8 @@ export function AudioControls({
   onAudioOutputChange,
   micGain,
   onMicGainChange,
+  isScreenSharing,
+  onToggleScreenShare,
 }: AudioControlsProps) {
   const {
     audioInputDevices,
@@ -144,6 +149,68 @@ export function AudioControls({
         disabledMessage={!isSinkIdSupported ? '이 브라우저에서는 출력 장치 선택을 지원하지 않습니다' : undefined}
         icon="speaker"
       />
+
+      {/* 화면공유 버튼 */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onToggleScreenShare}
+          disabled={disabled}
+          className={`
+            flex items-center justify-center w-14 h-14 rounded-full
+            transition-colors duration-200
+            ${
+              isScreenSharing
+                ? 'bg-green-500 hover:bg-green-600 text-white'
+                : 'bg-gray-700 hover:bg-gray-600 text-white'
+            }
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          `}
+          title={isScreenSharing ? '화면공유 중지' : '화면공유 시작'}
+        >
+          {isScreenSharing ? (
+            // 화면공유 중 아이콘 (중지 표시)
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          ) : (
+            // 화면공유 아이콘
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+          )}
+        </button>
+        <span className="text-sm text-gray-400 w-20">
+          {isScreenSharing ? '공유 중' : '화면공유'}
+        </span>
+      </div>
     </div>
   );
 }

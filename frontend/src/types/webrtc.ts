@@ -22,7 +22,15 @@ export type SignalingMessageType =
   | 'recording-stop'
   | 'recording-answer'
   | 'recording-started'
-  | 'recording-stopped';
+  | 'recording-stopped'
+  // 화면공유 관련
+  | 'screen-share-start'
+  | 'screen-share-stop'
+  | 'screen-share-started'
+  | 'screen-share-stopped'
+  | 'screen-offer'
+  | 'screen-answer'
+  | 'screen-ice-candidate';
 
 // 회의실 참여자 정보
 export interface RoomParticipant {
@@ -30,6 +38,7 @@ export interface RoomParticipant {
   userName: string;
   role: 'host' | 'participant';
   audioMuted: boolean;
+  isScreenSharing?: boolean;
 }
 
 // ICE 서버 설정
@@ -110,6 +119,33 @@ export interface RecordingStopMessage {
   type: 'recording-stop';
 }
 
+// 화면공유 관련 (Client -> Server)
+export interface ScreenShareStartMessage {
+  type: 'screen-share-start';
+}
+
+export interface ScreenShareStopMessage {
+  type: 'screen-share-stop';
+}
+
+export interface ScreenOfferMessage {
+  type: 'screen-offer';
+  sdp: RTCSessionDescriptionInit;
+  targetUserId: string;
+}
+
+export interface ScreenAnswerMessage {
+  type: 'screen-answer';
+  sdp: RTCSessionDescriptionInit;
+  targetUserId: string;
+}
+
+export interface ScreenIceCandidateMessage {
+  type: 'screen-ice-candidate';
+  candidate: RTCIceCandidateInit;
+  targetUserId: string;
+}
+
 export type ClientMessage =
   | JoinMessage
   | OfferMessage
@@ -119,7 +155,12 @@ export type ClientMessage =
   | MuteMessage
   | RecordingOfferMessage
   | RecordingIceMessage
-  | RecordingStopMessage;
+  | RecordingStopMessage
+  | ScreenShareStartMessage
+  | ScreenShareStopMessage
+  | ScreenOfferMessage
+  | ScreenAnswerMessage
+  | ScreenIceCandidateMessage;
 
 // ===== Server -> Client 메시지 =====
 
@@ -189,6 +230,35 @@ export interface RecordingStoppedMessage {
   userId: string;
 }
 
+// 화면공유 관련 (Server -> Client)
+export interface ScreenShareStartedMessage {
+  type: 'screen-share-started';
+  userId: string;
+}
+
+export interface ScreenShareStoppedMessage {
+  type: 'screen-share-stopped';
+  userId: string;
+}
+
+export interface ServerScreenOfferMessage {
+  type: 'screen-offer';
+  sdp: RTCSessionDescriptionInit;
+  fromUserId: string;
+}
+
+export interface ServerScreenAnswerMessage {
+  type: 'screen-answer';
+  sdp: RTCSessionDescriptionInit;
+  fromUserId: string;
+}
+
+export interface ServerScreenIceCandidateMessage {
+  type: 'screen-ice-candidate';
+  candidate: RTCIceCandidateInit;
+  fromUserId: string;
+}
+
 export type ServerMessage =
   | JoinedMessage
   | ParticipantJoinedMessage
@@ -201,7 +271,12 @@ export type ServerMessage =
   | ErrorMessage
   | RecordingAnswerMessage
   | RecordingStartedMessage
-  | RecordingStoppedMessage;
+  | RecordingStoppedMessage
+  | ScreenShareStartedMessage
+  | ScreenShareStoppedMessage
+  | ServerScreenOfferMessage
+  | ServerScreenAnswerMessage
+  | ServerScreenIceCandidateMessage;
 
 // 연결 상태
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';

@@ -14,6 +14,7 @@ from app.core.database import Base
 class RecordingStatus(str, Enum):
     """녹음 상태"""
 
+    PENDING = "pending"          # 업로드 대기 (presigned URL 발급됨)
     RECORDING = "recording"      # 녹음 중
     COMPLETED = "completed"      # 녹음 완료
     FAILED = "failed"            # 녹음 실패

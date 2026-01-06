@@ -107,6 +107,22 @@ export async function getLocalAudioStream(deviceId?: string): Promise<MediaStrea
 }
 
 /**
+ * 화면공유 스트림 획득
+ */
+export async function getDisplayMediaStream(): Promise<MediaStream> {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false, // 오디오는 별도 처리
+    });
+    return stream;
+  } catch (error) {
+    console.error('[WebRTC] Failed to get display media stream:', error);
+    throw error;
+  }
+}
+
+/**
  * SDP Offer 생성
  */
 export async function createOffer(pc: RTCPeerConnection): Promise<RTCSessionDescriptionInit> {
@@ -193,6 +209,7 @@ export const webrtcService = {
   createPeerConnection,
   createProcessedAudioStream,
   getLocalAudioStream,
+  getDisplayMediaStream,
   createOffer,
   createAnswer,
   setRemoteDescription,

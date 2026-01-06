@@ -39,6 +39,12 @@ interface MeetingRoomState {
   // 피어 연결
   peerConnections: Map<string, RTCPeerConnection>;
 
+  // 화면공유
+  isScreenSharing: boolean;
+  screenStream: MediaStream | null;
+  remoteScreenStreams: Map<string, MediaStream>; // userId -> screen stream
+  screenPeerConnections: Map<string, RTCPeerConnection>; // userId -> screen PC
+
   // Actions
   setMeetingInfo: (meetingId: string, status: string, iceServers: IceServer[], maxParticipants: number) => void;
   setConnectionState: (state: ConnectionState) => void;
@@ -64,6 +70,16 @@ interface MeetingRoomState {
   removePeerConnection: (userId: string) => void;
   getPeerConnection: (userId: string) => RTCPeerConnection | undefined;
 
+  // 화면공유 Actions
+  setScreenSharing: (isSharing: boolean) => void;
+  setScreenStream: (stream: MediaStream | null) => void;
+  addRemoteScreenStream: (userId: string, stream: MediaStream) => void;
+  removeRemoteScreenStream: (userId: string) => void;
+  addScreenPeerConnection: (userId: string, pc: RTCPeerConnection) => void;
+  removeScreenPeerConnection: (userId: string) => void;
+  getScreenPeerConnection: (userId: string) => RTCPeerConnection | undefined;
+  updateParticipantScreenSharing: (userId: string, isSharing: boolean) => void;
+
   reset: () => void;
 }
 
@@ -83,6 +99,11 @@ const initialState = {
   remoteStreams: new Map<string, MediaStream>(),
   remoteVolumes: new Map<string, number>(),
   peerConnections: new Map<string, RTCPeerConnection>(),
+  // 화면공유
+  isScreenSharing: false,
+  screenStream: null,
+  remoteScreenStreams: new Map<string, MediaStream>(),
+  screenPeerConnections: new Map<string, RTCPeerConnection>(),
 };
 
 export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
@@ -207,19 +228,90 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
     return get().peerConnections.get(userId);
   },
 
+  // 화면공유 Actions
+  setScreenSharing: (isScreenSharing) => {
+    set({ isScreenSharing });
+  },
+
+  setScreenStream: (screenStream) => {
+    // 기존 스트림 정리
+    const oldStream = get().screenStream;
+    if (oldStream) {
+      oldStream.getTracks().forEach((track) => track.stop());
+    }
+    set({ screenStream });
+  },
+
+  addRemoteScreenStream: (userId, stream) => {
+    const remoteScreenStreams = new Map(get().remoteScreenStreams);
+    remoteScreenStreams.set(userId, stream);
+    set({ remoteScreenStreams });
+  },
+
+  removeRemoteScreenStream: (userId) => {
+    const remoteScreenStreams = new Map(get().remoteScreenStreams);
+    const stream = remoteScreenStreams.get(userId);
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      remoteScreenStreams.delete(userId);
+      set({ remoteScreenStreams });
+    }
+  },
+
+  addScreenPeerConnection: (userId, pc) => {
+    const screenPeerConnections = new Map(get().screenPeerConnections);
+    screenPeerConnections.set(userId, pc);
+    set({ screenPeerConnections });
+  },
+
+  removeScreenPeerConnection: (userId) => {
+    const screenPeerConnections = new Map(get().screenPeerConnections);
+    const pc = screenPeerConnections.get(userId);
+    if (pc) {
+      pc.close();
+      screenPeerConnections.delete(userId);
+      set({ screenPeerConnections });
+    }
+  },
+
+  getScreenPeerConnection: (userId) => {
+    return get().screenPeerConnections.get(userId);
+  },
+
+  updateParticipantScreenSharing: (userId, isSharing) => {
+    const participants = new Map(get().participants);
+    const participant = participants.get(userId);
+    if (participant) {
+      participants.set(userId, { ...participant, isScreenSharing: isSharing });
+      set({ participants });
+    }
+  },
+
   reset: () => {
     // 모든 리소스 정리
-    const { localStream, remoteStreams, peerConnections } = get();
+    const { localStream, remoteStreams, peerConnections, screenStream, remoteScreenStreams, screenPeerConnections } = get();
 
     if (localStream) {
       localStream.getTracks().forEach((track) => track.stop());
+    }
+
+    if (screenStream) {
+      screenStream.getTracks().forEach((track) => track.stop());
     }
 
     remoteStreams.forEach((stream) => {
       stream.getTracks().forEach((track) => track.stop());
     });
 
+    remoteScreenStreams.forEach((stream) => {
+      stream.getTracks().forEach((track) => track.stop());
+    });
+
     peerConnections.forEach((pc) => {
+      pc.close();
+    });
+
+    screenPeerConnections.forEach((pc) => {
       pc.close();
     });
 

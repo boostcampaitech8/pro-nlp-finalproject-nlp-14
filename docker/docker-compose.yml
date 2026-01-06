@@ -76,6 +76,8 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # 외부에서 접근 가능한 스토리지 URL (nginx 프록시 경로)
+      STORAGE_EXTERNAL_URL: ${STORAGE_EXTERNAL_URL:-https://www.mit-hub.com/storage}
     depends_on:
       postgres:
         condition: service_healthy

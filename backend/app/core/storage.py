@@ -168,6 +168,110 @@ class StorageService:
             logger.error(f"Failed to generate presigned URL: {e}")
             raise
 
+    def get_presigned_upload_url(
+        self,
+        bucket: str,
+        object_name: str,
+        expires: timedelta = timedelta(hours=1),
+    ) -> str:
+        """Presigned URL 생성 (업로드용)
+
+        Args:
+            bucket: 버킷 이름
+            object_name: 객체 경로
+            expires: URL 만료 시간
+
+        Returns:
+            Presigned URL (외부 접근용 URL로 변환됨)
+        """
+        client = self._get_client()
+        settings = get_settings()
+        try:
+            url = client.presigned_put_object(
+                bucket_name=bucket,
+                object_name=object_name,
+                expires=expires,
+            )
+            # 내부 MinIO URL을 외부 프록시 URL로 변환
+            # http://minio:9000/bucket/... -> https://domain.com/storage/bucket/...
+            internal_url = f"http://{settings.minio_endpoint}"
+            external_url = settings.storage_external_url
+            return url.replace(internal_url, external_url)
+        except S3Error as e:
+            logger.error(f"Failed to generate presigned upload URL: {e}")
+            raise
+
+    def get_recording_upload_url(
+        self,
+        meeting_id: str,
+        user_id: str,
+        timestamp: str,
+        expires: timedelta = timedelta(hours=1),
+    ) -> tuple[str, str]:
+        """녹음 파일 업로드 URL 생성
+
+        Args:
+            meeting_id: 회의 ID
+            user_id: 사용자 ID
+            timestamp: 타임스탬프 (YYYYMMDD_HHMMSS)
+            expires: URL 만료 시간
+
+        Returns:
+            (presigned_url, file_path) 튜플
+        """
+        file_path = f"{meeting_id}/{user_id}_{timestamp}.webm"
+        url = self.get_presigned_upload_url(
+            bucket=self.BUCKET_RECORDINGS,
+            object_name=file_path,
+            expires=expires,
+        )
+        return url, file_path
+
+    def check_file_exists(self, bucket: str, object_name: str) -> bool:
+        """파일 존재 여부 확인
+
+        Args:
+            bucket: 버킷 이름
+            object_name: 객체 경로
+
+        Returns:
+            파일 존재 여부
+        """
+        client = self._get_client()
+        try:
+            client.stat_object(bucket_name=bucket, object_name=object_name)
+            return True
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return False
+            logger.error(f"Failed to check file existence: {e}")
+            raise
+
+    def get_file_info(self, bucket: str, object_name: str) -> dict | None:
+        """파일 정보 조회
+
+        Args:
+            bucket: 버킷 이름
+            object_name: 객체 경로
+
+        Returns:
+            파일 정보 (size, content_type 등) 또는 None
+        """
+        client = self._get_client()
+        try:
+            stat = client.stat_object(bucket_name=bucket, object_name=object_name)
+            return {
+                "size": stat.size,
+                "content_type": stat.content_type,
+                "last_modified": stat.last_modified,
+                "etag": stat.etag,
+            }
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return None
+            logger.error(f"Failed to get file info: {e}")
+            raise
+
     def get_recording_url(
         self,
         file_path: str,
