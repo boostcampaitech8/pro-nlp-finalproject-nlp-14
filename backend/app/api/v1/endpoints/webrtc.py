@@ -323,6 +323,22 @@ async def handle_websocket_messages(
         elif msg_type == SignalingMessageType.MUTE:
             await handle_mute(meeting_id, user_id, data)
 
+        # 화면공유 관련 메시지
+        elif msg_type == SignalingMessageType.SCREEN_SHARE_START:
+            await handle_screen_share_start(meeting_id, user_id)
+
+        elif msg_type == SignalingMessageType.SCREEN_SHARE_STOP:
+            await handle_screen_share_stop(meeting_id, user_id)
+
+        elif msg_type == SignalingMessageType.SCREEN_OFFER:
+            await handle_screen_offer(meeting_id, user_id, data)
+
+        elif msg_type == SignalingMessageType.SCREEN_ANSWER:
+            await handle_screen_answer(meeting_id, user_id, data)
+
+        elif msg_type == SignalingMessageType.SCREEN_ICE_CANDIDATE:
+            await handle_screen_ice_candidate(meeting_id, user_id, data)
+
         # 녹음은 클라이언트 측 MediaRecorder + HTTP 업로드로 변경됨
         # aiortc 기반 서버 녹음은 더 이상 사용하지 않음
 
@@ -454,6 +470,108 @@ async def handle_mute(meeting_id: UUID, user_id: UUID, data: dict) -> None:
             "muted": muted,
         },
         exclude_user_id=user_id,
+    )
+
+
+# ===== 화면공유 =====
+
+
+async def handle_screen_share_start(meeting_id: UUID, user_id: UUID) -> None:
+    """화면공유 시작 알림 처리"""
+    logger.info(f"Screen share started by user {user_id} in meeting {meeting_id}")
+
+    # 다른 참여자들에게 화면공유 시작 알림
+    await connection_manager.broadcast(
+        meeting_id,
+        {
+            "type": SignalingMessageType.SCREEN_SHARE_STARTED,
+            "userId": str(user_id),
+        },
+        exclude_user_id=user_id,
+    )
+
+
+async def handle_screen_share_stop(meeting_id: UUID, user_id: UUID) -> None:
+    """화면공유 중지 알림 처리"""
+    logger.info(f"Screen share stopped by user {user_id} in meeting {meeting_id}")
+
+    # 다른 참여자들에게 화면공유 중지 알림
+    await connection_manager.broadcast(
+        meeting_id,
+        {
+            "type": SignalingMessageType.SCREEN_SHARE_STOPPED,
+            "userId": str(user_id),
+        },
+        exclude_user_id=user_id,
+    )
+
+
+async def handle_screen_offer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
+    """화면공유 offer 메시지 처리 (타겟에게 전달)"""
+    target_user_id = data.get("targetUserId")
+    sdp = data.get("sdp")
+
+    if not target_user_id or not sdp:
+        logger.warning(f"Invalid screen offer from {user_id}: missing targetUserId or sdp")
+        return
+
+    logger.debug(f"Screen offer from {user_id} to {target_user_id}")
+
+    await connection_manager.send_to_user(
+        meeting_id,
+        UUID(target_user_id),
+        {
+            "type": SignalingMessageType.SCREEN_OFFER,
+            "sdp": sdp,
+            "fromUserId": str(user_id),
+        },
+    )
+
+
+async def handle_screen_answer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
+    """화면공유 answer 메시지 처리 (타겟에게 전달)"""
+    target_user_id = data.get("targetUserId")
+    sdp = data.get("sdp")
+
+    if not target_user_id or not sdp:
+        logger.warning(f"Invalid screen answer from {user_id}: missing targetUserId or sdp")
+        return
+
+    logger.debug(f"Screen answer from {user_id} to {target_user_id}")
+
+    await connection_manager.send_to_user(
+        meeting_id,
+        UUID(target_user_id),
+        {
+            "type": SignalingMessageType.SCREEN_ANSWER,
+            "sdp": sdp,
+            "fromUserId": str(user_id),
+        },
+    )
+
+
+async def handle_screen_ice_candidate(meeting_id: UUID, user_id: UUID, data: dict) -> None:
+    """화면공유 ICE candidate 메시지 처리"""
+    target_user_id = data.get("targetUserId")
+    candidate = data.get("candidate")
+
+    if not candidate:
+        return
+
+    if not target_user_id:
+        logger.warning(f"Screen ICE candidate from {user_id} missing targetUserId")
+        return
+
+    logger.debug(f"Screen ICE candidate from {user_id} to {target_user_id}")
+
+    await connection_manager.send_to_user(
+        meeting_id,
+        UUID(target_user_id),
+        {
+            "type": SignalingMessageType.SCREEN_ICE_CANDIDATE,
+            "candidate": candidate,
+            "fromUserId": str(user_id),
+        },
     )
 
 

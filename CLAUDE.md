@@ -112,11 +112,13 @@ API 변경은 명세 + BE + FE를 **한 커밋 또는 한 PR**에서 함께 수�
 | Redis | 캐시, Pub/Sub |
 | Alembic | DB 마이그레이션 |
 
-### WebRTC 아키텍처 (예정)
-- **SFU 방식**: 서버가 모든 미디어 스트림 수신 -> 녹음 가능
-- aiortc의 `MediaRecorder`로 서버 사이드 녹음
+### WebRTC 아키텍처
+- **Mesh P2P 방식**: 클라이언트 간 직접 연결
 - 시그널링: FastAPI WebSocket
-- **발화자 구분 녹음**: 각 참여자의 오디오 트랙을 개별 파일로 저장
+- **클라이언트 녹음**: MediaRecorder API로 로컬 오디오 녹음
+- **Presigned URL 업로드**: MinIO에 직접 업로드 (nginx 파일 크기 제한 우회)
+- **IndexedDB 증분 저장**: 10초마다 새 청크만 저장, 새로고침 시에도 데이터 보존
+- 화면 공유: getDisplayMedia API 사용
 
 ---
 
@@ -216,8 +218,9 @@ docker compose up -d --build
 | Week 2 | 팀 멤버 관리 | 완료 | 초대/역할변경/제거 |
 | Week 2 | 회의 참여자 관리 | 완료 | 추가/역할변경/제거 |
 | Week 3 | WebRTC 시그널링 | 완료 | FastAPI WebSocket |
-| Week 3 | 실시간 회의 (SFU) | 완료 | Mesh 시그널링 (SFU는 Week 4) |
-| Week 4 | 서버 사이드 녹음 | 완료 | 하이브리드 아키텍처 (Mesh + 녹음) |
+| Week 3 | 실시간 회의 | 완료 | Mesh P2P + 화면공유 |
+| Week 4 | 클라이언트 녹음 | 완료 | MediaRecorder + Presigned URL 업로드 |
+| Week 4 | 녹음 안정성 | 완료 | IndexedDB 증분저장, 토큰 자동갱신 |
 | Week 4 | 회의록 기본 기능 | 대기 | |
 
 ### Phase 2: PR Review 시스템 (4주)
@@ -241,12 +244,18 @@ docker compose up -d --build
 ## 다음 작업
 
 ```
-현재 목표: Phase 1 - Week 4 완료, 회의록 기본 기능 시작
+현재 목표: Phase 2 - 회의록 및 PR Review 시스템 시작
+
+완료된 작업:
+- [x] 녹음 기능 (클라이언트 녹음 + Presigned URL 업로드)
+- [x] 녹음 안정성 (IndexedDB 증분 저장, 토큰 자동 갱신)
+- [x] 화면 공유 기능
 
 다음 해야 할 작업:
-1. [ ] 회의록 기본 기능 구현
-2. [ ] 녹음 파일 STT 변환 (Whisper API 등)
-3. [ ] 회의록 조회/수정 API
+1. [ ] 녹음 파일 STT 변환 (Whisper API 등)
+2. [ ] 회의록 기본 기능 구현 (자동 생성, 조회, 수정)
+3. [ ] 회의록 Review UI (Comment, Suggestion)
+4. [ ] Ground Truth 관리
 ```
 
 ---
@@ -277,11 +286,13 @@ docker compose up -d --build
 - 최대 파일 크기: 500MB
 
 ### 녹음
-- 서버 사이드 녹음 시 **발화자 구분 필수**
-- SFU에서 각 참여자의 오디오 트랙을 개별 파일로 저장
-- 파일 경로 형식: `{meeting_id}/{user_id}_{timestamp}.webm`
+- **클라이언트 녹음**: MediaRecorder API로 각 참여자가 본인 오디오 녹음
+- **IndexedDB 증분 저장**: 10초마다 새 청크만 저장 (recordingStorageService)
+- **Presigned URL 업로드**: MinIO에 직접 업로드 (nginx 파일 크기 제한 우회)
+- 파일 경로 형식: `recordings/{meeting_id}/{user_id}_{timestamp}.webm`
 - 녹음 메타데이터(시작/종료 시각, 발화자)를 DB에 저장
 - MeetingRecording 모델: meeting_id, user_id, file_path, started_at, ended_at, duration_ms
+- 새로고침/회의종료 시에도 녹음 데이터 보존 및 업로드
 
 ---
 
@@ -326,6 +337,25 @@ docker compose up -d --build
 - **원인**: 회의 상태가 `ongoing`이 아니면 에러 메시지 표시
 - **해결**: 회의 상세 페이지에서 "Start Meeting" 버튼 클릭하여 회의 시작 필요
 
+### 녹음 업로드 시 413 Request Entity Too Large
+- **원인**: nginx가 큰 파일 업로드를 차단 (기본 1MB 제한)
+- **해결**: Presigned URL 방식으로 MinIO에 직접 업로드
+  - `recordingService.uploadRecordingPresigned()` 사용
+  - nginx `/storage/*` 경로로 MinIO 프록시 (client_max_body_size 500M)
+
+### 장시간 회의 중 401 Unauthorized
+- **원인**: access token 만료 (30분)
+- **해결**:
+  - useWebRTC에서 15분마다 자동 토큰 갱신 (`ensureValidToken`)
+  - 업로드 전 토큰 유효성 확인
+
+### 새로고침 시 녹음 데이터 손실
+- **원인**: 메모리의 녹음 청크가 날아감
+- **해결**:
+  - IndexedDB에 10초마다 증분 저장 (`saveNewChunks`)
+  - beforeunload 시 localStorage에 백업 메타데이터 저장
+  - 다음 회의 입장 시 미완료 녹음 자동 업로드 (`uploadPendingRecordings`)
+
 ---
 
 ## 참고 문서
@@ -340,6 +370,33 @@ docker compose up -d --build
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-07] 회의 버그 수정
+- 원격 오디오가 들리지 않는 문제 수정
+  - RemoteAudio 컴포넌트: AudioContext resume() 호출 추가
+  - audio 요소에 srcObject 직접 연결 및 autoPlay/playsInline 속성 추가
+  - 디버깅 로그 추가 (트랙 상태, AudioContext 상태)
+- 화면공유가 다른 참여자에게 보이지 않는 문제 수정
+  - Backend schemas/webrtc.py: 화면공유 메시지 타입 추가
+    (SCREEN_SHARE_START, SCREEN_SHARE_STOP, SCREEN_OFFER, SCREEN_ANSWER, SCREEN_ICE_CANDIDATE 등)
+  - Backend webrtc.py: 화면공유 메시지 핸들러 추가
+    (handle_screen_share_start, handle_screen_share_stop, handle_screen_offer 등)
+
+[2026-01-07] 녹음 안정성 개선
+- Presigned URL 방식 녹음 업로드 구현 (nginx 413 에러 해결)
+  - Backend: storage.py에 get_presigned_upload_url, get_recording_upload_url 추가
+  - Backend: recordings.py에 /upload-url, /confirm 엔드포인트 추가
+  - Frontend: recordingService.uploadRecordingPresigned() 구현
+  - nginx.conf: /storage/* 경로로 MinIO 프록시 추가
+- 장시간 회의 토큰 갱신 로직 추가
+  - api.ts: refreshAccessToken, isTokenExpiringSoon, ensureValidToken 함수 추가
+  - useWebRTC: 15분마다 자동 토큰 갱신
+- IndexedDB 기반 녹음 임시 저장 (증분 저장 방식)
+  - recordingStorageService.ts: 청크별 개별 저장, saveNewChunks로 새 청크만 저장
+  - useWebRTC: 10초마다 증분 저장, beforeunload 시 백업
+  - 회의 입장 시 미완료 녹음 자동 업로드 (uploadPendingRecordings)
+- meeting-ended 이벤트 시 녹음 업로드 보장
+- 화면 공유 기능 추가 (ScreenShareView 컴포넌트)
+
 [2026-01-06] Phase 1 - Week 4 녹음 기능 완료
 - 하이브리드 아키텍처: 기존 Mesh P2P 유지 + 녹음 전용 서버 연결
 - Backend:

@@ -18,8 +18,9 @@ interface MeetingRoomProps {
 }
 
 /**
- * 원격 오디오 재생 컴포넌트 (Web Audio API 사용)
- * - GainNode를 통한 볼륨 조절 지원
+ * 원격 오디오 재생 컴포넌트
+ * - HTMLAudioElement를 사용하여 안정적인 오디오 재생
+ * - GainNode를 통한 볼륨 조절 지원 (0-2 범위)
  * - setSinkId를 통한 출력 장치 선택 지원
  */
 function RemoteAudio({
@@ -33,38 +34,101 @@ function RemoteAudio({
   outputDeviceId: string | null;
   volume: number;
 }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const isSetupRef = useRef(false);
 
-  // Web Audio API로 오디오 재생 및 GainNode 연결
+  // audio 요소에 스트림 연결 및 Web Audio API로 볼륨 조절
   useEffect(() => {
-    if (!stream) return;
+    if (!stream || !audioRef.current) return;
 
-    console.log('[RemoteAudio] Setting up audio for:', odId);
+    // 이미 설정되어 있으면 skip
+    if (isSetupRef.current && audioContextRef.current) {
+      return;
+    }
 
-    // AudioContext 생성
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaStreamSource(stream);
-    const gainNode = audioContext.createGain();
+    const audioElement = audioRef.current;
+    console.log('[RemoteAudio] Setting up audio for:', odId, 'tracks:', stream.getAudioTracks().length);
 
-    // 연결: source -> gainNode -> destination
-    source.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    // 스트림의 오디오 트랙 확인
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      console.warn('[RemoteAudio] No audio tracks in stream for:', odId);
+      return;
+    }
 
-    audioContextRef.current = audioContext;
-    gainNodeRef.current = gainNode;
-    sourceRef.current = source;
+    audioTracks.forEach((track, i) => {
+      console.log(`[RemoteAudio] Track ${i}: enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+    });
+
+    // audio 요소에 스트림 연결
+    audioElement.srcObject = stream;
+
+    // Web Audio API로 볼륨 조절 (GainNode 사용)
+    try {
+      const audioContext = new AudioContext();
+
+      // AudioContext가 suspended 상태면 resume
+      if (audioContext.state === 'suspended') {
+        console.log('[RemoteAudio] Resuming suspended AudioContext');
+        audioContext.resume().catch((err) => {
+          console.error('[RemoteAudio] Failed to resume AudioContext:', err);
+        });
+      }
+
+      const source = audioContext.createMediaStreamSource(stream);
+      const gainNode = audioContext.createGain();
+
+      // 초기 볼륨 설정
+      gainNode.gain.value = 1.0;
+
+      // 연결: source -> gainNode -> destination
+      source.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      audioContextRef.current = audioContext;
+      gainNodeRef.current = gainNode;
+      sourceRef.current = source;
+
+      // audio 요소는 음소거 (Web Audio API가 실제 출력 담당)
+      audioElement.muted = true;
+      audioElement.volume = 0;
+
+      isSetupRef.current = true;
+      console.log('[RemoteAudio] Audio setup complete for:', odId);
+    } catch (err) {
+      console.error('[RemoteAudio] Failed to setup Web Audio API, using audio element:', err);
+      // Web Audio API 실패시 audio 요소로 재생
+      audioElement.muted = false;
+      audioElement.volume = 1.0;
+      isSetupRef.current = true;
+    }
+
+    // 재생 시작
+    audioElement.play().catch((err) => {
+      console.error('[RemoteAudio] Failed to play audio:', err);
+    });
 
     return () => {
       console.log('[RemoteAudio] Cleaning up audio for:', odId);
-      source.disconnect();
-      gainNode.disconnect();
-      audioContext.close();
-      audioContextRef.current = null;
-      gainNodeRef.current = null;
-      sourceRef.current = null;
+      isSetupRef.current = false;
+
+      if (sourceRef.current) {
+        sourceRef.current.disconnect();
+        sourceRef.current = null;
+      }
+      if (gainNodeRef.current) {
+        gainNodeRef.current.disconnect();
+        gainNodeRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+
+      audioElement.srcObject = null;
     };
   }, [stream, odId]);
 
@@ -72,12 +136,14 @@ function RemoteAudio({
   useEffect(() => {
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = volume;
+      console.log('[RemoteAudio] Volume changed for', odId, ':', volume);
+    } else if (audioRef.current && !audioRef.current.muted) {
+      // Web Audio API 미사용 시 audio 요소 볼륨 직접 조절
+      audioRef.current.volume = Math.min(1, volume);
     }
-  }, [volume]);
+  }, [volume, odId]);
 
   // 출력 장치 변경 (setSinkId 지원 브라우저만)
-  // Note: Web Audio API의 AudioContext는 setSinkId를 직접 지원하지 않음
-  // 대안: 숨겨진 <audio> 요소를 통해 출력 장치 설정 (완벽하지 않음)
   useEffect(() => {
     if (audioRef.current && outputDeviceId) {
       const audioElement = audioRef.current as HTMLAudioElement & {
@@ -91,8 +157,7 @@ function RemoteAudio({
     }
   }, [outputDeviceId]);
 
-  // setSinkId를 위한 숨겨진 오디오 요소 (출력 장치 선택용)
-  return <audio ref={audioRef} style={{ display: 'none' }} />;
+  return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
 }
 
 export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: MeetingRoomProps) {

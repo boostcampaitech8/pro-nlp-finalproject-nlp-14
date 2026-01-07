@@ -480,6 +480,15 @@ API 명세: `api-contract/openapi.yaml`
 | POST | /api/v1/meetings/{id}/end | 회의 종료 (host) |
 | WS | /api/v1/meetings/{id}/ws?token=... | WebSocket 시그널링 |
 
+### 녹음 API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/meetings/{id}/recordings | 녹음 목록 조회 |
+| POST | /api/v1/meetings/{id}/recordings/upload-url | Presigned URL 발급 |
+| POST | /api/v1/meetings/{id}/recordings/{recordingId}/confirm | 업로드 완료 확인 |
+| GET | /api/v1/meetings/{id}/recordings/{recordingId}/download | 녹음 다운로드 URL |
+
 ### 타입 생성
 
 ```bash
@@ -594,6 +603,31 @@ uv run alembic upgrade head
 1. 회의 상세 페이지(`/meetings/{id}`)로 이동
 2. Host가 "Start Meeting" 버튼 클릭하여 회의 시작
 3. 회의 상태가 `ongoing`으로 변경되면 회의실 페이지 접근 가능
+
+### 녹음 업로드 시 413 Request Entity Too Large
+
+**원인**: nginx가 큰 파일 업로드를 차단 (기본 1MB 제한)
+
+**해결**: Presigned URL 방식으로 MinIO에 직접 업로드 (nginx 우회)
+- Frontend: `recordingService.uploadRecordingPresigned()` 사용
+- 경로: Client -> nginx `/storage/*` -> MinIO (direct upload)
+
+### 장시간 회의 중 401 Unauthorized
+
+**원인**: access token 만료 (30분)
+
+**해결**:
+- useWebRTC에서 15분마다 자동 토큰 갱신
+- `ensureValidToken()` 함수로 업로드 전 토큰 유효성 확인
+
+### 새로고침 시 녹음 데이터 손실
+
+**원인**: 메모리의 녹음 청크가 날아감
+
+**해결**:
+- IndexedDB에 10초마다 증분 저장
+- beforeunload 시 localStorage에 백업 메타데이터 저장
+- 다음 회의 입장 시 미완료 녹음 자동 업로드
 
 ---
 

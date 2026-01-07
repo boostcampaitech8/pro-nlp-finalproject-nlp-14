@@ -20,6 +20,12 @@ class SignalingMessageType(str, Enum):
     RECORDING_OFFER = "recording-offer"
     RECORDING_ICE = "recording-ice"
     RECORDING_STOP = "recording-stop"
+    # 화면공유 관련 (Client -> Server)
+    SCREEN_SHARE_START = "screen-share-start"
+    SCREEN_SHARE_STOP = "screen-share-stop"
+    SCREEN_OFFER = "screen-offer"
+    SCREEN_ANSWER = "screen-answer"
+    SCREEN_ICE_CANDIDATE = "screen-ice-candidate"
     # Server -> Client
     JOINED = "joined"
     PARTICIPANT_JOINED = "participant-joined"
@@ -30,6 +36,9 @@ class SignalingMessageType(str, Enum):
     RECORDING_ANSWER = "recording-answer"
     RECORDING_STARTED = "recording-started"
     RECORDING_STOPPED = "recording-stopped"
+    # 화면공유 관련 (Server -> Client)
+    SCREEN_SHARE_STARTED = "screen-share-started"
+    SCREEN_SHARE_STOPPED = "screen-share-stopped"
 
 
 class RoomParticipant(BaseModel):
