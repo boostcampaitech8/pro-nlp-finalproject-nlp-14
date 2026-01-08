@@ -17,9 +17,11 @@ RUN pnpm install --frozen-lockfile
 # 프론트엔드 소스 복사
 COPY frontend ./frontend
 
-# 빌드 인자로 API URL 전달
+# 빌드 인자로 환경변수 전달
 ARG VITE_API_URL=/api/v1
+ARG VITE_DEV_MODE=false
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_DEV_MODE=$VITE_DEV_MODE
 
 # 빌드 (워크스페이스 필터 사용)
 WORKDIR /app/frontend

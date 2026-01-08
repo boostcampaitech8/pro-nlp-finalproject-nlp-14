@@ -23,6 +23,15 @@ Git이 코드의 진실을 관리하듯, **조직 회의의 진실을 관리하�
 ```
 mit/
 ├── api-contract/           # API 명세 (OpenAPI 3.0) - SSOT
+│   ├── openapi.yaml        # 메인 진입점
+│   ├── schemas/            # 스키마 정의
+│   │   ├── common.yaml     # 공통 타입 (UUID, Timestamp, PaginationMeta)
+│   │   ├── auth.yaml       # 인증 스키마
+│   │   ├── team.yaml       # 팀 + 팀멤버 스키마
+│   │   ├── meeting.yaml    # 회의 + 참여자 스키마
+│   │   ├── webrtc.yaml     # WebRTC 스키마
+│   │   └── recording.yaml  # 녹음 스키마
+│   └── paths/              # 엔드포인트 정의
 ├── packages/shared-types/  # FE/BE 공유 타입 (자동 생성)
 ├── frontend/               # React + TypeScript + Vite
 │   ├── Dockerfile          # nginx 기반 프로덕션 이미지
@@ -195,6 +204,9 @@ make dev               # FE + BE 로컬 실행
 make dev-fe            # Frontend만 (http://localhost:3000)
 make dev-be            # Backend만 (http://localhost:8000)
 
+# 테스트
+make test-fe           # Frontend 테스트
+
 # Docker (전체)
 make docker-up         # 전체 (infra + frontend + backend)
 make docker-down       # 전체 중지
@@ -281,6 +293,24 @@ pnpm typecheck    # 타입 체크
 | Redis 7 | 캐시, 세션 |
 | Alembic | DB 마이그레이션 |
 
+### 주요 모듈
+
+| 모듈 | 역할 |
+|------|------|
+| `api/dependencies.py` | 공유 의존성 (인증, 회의 검증) |
+| `core/constants.py` | 애플리케이션 상수 |
+| `services/recording_service.py` | 녹음 비즈니스 로직 |
+| `handlers/websocket_message_handlers.py` | WebSocket 메시지 핸들러 |
+| `services/webrtc/` | WebRTC 관련 서비스 (연결, 저장) |
+| `utils/ice_parser.py` | ICE candidate 파싱 |
+
+### 설계 패턴
+
+- **Strategy Pattern**: WebSocket 메시지 타입별 핸들러 분리
+- **Composition**: RecordingSession을 WebRTC 연결 + 저장으로 분리
+- **Service Layer**: Endpoint와 비즈니스 로직 분리
+- **Shared Dependencies**: 공통 인증/검증 코드 중앙화
+
 ### 명령어 (uv)
 
 ```bash
@@ -299,7 +329,8 @@ uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "설명"
 
 # 테스트/린트
-uv run pytest
+uv run pytest          # 전체 테스트
+uv run pytest tests/unit -v  # 단위 테스트만
 uv run ruff check .
 ```
 
@@ -501,11 +532,44 @@ pnpm run generate:types
 
 ### API 변경 시 (Contract First)
 
-1. `api-contract/openapi.yaml` 수정
+1. `api-contract/openapi.yaml` 또는 관련 스키마 파일 수정
 2. `pnpm run generate:types` 실행
 3. Backend 구현
 4. Frontend 구현
 5. 한 커밋에 모두 포함
+
+### API Contract 패턴
+
+**스키마 참조 규칙:**
+```yaml
+# paths -> schemas
+$ref: '../schemas/team.yaml#/components/schemas/Team'
+
+# schemas 내부 참조
+$ref: '#/components/schemas/TeamRole'
+
+# 공통 타입 (UUID, Timestamp)은 항상 common.yaml에서 참조
+$ref: './common.yaml#/components/schemas/UUID'
+```
+
+**목록 응답 패턴:**
+```yaml
+SomeListResponse:
+  properties:
+    items: [...]        # 데이터 배열
+    meta:               # 페이지네이션 메타
+      $ref: './common.yaml#/components/schemas/PaginationMeta'
+```
+
+**스키마 확장 패턴 (allOf):**
+```yaml
+TeamWithMembers:
+  allOf:
+    - $ref: '#/components/schemas/Team'
+    - type: object
+      properties:
+        members: [...]
+```
 
 ### 코드 스타일
 

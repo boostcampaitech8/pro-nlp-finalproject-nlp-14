@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.team import PaginationMeta
+
 
 class RecordingUploadRequest(BaseModel):
     """녹음 업로드 메타데이터 요청 (기존 방식 - deprecated)"""
@@ -72,8 +74,8 @@ class RecordingResponse(BaseModel):
 class RecordingListResponse(BaseModel):
     """녹음 목록 응답"""
 
-    recordings: list[RecordingResponse]
-    total: int
+    items: list[RecordingResponse]
+    meta: PaginationMeta
 
 
 class RecordingDownloadResponse(BaseModel):

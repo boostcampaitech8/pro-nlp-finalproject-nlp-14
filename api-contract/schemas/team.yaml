@@ -67,37 +67,16 @@ components:
 
     # 팀 상세 정보 (멤버 포함)
     TeamWithMembers:
-      type: object
-      required:
-        - id
-        - name
-        - createdBy
-        - createdAt
-        - updatedAt
-        - members
-      properties:
-        id:
-          $ref: './common.yaml#/components/schemas/UUID'
-        name:
-          type: string
-          minLength: 1
-          maxLength: 100
-          example: "Development Team"
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
-          example: "Backend development team"
-        createdBy:
-          $ref: './common.yaml#/components/schemas/UUID'
-        createdAt:
-          $ref: './common.yaml#/components/schemas/Timestamp'
-        updatedAt:
-          $ref: './common.yaml#/components/schemas/Timestamp'
-        members:
-          type: array
-          items:
-            $ref: '#/components/schemas/TeamMember'
+      allOf:
+        - $ref: '#/components/schemas/Team'
+        - type: object
+          required:
+            - members
+          properties:
+            members:
+              type: array
+              items:
+                $ref: '#/components/schemas/TeamMember'
 
     # 팀 생성 요청
     CreateTeamRequest:
@@ -143,3 +122,29 @@ components:
             $ref: '#/components/schemas/Team'
         meta:
           $ref: './common.yaml#/components/schemas/PaginationMeta'
+
+    # 팀 멤버 초대 요청
+    InviteTeamMemberRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: 초대할 사용자의 이메일
+          example: "newmember@example.com"
+        role:
+          $ref: '#/components/schemas/TeamRole'
+          default: member
+          description: 멤버 역할 (기본값 member)
+
+    # 팀 멤버 역할 수정 요청
+    UpdateTeamMemberRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          $ref: '#/components/schemas/TeamRole'
+          description: 새로운 역할

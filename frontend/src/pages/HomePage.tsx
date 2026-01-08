@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
+import logger from '@/utils/logger';
 
 export function HomePage() {
-  console.log('[HomePage] Rendering...');
+  logger.log('[HomePage] Rendering...');
   const { user, logout, isLoading: authLoading } = useAuth();
   const {
     teams,
@@ -16,7 +17,7 @@ export function HomePage() {
     fetchTeams,
     createTeam,
   } = useTeamStore();
-  console.log('[HomePage] user:', user?.email || 'null', 'authLoading:', authLoading);
+  logger.log('[HomePage] user:', user?.email || 'null', 'authLoading:', authLoading);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');

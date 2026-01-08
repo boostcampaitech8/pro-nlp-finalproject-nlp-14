@@ -1,4 +1,5 @@
 import axios from 'axios';
+import logger from '@/utils/logger';
 
 // 환경변수에서 API URL 가져오기 (기본값: 상대 경로)
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -32,20 +33,20 @@ function addRefreshSubscriber(callback: (token: string) => void) {
 export async function refreshAccessToken(): Promise<boolean> {
   const refreshToken = localStorage.getItem('refreshToken');
   if (!refreshToken) {
-    console.log('[api] No refreshToken available');
+    logger.log('[api] No refreshToken available');
     return false;
   }
 
   // 이미 갱신 중이면 완료될 때까지 대기
   if (isRefreshing) {
-    console.log('[api] Token refresh already in progress, waiting...');
+    logger.log('[api] Token refresh already in progress, waiting...');
     return new Promise((resolve) => {
       addRefreshSubscriber(() => resolve(true));
     });
   }
 
   isRefreshing = true;
-  console.log('[api] Starting token refresh...');
+  logger.log('[api] Starting token refresh...');
 
   try {
     const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
@@ -56,11 +57,11 @@ export async function refreshAccessToken(): Promise<boolean> {
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', newRefreshToken);
 
-    console.log('[api] Token refreshed successfully');
+    logger.log('[api] Token refreshed successfully');
     onRefreshed(accessToken);
     return true;
   } catch (error) {
-    console.error('[api] Token refresh failed:', error);
+    logger.error('[api] Token refresh failed:', error);
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     window.dispatchEvent(new CustomEvent('auth:logout'));
@@ -96,7 +97,7 @@ export function isTokenExpiringSoon(bufferSeconds: number = 60): boolean {
  */
 export async function ensureValidToken(): Promise<boolean> {
   if (isTokenExpiringSoon(120)) { // 2분 전에 갱신
-    console.log('[api] Token expiring soon, refreshing proactively...');
+    logger.log('[api] Token expiring soon, refreshing proactively...');
     return await refreshAccessToken();
   }
   return true;
@@ -105,7 +106,7 @@ export async function ensureValidToken(): Promise<boolean> {
 // 요청 인터셉터: access token 추가
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('accessToken');
-  console.log('[api] Request:', config.method?.toUpperCase(), config.url, 'token:', token ? 'exists' : 'null');
+  logger.log('[api] Request:', config.method?.toUpperCase(), config.url, 'token:', token ? 'exists' : 'null');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -115,21 +116,21 @@ api.interceptors.request.use((config) => {
 // 응답 인터셉터: 토큰 만료 시 갱신 시도
 api.interceptors.response.use(
   (response) => {
-    console.log('[api] Response:', response.status, response.config.url);
+    logger.log('[api] Response:', response.status, response.config.url);
     return response;
   },
   async (error) => {
-    console.log('[api] Error:', error.response?.status, error.config?.url, error.message);
+    logger.log('[api] Error:', error.response?.status, error.config?.url, error.message);
     const originalRequest = error.config;
 
     // 401 에러이고 재시도하지 않은 경우
     if (error.response?.status === 401 && !originalRequest._retry) {
-      console.log('[api] 401 received, attempting token refresh...');
+      logger.log('[api] 401 received, attempting token refresh...');
       originalRequest._retry = true;
 
       // 이미 갱신 중이면 대기
       if (isRefreshing) {
-        console.log('[api] Refresh in progress, queueing request...');
+        logger.log('[api] Refresh in progress, queueing request...');
         return new Promise((resolve) => {
           addRefreshSubscriber((token: string) => {
             originalRequest.headers.Authorization = `Bearer ${token}`;
@@ -139,20 +140,20 @@ api.interceptors.response.use(
       }
 
       const refreshToken = localStorage.getItem('refreshToken');
-      console.log('[api] refreshToken exists:', !!refreshToken);
+      logger.log('[api] refreshToken exists:', !!refreshToken);
       if (refreshToken) {
         isRefreshing = true;
         try {
-          console.log('[api] Calling /auth/refresh...');
+          logger.log('[api] Calling /auth/refresh...');
           const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
             refreshToken,
           });
-          console.log('[api] Refresh response:', response.data);
+          logger.log('[api] Refresh response:', response.data);
 
           // 백엔드에서 camelCase로 반환됨
           const { accessToken, refreshToken: newRefreshToken } = response.data;
-          console.log('[api] New accessToken:', accessToken ? 'received' : 'null');
-          console.log('[api] New refreshToken:', newRefreshToken ? 'received' : 'null');
+          logger.log('[api] New accessToken:', accessToken ? 'received' : 'null');
+          logger.log('[api] New refreshToken:', newRefreshToken ? 'received' : 'null');
           localStorage.setItem('accessToken', accessToken);
           localStorage.setItem('refreshToken', newRefreshToken);
 
@@ -162,7 +163,7 @@ api.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
           return api(originalRequest);
         } catch (refreshError) {
-          console.error('[api] Refresh failed:', refreshError);
+          logger.error('[api] Refresh failed:', refreshError);
           // 갱신 실패 시 로그아웃
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
@@ -173,7 +174,7 @@ api.interceptors.response.use(
           isRefreshing = false;
         }
       } else {
-        console.log('[api] No refreshToken, dispatching auth:logout');
+        logger.log('[api] No refreshToken, dispatching auth:logout');
         // refreshToken이 없으면 토큰 제거
         localStorage.removeItem('accessToken');
         window.dispatchEvent(new CustomEvent('auth:logout'));

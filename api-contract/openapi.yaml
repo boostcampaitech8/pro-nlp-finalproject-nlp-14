@@ -92,17 +92,17 @@ components:
     MeetingListResponse:
       $ref: './schemas/meeting.yaml#/components/schemas/MeetingListResponse'
 
-    # TeamMember
+    # TeamMember (merged into team.yaml)
     InviteTeamMemberRequest:
-      $ref: './schemas/team-member.yaml#/components/schemas/InviteTeamMemberRequest'
+      $ref: './schemas/team.yaml#/components/schemas/InviteTeamMemberRequest'
     UpdateTeamMemberRequest:
-      $ref: './schemas/team-member.yaml#/components/schemas/UpdateTeamMemberRequest'
+      $ref: './schemas/team.yaml#/components/schemas/UpdateTeamMemberRequest'
 
-    # MeetingParticipant
+    # MeetingParticipant (merged into meeting.yaml)
     AddMeetingParticipantRequest:
-      $ref: './schemas/meeting-participant.yaml#/components/schemas/AddMeetingParticipantRequest'
+      $ref: './schemas/meeting.yaml#/components/schemas/AddMeetingParticipantRequest'
     UpdateMeetingParticipantRequest:
-      $ref: './schemas/meeting-participant.yaml#/components/schemas/UpdateMeetingParticipantRequest'
+      $ref: './schemas/meeting.yaml#/components/schemas/UpdateMeetingParticipantRequest'
 
     # WebRTC
     RoomParticipant:

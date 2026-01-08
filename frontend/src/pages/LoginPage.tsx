@@ -3,17 +3,18 @@ import { useNavigate } from 'react-router-dom';
 
 import { LoginForm } from '@/components/auth/LoginForm';
 import { useAuth } from '@/hooks/useAuth';
+import logger from '@/utils/logger';
 
 export function LoginPage() {
-  console.log('[LoginPage] Rendering...');
+  logger.log('[LoginPage] Rendering...');
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  console.log('[LoginPage] isAuthenticated:', isAuthenticated);
+  logger.log('[LoginPage] isAuthenticated:', isAuthenticated);
 
   useEffect(() => {
-    console.log('[LoginPage] useEffect - isAuthenticated:', isAuthenticated);
+    logger.log('[LoginPage] useEffect - isAuthenticated:', isAuthenticated);
     if (isAuthenticated) {
-      console.log('[LoginPage] Already authenticated, navigating to /');
+      logger.log('[LoginPage] Already authenticated, navigating to /');
       navigate('/');
     }
   }, [isAuthenticated, navigate]);

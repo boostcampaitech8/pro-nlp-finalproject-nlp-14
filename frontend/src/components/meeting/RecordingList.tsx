@@ -1,24 +1,13 @@
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/Button';
+import { RECORDING_STATUS_COLORS, RECORDING_STATUS_LABELS } from '@/constants';
 import { recordingService } from '@/services/recordingService';
-import type { Recording, RecordingStatus } from '@/types';
+import type { Recording } from '@/types';
 
 interface RecordingListProps {
   meetingId: string;
 }
-
-const STATUS_LABELS: Record<RecordingStatus, string> = {
-  recording: 'Recording',
-  completed: 'Completed',
-  failed: 'Failed',
-};
-
-const STATUS_COLORS: Record<RecordingStatus, string> = {
-  recording: 'bg-red-100 text-red-800',
-  completed: 'bg-green-100 text-green-800',
-  failed: 'bg-gray-100 text-gray-600',
-};
 
 function formatDuration(ms: number | null | undefined): string {
   if (!ms) return '-';
@@ -47,7 +36,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
         setLoading(true);
         setError(null);
         const response = await recordingService.listRecordings(meetingId);
-        setRecordings(response.recordings);
+        setRecordings(response.items);
       } catch (err) {
         setError('Failed to load recordings');
         console.error('Failed to load recordings:', err);
@@ -119,10 +108,10 @@ export function RecordingList({ meetingId }: RecordingListProps) {
               </p>
               <span
                 className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                  STATUS_COLORS[recording.status]
+                  RECORDING_STATUS_COLORS[recording.status]
                 }`}
               >
-                {STATUS_LABELS[recording.status]}
+                {RECORDING_STATUS_LABELS[recording.status]}
               </span>
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-500">

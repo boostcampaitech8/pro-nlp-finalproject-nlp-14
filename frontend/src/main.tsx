@@ -4,10 +4,11 @@ import { BrowserRouter } from 'react-router-dom';
 
 import App from './App';
 import './index.css';
+import logger from '@/utils/logger';
 
-console.log('[main.tsx] App starting...');
-console.log('[main.tsx] localStorage accessToken:', localStorage.getItem('accessToken') ? 'exists' : 'null');
-console.log('[main.tsx] localStorage refreshToken:', localStorage.getItem('refreshToken') ? 'exists' : 'null');
+logger.log('[main.tsx] App starting...');
+logger.log('[main.tsx] localStorage accessToken:', localStorage.getItem('accessToken') ? 'exists' : 'null');
+logger.log('[main.tsx] localStorage refreshToken:', localStorage.getItem('refreshToken') ? 'exists' : 'null');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

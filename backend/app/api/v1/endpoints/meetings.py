@@ -1,11 +1,10 @@
 from typing import Annotated
 from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.api.dependencies import get_current_user
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas import ErrorResponse
 from app.schemas.meeting import (
     CreateMeetingRequest,
@@ -14,42 +13,13 @@ from app.schemas.meeting import (
     MeetingWithParticipantsResponse,
     UpdateMeetingRequest,
 )
-from app.services.auth_service import AuthService
 from app.services.meeting_service import MeetingService
-
 router = APIRouter(tags=["Meetings"])
-security = HTTPBearer()
-
-
 def get_meeting_service(db: Annotated[AsyncSession, Depends(get_db)]) -> MeetingService:
     """MeetingService 의존성"""
     return MeetingService(db)
-
-
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    """AuthService 의존성"""
-    return AuthService(db)
-
-
-async def get_current_user_id(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> UUID:
-    """현재 사용자 ID 조회"""
-    try:
-        user = await auth_service.get_current_user(credentials.credentials)
-        return user.id
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
-        )
-
-
 # /api/v1/teams/{team_id}/meetings 엔드포인트
 team_meetings_router = APIRouter(prefix="/teams/{team_id}/meetings", tags=["Meetings"])
-
-
 @team_meetings_router.post(
     "",
     response_model=MeetingResponse,
@@ -64,12 +34,12 @@ team_meetings_router = APIRouter(prefix="/teams/{team_id}/meetings", tags=["Meet
 async def create_meeting(
     team_id: UUID,
     data: CreateMeetingRequest,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     meeting_service: Annotated[MeetingService, Depends(get_meeting_service)],
 ) -> MeetingResponse:
     """회의 생성"""
     try:
-        return await meeting_service.create_meeting(team_id, data, user_id)
+        return await meeting_service.create_meeting(team_id, data, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -81,8 +51,6 @@ async def create_meeting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "VALIDATION_ERROR", "message": str(e)},
         )
-
-
 @team_meetings_router.get(
     "",
     response_model=MeetingListResponse,
@@ -94,7 +62,7 @@ async def create_meeting(
 )
 async def list_team_meetings(
     team_id: UUID,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     meeting_service: Annotated[MeetingService, Depends(get_meeting_service)],
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
@@ -103,7 +71,7 @@ async def list_team_meetings(
     """팀 회의 목록"""
     try:
         return await meeting_service.list_team_meetings(
-            team_id, user_id, page, limit, status
+            team_id, current_user.id, page, limit, status
         )
     except ValueError as e:
         error_code = str(e)
@@ -116,8 +84,6 @@ async def list_team_meetings(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "VALIDATION_ERROR", "message": str(e)},
         )
-
-
 # /api/v1/meetings/{meeting_id} 엔드포인트
 @router.get(
     "/meetings/{meeting_id}",
@@ -130,12 +96,12 @@ async def list_team_meetings(
 )
 async def get_meeting(
     meeting_id: UUID,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     meeting_service: Annotated[MeetingService, Depends(get_meeting_service)],
 ) -> MeetingWithParticipantsResponse:
     """회의 상세 조회"""
     try:
-        return await meeting_service.get_meeting(meeting_id, user_id)
+        return await meeting_service.get_meeting(meeting_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -152,8 +118,6 @@ async def get_meeting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "VALIDATION_ERROR", "message": str(e)},
         )
-
-
 @router.put(
     "/meetings/{meeting_id}",
     response_model=MeetingResponse,
@@ -167,12 +131,12 @@ async def get_meeting(
 async def update_meeting(
     meeting_id: UUID,
     data: UpdateMeetingRequest,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     meeting_service: Annotated[MeetingService, Depends(get_meeting_service)],
 ) -> MeetingResponse:
     """회의 수정"""
     try:
-        return await meeting_service.update_meeting(meeting_id, data, user_id)
+        return await meeting_service.update_meeting(meeting_id, data, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -194,8 +158,6 @@ async def update_meeting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "VALIDATION_ERROR", "message": str(e)},
         )
-
-
 @router.delete(
     "/meetings/{meeting_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -207,12 +169,12 @@ async def update_meeting(
 )
 async def delete_meeting(
     meeting_id: UUID,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     meeting_service: Annotated[MeetingService, Depends(get_meeting_service)],
 ) -> None:
     """회의 삭제"""
     try:
-        await meeting_service.delete_meeting(meeting_id, user_id)
+        await meeting_service.delete_meeting(meeting_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":

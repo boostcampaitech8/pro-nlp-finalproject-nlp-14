@@ -2,21 +2,20 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_user
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas import ErrorResponse
 from app.schemas.meeting import MeetingParticipantResponse
 from app.schemas.meeting_participant import (
     AddMeetingParticipantRequest,
     UpdateMeetingParticipantRequest,
 )
-from app.services.auth_service import AuthService
 from app.services.meeting_participant_service import MeetingParticipantService
 
 router = APIRouter(prefix="/meetings/{meeting_id}/participants", tags=["MeetingParticipants"])
-security = HTTPBearer()
 
 
 def get_participant_service(
@@ -24,26 +23,6 @@ def get_participant_service(
 ) -> MeetingParticipantService:
     """MeetingParticipantService 의존성"""
     return MeetingParticipantService(db)
-
-
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    """AuthService 의존성"""
-    return AuthService(db)
-
-
-async def get_current_user_id(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> UUID:
-    """현재 사용자 ID 조회"""
-    try:
-        user = await auth_service.get_current_user(credentials.credentials)
-        return user.id
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
-        )
 
 
 @router.post(
@@ -61,12 +40,12 @@ async def get_current_user_id(
 async def add_meeting_participant(
     meeting_id: UUID,
     data: AddMeetingParticipantRequest,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[MeetingParticipantService, Depends(get_participant_service)],
 ) -> MeetingParticipantResponse:
     """회의 참여자 추가"""
     try:
-        return await service.add_participant(meeting_id, data, user_id)
+        return await service.add_participant(meeting_id, data, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "MEETING_NOT_FOUND":
@@ -106,12 +85,12 @@ async def add_meeting_participant(
 )
 async def list_meeting_participants(
     meeting_id: UUID,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[MeetingParticipantService, Depends(get_participant_service)],
 ) -> list[MeetingParticipantResponse]:
     """회의 참여자 목록"""
     try:
-        return await service.list_participants(meeting_id, user_id)
+        return await service.list_participants(meeting_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "MEETING_NOT_FOUND":
@@ -144,12 +123,12 @@ async def update_meeting_participant_role(
     meeting_id: UUID,
     user_id: UUID,
     data: UpdateMeetingParticipantRequest,
-    current_user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[MeetingParticipantService, Depends(get_participant_service)],
 ) -> MeetingParticipantResponse:
     """참여자 역할 수정"""
     try:
-        return await service.update_participant_role(meeting_id, user_id, data, current_user_id)
+        return await service.update_participant_role(meeting_id, user_id, data, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "MEETING_NOT_FOUND":
@@ -190,12 +169,12 @@ async def update_meeting_participant_role(
 async def remove_meeting_participant(
     meeting_id: UUID,
     user_id: UUID,
-    current_user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[MeetingParticipantService, Depends(get_participant_service)],
 ) -> None:
     """참여자 제거"""
     try:
-        await service.remove_participant(meeting_id, user_id, current_user_id)
+        await service.remove_participant(meeting_id, user_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "MEETING_NOT_FOUND":

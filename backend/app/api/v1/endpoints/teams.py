@@ -2,10 +2,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_user
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas import ErrorResponse
 from app.schemas.team import (
     CreateTeamRequest,
@@ -14,36 +15,14 @@ from app.schemas.team import (
     TeamWithMembersResponse,
     UpdateTeamRequest,
 )
-from app.services.auth_service import AuthService
 from app.services.team_service import TeamService
 
 router = APIRouter(prefix="/teams", tags=["Teams"])
-security = HTTPBearer()
 
 
 def get_team_service(db: Annotated[AsyncSession, Depends(get_db)]) -> TeamService:
     """TeamService 의존성"""
     return TeamService(db)
-
-
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    """AuthService 의존성"""
-    return AuthService(db)
-
-
-async def get_current_user_id(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> UUID:
-    """현재 사용자 ID 조회"""
-    try:
-        user = await auth_service.get_current_user(credentials.credentials)
-        return user.id
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
-        )
 
 
 @router.post(
@@ -57,12 +36,12 @@ async def get_current_user_id(
 )
 async def create_team(
     data: CreateTeamRequest,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     team_service: Annotated[TeamService, Depends(get_team_service)],
 ) -> TeamResponse:
     """팀 생성"""
     try:
-        return await team_service.create_team(data, user_id)
+        return await team_service.create_team(data, current_user.id)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -76,13 +55,13 @@ async def create_team(
     responses={401: {"model": ErrorResponse}},
 )
 async def list_my_teams(
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     team_service: Annotated[TeamService, Depends(get_team_service)],
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> TeamListResponse:
     """내 팀 목록"""
-    return await team_service.list_my_teams(user_id, page, limit)
+    return await team_service.list_my_teams(current_user.id, page, limit)
 
 
 @router.get(
@@ -96,12 +75,12 @@ async def list_my_teams(
 )
 async def get_team(
     team_id: UUID,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     team_service: Annotated[TeamService, Depends(get_team_service)],
 ) -> TeamWithMembersResponse:
     """팀 상세 조회"""
     try:
-        return await team_service.get_team(team_id, user_id)
+        return await team_service.get_team(team_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -133,12 +112,12 @@ async def get_team(
 async def update_team(
     team_id: UUID,
     data: UpdateTeamRequest,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     team_service: Annotated[TeamService, Depends(get_team_service)],
 ) -> TeamResponse:
     """팀 수정"""
     try:
-        return await team_service.update_team(team_id, data, user_id)
+        return await team_service.update_team(team_id, data, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -173,12 +152,12 @@ async def update_team(
 )
 async def delete_team(
     team_id: UUID,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     team_service: Annotated[TeamService, Depends(get_team_service)],
 ) -> None:
     """팀 삭제"""
     try:
-        await team_service.delete_team(team_id, user_id)
+        await team_service.delete_team(team_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":

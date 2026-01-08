@@ -98,6 +98,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api/v1
+        VITE_DEV_MODE: ${VITE_DEV_MODE:-false}
     container_name: mit-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"

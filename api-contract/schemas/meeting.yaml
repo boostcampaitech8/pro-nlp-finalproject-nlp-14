@@ -100,53 +100,16 @@ components:
 
     # 회의 상세 정보 (참여자 포함)
     MeetingWithParticipants:
-      type: object
-      required:
-        - id
-        - teamId
-        - title
-        - createdBy
-        - status
-        - createdAt
-        - updatedAt
-        - participants
-      properties:
-        id:
-          $ref: './common.yaml#/components/schemas/UUID'
-        teamId:
-          $ref: './common.yaml#/components/schemas/UUID'
-        title:
-          type: string
-          minLength: 1
-          maxLength: 255
-          example: "Weekly Standup"
-        description:
-          type: string
-          maxLength: 2000
-          nullable: true
-          example: "Weekly team standup meeting"
-        createdBy:
-          $ref: './common.yaml#/components/schemas/UUID'
-        status:
-          $ref: '#/components/schemas/MeetingStatus'
-        scheduledAt:
-          $ref: './common.yaml#/components/schemas/Timestamp'
-        startedAt:
-          type: string
-          format: date-time
-          nullable: true
-        endedAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          $ref: './common.yaml#/components/schemas/Timestamp'
-        updatedAt:
-          $ref: './common.yaml#/components/schemas/Timestamp'
-        participants:
-          type: array
-          items:
-            $ref: '#/components/schemas/MeetingParticipant'
+      allOf:
+        - $ref: '#/components/schemas/Meeting'
+        - type: object
+          required:
+            - participants
+          properties:
+            participants:
+              type: array
+              items:
+                $ref: '#/components/schemas/MeetingParticipant'
 
     # 회의 생성 요청
     CreateMeetingRequest:
@@ -202,3 +165,27 @@ components:
             $ref: '#/components/schemas/Meeting'
         meta:
           $ref: './common.yaml#/components/schemas/PaginationMeta'
+
+    # 회의 참여자 추가 요청
+    AddMeetingParticipantRequest:
+      type: object
+      required:
+        - userId
+      properties:
+        userId:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 추가할 사용자의 ID
+        role:
+          $ref: '#/components/schemas/ParticipantRole'
+          default: participant
+          description: 참여자 역할 (기본값 participant)
+
+    # 회의 참여자 역할 수정 요청
+    UpdateMeetingParticipantRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          $ref: '#/components/schemas/ParticipantRole'
+          description: 새로운 역할

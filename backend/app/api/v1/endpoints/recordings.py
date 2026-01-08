@@ -1,19 +1,17 @@
 """녹음 관련 API 엔드포인트"""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
+from app.api.dependencies import get_current_user, require_meeting_participant
+from app.core.constants import PRESIGNED_URL_EXPIRATION
 from app.core.database import get_db
-from app.core.storage import storage_service
-from app.models.meeting import Meeting, MeetingParticipant, MeetingStatus
+from app.models.meeting import Meeting
 from app.models.recording import MeetingRecording, RecordingStatus
 from app.models.user import User
 from app.schemas.recording import (
@@ -24,78 +22,33 @@ from app.schemas.recording import (
     RecordingUploadUrlRequest,
     RecordingUploadUrlResponse,
 )
-from app.services.auth_service import AuthService
+from app.schemas.team import PaginationMeta
+from app.services.recording_service import RecordingService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["Recordings"])
-security = HTTPBearer()
 
 
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    """AuthService 의존성"""
-    return AuthService(db)
-
-
-async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> User:
-    """현재 사용자 조회"""
-    try:
-        return await auth_service.get_current_user(credentials.credentials)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
-        )
+def get_recording_service(db: Annotated[AsyncSession, Depends(get_db)]) -> RecordingService:
+    """RecordingService 의존성"""
+    return RecordingService(db)
 
 
 @router.get("/{meeting_id}/recordings", response_model=RecordingListResponse)
 async def get_meeting_recordings(
-    meeting_id: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
+    recording_service: Annotated[RecordingService, Depends(get_recording_service)],
 ):
     """회의 녹음 목록 조회
 
     회의 참여자만 조회 가능합니다.
     """
-    # 회의 조회 및 참여자 확인
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # 참여자인지 확인
-    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
-    if not is_participant:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 조회할 수 있습니다."},
-        )
-
-    # 녹음 목록 조회 (user 정보와 함께)
-    recordings_query = (
-        select(MeetingRecording)
-        .options(selectinload(MeetingRecording.user))
-        .where(MeetingRecording.meeting_id == meeting_id)
-        .order_by(MeetingRecording.started_at.desc())
-    )
-    recordings_result = await db.execute(recordings_query)
-    recordings = recordings_result.scalars().all()
+    recordings = await recording_service.get_meeting_recordings(meeting.id)
+    total = len(recordings)
 
     return RecordingListResponse(
-        recordings=[
+        items=[
             RecordingResponse(
                 id=r.id,
                 meeting_id=r.meeting_id,
@@ -110,52 +63,27 @@ async def get_meeting_recordings(
             )
             for r in recordings
         ],
-        total=len(recordings),
+        meta=PaginationMeta(
+            page=1,
+            limit=total if total > 0 else 20,
+            total=total,
+            total_pages=1,
+        ),
     )
 
 
 @router.get("/{meeting_id}/recordings/{recording_id}/download", response_model=RecordingDownloadResponse)
 async def get_recording_download_url(
-    meeting_id: UUID,
+    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
     recording_id: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    recording_service: Annotated[RecordingService, Depends(get_recording_service)],
 ):
     """녹음 다운로드 URL 조회
 
     회의 참여자만 다운로드 가능합니다.
     Presigned URL은 1시간 동안 유효합니다.
     """
-    # 회의 조회 및 참여자 확인
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # 참여자인지 확인
-    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
-    if not is_participant:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 다운로드할 수 있습니다."},
-        )
-
-    # 녹음 조회
-    recording_query = select(MeetingRecording).where(
-        MeetingRecording.id == recording_id,
-        MeetingRecording.meeting_id == meeting_id,
-    )
-    recording_result = await db.execute(recording_query)
-    recording = recording_result.scalar_one_or_none()
+    recording = await recording_service.get_recording_by_id(recording_id, meeting.id)
 
     if not recording:
         raise HTTPException(
@@ -163,9 +91,8 @@ async def get_recording_download_url(
             detail={"error": "NOT_FOUND", "message": "녹음을 찾을 수 없습니다."},
         )
 
-    # Presigned URL 생성
     try:
-        download_url = storage_service.get_recording_url(recording.file_path)
+        download_url = recording_service.get_download_url(recording.file_path)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -175,52 +102,22 @@ async def get_recording_download_url(
     return RecordingDownloadResponse(
         recording_id=recording.id,
         download_url=download_url,
-        expires_in_seconds=3600,
+        expires_in_seconds=PRESIGNED_URL_EXPIRATION,
     )
 
 
 @router.get("/{meeting_id}/recordings/{recording_id}/file")
 async def download_recording_file(
-    meeting_id: UUID,
+    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
     recording_id: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    recording_service: Annotated[RecordingService, Depends(get_recording_service)],
 ):
     """녹음 파일 직접 다운로드
 
     회의 참여자만 다운로드 가능합니다.
     파일을 직접 스트리밍합니다.
     """
-    # 회의 조회 및 참여자 확인
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # 참여자인지 확인
-    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
-    if not is_participant:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 다운로드할 수 있습니다."},
-        )
-
-    # 녹음 조회
-    recording_query = select(MeetingRecording).where(
-        MeetingRecording.id == recording_id,
-        MeetingRecording.meeting_id == meeting_id,
-    )
-    recording_result = await db.execute(recording_query)
-    recording = recording_result.scalar_one_or_none()
+    recording = await recording_service.get_recording_by_id(recording_id, meeting.id)
 
     if not recording:
         raise HTTPException(
@@ -228,9 +125,8 @@ async def download_recording_file(
             detail={"error": "NOT_FOUND", "message": "녹음을 찾을 수 없습니다."},
         )
 
-    # MinIO에서 파일 다운로드
     try:
-        file_data = storage_service.get_recording_file(recording.file_path)
+        file_data = recording_service.get_file_content(recording.file_path)
     except Exception as e:
         logger.error(f"Failed to download recording: {e}")
         raise HTTPException(
@@ -253,9 +149,9 @@ async def download_recording_file(
 
 @router.post("/{meeting_id}/recordings", response_model=RecordingResponse, status_code=status.HTTP_201_CREATED)
 async def upload_recording(
-    meeting_id: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
     current_user: Annotated[User, Depends(get_current_user)],
+    recording_service: Annotated[RecordingService, Depends(get_recording_service)],
     file: UploadFile = File(...),
     started_at: datetime = Form(..., alias="startedAt"),
     ended_at: datetime = Form(..., alias="endedAt"),
@@ -266,29 +162,6 @@ async def upload_recording(
     클라이언트에서 MediaRecorder로 녹음한 파일을 업로드합니다.
     회의 참여자만 업로드 가능합니다.
     """
-    # 회의 조회 및 참여자 확인
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # 참여자인지 확인
-    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
-    if not is_participant:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 업로드할 수 있습니다."},
-        )
-
     # 파일 유효성 검사
     if not file.filename:
         raise HTTPException(
@@ -296,16 +169,9 @@ async def upload_recording(
             detail={"error": "BAD_REQUEST", "message": "파일이 필요합니다."},
         )
 
-    # 파일 크기 제한 (500MB)
-    MAX_FILE_SIZE = 500 * 1024 * 1024
+    # 파일 읽기
     content = await file.read()
     file_size = len(content)
-
-    if file_size > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "BAD_REQUEST", "message": "파일 크기는 500MB를 초과할 수 없습니다."},
-        )
 
     if file_size == 0:
         raise HTTPException(
@@ -314,33 +180,13 @@ async def upload_recording(
         )
 
     try:
-        # MinIO에 업로드
-        timestamp = started_at.strftime("%Y%m%d_%H%M%S")
-        file_path = storage_service.upload_recording(
-            meeting_id=str(meeting_id),
-            user_id=str(current_user.id),
-            timestamp=timestamp,
-            data=content,
-        )
-
-        # DB에 녹음 메타데이터 저장
-        recording = MeetingRecording(
-            meeting_id=meeting_id,
+        recording = await recording_service.upload_recording_directly(
+            meeting_id=meeting.id,
             user_id=current_user.id,
-            file_path=file_path,
-            status=RecordingStatus.COMPLETED.value,
+            file_content=content,
             started_at=started_at,
             ended_at=ended_at,
             duration_ms=duration_ms,
-            file_size_bytes=file_size,
-        )
-        db.add(recording)
-        await db.commit()
-        await db.refresh(recording)
-
-        logger.info(
-            f"Recording uploaded: meeting={meeting_id}, user={current_user.id}, "
-            f"size={file_size}, duration={duration_ms}ms"
         )
 
         return RecordingResponse(
@@ -356,6 +202,17 @@ async def upload_recording(
             created_at=recording.created_at,
         )
 
+    except ValueError as e:
+        error_code = str(e)
+        if error_code == "FILE_TOO_LARGE":
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "BAD_REQUEST", "message": "파일 크기는 500MB를 초과할 수 없습니다."},
+            )
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "BAD_REQUEST", "message": str(e)},
+        )
     except Exception as e:
         logger.error(f"Failed to upload recording: {e}")
         raise HTTPException(
@@ -366,10 +223,10 @@ async def upload_recording(
 
 @router.post("/{meeting_id}/recordings/upload-url", response_model=RecordingUploadUrlResponse, status_code=status.HTTP_201_CREATED)
 async def get_recording_upload_url(
-    meeting_id: UUID,
+    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
     request: RecordingUploadUrlRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    recording_service: Annotated[RecordingService, Depends(get_recording_service)],
 ):
     """녹음 업로드용 Presigned URL 발급
 
@@ -380,71 +237,33 @@ async def get_recording_upload_url(
     2. 반환된 uploadUrl로 파일 직접 업로드 (PUT)
     3. /recordings/{recording_id}/confirm 으로 업로드 완료 확인
     """
-    # 회의 조회 및 참여자 확인
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # 참여자인지 확인
-    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
-    if not is_participant:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 업로드할 수 있습니다."},
-        )
-
-    # 파일 크기 제한 (500MB)
-    MAX_FILE_SIZE = 500 * 1024 * 1024
-    if request.file_size_bytes > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "BAD_REQUEST", "message": "파일 크기는 500MB를 초과할 수 없습니다."},
-        )
-
     try:
-        # Presigned URL 생성
-        timestamp = request.started_at.strftime("%Y%m%d_%H%M%S")
-        upload_url, file_path = storage_service.get_recording_upload_url(
-            meeting_id=str(meeting_id),
-            user_id=str(current_user.id),
-            timestamp=timestamp,
-        )
-
-        # DB에 녹음 메타데이터 저장 (pending 상태)
-        recording = MeetingRecording(
-            meeting_id=meeting_id,
+        upload_url, file_path, recording_id = await recording_service.create_recording_upload(
+            meeting_id=meeting.id,
             user_id=current_user.id,
-            file_path=file_path,
-            status=RecordingStatus.PENDING.value,
+            file_size_bytes=request.file_size_bytes,
             started_at=request.started_at,
             ended_at=request.ended_at,
             duration_ms=request.duration_ms,
-            file_size_bytes=request.file_size_bytes,
-        )
-        db.add(recording)
-        await db.commit()
-        await db.refresh(recording)
-
-        logger.info(
-            f"Recording upload URL generated: meeting={meeting_id}, user={current_user.id}, "
-            f"recording={recording.id}"
         )
 
         return RecordingUploadUrlResponse(
-            recording_id=recording.id,
+            recording_id=recording_id,
             upload_url=upload_url,
             file_path=file_path,
-            expires_in_seconds=3600,
+            expires_in_seconds=PRESIGNED_URL_EXPIRATION,
+        )
+
+    except ValueError as e:
+        error_code = str(e)
+        if error_code == "FILE_TOO_LARGE":
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "BAD_REQUEST", "message": "파일 크기는 500MB를 초과할 수 없습니다."},
+            )
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "BAD_REQUEST", "message": str(e)},
         )
 
     except Exception as e:
@@ -457,10 +276,10 @@ async def get_recording_upload_url(
 
 @router.post("/{meeting_id}/recordings/{recording_id}/confirm", response_model=RecordingResponse)
 async def confirm_recording_upload(
-    meeting_id: UUID,
+    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
     recording_id: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    recording_service: Annotated[RecordingService, Depends(get_recording_service)],
     request: RecordingConfirmRequest | None = None,
 ):
     """녹음 업로드 완료 확인
@@ -470,46 +289,9 @@ async def confirm_recording_upload(
 
     서버에서 파일 존재 여부를 확인하고 상태를 completed로 변경합니다.
     """
-    # 회의 조회 및 참여자 확인
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
+    try:
+        recording = await recording_service.complete_recording_upload(recording_id, meeting.id)
 
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # 참여자인지 확인
-    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
-    if not is_participant:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "회의 참여자만 녹음을 확인할 수 있습니다."},
-        )
-
-    # 녹음 조회
-    recording_query = select(MeetingRecording).where(
-        MeetingRecording.id == recording_id,
-        MeetingRecording.meeting_id == meeting_id,
-        MeetingRecording.user_id == current_user.id,
-    )
-    recording_result = await db.execute(recording_query)
-    recording = recording_result.scalar_one_or_none()
-
-    if not recording:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "녹음을 찾을 수 없습니다."},
-        )
-
-    # 이미 완료된 경우
-    if recording.status == RecordingStatus.COMPLETED.value:
         return RecordingResponse(
             id=recording.id,
             meeting_id=recording.meeting_id,
@@ -523,43 +305,22 @@ async def confirm_recording_upload(
             created_at=recording.created_at,
         )
 
-    # MinIO에서 파일 존재 확인
-    try:
-        file_info = storage_service.get_file_info(
-            bucket=storage_service.BUCKET_RECORDINGS,
-            object_name=recording.file_path,
-        )
-
-        if not file_info:
+    except ValueError as e:
+        error_code = str(e)
+        if error_code == "RECORDING_NOT_FOUND":
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "NOT_FOUND", "message": "녹음을 찾을 수 없습니다."},
+            )
+        if error_code == "FILE_NOT_FOUND":
             raise HTTPException(
                 status_code=400,
-                detail={"error": "FILE_NOT_FOUND", "message": "업로드된 파일을 찾을 수 없습니다. 업로드를 완료해주세요."},
+                detail={"error": "BAD_REQUEST", "message": "업로드된 파일을 찾을 수 없습니다."},
             )
-
-        # 파일 크기 업데이트 (실제 업로드된 크기로)
-        recording.file_size_bytes = file_info["size"]
-        recording.status = RecordingStatus.COMPLETED.value
-        await db.commit()
-        await db.refresh(recording)
-
-        logger.info(
-            f"Recording upload confirmed: meeting={meeting_id}, user={current_user.id}, "
-            f"recording={recording.id}, size={file_info['size']}"
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "BAD_REQUEST", "message": str(e)},
         )
-
-        return RecordingResponse(
-            id=recording.id,
-            meeting_id=recording.meeting_id,
-            user_id=recording.user_id,
-            user_name=current_user.name,
-            status=recording.status,
-            started_at=recording.started_at,
-            ended_at=recording.ended_at,
-            duration_ms=recording.duration_ms,
-            file_size_bytes=recording.file_size_bytes,
-            created_at=recording.created_at,
-        )
-
     except HTTPException:
         raise
     except Exception as e:

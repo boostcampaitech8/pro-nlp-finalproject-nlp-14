@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_auth_service
 from app.core.database import get_db
 from app.schemas import (
     AuthResponse,
@@ -18,11 +19,6 @@ from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 security = HTTPBearer()
-
-
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    """AuthService 의존성"""
-    return AuthService(db)
 
 
 @router.post(

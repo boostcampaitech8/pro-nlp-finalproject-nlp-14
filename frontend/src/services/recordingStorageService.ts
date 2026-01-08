@@ -3,6 +3,8 @@
  * 새로고침/회의 종료 시에도 녹음 데이터를 보존
  */
 
+import logger from '@/utils/logger';
+
 const DB_NAME = 'mit-recordings';
 const DB_VERSION = 2; // 버전 업그레이드 (스키마 변경)
 const METADATA_STORE = 'recording-metadata';
@@ -54,13 +56,13 @@ class RecordingStorageService {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => {
-        console.error('[RecordingStorage] Failed to open IndexedDB:', request.error);
+        logger.error('[RecordingStorage] Failed to open IndexedDB:', request.error);
         reject(request.error);
       };
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('[RecordingStorage] IndexedDB opened successfully');
+        logger.log('[RecordingStorage] IndexedDB opened successfully');
         resolve(request.result);
       };
 
@@ -88,7 +90,7 @@ class RecordingStorageService {
         chunksStore.createIndex('recordingId', 'recordingId', { unique: false });
         chunksStore.createIndex('chunkIndex', 'chunkIndex', { unique: false });
 
-        console.log('[RecordingStorage] IndexedDB stores created (v2 - incremental)');
+        logger.log('[RecordingStorage] IndexedDB stores created (v2 - incremental)');
       };
     });
   }
@@ -129,7 +131,7 @@ class RecordingStorageService {
       const request = store.put(metadata);
 
       request.onerror = () => {
-        console.error('[RecordingStorage] Failed to save metadata:', request.error);
+        logger.error('[RecordingStorage] Failed to save metadata:', request.error);
         reject(request.error);
       };
 
@@ -202,14 +204,14 @@ class RecordingStorageService {
 
       transaction.oncomplete = () => {
         const newLastIndex = chunks.length - 1;
-        console.log(
+        logger.log(
           `[RecordingStorage] Saved ${newChunks.length} new chunks (index ${lastSavedIndex + 1}-${newLastIndex}, ${Math.round(newTotalSize / 1024)}KB)`
         );
         resolve(newLastIndex);
       };
 
       transaction.onerror = () => {
-        console.error('[RecordingStorage] Failed to save new chunks:', transaction.error);
+        logger.error('[RecordingStorage] Failed to save new chunks:', transaction.error);
         reject(transaction.error);
       };
     });
@@ -228,7 +230,7 @@ class RecordingStorageService {
       const request = index.getAll(recordingId);
 
       request.onerror = () => {
-        console.error('[RecordingStorage] Failed to get chunks:', request.error);
+        logger.error('[RecordingStorage] Failed to get chunks:', request.error);
         reject(request.error);
       };
 
@@ -253,7 +255,7 @@ class RecordingStorageService {
       const request = store.get(recordingId);
 
       request.onerror = () => {
-        console.error('[RecordingStorage] Failed to get metadata:', request.error);
+        logger.error('[RecordingStorage] Failed to get metadata:', request.error);
         reject(request.error);
       };
 
@@ -364,12 +366,12 @@ class RecordingStorageService {
       });
 
       transaction.oncomplete = () => {
-        console.log(`[RecordingStorage] Deleted recording ${recordingId} (${chunks.length} chunks)`);
+        logger.log(`[RecordingStorage] Deleted recording ${recordingId} (${chunks.length} chunks)`);
         resolve();
       };
 
       transaction.onerror = () => {
-        console.error('[RecordingStorage] Failed to delete recording:', transaction.error);
+        logger.error('[RecordingStorage] Failed to delete recording:', transaction.error);
         reject(transaction.error);
       };
     });
@@ -402,7 +404,7 @@ class RecordingStorageService {
     }
 
     if (deletedCount > 0) {
-      console.log(`[RecordingStorage] Cleaned up ${deletedCount} old recordings`);
+      logger.log(`[RecordingStorage] Cleaned up ${deletedCount} old recordings`);
     }
 
     return deletedCount;

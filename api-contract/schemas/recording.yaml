@@ -10,24 +10,27 @@ components:
 
     Recording:
       type: object
+      required:
+        - id
+        - meetingId
+        - userId
+        - status
+        - startedAt
+        - createdAt
       properties:
         id:
-          type: string
-          format: uuid
+          $ref: './common.yaml#/components/schemas/UUID'
         meetingId:
-          type: string
-          format: uuid
+          $ref: './common.yaml#/components/schemas/UUID'
         userId:
-          type: string
-          format: uuid
+          $ref: './common.yaml#/components/schemas/UUID'
         userName:
           type: string
           nullable: true
         status:
           $ref: '#/components/schemas/RecordingStatus'
         startedAt:
-          type: string
-          format: date-time
+          $ref: './common.yaml#/components/schemas/Timestamp'
         endedAt:
           type: string
           format: date-time
@@ -41,35 +44,30 @@ components:
           nullable: true
           description: 파일 크기 (바이트)
         createdAt:
-          type: string
-          format: date-time
-      required:
-        - id
-        - meetingId
-        - userId
-        - status
-        - startedAt
-        - createdAt
+          $ref: './common.yaml#/components/schemas/Timestamp'
 
     RecordingListResponse:
       type: object
+      required:
+        - items
+        - meta
       properties:
-        recordings:
+        items:
           type: array
           items:
             $ref: '#/components/schemas/Recording'
-        total:
-          type: integer
-      required:
-        - recordings
-        - total
+        meta:
+          $ref: './common.yaml#/components/schemas/PaginationMeta'
 
     RecordingDownloadResponse:
       type: object
+      required:
+        - recordingId
+        - downloadUrl
+        - expiresInSeconds
       properties:
         recordingId:
-          type: string
-          format: uuid
+          $ref: './common.yaml#/components/schemas/UUID'
         downloadUrl:
           type: string
           format: uri
@@ -78,7 +76,3 @@ components:
           type: integer
           default: 3600
           description: URL 만료 시간 (초)
-      required:
-        - recordingId
-        - downloadUrl
-        - expiresInSeconds

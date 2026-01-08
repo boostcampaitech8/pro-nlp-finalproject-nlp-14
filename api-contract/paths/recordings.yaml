@@ -21,25 +21,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/RecordingListResponse'
+                $ref: '../schemas/recording.yaml#/components/schemas/RecordingListResponse'
         '401':
           description: 인증 실패
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
         '403':
           description: 권한 없음 (참여자가 아님)
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
         '404':
           description: 회의를 찾을 수 없음
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
 
   /api/v1/meetings/{meetingId}/recordings/{recordingId}/download:
     get:
@@ -72,28 +72,28 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/RecordingDownloadResponse'
+                $ref: '../schemas/recording.yaml#/components/schemas/RecordingDownloadResponse'
         '401':
           description: 인증 실패
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
         '403':
           description: 권한 없음 (참여자가 아님)
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
         '404':
           description: 회의 또는 녹음을 찾을 수 없음
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
         '500':
           description: 스토리지 오류
           content:
             application/json:
               schema:
-                $ref: '../openapi.yaml#/components/schemas/ErrorResponse'
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'

@@ -547,15 +547,7 @@ export interface components {
             role: components["schemas"]["TeamRole"];
             joinedAt: components["schemas"]["Timestamp"];
         };
-        TeamWithMembers: {
-            id: components["schemas"]["UUID"];
-            /** @example Development Team */
-            name: string;
-            /** @example Backend development team */
-            description?: string | null;
-            createdBy: components["schemas"]["UUID"];
-            createdAt: components["schemas"]["Timestamp"];
-            updatedAt: components["schemas"]["Timestamp"];
+        TeamWithMembers: components["schemas"]["Team"] & {
             members: components["schemas"]["TeamMember"][];
         };
         CreateTeamRequest: {
@@ -617,22 +609,7 @@ export interface components {
             role: components["schemas"]["ParticipantRole"];
             joinedAt: components["schemas"]["Timestamp"];
         };
-        MeetingWithParticipants: {
-            id: components["schemas"]["UUID"];
-            teamId: components["schemas"]["UUID"];
-            /** @example Weekly Standup */
-            title: string;
-            /** @example Weekly team standup meeting */
-            description?: string | null;
-            createdBy: components["schemas"]["UUID"];
-            status: components["schemas"]["MeetingStatus"];
-            scheduledAt?: components["schemas"]["Timestamp"];
-            /** Format: date-time */
-            startedAt?: string | null;
-            /** Format: date-time */
-            endedAt?: string | null;
-            createdAt: components["schemas"]["Timestamp"];
-            updatedAt: components["schemas"]["Timestamp"];
+        MeetingWithParticipants: components["schemas"]["Meeting"] & {
             participants: components["schemas"]["MeetingParticipant"][];
         };
         CreateMeetingRequest: {
@@ -733,32 +710,26 @@ export interface components {
          */
         RecordingStatus: "recording" | "completed" | "failed";
         Recording: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            meetingId: string;
-            /** Format: uuid */
-            userId: string;
+            id: components["schemas"]["UUID"];
+            meetingId: components["schemas"]["UUID"];
+            userId: components["schemas"]["UUID"];
             userName?: string | null;
             status: components["schemas"]["RecordingStatus"];
-            /** Format: date-time */
-            startedAt: string;
+            startedAt: components["schemas"]["Timestamp"];
             /** Format: date-time */
             endedAt?: string | null;
             /** @description 녹음 길이 (밀리초) */
             durationMs?: number | null;
             /** @description 파일 크기 (바이트) */
             fileSizeBytes?: number | null;
-            /** Format: date-time */
-            createdAt: string;
+            createdAt: components["schemas"]["Timestamp"];
         };
         RecordingListResponse: {
-            recordings: components["schemas"]["Recording"][];
-            total: number;
+            items: components["schemas"]["Recording"][];
+            meta: components["schemas"]["PaginationMeta"];
         };
         RecordingDownloadResponse: {
-            /** Format: uuid */
-            recordingId: string;
+            recordingId: components["schemas"]["UUID"];
             /**
              * Format: uri
              * @description Presigned URL for downloading

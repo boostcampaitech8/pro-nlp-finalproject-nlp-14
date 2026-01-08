@@ -4,6 +4,7 @@
  */
 
 import type { ClientMessage, ServerMessage } from '@/types/webrtc';
+import logger from '@/utils/logger';
 
 type MessageHandler = (message: ServerMessage) => void;
 
@@ -42,18 +43,18 @@ export class SignalingClient {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        console.log('[Signaling] Connected');
+        logger.log('[Signaling] Connected');
         this.reconnectAttempts = 0;
         resolve();
       };
 
       this.ws.onerror = (error) => {
-        console.error('[Signaling] Error:', error);
+        logger.error('[Signaling] Error:', error);
         reject(error);
       };
 
       this.ws.onclose = (event) => {
-        console.log('[Signaling] Closed:', event.code, event.reason);
+        logger.log('[Signaling] Closed:', event.code, event.reason);
 
         if (!this.isClosedIntentionally && this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           this.scheduleReconnect();
@@ -63,10 +64,10 @@ export class SignalingClient {
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data) as ServerMessage;
-          console.log('[Signaling] Received:', message.type);
+          logger.log('[Signaling] Received:', message.type);
           this.messageHandler?.(message);
         } catch (error) {
-          console.error('[Signaling] Failed to parse message:', error);
+          logger.error('[Signaling] Failed to parse message:', error);
         }
       };
     });
@@ -79,7 +80,7 @@ export class SignalingClient {
     this.reconnectAttempts++;
     const delay = RECONNECT_DELAY * Math.pow(2, this.reconnectAttempts - 1);
 
-    console.log(`[Signaling] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    logger.log(`[Signaling] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
 
     setTimeout(async () => {
       try {
@@ -87,7 +88,7 @@ export class SignalingClient {
         // 재연결 후 join 메시지 전송
         this.send({ type: 'join' });
       } catch (error) {
-        console.error('[Signaling] Reconnection failed:', error);
+        logger.error('[Signaling] Reconnection failed:', error);
       }
     }, delay);
   }
@@ -108,11 +109,11 @@ export class SignalingClient {
    */
   send(message: ClientMessage): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[Signaling] Cannot send - not connected');
+      logger.warn('[Signaling] Cannot send - not connected');
       return;
     }
 
-    console.log('[Signaling] Sending:', message.type);
+    logger.log('[Signaling] Sending:', message.type);
     this.ws.send(JSON.stringify(message));
   }
 

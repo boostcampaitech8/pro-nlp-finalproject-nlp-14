@@ -6,11 +6,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.dependencies import get_current_user, require_meeting_participant
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.core.webrtc_config import ICE_SERVERS, MAX_PARTICIPANTS, WSErrorCode
@@ -24,33 +24,13 @@ from app.schemas.webrtc import (
     SignalingMessageType,
     StartMeetingResponse,
 )
-from app.services.auth_service import AuthService
+from app.handlers.websocket_message_handlers import dispatch_message
 from app.services.signaling_service import connection_manager
 from app.services.sfu_service import sfu_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["WebRTC"])
-security = HTTPBearer()
-
-
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    """AuthService 의존성"""
-    return AuthService(db)
-
-
-async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> User:
-    """현재 사용자 조회"""
-    try:
-        return await auth_service.get_current_user(credentials.credentials)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
-        )
 
 
 # ===== REST 엔드포인트 =====
@@ -300,281 +280,14 @@ async def handle_websocket_messages(
     user_id: UUID,
     db: AsyncSession,
 ) -> None:
-    """WebSocket 메시지 처리"""
+    """WebSocket 메시지 처리 - Strategy Pattern 사용"""
     while True:
         data = await websocket.receive_json()
         msg_type = data.get("type")
 
-        if msg_type == SignalingMessageType.JOIN:
-            await handle_join(meeting_id, user_id)
-
-        elif msg_type == SignalingMessageType.OFFER:
-            await handle_offer(meeting_id, user_id, data)
-
-        elif msg_type == SignalingMessageType.ANSWER:
-            await handle_answer(meeting_id, user_id, data)
-
-        elif msg_type == SignalingMessageType.ICE_CANDIDATE:
-            await handle_ice_candidate(meeting_id, user_id, data)
-
-        elif msg_type == SignalingMessageType.LEAVE:
-            break  # 루프 종료 -> finally에서 정리
-
-        elif msg_type == SignalingMessageType.MUTE:
-            await handle_mute(meeting_id, user_id, data)
-
-        # 화면공유 관련 메시지
-        elif msg_type == SignalingMessageType.SCREEN_SHARE_START:
-            await handle_screen_share_start(meeting_id, user_id)
-
-        elif msg_type == SignalingMessageType.SCREEN_SHARE_STOP:
-            await handle_screen_share_stop(meeting_id, user_id)
-
-        elif msg_type == SignalingMessageType.SCREEN_OFFER:
-            await handle_screen_offer(meeting_id, user_id, data)
-
-        elif msg_type == SignalingMessageType.SCREEN_ANSWER:
-            await handle_screen_answer(meeting_id, user_id, data)
-
-        elif msg_type == SignalingMessageType.SCREEN_ICE_CANDIDATE:
-            await handle_screen_ice_candidate(meeting_id, user_id, data)
-
-        # 녹음은 클라이언트 측 MediaRecorder + HTTP 업로드로 변경됨
-        # aiortc 기반 서버 녹음은 더 이상 사용하지 않음
-
-        else:
-            logger.warning(f"Unknown message type: {msg_type}")
-
-
-async def handle_join(meeting_id: UUID, user_id: UUID) -> None:
-    """join 메시지 처리"""
-    # 현재 참여자 목록 전송
-    participants = connection_manager.get_participants(meeting_id)
-    participants_data = [
-        {
-            "userId": str(p.user_id),
-            "userName": p.user_name,
-            "role": p.role,
-            "audioMuted": p.audio_muted,
-        }
-        for p in participants
-    ]
-
-    await connection_manager.send_to_user(
-        meeting_id,
-        user_id,
-        {"type": SignalingMessageType.JOINED, "participants": participants_data},
-    )
-
-    # 다른 참여자들에게 새 참여자 알림
-    current_participant = connection_manager.get_participant(meeting_id, user_id)
-    if current_participant:
-        await connection_manager.broadcast(
-            meeting_id,
-            {
-                "type": SignalingMessageType.PARTICIPANT_JOINED,
-                "participant": {
-                    "userId": str(current_participant.user_id),
-                    "userName": current_participant.user_name,
-                    "role": current_participant.role,
-                    "audioMuted": current_participant.audio_muted,
-                },
-            },
-            exclude_user_id=user_id,
-        )
-
-
-async def handle_offer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """offer 메시지 처리 (Mesh 모드: 타겟에게 전달)"""
-    target_user_id = data.get("targetUserId")
-    sdp = data.get("sdp")
-
-    if not target_user_id or not sdp:
-        return
-
-    await connection_manager.send_to_user(
-        meeting_id,
-        UUID(target_user_id),
-        {
-            "type": SignalingMessageType.OFFER,
-            "sdp": sdp,
-            "fromUserId": str(user_id),
-        },
-    )
-
-
-async def handle_answer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """answer 메시지 처리 (Mesh 모드: 타겟에게 전달)"""
-    target_user_id = data.get("targetUserId")
-    sdp = data.get("sdp")
-
-    if not target_user_id or not sdp:
-        return
-
-    await connection_manager.send_to_user(
-        meeting_id,
-        UUID(target_user_id),
-        {
-            "type": SignalingMessageType.ANSWER,
-            "sdp": sdp,
-            "fromUserId": str(user_id),
-        },
-    )
-
-
-async def handle_ice_candidate(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """ice-candidate 메시지 처리"""
-    target_user_id = data.get("targetUserId")
-    candidate = data.get("candidate")
-
-    if not candidate:
-        return
-
-    if target_user_id:
-        # 특정 사용자에게 전송
-        await connection_manager.send_to_user(
-            meeting_id,
-            UUID(target_user_id),
-            {
-                "type": SignalingMessageType.ICE_CANDIDATE,
-                "candidate": candidate,
-                "fromUserId": str(user_id),
-            },
-        )
-    else:
-        # 모든 사용자에게 전송
-        await connection_manager.broadcast(
-            meeting_id,
-            {
-                "type": SignalingMessageType.ICE_CANDIDATE,
-                "candidate": candidate,
-                "fromUserId": str(user_id),
-            },
-            exclude_user_id=user_id,
-        )
-
-
-async def handle_mute(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """mute 메시지 처리"""
-    muted = data.get("muted", False)
-
-    # 상태 업데이트
-    connection_manager.update_mute_status(meeting_id, user_id, muted)
-
-    # 다른 참여자들에게 알림
-    await connection_manager.broadcast(
-        meeting_id,
-        {
-            "type": SignalingMessageType.PARTICIPANT_MUTED,
-            "userId": str(user_id),
-            "muted": muted,
-        },
-        exclude_user_id=user_id,
-    )
-
-
-# ===== 화면공유 =====
-
-
-async def handle_screen_share_start(meeting_id: UUID, user_id: UUID) -> None:
-    """화면공유 시작 알림 처리"""
-    logger.info(f"Screen share started by user {user_id} in meeting {meeting_id}")
-
-    # 다른 참여자들에게 화면공유 시작 알림
-    await connection_manager.broadcast(
-        meeting_id,
-        {
-            "type": SignalingMessageType.SCREEN_SHARE_STARTED,
-            "userId": str(user_id),
-        },
-        exclude_user_id=user_id,
-    )
-
-
-async def handle_screen_share_stop(meeting_id: UUID, user_id: UUID) -> None:
-    """화면공유 중지 알림 처리"""
-    logger.info(f"Screen share stopped by user {user_id} in meeting {meeting_id}")
-
-    # 다른 참여자들에게 화면공유 중지 알림
-    await connection_manager.broadcast(
-        meeting_id,
-        {
-            "type": SignalingMessageType.SCREEN_SHARE_STOPPED,
-            "userId": str(user_id),
-        },
-        exclude_user_id=user_id,
-    )
-
-
-async def handle_screen_offer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """화면공유 offer 메시지 처리 (타겟에게 전달)"""
-    target_user_id = data.get("targetUserId")
-    sdp = data.get("sdp")
-
-    if not target_user_id or not sdp:
-        logger.warning(f"Invalid screen offer from {user_id}: missing targetUserId or sdp")
-        return
-
-    logger.debug(f"Screen offer from {user_id} to {target_user_id}")
-
-    await connection_manager.send_to_user(
-        meeting_id,
-        UUID(target_user_id),
-        {
-            "type": SignalingMessageType.SCREEN_OFFER,
-            "sdp": sdp,
-            "fromUserId": str(user_id),
-        },
-    )
-
-
-async def handle_screen_answer(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """화면공유 answer 메시지 처리 (타겟에게 전달)"""
-    target_user_id = data.get("targetUserId")
-    sdp = data.get("sdp")
-
-    if not target_user_id or not sdp:
-        logger.warning(f"Invalid screen answer from {user_id}: missing targetUserId or sdp")
-        return
-
-    logger.debug(f"Screen answer from {user_id} to {target_user_id}")
-
-    await connection_manager.send_to_user(
-        meeting_id,
-        UUID(target_user_id),
-        {
-            "type": SignalingMessageType.SCREEN_ANSWER,
-            "sdp": sdp,
-            "fromUserId": str(user_id),
-        },
-    )
-
-
-async def handle_screen_ice_candidate(meeting_id: UUID, user_id: UUID, data: dict) -> None:
-    """화면공유 ICE candidate 메시지 처리"""
-    target_user_id = data.get("targetUserId")
-    candidate = data.get("candidate")
-
-    if not candidate:
-        return
-
-    if not target_user_id:
-        logger.warning(f"Screen ICE candidate from {user_id} missing targetUserId")
-        return
-
-    logger.debug(f"Screen ICE candidate from {user_id} to {target_user_id}")
-
-    await connection_manager.send_to_user(
-        meeting_id,
-        UUID(target_user_id),
-        {
-            "type": SignalingMessageType.SCREEN_ICE_CANDIDATE,
-            "candidate": candidate,
-            "fromUserId": str(user_id),
-        },
-    )
-
-
-# ===== 녹음 =====
+        # dispatch_message가 False를 반환하면 LEAVE 메시지 (루프 종료)
+        should_continue = await dispatch_message(msg_type, meeting_id, user_id, data)
+        if not should_continue:
+            break  # LEAVE 메시지 -> finally에서 정리
 # 녹음은 클라이언트 측 MediaRecorder로 처리하고 HTTP API로 업로드합니다.
 # POST /api/v1/meetings/{meeting_id}/recordings 엔드포인트 참조

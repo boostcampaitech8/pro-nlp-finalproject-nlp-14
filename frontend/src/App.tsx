@@ -8,16 +8,17 @@ import { MeetingDetailPage } from '@/pages/MeetingDetailPage';
 import MeetingRoomPage from '@/pages/MeetingRoomPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { TeamDetailPage } from '@/pages/TeamDetailPage';
+import logger from '@/utils/logger';
 
 // 인증된 사용자만 접근 가능
 function PrivateRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
 
-  console.log('[PrivateRoute] path:', location.pathname, 'isAuthenticated:', isAuthenticated);
+  logger.log('[PrivateRoute] path:', location.pathname, 'isAuthenticated:', isAuthenticated);
 
   if (!isAuthenticated) {
-    console.log('[PrivateRoute] Redirecting to /login');
+    logger.log('[PrivateRoute] Redirecting to /login');
     return <Navigate to="/login" replace />;
   }
 

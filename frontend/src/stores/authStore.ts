@@ -3,6 +3,7 @@ import axios from 'axios';
 import { create } from 'zustand';
 
 import { authService } from '@/services/authService';
+import logger from '@/utils/logger';
 
 // API 에러에서 사용자 친화적 메시지 추출
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -35,18 +36,18 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => {
-  console.log('[authStore] Initializing store...');
+  logger.log('[authStore] Initializing store...');
 
   // 토큰 갱신 실패 시 자동 로그아웃 처리
   if (typeof window !== 'undefined') {
     window.addEventListener('auth:logout', () => {
-      console.log('[authStore] auth:logout event received');
+      logger.log('[authStore] auth:logout event received');
       set({ user: null, isAuthenticated: false });
     });
   }
 
   const hasAccessToken = !!localStorage.getItem('accessToken');
-  console.log('[authStore] Initial isAuthenticated:', hasAccessToken);
+  logger.log('[authStore] Initial isAuthenticated:', hasAccessToken);
 
   return {
     user: null,
@@ -95,23 +96,23 @@ export const useAuthStore = create<AuthState>((set) => {
   },
 
   checkAuth: async () => {
-    console.log('[authStore] checkAuth called');
+    logger.log('[authStore] checkAuth called');
     const token = localStorage.getItem('accessToken');
-    console.log('[authStore] accessToken exists:', !!token);
+    logger.log('[authStore] accessToken exists:', !!token);
     if (!token) {
-      console.log('[authStore] No token, setting isAuthenticated: false');
+      logger.log('[authStore] No token, setting isAuthenticated: false');
       set({ isAuthenticated: false, user: null });
       return;
     }
 
     set({ isLoading: true });
     try {
-      console.log('[authStore] Fetching current user...');
+      logger.log('[authStore] Fetching current user...');
       const user = await authService.getCurrentUser();
-      console.log('[authStore] User fetched successfully:', user?.email);
+      logger.log('[authStore] User fetched successfully:', user?.email);
       set({ user, isAuthenticated: true, isLoading: false });
     } catch (error) {
-      console.error('[authStore] checkAuth error:', error);
+      logger.error('[authStore] checkAuth error:', error);
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       set({ user: null, isAuthenticated: false, isLoading: false });

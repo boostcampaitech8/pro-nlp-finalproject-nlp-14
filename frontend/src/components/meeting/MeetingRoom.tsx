@@ -9,6 +9,7 @@ import { useMultiAudioLevels } from '@/hooks/useAudioLevel';
 import { AudioControls } from './AudioControls';
 import { ParticipantList } from './ParticipantList';
 import { ScreenShareView } from './ScreenShareView';
+import logger from '@/utils/logger';
 
 interface MeetingRoomProps {
   meetingId: string;
@@ -50,17 +51,17 @@ function RemoteAudio({
     }
 
     const audioElement = audioRef.current;
-    console.log('[RemoteAudio] Setting up audio for:', odId, 'tracks:', stream.getAudioTracks().length);
+    logger.log('[RemoteAudio] Setting up audio for:', odId, 'tracks:', stream.getAudioTracks().length);
 
     // 스트림의 오디오 트랙 확인
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0) {
-      console.warn('[RemoteAudio] No audio tracks in stream for:', odId);
+      logger.warn('[RemoteAudio] No audio tracks in stream for:', odId);
       return;
     }
 
     audioTracks.forEach((track, i) => {
-      console.log(`[RemoteAudio] Track ${i}: enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+      logger.log(`[RemoteAudio] Track ${i}: enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
     });
 
     // audio 요소에 스트림 연결
@@ -72,9 +73,9 @@ function RemoteAudio({
 
       // AudioContext가 suspended 상태면 resume
       if (audioContext.state === 'suspended') {
-        console.log('[RemoteAudio] Resuming suspended AudioContext');
+        logger.log('[RemoteAudio] Resuming suspended AudioContext');
         audioContext.resume().catch((err) => {
-          console.error('[RemoteAudio] Failed to resume AudioContext:', err);
+          logger.error('[RemoteAudio] Failed to resume AudioContext:', err);
         });
       }
 
@@ -97,9 +98,9 @@ function RemoteAudio({
       audioElement.volume = 0;
 
       isSetupRef.current = true;
-      console.log('[RemoteAudio] Audio setup complete for:', odId);
+      logger.log('[RemoteAudio] Audio setup complete for:', odId);
     } catch (err) {
-      console.error('[RemoteAudio] Failed to setup Web Audio API, using audio element:', err);
+      logger.error('[RemoteAudio] Failed to setup Web Audio API, using audio element:', err);
       // Web Audio API 실패시 audio 요소로 재생
       audioElement.muted = false;
       audioElement.volume = 1.0;
@@ -108,11 +109,11 @@ function RemoteAudio({
 
     // 재생 시작
     audioElement.play().catch((err) => {
-      console.error('[RemoteAudio] Failed to play audio:', err);
+      logger.error('[RemoteAudio] Failed to play audio:', err);
     });
 
     return () => {
-      console.log('[RemoteAudio] Cleaning up audio for:', odId);
+      logger.log('[RemoteAudio] Cleaning up audio for:', odId);
       isSetupRef.current = false;
 
       if (sourceRef.current) {
@@ -136,7 +137,7 @@ function RemoteAudio({
   useEffect(() => {
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = volume;
-      console.log('[RemoteAudio] Volume changed for', odId, ':', volume);
+      logger.log('[RemoteAudio] Volume changed for', odId, ':', volume);
     } else if (audioRef.current && !audioRef.current.muted) {
       // Web Audio API 미사용 시 audio 요소 볼륨 직접 조절
       audioRef.current.volume = Math.min(1, volume);
@@ -151,7 +152,7 @@ function RemoteAudio({
       };
       if (audioElement.setSinkId) {
         audioElement.setSinkId(outputDeviceId).catch((err) => {
-          console.error('[RemoteAudio] Failed to set output device:', err);
+          logger.error('[RemoteAudio] Failed to set output device:', err);
         });
       }
     }
@@ -202,7 +203,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
       stopScreenShare();
     } else {
       startScreenShare().catch((err) => {
-        console.error('Failed to start screen share:', err);
+        logger.error('Failed to start screen share:', err);
       });
     }
   }, [isScreenSharing, startScreenShare, stopScreenShare]);
@@ -221,7 +222,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     if (!hasJoinedRef.current) {
       hasJoinedRef.current = true;
       joinRoom(userId).catch((err) => {
-        console.error('Failed to join room:', err);
+        logger.error('Failed to join room:', err);
       });
     }
   }, [joinRoom, userId]);

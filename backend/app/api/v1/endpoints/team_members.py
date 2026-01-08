@@ -2,18 +2,17 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_user
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas import ErrorResponse
 from app.schemas.team import TeamMemberResponse
 from app.schemas.team_member import InviteTeamMemberRequest, UpdateTeamMemberRequest
-from app.services.auth_service import AuthService
 from app.services.team_member_service import TeamMemberService
 
 router = APIRouter(prefix="/teams/{team_id}/members", tags=["TeamMembers"])
-security = HTTPBearer()
 
 
 def get_team_member_service(
@@ -21,26 +20,6 @@ def get_team_member_service(
 ) -> TeamMemberService:
     """TeamMemberService 의존성"""
     return TeamMemberService(db)
-
-
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    """AuthService 의존성"""
-    return AuthService(db)
-
-
-async def get_current_user_id(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> UUID:
-    """현재 사용자 ID 조회"""
-    try:
-        user = await auth_service.get_current_user(credentials.credentials)
-        return user.id
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
-        )
 
 
 @router.post(
@@ -58,12 +37,12 @@ async def get_current_user_id(
 async def invite_team_member(
     team_id: UUID,
     data: InviteTeamMemberRequest,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[TeamMemberService, Depends(get_team_member_service)],
 ) -> TeamMemberResponse:
     """팀 멤버 초대"""
     try:
-        return await service.invite_member(team_id, data, user_id)
+        return await service.invite_member(team_id, data, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -103,12 +82,12 @@ async def invite_team_member(
 )
 async def list_team_members(
     team_id: UUID,
-    user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[TeamMemberService, Depends(get_team_member_service)],
 ) -> list[TeamMemberResponse]:
     """팀 멤버 목록"""
     try:
-        return await service.list_members(team_id, user_id)
+        return await service.list_members(team_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -136,12 +115,12 @@ async def update_team_member_role(
     team_id: UUID,
     user_id: UUID,
     data: UpdateTeamMemberRequest,
-    current_user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[TeamMemberService, Depends(get_team_member_service)],
 ) -> TeamMemberResponse:
     """멤버 역할 수정"""
     try:
-        return await service.update_member_role(team_id, user_id, data, current_user_id)
+        return await service.update_member_role(team_id, user_id, data, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
@@ -187,12 +166,12 @@ async def update_team_member_role(
 async def remove_team_member(
     team_id: UUID,
     user_id: UUID,
-    current_user_id: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[TeamMemberService, Depends(get_team_member_service)],
 ) -> None:
     """멤버 제거"""
     try:
-        await service.remove_member(team_id, user_id, current_user_id)
+        await service.remove_member(team_id, user_id, current_user.id)
     except ValueError as e:
         error_code = str(e)
         if error_code == "NOT_TEAM_MEMBER":
