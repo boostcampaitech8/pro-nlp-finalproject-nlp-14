@@ -16,6 +16,7 @@ class SignalingMessageType(str, Enum):
     ICE_CANDIDATE = "ice-candidate"
     LEAVE = "leave"
     MUTE = "mute"
+    FORCE_MUTE = "force-mute"  # Host -> 다른 참여자 강제 음소거
     # 녹음 관련 (Client -> Server)
     RECORDING_OFFER = "recording-offer"
     RECORDING_ICE = "recording-ice"
@@ -26,11 +27,14 @@ class SignalingMessageType(str, Enum):
     SCREEN_OFFER = "screen-offer"
     SCREEN_ANSWER = "screen-answer"
     SCREEN_ICE_CANDIDATE = "screen-ice-candidate"
+    # 채팅 관련 (Client <-> Server)
+    CHAT_MESSAGE = "chat-message"
     # Server -> Client
     JOINED = "joined"
     PARTICIPANT_JOINED = "participant-joined"
     PARTICIPANT_LEFT = "participant-left"
     PARTICIPANT_MUTED = "participant-muted"
+    FORCE_MUTED = "force-muted"  # 강제 음소거됨 알림 (대상에게)
     ERROR = "error"
     # 녹음 관련 (Server -> Client)
     RECORDING_ANSWER = "recording-answer"

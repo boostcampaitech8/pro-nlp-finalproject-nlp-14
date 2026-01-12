@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     # 예: https://www.mit-hub.com/storage
     storage_external_url: str = "http://localhost:3000/storage"
 
+    # STT (Speech-to-Text) 설정
+    openai_api_key: str = ""
+    stt_provider: str = "openai"  # openai, local, self_hosted
+
+    # ARQ Worker 설정
+    arq_redis_url: str = "redis://localhost:6379/1"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):

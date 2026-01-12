@@ -4,6 +4,7 @@
  */
 
 import { Button } from '@/components/ui/Button';
+import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 import type { TeamRole, TeamWithMembers } from '@/types';
 
 interface TeamInfoCardProps {
@@ -29,7 +30,7 @@ export function TeamInfoCard({
             {team.name}
           </h2>
           {team.description && (
-            <p className="text-gray-600 mb-4">{team.description}</p>
+            <MarkdownRenderer content={team.description} className="text-gray-600 mb-4" />
           )}
           <p className="text-sm text-gray-500">
             {team.members.length} member(s) | Your role:{' '}

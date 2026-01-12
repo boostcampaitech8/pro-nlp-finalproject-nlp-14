@@ -128,7 +128,11 @@ async def end_meeting(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    """회의 종료 (host만 가능)"""
+    """회의 종료 (host만 가능)
+
+    회의 종료 시 자동으로 회의록 병합 작업을 큐잉합니다.
+    (개별 녹음 STT가 모두 완료된 후 병합됨)
+    """
     # 회의 조회
     query = (
         select(Meeting)
@@ -166,6 +170,9 @@ async def end_meeting(
     # SFU 룸 종료 (녹음은 클라이언트 측에서 HTTP로 업로드)
     await sfu_service.close_room(meeting_id)
     logger.info(f"Meeting {meeting_id} ended")
+
+    # STT 및 회의록 병합은 /transcribe 엔드포인트 호출 시 처리됨
+    # transcribe_meeting_task가 모든 녹음 STT 완료 후 자동으로 merge_utterances 호출
 
     return EndMeetingResponse(
         meeting_id=meeting.id,
@@ -286,7 +293,7 @@ async def handle_websocket_messages(
         msg_type = data.get("type")
 
         # dispatch_message가 False를 반환하면 LEAVE 메시지 (루프 종료)
-        should_continue = await dispatch_message(msg_type, meeting_id, user_id, data)
+        should_continue = await dispatch_message(msg_type, meeting_id, user_id, data, db)
         if not should_continue:
             break  # LEAVE 메시지 -> finally에서 정리
 # 녹음은 클라이언트 측 MediaRecorder로 처리하고 HTTP API로 업로드합니다.

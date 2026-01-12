@@ -1,0 +1,235 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## AI Guidance
+
+* DO NOT use Emoji. 코드 주석은 한글로 작성.
+* ALWAYS read and understand relevant files before proposing code edits.
+* Do what has been asked; nothing more, nothing less.
+* ALWAYS prefer editing an existing file to creating a new one.
+* NEVER proactively create documentation files (*.md) or README files unless explicitly requested.
+* When asked to commit changes, exclude CLAUDE.md and CLAUDE-*.md files from commits.
+* For code searches and analysis, use code-searcher subagent where appropriate.
+* For maximum efficiency, invoke multiple independent tools simultaneously rather than sequentially.
+* After completing a task that involves tool use, provide a quick summary of what you've done.
+* When you update or modify core context files, also update markdown documentation and memory bank.
+
+<investigate_before_answering>
+Never speculate about code you have not opened. If the user references a specific file, you MUST read the file before answering. Make sure to investigate and read relevant files BEFORE answering questions about the codebase. Never make any claims about code before investigating unless you are certain of the correct answer - give grounded and hallucination-free answers.
+</investigate_before_answering>
+
+<do_not_act_before_instructions>
+Do not jump into implementation or change files unless clearly instructed to make changes. When the user's intent is ambiguous, default to providing information, doing research, and providing recommendations rather than taking action. Only proceed with edits, modifications, or implementations when the user explicitly requests them.
+</do_not_act_before_instructions>
+
+## Memory Bank System
+
+This project uses a structured memory bank system with specialized context files. Always check these files for relevant information before starting work:
+
+### Core Context Files
+
+* **CLAUDE-activeContext.md** - Current session state, goals, and progress (if exists)
+* **CLAUDE-patterns.md** - Established code patterns and conventions (if exists)
+* **CLAUDE-decisions.md** - Architecture decisions and rationale (if exists)
+* **CLAUDE-troubleshooting.md** - Common issues and proven solutions (if exists)
+* **CLAUDE-config-variables.md** - Configuration variables reference (if exists)
+* **CLAUDE-temp.md** - Temporary scratch pad (only read when referenced)
+
+**Important:** Always reference the active context file first to understand what's currently being worked on and maintain session continuity.
+
+### Memory Bank System Backups
+
+When asked to backup Memory Bank System files, copy the core context files above and .claude settings directory to the specified backup directory. If files already exist in the backup directory, overwrite them.
+
+## Fast CLI Tools
+
+### BANNED - Never Use These Slow Tools
+
+* `tree` - NOT INSTALLED, use `fd` instead
+* `find` - use `fd` or `rg --files`
+* `grep` or `grep -r` - use `rg` instead
+* `ls -R` - use `rg --files` or `fd`
+* `cat file | grep` - use `rg pattern file`
+
+### Use These Instead
+
+```bash
+# ripgrep (rg) - content search
+rg "search_term"                # Search in all files
+rg -i "case_insensitive"        # Case-insensitive
+rg "pattern" -t py              # Only Python files
+rg "pattern" -g "*.md"          # Only Markdown
+rg -l "pattern"                 # Filenames with matches
+rg -c "pattern"                 # Count matches per file
+rg -n "pattern"                 # Show line numbers
+rg -A 3 -B 3 "error"            # Context lines
+
+# ripgrep (rg) - file listing
+rg --files                      # List files (respects .gitignore)
+rg --files | rg "pattern"       # Find files by name
+rg --files -t md                # Only Markdown files
+
+# fd - file finding
+fd . -t f                       # All files (fastest)
+fd . -t d                       # All directories
+fd -e js                        # All .js files
+fd "filename"                   # Find by name pattern
+
+# jq - JSON processing
+jq . data.json                  # Pretty-print
+jq -r .name file.json           # Extract field
+```
+
+### Decision Tree
+
+```
+"list/show/summarize/explore files" → fd . -t f OR rg --files
+"search/grep/find text content"     → rg "pattern" (NOT grep!)
+"find file/directory by name"       → fd "name" (NOT find!)
+"directory structure/tree"          → fd . -t d + fd . -t f (NOT tree!)
+"current directory only"            → ls -la
+```
+
+## Project Overview
+
+**Mit**는 "Git이 코드의 진실을 관리하듯, 조직 회의의 진실을 관리하는" 협업 기반 조직 지식 시스템입니다.
+
+핵심 컨셉:
+- 회의록을 PR Review 스타일로 팀원들이 검토/합의
+- 합의된 내용만 조직의 Ground Truth(GT)로 확정
+- 회의마다 GT가 축적되어 조직 지식 DB 성장
+
+## Commands
+
+### Development (Local)
+```bash
+make install           # 의존성 설치
+make dev               # FE + BE 로컬 실행
+make dev-fe            # Frontend (http://localhost:3000)
+make dev-be            # Backend (http://localhost:8000)
+```
+
+### Docker
+```bash
+make infra-up          # 인프라만 (DB, Redis, MinIO)
+make docker-up         # 전체 (infra + frontend + backend)
+make docker-down       # 전체 중지
+make docker-logs       # 로그 보기
+make docker-rebuild    # 이미지 재빌드
+```
+
+### DB Migration
+```bash
+make db-migrate m="설명"  # 마이그레이션 생성
+make db-upgrade           # 마이그레이션 적용
+make db-downgrade         # 롤백
+```
+
+### Type Generation
+```bash
+pnpm run generate:types   # OpenAPI -> TypeScript 타입 생성
+```
+
+### Backend (uv)
+```bash
+cd backend
+uv sync                # 의존성 설치
+uv add <package>       # 패키지 추가
+uv run pytest          # 테스트 실행
+```
+
+## Architecture
+
+```
+mit/
+├── api-contract/                # API 명세 (SSOT) - OpenAPI 3.0
+├── packages/shared-types/       # FE/BE 공유 타입 (자동 생성)
+├── frontend/                    # React + TypeScript + Vite + Zustand + Tailwind
+├── backend/                     # FastAPI + Python 3.11 + SQLAlchemy 2.0 + uv
+│   └── workers/                 # ARQ Worker (STT 비동기 처리)
+└── docker/                      # Docker Compose (PostgreSQL, Redis, MinIO, stt-worker)
+```
+
+### WebRTC Architecture
+- **Mesh P2P**: 클라이언트 간 직접 연결 (STUN only, TURN 미사용)
+- **시그널링**: FastAPI WebSocket
+- **클라이언트 녹음**: MediaRecorder API -> IndexedDB 증분 저장 -> Presigned URL로 MinIO 직접 업로드
+- **오디오 컨트롤**: 마이크 게인 조절, 디바이스 선택
+- **설정 캐싱**: localStorage에 오디오 설정, 참여자별 볼륨 저장 (회의 간 유지)
+
+### Deployment Architecture
+```
+[Client] --> [Host nginx:443 SSL] --> [Docker nginx:3000] --> /api/* --> [backend:8000]
+             (snsn.kr)                                    --> /*     --> static files
+```
+
+## Key Components
+
+### Frontend
+| 파일 | 역할 |
+|------|------|
+| `hooks/useWebRTC.ts` | WebRTC 연결, 시그널링, 녹음 관리 |
+| `hooks/useAudioDevices.ts` | 오디오 디바이스 선택 |
+| `hooks/useForceMute.ts` | Host 강제 음소거 |
+| `hooks/useChat.ts` | 채팅 메시지 관리 |
+| `stores/meetingRoomStore.ts` | 회의실 상태 (스트림, 참여자, 연결, localStorage 설정 캐싱) |
+| `services/recordingService.ts` | 녹음 업로드 (Presigned URL) |
+| `services/recordingStorageService.ts` | IndexedDB 증분 저장 |
+| `services/transcriptService.ts` | STT 시작/상태조회/결과조회 |
+| `services/chatService.ts` | 채팅 히스토리 조회 |
+| `components/meeting/ChatPanel.tsx` | 채팅 UI (Markdown, 연속 메시지 그룹화) |
+| `components/ui/MarkdownRenderer.tsx` | Markdown 렌더링 (react-markdown) |
+
+### Backend
+| 파일 | 역할 |
+|------|------|
+| `api/dependencies.py` | 공유 의존성 (인증, 회의 검증) - DRY 원칙 |
+| `core/constants.py` | 애플리케이션 상수 (파일 크기, URL 만료 시간) |
+| `services/signaling_service.py` | WebSocket 연결 관리 (ConnectionManager) |
+| `services/recording_service.py` | 녹음 비즈니스 로직 (Service Layer) |
+| `services/chat_service.py` | 채팅 메시지 CRUD |
+| `handlers/websocket_message_handlers.py` | WebSocket 메시지 핸들러 (Strategy Pattern) |
+| `api/v1/endpoints/webrtc.py` | WebSocket 시그널링 엔드포인트 |
+| `api/v1/endpoints/recordings.py` | 녹음 업로드/다운로드 API |
+| `api/v1/endpoints/transcripts.py` | STT 시작/상태/조회 API |
+| `api/v1/endpoints/chat.py` | 채팅 히스토리 API |
+| `core/webrtc_config.py` | ICE 서버 설정 (STUN only) |
+| `core/storage.py` | MinIO 스토리지 서비스 |
+| `services/stt_service.py` | STT 변환 로직 |
+| `services/transcript_service.py` | 회의록 병합/관리 |
+| `services/stt/base.py` | STT Provider 추상 클래스 |
+| `services/stt/openai_provider.py` | OpenAI Whisper 구현체 |
+| `workers/arq_worker.py` | ARQ 비동기 작업 Worker |
+| `models/chat.py` | ChatMessage 모델 |
+
+### Backend Design Patterns
+- **Strategy Pattern**: `websocket_message_handlers.py` - 메시지 타입별 핸들러 분리
+- **Composition**: `RecordingSession` - WebRTC 연결 + 저장 분리
+- **Service Layer**: `RecordingService` - Endpoint ↔ 비즈니스 로직 분리
+- **Shared Dependencies**: `api/dependencies.py` - 중복 코드 180+ lines 제거
+- **Provider Pattern**: `stt/` - STT Provider 추상화 (OpenAI/Local/Self-hosted 확장)
+- **Async Worker**: `workers/arq_worker.py` - ARQ 기반 비동기 STT 처리
+
+## Critical Rules
+
+### 1. API Contract First
+API 변경 시 반드시 이 순서로 작업:
+```
+1. api-contract/openapi.yaml 수정
+2. pnpm run generate:types 실행
+3. backend 구현
+4. frontend 구현
+```
+API 변경은 명세 + BE + FE를 **한 커밋 또는 한 PR**에서 함께 수정.
+
+### 2. Naming Conventions
+- API 경로: kebab-case (`/api/v1/meeting-reviews`)
+- DB 테이블/컬럼: snake_case (`meeting_reviews`, `created_at`)
+- TypeScript: camelCase (변수), PascalCase (타입/컴포넌트)
+- Python: snake_case (변수/함수), PascalCase (클래스)
+
+### 3. API Design
+- 모든 목록 API는 페이지네이션 필수 (`page`, `limit`, `total`)
+- 에러 응답 형식 통일: `{ error: string, message: string, details?: object }`
+- UUID 사용 (auto-increment ID 사용 금지)

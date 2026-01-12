@@ -26,6 +26,13 @@ dependencies = [
     "aiortc>=1.9.0",
     # Object Storage
     "minio>=7.2.0",
+    # STT (Speech-to-Text)
+    "openai>=1.0.0",
+    "arq>=0.26.0",
+    "webrtcvad>=2.0.10",
+    "pydub>=0.25.1",
+    # webrtcvad requires pkg_resources from setuptools
+    "setuptools>=70.0.0",
 ]
 
 [dependency-groups]

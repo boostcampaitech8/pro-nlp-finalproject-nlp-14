@@ -10,10 +10,12 @@ export type SignalingMessageType =
   | 'ice-candidate'
   | 'leave'
   | 'mute'
+  | 'force-mute'
   | 'joined'
   | 'participant-joined'
   | 'participant-left'
   | 'participant-muted'
+  | 'force-muted'
   | 'meeting-ended'
   | 'error'
   // 녹음 관련
@@ -30,7 +32,9 @@ export type SignalingMessageType =
   | 'screen-share-stopped'
   | 'screen-offer'
   | 'screen-answer'
-  | 'screen-ice-candidate';
+  | 'screen-ice-candidate'
+  // 채팅 관련
+  | 'chat-message';
 
 // 회의실 참여자 정보
 export interface RoomParticipant {
@@ -104,6 +108,12 @@ export interface MuteMessage {
   muted: boolean;
 }
 
+export interface ForceMuteMessage {
+  type: 'force-mute';
+  targetUserId: string;
+  muted: boolean;
+}
+
 // 녹음 관련 (Client -> Server)
 export interface RecordingOfferMessage {
   type: 'recording-offer';
@@ -146,6 +156,12 @@ export interface ScreenIceCandidateMessage {
   targetUserId: string;
 }
 
+// 채팅 관련 (Client -> Server)
+export interface ChatMessageClientMessage {
+  type: 'chat-message';
+  content: string;
+}
+
 export type ClientMessage =
   | JoinMessage
   | OfferMessage
@@ -153,6 +169,7 @@ export type ClientMessage =
   | IceCandidateMessage
   | LeaveMessage
   | MuteMessage
+  | ForceMuteMessage
   | RecordingOfferMessage
   | RecordingIceMessage
   | RecordingStopMessage
@@ -160,7 +177,8 @@ export type ClientMessage =
   | ScreenShareStopMessage
   | ScreenOfferMessage
   | ScreenAnswerMessage
-  | ScreenIceCandidateMessage;
+  | ScreenIceCandidateMessage
+  | ChatMessageClientMessage;
 
 // ===== Server -> Client 메시지 =====
 
@@ -201,6 +219,12 @@ export interface ParticipantMutedMessage {
   type: 'participant-muted';
   userId: string;
   muted: boolean;
+}
+
+export interface ForceMutedMessage {
+  type: 'force-muted';
+  muted: boolean;
+  byUserId: string;
 }
 
 export interface MeetingEndedMessage {
@@ -259,6 +283,16 @@ export interface ServerScreenIceCandidateMessage {
   fromUserId: string;
 }
 
+// 채팅 관련 (Server -> Client)
+export interface ChatMessageServerMessage {
+  type: 'chat-message';
+  messageId: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+}
+
 export type ServerMessage =
   | JoinedMessage
   | ParticipantJoinedMessage
@@ -267,6 +301,7 @@ export type ServerMessage =
   | ServerAnswerMessage
   | ServerIceCandidateMessage
   | ParticipantMutedMessage
+  | ForceMutedMessage
   | MeetingEndedMessage
   | ErrorMessage
   | RecordingAnswerMessage
@@ -276,7 +311,8 @@ export type ServerMessage =
   | ScreenShareStoppedMessage
   | ServerScreenOfferMessage
   | ServerScreenAnswerMessage
-  | ServerScreenIceCandidateMessage;
+  | ServerScreenIceCandidateMessage
+  | ChatMessageServerMessage;
 
 // 연결 상태
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';

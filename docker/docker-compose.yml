@@ -68,6 +68,7 @@ services:
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mit}:${POSTGRES_PASSWORD:-mitpassword}@postgres:5432/${POSTGRES_DB:-mit}
       REDIS_URL: redis://redis:6379/0
+      ARQ_REDIS_URL: ${ARQ_REDIS_URL:-redis://redis:6379/1}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-key}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
@@ -109,6 +110,33 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
+
+  stt-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: mit-stt-worker
+    command: uv run python -m app.workers.run_worker
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mit}:${POSTGRES_PASSWORD:-mitpassword}@postgres:5432/${POSTGRES_DB:-mit}
+      REDIS_URL: redis://redis:6379/0
+      ARQ_REDIS_URL: redis://redis:6379/1
+      # MinIO 설정
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # OpenAI STT 설정
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      STT_PROVIDER: ${STT_PROVIDER:-openai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

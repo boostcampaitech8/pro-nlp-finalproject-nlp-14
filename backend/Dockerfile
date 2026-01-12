@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 시스템 의존성 설치
+# 시스템 의존성 설치 (webrtcvad 빌드에 gcc 필요, pydub에 ffmpeg 필요)
 RUN apt-get update && apt-get install -y \
     curl \
+    build-essential \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # uv 설치

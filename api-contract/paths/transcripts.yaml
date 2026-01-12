@@ -1,0 +1,139 @@
+paths:
+  /api/v1/meetings/{meetingId}/transcribe:
+    post:
+      tags:
+        - Transcripts
+      summary: 회의 STT 변환 시작
+      description: |
+        회의의 모든 녹음에 대해 STT 변환을 시작합니다.
+        비동기로 처리되며, 진행 상태는 GET /transcript/status로 조회합니다.
+      operationId: startMeetingTranscription
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/transcript.yaml#/components/schemas/TranscribeRequest'
+      responses:
+        '202':
+          description: STT 변환 작업 시작됨
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/transcript.yaml#/components/schemas/TranscribeResponse'
+        '400':
+          description: 잘못된 요청 (완료된 녹음이 없음)
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '401':
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/meetings/{meetingId}/transcript:
+    get:
+      tags:
+        - Transcripts
+      summary: 회의 트랜스크립트 조회
+      description: 회의의 전체 트랜스크립트(화자별 발화 병합 결과)를 조회합니다.
+      operationId: getMeetingTranscript
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 트랜스크립트 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/transcript.yaml#/components/schemas/MeetingTranscript'
+        '401':
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의 또는 트랜스크립트를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/meetings/{meetingId}/transcript/status:
+    get:
+      tags:
+        - Transcripts
+      summary: STT 변환 상태 조회
+      description: 회의 STT 변환 작업의 진행 상태를 조회합니다.
+      operationId: getTranscriptStatus
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 상태 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/transcript.yaml#/components/schemas/TranscriptStatusResponse'
+        '401':
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의 또는 트랜스크립트를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'

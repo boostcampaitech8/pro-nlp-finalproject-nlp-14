@@ -4,6 +4,8 @@ import logging
 from typing import Protocol
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.schemas.webrtc import SignalingMessageType
 from app.services.signaling_service import connection_manager
 
@@ -157,6 +159,71 @@ class MuteHandler:
         )
 
 
+class ForceMuteHandler:
+    """FORCE_MUTE 메시지 핸들러 - Host가 다른 참여자를 강제 음소거"""
+
+    async def handle(self, meeting_id: UUID, user_id: UUID, data: dict) -> None:
+        target_user_id_str = data.get("targetUserId")
+        muted = data.get("muted", True)
+
+        # targetUserId 필수
+        if not target_user_id_str:
+            return
+
+        target_user_id = UUID(target_user_id_str)
+
+        # 자기 자신은 강제 음소거 불가
+        if target_user_id == user_id:
+            await connection_manager.send_to_user(
+                meeting_id,
+                user_id,
+                {
+                    "type": SignalingMessageType.ERROR,
+                    "code": "invalid_target",
+                    "message": "Cannot force mute yourself. Use regular mute instead.",
+                },
+            )
+            return
+
+        # 요청자 권한 확인
+        requester = connection_manager.get_participant(meeting_id, user_id)
+        if not requester or requester.role != "host":
+            await connection_manager.send_to_user(
+                meeting_id,
+                user_id,
+                {
+                    "type": SignalingMessageType.ERROR,
+                    "code": "permission_denied",
+                    "message": "Only host can force mute participants. Permission denied.",
+                },
+            )
+            return
+
+        # 대상의 mute 상태 업데이트
+        connection_manager.update_mute_status(meeting_id, target_user_id, muted)
+
+        # 대상에게 강제 음소거됨 알림
+        await connection_manager.send_to_user(
+            meeting_id,
+            target_user_id,
+            {
+                "type": SignalingMessageType.FORCE_MUTED,
+                "muted": muted,
+                "byUserId": str(user_id),
+            },
+        )
+
+        # 모든 참여자에게 음소거 상태 변경 알림
+        await connection_manager.broadcast(
+            meeting_id,
+            {
+                "type": SignalingMessageType.PARTICIPANT_MUTED,
+                "userId": str(target_user_id),
+                "muted": muted,
+            },
+        )
+
+
 class ScreenShareHandler:
     """SCREEN_SHARE_START/STOP 메시지 핸들러 (통합)"""
 
@@ -220,6 +287,52 @@ class ScreenOfferAnswerHandler:
         )
 
 
+class ChatMessageHandler:
+    """CHAT_MESSAGE 메시지 핸들러"""
+
+    def __init__(self, chat_service=None):
+        """
+        Args:
+            chat_service: ChatService 인스턴스 (DI용)
+        """
+        self.chat_service = chat_service
+
+    async def handle(self, meeting_id: UUID, user_id: UUID, data: dict) -> None:
+        content = data.get("content", "")
+
+        # 빈 메시지 무시
+        if not content or not content.strip():
+            return
+
+        # 메시지 저장
+        try:
+            message = await self.chat_service.create_message(
+                meeting_id=meeting_id,
+                user_id=user_id,
+                content=content,
+            )
+        except ValueError as e:
+            logger.warning(f"Invalid chat message from {user_id}: {e}")
+            return
+
+        # 사용자 이름 조회
+        participant = connection_manager.get_participant(meeting_id, user_id)
+        user_name = participant.user_name if participant else "Unknown"
+
+        # 모든 참여자에게 브로드캐스트
+        await connection_manager.broadcast(
+            meeting_id,
+            {
+                "type": SignalingMessageType.CHAT_MESSAGE,
+                "messageId": str(message.id),
+                "userId": str(user_id),
+                "userName": user_name,
+                "content": message.content,
+                "createdAt": message.created_at.isoformat() if message.created_at else None,
+            },
+        )
+
+
 # 핸들러 레지스트리
 HANDLERS: dict[str, MessageHandler] = {
     SignalingMessageType.JOIN: JoinHandler(),
@@ -227,6 +340,7 @@ HANDLERS: dict[str, MessageHandler] = {
     SignalingMessageType.ANSWER: OfferAnswerHandler(SignalingMessageType.ANSWER),
     SignalingMessageType.ICE_CANDIDATE: ICECandidateHandler(SignalingMessageType.ICE_CANDIDATE),
     SignalingMessageType.MUTE: MuteHandler(),
+    SignalingMessageType.FORCE_MUTE: ForceMuteHandler(),
     SignalingMessageType.SCREEN_SHARE_START: ScreenShareHandler("start"),
     SignalingMessageType.SCREEN_SHARE_STOP: ScreenShareHandler("stop"),
     SignalingMessageType.SCREEN_OFFER: ScreenOfferAnswerHandler(SignalingMessageType.SCREEN_OFFER),
@@ -238,7 +352,11 @@ HANDLERS: dict[str, MessageHandler] = {
 
 
 async def dispatch_message(
-    msg_type: str, meeting_id: UUID, user_id: UUID, data: dict
+    msg_type: str,
+    meeting_id: UUID,
+    user_id: UUID,
+    data: dict,
+    db: AsyncSession | None = None,
 ) -> bool:
     """메시지 타입에 따라 적절한 핸들러로 디스패치
 
@@ -247,6 +365,7 @@ async def dispatch_message(
         meeting_id: 회의 ID
         user_id: 사용자 ID
         data: 메시지 데이터
+        db: 데이터베이스 세션 (채팅 메시지 저장용)
 
     Returns:
         True if handler was found and executed, False if message type was LEAVE
@@ -254,6 +373,18 @@ async def dispatch_message(
     # LEAVE는 특별 케이스 - 루프를 종료해야 함
     if msg_type == SignalingMessageType.LEAVE:
         return False
+
+    # 채팅 메시지는 DB 세션이 필요하므로 별도 처리
+    if msg_type == SignalingMessageType.CHAT_MESSAGE:
+        if db is None:
+            logger.warning("Chat message received but no DB session available")
+            return True
+        from app.services.chat_service import ChatService
+
+        chat_service = ChatService(db)
+        handler = ChatMessageHandler(chat_service)
+        await handler.handle(meeting_id, user_id, data)
+        return True
 
     handler = HANDLERS.get(msg_type)
     if handler:

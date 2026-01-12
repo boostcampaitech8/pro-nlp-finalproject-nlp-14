@@ -37,4 +37,13 @@ export type {
   RecordingDownloadResponse,
   RecordingListResponse,
   RecordingStatus,
+  // Transcript
+  MeetingTranscript,
+  TranscribeRequest,
+  TranscribeResponse,
+  TranscriptDownloadResponse,
+  TranscriptSegment,
+  TranscriptStatus,
+  TranscriptStatusResponse,
+  Utterance,
 } from '@mit/shared-types';

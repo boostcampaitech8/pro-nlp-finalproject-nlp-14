@@ -13,6 +13,8 @@ interface ParticipantListProps {
   localMuteState: boolean; // 현재 사용자의 로컬 음소거 상태
   remoteVolumes: Map<string, number>; // 원격 참여자별 볼륨
   onVolumeChange: (userId: string, volume: number) => void;
+  isHost?: boolean; // 현재 사용자가 Host인지 여부
+  onForceMute?: (userId: string, muted: boolean) => void; // Host의 강제 음소거 콜백
 }
 
 /**
@@ -50,6 +52,8 @@ export function ParticipantList({
   localMuteState,
   remoteVolumes,
   onVolumeChange,
+  isHost = false,
+  onForceMute,
 }: ParticipantListProps) {
   const participantArray = Array.from(participants.values());
 
@@ -152,11 +156,26 @@ export function ParticipantList({
 
               {/* 원격 참여자용 볼륨 슬라이더 (현재 사용자 제외) */}
               {!isCurrentUser && (
-                <div className="mt-2 pl-10">
+                <div className="mt-2 pl-10 flex items-center gap-2">
                   <VolumeSlider
                     value={remoteVolumes.get(participant.userId) ?? 1.0}
                     onChange={(volume) => onVolumeChange(participant.userId, volume)}
                   />
+                  {/* Host만 다른 참여자 강제 음소거 가능 */}
+                  {isHost && onForceMute && (
+                    <button
+                      type="button"
+                      onClick={() => onForceMute(participant.userId, !isMuted)}
+                      className={`px-2 py-1 text-xs rounded transition-colors ${
+                        isMuted
+                          ? 'bg-green-600 hover:bg-green-700 text-white'
+                          : 'bg-red-600 hover:bg-red-700 text-white'
+                      }`}
+                      aria-label={isMuted ? 'Unmute' : 'Mute'}
+                    >
+                      {isMuted ? 'Unmute' : 'Mute'}
+                    </button>
+                  )}
                 </div>
               )}
             </li>

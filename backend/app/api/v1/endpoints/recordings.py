@@ -3,12 +3,16 @@
 import logging
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import urlparse
 from uuid import UUID
 
+from arq import ArqRedis, create_pool
+from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_meeting_participant
+from app.core.config import get_settings
 from app.core.constants import PRESIGNED_URL_EXPIRATION
 from app.core.database import get_db
 from app.models.meeting import Meeting
@@ -26,6 +30,21 @@ from app.schemas.team import PaginationMeta
 from app.services.recording_service import RecordingService
 
 logger = logging.getLogger(__name__)
+
+
+async def get_arq_pool() -> ArqRedis:
+    """ARQ Redis 연결 풀"""
+    settings = get_settings()
+    parsed = urlparse(settings.arq_redis_url)
+
+    redis_settings = RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        database=int(parsed.path.lstrip("/") or "0"),
+        password=parsed.password,
+    )
+
+    return await create_pool(redis_settings)
 
 router = APIRouter(prefix="/meetings", tags=["Recordings"])
 
@@ -288,9 +307,24 @@ async def confirm_recording_upload(
     이 엔드포인트를 호출하여 업로드 완료를 확인합니다.
 
     서버에서 파일 존재 여부를 확인하고 상태를 completed로 변경합니다.
+    업로드 완료 후 자동으로 STT 변환 작업을 큐잉합니다.
     """
     try:
         recording = await recording_service.complete_recording_upload(recording_id, meeting.id)
+
+        # STT 작업 자동 큐잉
+        try:
+            pool = await get_arq_pool()
+            await pool.enqueue_job(
+                "transcribe_recording_task",
+                str(recording_id),
+                "ko",  # 기본 한국어
+            )
+            await pool.close()
+            logger.info(f"STT task queued for recording: {recording_id}")
+        except Exception as stt_error:
+            # STT 큐잉 실패해도 녹음 완료 응답은 반환
+            logger.error(f"Failed to queue STT task: {stt_error}")
 
         return RecordingResponse(
             id=recording.id,

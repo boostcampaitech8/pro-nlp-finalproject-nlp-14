@@ -32,20 +32,49 @@ export function ParticipantSection({
   onRemoveParticipant,
 }: ParticipantSectionProps) {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [participantRole, setParticipantRole] = useState<ParticipantRole>('participant');
   const [adding, setAdding] = useState(false);
   const [editingParticipantId, setEditingParticipantId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState<ParticipantRole>('participant');
 
-  const handleAddParticipant = async (e: React.FormEvent) => {
+  // 체크박스 토글 핸들러
+  const handleToggleUser = (userId: string) => {
+    setSelectedUserIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
+      }
+      return newSet;
+    });
+  };
+
+  // 전체 선택/해제 핸들러
+  const handleToggleAll = () => {
+    if (selectedUserIds.size === availableMembers.length) {
+      // 전체 해제
+      setSelectedUserIds(new Set());
+    } else {
+      // 전체 선택
+      setSelectedUserIds(new Set(availableMembers.map((m) => m.userId)));
+    }
+  };
+
+  const handleAddParticipants = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedUserId) return;
+    if (selectedUserIds.size === 0) return;
 
     setAdding(true);
     try {
-      await onAddParticipant(selectedUserId, participantRole);
-      setSelectedUserId('');
+      // 여러 명을 병렬로 추가
+      await Promise.all(
+        Array.from(selectedUserIds).map((userId) =>
+          onAddParticipant(userId, participantRole)
+        )
+      );
+      setSelectedUserIds(new Set());
       setParticipantRole('participant');
       setShowAddForm(false);
     } finally {
@@ -75,24 +104,47 @@ export function ParticipantSection({
       {showAddForm && (
         <div className="bg-white rounded-xl shadow-md p-6 mb-4">
           <h4 className="text-lg font-semibold mb-4">Add Participant</h4>
-          <form onSubmit={handleAddParticipant} className="space-y-4">
+          <form onSubmit={handleAddParticipants} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Team Member
               </label>
-              <select
-                value={selectedUserId}
-                onChange={(e) => setSelectedUserId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                <option value="">Select a member</option>
+              {/* 전체 선택 체크박스 */}
+              <div className="mb-2 pb-2 border-b border-gray-200">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all"
+                    checked={selectedUserIds.size === availableMembers.length && availableMembers.length > 0}
+                    onChange={handleToggleAll}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Select all</span>
+                </label>
+              </div>
+              {/* 멤버 목록 체크박스 */}
+              <div className="space-y-2 max-h-48 overflow-y-auto">
                 {availableMembers.map((member) => (
-                  <option key={member.userId} value={member.userId}>
-                    {member.user?.name || member.user?.email}
-                  </option>
+                  <label key={member.userId} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label={member.user?.name || member.user?.email || member.userId}
+                      checked={selectedUserIds.has(member.userId)}
+                      onChange={() => handleToggleUser(member.userId)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-900">
+                      {member.user?.name || member.user?.email}
+                    </span>
+                  </label>
                 ))}
-              </select>
+              </div>
+              {/* 선택된 멤버 수 표시 */}
+              {selectedUserIds.size > 0 && (
+                <p className="mt-2 text-sm text-blue-600">
+                  {selectedUserIds.size} selected
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -108,7 +160,7 @@ export function ParticipantSection({
               </select>
             </div>
             <div className="flex gap-2">
-              <Button type="submit" isLoading={adding}>
+              <Button type="submit" isLoading={adding} disabled={selectedUserIds.size === 0}>
                 Add
               </Button>
               <Button

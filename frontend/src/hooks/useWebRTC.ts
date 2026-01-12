@@ -49,12 +49,17 @@ export function useWebRTC(meetingId: string) {
   const updateParticipantScreenSharing = useMeetingRoomStore((s) => s.updateParticipantScreenSharing);
   const removeRemoteScreenStream = useMeetingRoomStore((s) => s.removeRemoteScreenStream);
   const removeScreenPeerConnection = useMeetingRoomStore((s) => s.removeScreenPeerConnection);
+  const chatMessages = useMeetingRoomStore((s) => s.chatMessages);
+  const addChatMessage = useMeetingRoomStore((s) => s.addChatMessage);
+  const setChatMessages = useMeetingRoomStore((s) => s.setChatMessages);
   const reset = useMeetingRoomStore((s) => s.reset);
 
   // Refs
   const currentUserIdRef = useRef<string>('');
   const hasCleanedUpRef = useRef(false);
   const stopRecordingRef = useRef<() => Promise<void>>();
+  const startRecordingRef = useRef<() => void>();
+  const hasStartedRecordingRef = useRef(false);
 
   /**
    * 시그널링 메시지 핸들러
@@ -144,6 +149,21 @@ export function useWebRTC(meetingId: string) {
           break;
         }
 
+        case 'force-muted': {
+          // 자신이 강제 음소거됨
+          logger.log('[useWebRTC] Force muted by:', message.byUserId, 'muted:', message.muted);
+          setAudioMuted(message.muted);
+
+          // 로컬 오디오 트랙 활성화/비활성화
+          const stream = useMeetingRoomStore.getState().localStream;
+          if (stream) {
+            stream.getAudioTracks().forEach((track) => {
+              track.enabled = !message.muted;
+            });
+          }
+          break;
+        }
+
         case 'screen-share-started': {
           logger.log('[useWebRTC] Screen share started by:', message.userId);
           updateParticipantScreenSharing(message.userId, true);
@@ -204,9 +224,22 @@ export function useWebRTC(meetingId: string) {
           setError(message.message);
           break;
         }
+
+        case 'chat-message': {
+          // 서버에서 받은 채팅 메시지
+          logger.log('[useWebRTC] Chat message received:', message.content);
+          addChatMessage({
+            id: message.messageId,
+            userId: message.userId,
+            userName: message.userName,
+            content: message.content,
+            createdAt: message.createdAt,
+          });
+          break;
+        }
       }
     },
-    [setParticipants, setConnectionState, addParticipant, removeParticipant, updateParticipantMute, setError, updateParticipantScreenSharing, removeRemoteScreenStream, removeScreenPeerConnection]
+    [setParticipants, setConnectionState, addParticipant, removeParticipant, updateParticipantMute, setError, updateParticipantScreenSharing, removeRemoteScreenStream, removeScreenPeerConnection, addChatMessage]
   );
 
   // 시그널링 훅
@@ -239,10 +272,11 @@ export function useWebRTC(meetingId: string) {
     getLocalStream: () => useMeetingRoomStore.getState().localStream,
   });
 
-  // stopRecordingRef 할당
+  // recording 함수 ref 할당
   useEffect(() => {
     stopRecordingRef.current = recording.stopRecording;
-  }, [recording.stopRecording]);
+    startRecordingRef.current = recording.startRecording;
+  }, [recording.stopRecording, recording.startRecording]);
 
   // 화면공유 훅
   const screenShare = useScreenShare({
@@ -278,6 +312,37 @@ export function useWebRTC(meetingId: string) {
   }, [meetingId, setMeetingInfo, setError]);
 
   /**
+   * 채팅 히스토리 조회
+   */
+  const fetchChatHistory = useCallback(async () => {
+    try {
+      const response = await api.get<{
+        messages: Array<{
+          id: string;
+          user_id: string;
+          user_name: string;
+          content: string;
+          created_at: string;
+        }>;
+      }>(`/meetings/${meetingId}/chat`);
+
+      const messages = response.data.messages.map((msg) => ({
+        id: msg.id,
+        userId: msg.user_id,
+        userName: msg.user_name,
+        content: msg.content,
+        createdAt: msg.created_at,
+      }));
+
+      setChatMessages(messages);
+      logger.log('[useWebRTC] Chat history loaded:', messages.length, 'messages');
+    } catch (err) {
+      logger.warn('[useWebRTC] Failed to fetch chat history:', err);
+      // 채팅 히스토리 로드 실패는 치명적이지 않으므로 에러를 throw하지 않음
+    }
+  }, [meetingId, setChatMessages]);
+
+  /**
    * 회의 참여
    */
   const joinRoom = useCallback(
@@ -287,8 +352,8 @@ export function useWebRTC(meetingId: string) {
       setConnectionState('connecting');
 
       try {
-        // 1. 회의실 정보 조회
-        await fetchRoomInfo();
+        // 1. 회의실 정보 조회 및 채팅 히스토리 병렬 로드
+        await Promise.all([fetchRoomInfo(), fetchChatHistory()]);
 
         // 2. 로컬 오디오 스트림 획득
         const currentMicGain = useMeetingRoomStore.getState().micGain;
@@ -313,7 +378,7 @@ export function useWebRTC(meetingId: string) {
         throw err;
       }
     },
-    [fetchRoomInfo, peerConnections, signaling, setConnectionState, setLocalStream, setError]
+    [fetchRoomInfo, fetchChatHistory, peerConnections, signaling, setConnectionState, setLocalStream, setError]
   );
 
   /**
@@ -322,11 +387,10 @@ export function useWebRTC(meetingId: string) {
   const leaveRoom = useCallback(async () => {
     if (hasCleanedUpRef.current) return;
     hasCleanedUpRef.current = true;
+    hasStartedRecordingRef.current = false;
 
-    // 녹음 중지 및 업로드
-    if (recording.isRecording) {
-      await recording.stopRecording();
-    }
+    // 녹음 중지 및 업로드 (항상 호출 - stopRecording 내부에서 녹음 중이 아니면 early return)
+    await recording.stopRecording();
 
     // 시그널링 연결 해제
     signaling.disconnect();
@@ -354,6 +418,20 @@ export function useWebRTC(meetingId: string) {
 
     signaling.send({ type: 'mute', muted: newMuted });
   }, [setAudioMuted, signaling]);
+
+  /**
+   * 강제 음소거 (Host 전용)
+   */
+  const forceMute = useCallback(
+    (targetUserId: string, muted: boolean) => {
+      signaling.send({
+        type: 'force-mute',
+        targetUserId,
+        muted,
+      });
+    },
+    [signaling]
+  );
 
   /**
    * 마이크 입력 장치 변경
@@ -433,16 +511,33 @@ export function useWebRTC(meetingId: string) {
   }, [screenShare]);
 
   /**
+   * 채팅 메시지 전송
+   */
+  const sendChatMessage = useCallback(
+    (content: string) => {
+      signaling.send({
+        type: 'chat-message',
+        content,
+      });
+    },
+    [signaling]
+  );
+
+  /**
    * 연결 완료 시 자동 녹음 시작
+   * ref를 사용하여 녹음 시작 여부 추적 및 함수 호출 (의존성 제거)
    */
   useEffect(() => {
-    if (connectionState === 'connected' && !recording.isRecording) {
+    if (connectionState === 'connected' && !hasStartedRecordingRef.current) {
+      hasStartedRecordingRef.current = true;
+      logger.log('[useWebRTC] Auto-starting recording in 500ms...');
       const timer = setTimeout(() => {
-        recording.startRecording();
+        logger.log('[useWebRTC] Auto-starting recording now');
+        startRecordingRef.current?.();
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [connectionState, recording]);
+  }, [connectionState]);
 
   /**
    * 마운트 시 이전 녹음 데이터 업로드
@@ -510,11 +605,14 @@ export function useWebRTC(meetingId: string) {
     isScreenSharing: screenShare.isScreenSharing,
     screenStream: screenShare.screenStream,
     remoteScreenStreams: screenShare.remoteScreenStreams,
+    // 채팅 상태
+    chatMessages,
 
     // 액션
     joinRoom,
     leaveRoom,
     toggleMute,
+    forceMute,
     changeAudioInputDevice,
     changeAudioOutputDevice,
     changeMicGain,
@@ -522,5 +620,7 @@ export function useWebRTC(meetingId: string) {
     // 화면공유 액션
     startScreenShare,
     stopScreenShare,
+    // 채팅 액션
+    sendChatMessage,
   };
 }

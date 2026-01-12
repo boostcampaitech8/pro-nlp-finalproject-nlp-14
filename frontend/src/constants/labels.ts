@@ -50,13 +50,21 @@ export const TEAM_ROLE_COLORS: Record<TeamRole, string> = {
 
 // 녹음 상태 라벨
 export const RECORDING_STATUS_LABELS: Record<RecordingStatus, string> = {
+  pending: 'Pending',
   recording: 'Recording',
   completed: 'Completed',
   failed: 'Failed',
+  transcribing: 'Transcribing',
+  transcribed: 'Transcribed',
+  transcription_failed: 'Transcription Failed',
 };
 
 export const RECORDING_STATUS_COLORS: Record<RecordingStatus, string> = {
+  pending: 'bg-yellow-100 text-yellow-800',
   recording: 'bg-red-100 text-red-800',
   completed: 'bg-green-100 text-green-800',
   failed: 'bg-gray-100 text-gray-600',
+  transcribing: 'bg-blue-100 text-blue-800',
+  transcribed: 'bg-purple-100 text-purple-800',
+  transcription_failed: 'bg-orange-100 text-orange-800',
 };

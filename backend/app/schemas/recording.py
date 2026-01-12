@@ -65,6 +65,18 @@ class RecordingResponse(BaseModel):
     duration_ms: int | None = Field(default=None, serialization_alias="durationMs")
     file_size_bytes: int | None = Field(default=None, serialization_alias="fileSizeBytes")
     created_at: datetime = Field(serialization_alias="createdAt")
+    # STT 관련 필드
+    transcript_text: str | None = Field(default=None, serialization_alias="transcriptText")
+    transcript_language: str | None = Field(default=None, serialization_alias="transcriptLanguage")
+    transcription_started_at: datetime | None = Field(
+        default=None, serialization_alias="transcriptionStartedAt"
+    )
+    transcription_completed_at: datetime | None = Field(
+        default=None, serialization_alias="transcriptionCompletedAt"
+    )
+    transcription_error: str | None = Field(
+        default=None, serialization_alias="transcriptionError"
+    )
 
     class Config:
         populate_by_name = True

@@ -28,6 +28,8 @@ tags:
     description: 실시간 회의 관련 API (시그널링, 회의 시작/종료)
   - name: Recordings
     description: 회의 녹음 관련 API
+  - name: Transcripts
+    description: 회의 STT/트랜스크립트 관련 API
 
 # 공통 스키마 참조
 components:
@@ -126,6 +128,22 @@ components:
     RecordingDownloadResponse:
       $ref: './schemas/recording.yaml#/components/schemas/RecordingDownloadResponse'
 
+    # Transcripts
+    TranscriptStatus:
+      $ref: './schemas/transcript.yaml#/components/schemas/TranscriptStatus'
+    TranscriptSegment:
+      $ref: './schemas/transcript.yaml#/components/schemas/TranscriptSegment'
+    Utterance:
+      $ref: './schemas/transcript.yaml#/components/schemas/Utterance'
+    MeetingTranscript:
+      $ref: './schemas/transcript.yaml#/components/schemas/MeetingTranscript'
+    TranscribeRequest:
+      $ref: './schemas/transcript.yaml#/components/schemas/TranscribeRequest'
+    TranscribeResponse:
+      $ref: './schemas/transcript.yaml#/components/schemas/TranscribeResponse'
+    TranscriptStatusResponse:
+      $ref: './schemas/transcript.yaml#/components/schemas/TranscriptStatusResponse'
+
   securitySchemes:
     BearerAuth:
       $ref: './schemas/auth.yaml#/components/securitySchemes/BearerAuth'
@@ -180,3 +198,13 @@ paths:
     $ref: './paths/recordings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1recordings'
   /api/v1/meetings/{meetingId}/recordings/{recordingId}/download:
     $ref: './paths/recordings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1recordings~1{recordingId}~1download'
+  /api/v1/meetings/{meetingId}/recordings/{recordingId}/transcript:
+    $ref: './paths/recordings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1recordings~1{recordingId}~1transcript'
+
+  # Transcripts
+  /api/v1/meetings/{meetingId}/transcribe:
+    $ref: './paths/transcripts.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1transcribe'
+  /api/v1/meetings/{meetingId}/transcript:
+    $ref: './paths/transcripts.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1transcript'
+  /api/v1/meetings/{meetingId}/transcript/status:
+    $ref: './paths/transcripts.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1transcript~1status'

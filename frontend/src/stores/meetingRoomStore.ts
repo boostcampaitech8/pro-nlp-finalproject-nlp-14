@@ -4,6 +4,64 @@
 
 import { create } from 'zustand';
 import type { ConnectionState, IceServer, RoomParticipant } from '@/types/webrtc';
+import type { ChatMessage } from '@/types/chat';
+
+// localStorage 키
+const AUDIO_SETTINGS_KEY = 'mit-audio-settings';
+const REMOTE_VOLUMES_KEY = 'mit-remote-volumes';
+
+// 오디오 설정 타입
+interface AudioSettings {
+  micGain: number;
+  audioInputDeviceId: string | null;
+  audioOutputDeviceId: string | null;
+}
+
+// localStorage에서 오디오 설정 불러오기
+function loadAudioSettings(): Partial<AudioSettings> {
+  try {
+    const stored = localStorage.getItem(AUDIO_SETTINGS_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn('[meetingRoomStore] Failed to load audio settings:', e);
+  }
+  return {};
+}
+
+// localStorage에 오디오 설정 저장
+function saveAudioSettings(settings: AudioSettings): void {
+  try {
+    localStorage.setItem(AUDIO_SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    console.warn('[meetingRoomStore] Failed to save audio settings:', e);
+  }
+}
+
+// localStorage에서 참여자별 볼륨 불러오기
+function loadRemoteVolumes(): Map<string, number> {
+  try {
+    const stored = localStorage.getItem(REMOTE_VOLUMES_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return new Map(Object.entries(parsed));
+    }
+  } catch (e) {
+    console.warn('[meetingRoomStore] Failed to load remote volumes:', e);
+  }
+  return new Map();
+}
+
+// localStorage에 참여자별 볼륨 저장
+function saveRemoteVolumes(volumes: Map<string, number>): void {
+  try {
+    const obj = Object.fromEntries(volumes);
+    localStorage.setItem(REMOTE_VOLUMES_KEY, JSON.stringify(obj));
+  } catch (e) {
+    console.warn('[meetingRoomStore] Failed to save remote volumes:', e);
+  }
+}
 
 interface MeetingRoomState {
   // 회의 정보
@@ -45,6 +103,9 @@ interface MeetingRoomState {
   remoteScreenStreams: Map<string, MediaStream>; // userId -> screen stream
   screenPeerConnections: Map<string, RTCPeerConnection>; // userId -> screen PC
 
+  // 채팅
+  chatMessages: ChatMessage[];
+
   // Actions
   setMeetingInfo: (meetingId: string, status: string, iceServers: IceServer[], maxParticipants: number) => void;
   setConnectionState: (state: ConnectionState) => void;
@@ -80,8 +141,17 @@ interface MeetingRoomState {
   getScreenPeerConnection: (userId: string) => RTCPeerConnection | undefined;
   updateParticipantScreenSharing: (userId: string, isSharing: boolean) => void;
 
+  // 채팅 Actions
+  addChatMessage: (message: ChatMessage) => void;
+  setChatMessages: (messages: ChatMessage[]) => void;
+  clearChatMessages: () => void;
+
   reset: () => void;
 }
+
+// 캐시된 설정 불러오기
+const cachedAudioSettings = loadAudioSettings();
+const cachedRemoteVolumes = loadRemoteVolumes();
 
 const initialState = {
   meetingId: null,
@@ -93,17 +163,21 @@ const initialState = {
   participants: new Map<string, RoomParticipant>(),
   localStream: null,
   isAudioMuted: false,
-  audioInputDeviceId: null,
-  audioOutputDeviceId: null,
-  micGain: 1.0,
+  // 캐시된 오디오 설정 적용
+  audioInputDeviceId: cachedAudioSettings.audioInputDeviceId ?? null,
+  audioOutputDeviceId: cachedAudioSettings.audioOutputDeviceId ?? null,
+  micGain: cachedAudioSettings.micGain ?? 1.0,
   remoteStreams: new Map<string, MediaStream>(),
-  remoteVolumes: new Map<string, number>(),
+  // 캐시된 볼륨 설정 적용
+  remoteVolumes: cachedRemoteVolumes,
   peerConnections: new Map<string, RTCPeerConnection>(),
   // 화면공유
   isScreenSharing: false,
   screenStream: null,
   remoteScreenStreams: new Map<string, MediaStream>(),
   screenPeerConnections: new Map<string, RTCPeerConnection>(),
+  // 채팅
+  chatMessages: [] as ChatMessage[],
 };
 
 export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
@@ -171,14 +245,23 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
 
   setAudioInputDeviceId: (audioInputDeviceId) => {
     set({ audioInputDeviceId });
+    // localStorage에 저장
+    const { micGain, audioOutputDeviceId } = get();
+    saveAudioSettings({ micGain, audioInputDeviceId, audioOutputDeviceId });
   },
 
   setAudioOutputDeviceId: (audioOutputDeviceId) => {
     set({ audioOutputDeviceId });
+    // localStorage에 저장
+    const { micGain, audioInputDeviceId } = get();
+    saveAudioSettings({ micGain, audioInputDeviceId, audioOutputDeviceId });
   },
 
   setMicGain: (micGain) => {
     set({ micGain });
+    // localStorage에 저장
+    const { audioInputDeviceId, audioOutputDeviceId } = get();
+    saveAudioSettings({ micGain, audioInputDeviceId, audioOutputDeviceId });
   },
 
   addRemoteStream: (userId, stream) => {
@@ -195,17 +278,15 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
       remoteStreams.delete(userId);
       set({ remoteStreams });
     }
-
-    // 볼륨 설정도 함께 제거
-    const remoteVolumes = new Map(get().remoteVolumes);
-    remoteVolumes.delete(userId);
-    set({ remoteVolumes });
+    // 볼륨 설정은 캐시되어야 하므로 삭제하지 않음
   },
 
   setRemoteVolume: (userId, volume) => {
     const remoteVolumes = new Map(get().remoteVolumes);
     remoteVolumes.set(userId, volume);
     set({ remoteVolumes });
+    // localStorage에 저장
+    saveRemoteVolumes(remoteVolumes);
   },
 
   addPeerConnection: (userId, pc) => {
@@ -287,9 +368,35 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
     }
   },
 
+  // 채팅 Actions
+  addChatMessage: (message) => {
+    const chatMessages = [...get().chatMessages, message];
+    set({ chatMessages });
+  },
+
+  setChatMessages: (chatMessages) => {
+    set({ chatMessages });
+  },
+
+  clearChatMessages: () => {
+    set({ chatMessages: [] });
+  },
+
   reset: () => {
     // 모든 리소스 정리
-    const { localStream, remoteStreams, peerConnections, screenStream, remoteScreenStreams, screenPeerConnections } = get();
+    const {
+      localStream,
+      remoteStreams,
+      peerConnections,
+      screenStream,
+      remoteScreenStreams,
+      screenPeerConnections,
+      // 캐시된 설정 유지
+      audioInputDeviceId,
+      audioOutputDeviceId,
+      micGain,
+      remoteVolumes,
+    } = get();
 
     if (localStream) {
       localStream.getTracks().forEach((track) => track.stop());
@@ -315,6 +422,13 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
       pc.close();
     });
 
-    set(initialState);
+    // 캐시된 설정은 유지하면서 초기화
+    set({
+      ...initialState,
+      audioInputDeviceId,
+      audioOutputDeviceId,
+      micGain,
+      remoteVolumes,
+    });
   },
 }));

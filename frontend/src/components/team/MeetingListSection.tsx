@@ -74,12 +74,18 @@ export function MeetingListSection({
               placeholder="Enter meeting title"
               required
             />
-            <Input
-              label="Description (optional)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter meeting description"
-            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description (optional)
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Enter meeting description (Shift+Enter: new line)"
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Scheduled At (optional)

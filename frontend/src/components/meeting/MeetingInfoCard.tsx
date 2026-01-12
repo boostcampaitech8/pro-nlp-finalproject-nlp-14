@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 import {
   MEETING_STATUS_COLORS,
   MEETING_STATUS_LABELS,
@@ -80,11 +81,18 @@ export function MeetingInfoCard({
             onChange={(e) => setEditTitle(e.target.value)}
             required
           />
-          <Input
-            label="Description"
-            value={editDescription}
-            onChange={(e) => setEditDescription(e.target.value)}
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              placeholder="회의 설명 (Shift+Enter: 줄바꿈)"
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Status
@@ -171,7 +179,7 @@ export function MeetingInfoCard({
           </div>
 
           {meeting.description && (
-            <p className="text-gray-600 mb-4">{meeting.description}</p>
+            <MarkdownRenderer content={meeting.description} className="text-gray-600 mb-4" />
           )}
 
           <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">

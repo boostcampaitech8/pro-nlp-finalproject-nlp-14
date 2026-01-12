@@ -1,0 +1,152 @@
+components:
+  schemas:
+    TranscriptStatus:
+      type: string
+      enum:
+        - pending
+        - processing
+        - completed
+        - failed
+      description: |
+        회의록 트랜스크립트 상태:
+        - pending: 대기 중
+        - processing: 처리 중
+        - completed: 완료
+        - failed: 실패
+
+    TranscriptSegment:
+      type: object
+      required:
+        - id
+        - startMs
+        - endMs
+        - text
+      properties:
+        id:
+          type: integer
+          description: 세그먼트 ID
+        startMs:
+          type: integer
+          description: 시작 시간 (밀리초)
+        endMs:
+          type: integer
+          description: 종료 시간 (밀리초)
+        text:
+          type: string
+          description: 해당 구간 텍스트
+
+    Utterance:
+      type: object
+      required:
+        - id
+        - speakerId
+        - speakerName
+        - startMs
+        - endMs
+        - text
+      properties:
+        id:
+          type: integer
+          description: 발화 ID
+        speakerId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        speakerName:
+          type: string
+          description: 화자 이름
+        startMs:
+          type: integer
+          description: 시작 시간 (밀리초)
+        endMs:
+          type: integer
+          description: 종료 시간 (밀리초)
+        text:
+          type: string
+          description: 발화 텍스트
+
+    MeetingTranscript:
+      type: object
+      required:
+        - id
+        - meetingId
+        - status
+        - createdAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: '#/components/schemas/TranscriptStatus'
+        fullText:
+          type: string
+          nullable: true
+          description: 전체 텍스트 (화자 라벨 포함)
+        utterances:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Utterance'
+          description: 화자별 발화 목록
+        totalDurationMs:
+          type: integer
+          nullable: true
+          description: 전체 녹음 길이 (밀리초)
+        speakerCount:
+          type: integer
+          nullable: true
+          description: 화자 수
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+          description: 실패 시 에러 메시지
+
+    TranscribeRequest:
+      type: object
+      properties:
+        language:
+          type: string
+          default: "ko"
+          description: 우선 언어 코드 (ko, en 등)
+
+    TranscribeResponse:
+      type: object
+      required:
+        - transcriptId
+        - status
+      properties:
+        transcriptId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: '#/components/schemas/TranscriptStatus'
+        message:
+          type: string
+          description: 상태 메시지
+
+    TranscriptStatusResponse:
+      type: object
+      required:
+        - transcriptId
+        - status
+        - totalRecordings
+        - processedRecordings
+      properties:
+        transcriptId:
+          $ref: './common.yaml#/components/schemas/UUID'
+        status:
+          $ref: '#/components/schemas/TranscriptStatus'
+        totalRecordings:
+          type: integer
+          description: 전체 녹음 수
+        processedRecordings:
+          type: integer
+          description: 처리 완료된 녹음 수
+        error:
+          type: string
+          nullable: true
+          description: 실패 시 에러 메시지

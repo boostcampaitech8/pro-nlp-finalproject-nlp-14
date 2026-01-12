@@ -17,6 +17,7 @@ class StorageService:
     """MinIO 스토리지 서비스"""
 
     BUCKET_RECORDINGS = "recordings"
+    BUCKET_TRANSCRIPTS = "transcripts"
 
     def __init__(self):
         self._client: Minio | None = None
@@ -36,10 +37,12 @@ class StorageService:
 
     def _ensure_buckets(self) -> None:
         """필요한 버킷 생성"""
+        buckets = [self.BUCKET_RECORDINGS, self.BUCKET_TRANSCRIPTS]
         try:
-            if not self._client.bucket_exists(self.BUCKET_RECORDINGS):
-                self._client.make_bucket(self.BUCKET_RECORDINGS)
-                logger.info(f"Created bucket: {self.BUCKET_RECORDINGS}")
+            for bucket in buckets:
+                if not self._client.bucket_exists(bucket):
+                    self._client.make_bucket(bucket)
+                    logger.info(f"Created bucket: {bucket}")
         except S3Error as e:
             logger.error(f"Failed to create bucket: {e}")
             raise
@@ -155,15 +158,21 @@ class StorageService:
             expires: URL 만료 시간
 
         Returns:
-            Presigned URL
+            Presigned URL (외부 접근용 URL로 변환됨)
         """
         client = self._get_client()
+        settings = get_settings()
         try:
-            return client.presigned_get_object(
+            url = client.presigned_get_object(
                 bucket_name=bucket,
                 object_name=object_name,
                 expires=expires,
             )
+            # 내부 MinIO URL을 외부 프록시 URL로 변환
+            # http://minio:9000/bucket/... -> https://domain.com/storage/bucket/...
+            internal_url = f"http://{settings.minio_endpoint}"
+            external_url = settings.storage_external_url
+            return url.replace(internal_url, external_url)
         except S3Error as e:
             logger.error(f"Failed to generate presigned URL: {e}")
             raise
@@ -324,6 +333,29 @@ class StorageService:
         """
         return self.get_file(self.BUCKET_RECORDINGS, file_path)
 
+    def check_recording_exists(self, file_path: str) -> bool:
+        """녹음 파일 존재 여부 확인
+
+        Args:
+            file_path: 녹음 파일 경로
+
+        Returns:
+            파일 존재 여부
+        """
+        return self.check_file_exists(self.BUCKET_RECORDINGS, file_path)
+
+    def get_recording_size(self, file_path: str) -> int:
+        """녹음 파일 크기 조회
+
+        Args:
+            file_path: 녹음 파일 경로
+
+        Returns:
+            파일 크기 (bytes), 파일이 없으면 0
+        """
+        info = self.get_file_info(self.BUCKET_RECORDINGS, file_path)
+        return info["size"] if info else 0
+
     def delete_file(self, bucket: str, object_name: str) -> None:
         """파일 삭제
 
@@ -346,6 +378,73 @@ class StorageService:
             file_path: 녹음 파일 경로
         """
         self.delete_file(self.BUCKET_RECORDINGS, file_path)
+
+    # === Transcript 관련 메서드 ===
+
+    def upload_transcript(
+        self,
+        meeting_id: str,
+        data: bytes,
+        content_type: str = "application/json",
+    ) -> str:
+        """회의록 파일 업로드
+
+        Args:
+            meeting_id: 회의 ID
+            data: 회의록 JSON 데이터
+            content_type: 콘텐츠 타입
+
+        Returns:
+            업로드된 파일 경로
+        """
+        object_name = f"{meeting_id}/transcript.json"
+        data_stream = BytesIO(data)
+        return self.upload_file(
+            bucket=self.BUCKET_TRANSCRIPTS,
+            object_name=object_name,
+            data=data_stream,
+            length=len(data),
+            content_type=content_type,
+        )
+
+    def get_transcript_url(
+        self,
+        file_path: str,
+        expires: timedelta = timedelta(hours=1),
+    ) -> str:
+        """회의록 파일 다운로드 URL 생성
+
+        Args:
+            file_path: 회의록 파일 경로
+            expires: URL 만료 시간
+
+        Returns:
+            Presigned URL
+        """
+        return self.get_presigned_url(
+            bucket=self.BUCKET_TRANSCRIPTS,
+            object_name=file_path,
+            expires=expires,
+        )
+
+    def get_transcript_file(self, file_path: str) -> bytes:
+        """회의록 파일 다운로드
+
+        Args:
+            file_path: 회의록 파일 경로
+
+        Returns:
+            파일 데이터
+        """
+        return self.get_file(self.BUCKET_TRANSCRIPTS, file_path)
+
+    def delete_transcript(self, file_path: str) -> None:
+        """회의록 파일 삭제
+
+        Args:
+            file_path: 회의록 파일 경로
+        """
+        self.delete_file(self.BUCKET_TRANSCRIPTS, file_path)
 
 
 # 싱글톤 인스턴스

@@ -27,7 +27,6 @@ env/
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
@@ -70,9 +69,3 @@ temp/
 # MinIO / S3 uploads (local)
 uploads/
 recordings/
-
-# Claude
-.claude/
-CLAUDE*.md
-AGENTS.md
-.worktreeinclude

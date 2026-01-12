@@ -1,10 +1,11 @@
 """WebSocket 메시지 핸들러 단위 테스트
 
-총 18개 테스트:
+총 23개 테스트:
 - JoinHandler: 2개 (참여자 목록 전송, 다른 참여자에게 알림)
 - OfferAnswerHandler: 3개 (offer 전송, answer 전송, 데이터 누락)
 - ICECandidateHandler: 4개 (특정 사용자, 브로드캐스트, candidate 누락, screen ice warning)
 - MuteHandler: 2개 (mute, unmute)
+- ForceMuteHandler: 5개 (host 강제 음소거, 비host 권한 거부, 언뮤트, 대상 없음, 자기 자신)
 - ScreenShareHandler: 2개 (start, stop)
 - ScreenOfferAnswerHandler: 2개 (성공, 데이터 누락)
 - dispatch_message: 3개 (LEAVE, 알려진 타입, 알 수 없는 타입)
@@ -19,6 +20,7 @@ from app.handlers.websocket_message_handlers import (
     OfferAnswerHandler,
     ICECandidateHandler,
     MuteHandler,
+    ForceMuteHandler,
     ScreenShareHandler,
     ScreenOfferAnswerHandler,
     dispatch_message,
@@ -269,6 +271,151 @@ async def test_mute_handler_unmute(mock_connection_manager):
     )
 
 
+# ===== ForceMuteHandler 테스트 (5개) =====
+
+
+@pytest.fixture
+def host_participant():
+    """Host 권한 참여자"""
+    participant = MagicMock()
+    participant.user_id = uuid4()
+    participant.user_name = "Host User"
+    participant.role = "host"
+    participant.audio_muted = False
+    return participant
+
+
+@pytest.fixture
+def normal_participant():
+    """일반 참여자"""
+    participant = MagicMock()
+    participant.user_id = uuid4()
+    participant.user_name = "Normal User"
+    participant.role = "participant"
+    participant.audio_muted = False
+    return participant
+
+
+@pytest.mark.asyncio
+async def test_force_mute_handler_host_can_mute(mock_connection_manager, host_participant):
+    """Host가 다른 참여자를 강제 음소거"""
+    handler = ForceMuteHandler()
+    meeting_id = uuid4()
+    host_id = host_participant.user_id
+    target_id = uuid4()
+
+    mock_connection_manager.get_participant.return_value = host_participant
+
+    await handler.handle(
+        meeting_id,
+        host_id,
+        {"targetUserId": str(target_id), "muted": True}
+    )
+
+    # 대상의 mute 상태 업데이트
+    mock_connection_manager.update_mute_status.assert_called_once_with(
+        meeting_id, target_id, True
+    )
+    # 대상에게 force-muted 전송
+    mock_connection_manager.send_to_user.assert_called_once()
+    call_args = mock_connection_manager.send_to_user.call_args
+    assert call_args[0][1] == target_id
+    assert call_args[0][2]["type"] == SignalingMessageType.FORCE_MUTED
+    assert call_args[0][2]["muted"] is True
+    assert call_args[0][2]["byUserId"] == str(host_id)
+
+    # 전체에게 participant-muted 브로드캐스트
+    mock_connection_manager.broadcast.assert_called_once()
+    broadcast_args = mock_connection_manager.broadcast.call_args
+    assert broadcast_args[0][1]["type"] == SignalingMessageType.PARTICIPANT_MUTED
+    assert broadcast_args[0][1]["userId"] == str(target_id)
+
+
+@pytest.mark.asyncio
+async def test_force_mute_handler_non_host_rejected(mock_connection_manager, normal_participant):
+    """일반 참여자의 강제 음소거 시도는 거부됨"""
+    handler = ForceMuteHandler()
+    meeting_id = uuid4()
+    user_id = normal_participant.user_id
+    target_id = uuid4()
+
+    mock_connection_manager.get_participant.return_value = normal_participant
+
+    await handler.handle(
+        meeting_id,
+        user_id,
+        {"targetUserId": str(target_id), "muted": True}
+    )
+
+    # mute 상태 업데이트 안 됨
+    mock_connection_manager.update_mute_status.assert_not_called()
+
+    # 에러 메시지 전송
+    mock_connection_manager.send_to_user.assert_called_once()
+    call_args = mock_connection_manager.send_to_user.call_args
+    assert call_args[0][1] == user_id
+    assert call_args[0][2]["type"] == SignalingMessageType.ERROR
+    assert "permission" in call_args[0][2]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_force_mute_handler_unmute(mock_connection_manager, host_participant):
+    """Host가 참여자 강제 음소거 해제"""
+    handler = ForceMuteHandler()
+    meeting_id = uuid4()
+    host_id = host_participant.user_id
+    target_id = uuid4()
+
+    mock_connection_manager.get_participant.return_value = host_participant
+
+    await handler.handle(
+        meeting_id,
+        host_id,
+        {"targetUserId": str(target_id), "muted": False}
+    )
+
+    mock_connection_manager.update_mute_status.assert_called_once_with(
+        meeting_id, target_id, False
+    )
+
+
+@pytest.mark.asyncio
+async def test_force_mute_handler_missing_target(mock_connection_manager, host_participant):
+    """targetUserId 없으면 무시"""
+    handler = ForceMuteHandler()
+    meeting_id = uuid4()
+    host_id = host_participant.user_id
+
+    mock_connection_manager.get_participant.return_value = host_participant
+
+    await handler.handle(meeting_id, host_id, {"muted": True})
+
+    mock_connection_manager.update_mute_status.assert_not_called()
+    mock_connection_manager.send_to_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_force_mute_handler_cannot_mute_self(mock_connection_manager, host_participant):
+    """Host도 자기 자신은 강제 음소거 불가 (일반 mute 사용)"""
+    handler = ForceMuteHandler()
+    meeting_id = uuid4()
+    host_id = host_participant.user_id
+
+    mock_connection_manager.get_participant.return_value = host_participant
+
+    await handler.handle(
+        meeting_id,
+        host_id,
+        {"targetUserId": str(host_id), "muted": True}
+    )
+
+    # 자기 자신은 force mute 불가 - 에러 전송
+    mock_connection_manager.update_mute_status.assert_not_called()
+    mock_connection_manager.send_to_user.assert_called_once()
+    call_args = mock_connection_manager.send_to_user.call_args
+    assert call_args[0][2]["type"] == SignalingMessageType.ERROR
+
+
 # ===== ScreenShareHandler 테스트 (2개) =====
 
 
@@ -395,6 +542,7 @@ def test_handlers_registry_complete():
         SignalingMessageType.ANSWER,
         SignalingMessageType.ICE_CANDIDATE,
         SignalingMessageType.MUTE,
+        SignalingMessageType.FORCE_MUTE,
         SignalingMessageType.SCREEN_SHARE_START,
         SignalingMessageType.SCREEN_SHARE_STOP,
         SignalingMessageType.SCREEN_OFFER,
