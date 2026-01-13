@@ -70,6 +70,20 @@ export function RecordingList({ meetingId }: RecordingListProps) {
     }
   };
 
+  const handleTranscriptDownload = (recording: Recording) => {
+    if (!recording.transcriptText) return;
+
+    const blob = new Blob([recording.transcriptText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `transcript_${recording.userName || 'unknown'}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-xl shadow-md p-6">
@@ -127,16 +141,25 @@ export function RecordingList({ meetingId }: RecordingListProps) {
             </div>
           </div>
 
-          {recording.status === 'completed' && (
-            <Button
-              variant="outline"
-              onClick={() => handleDownload(recording.id, recording.userName)}
-              isLoading={downloadingId === recording.id}
-              className="ml-4"
-            >
-              Download
-            </Button>
-          )}
+          <div className="flex items-center gap-2 ml-4">
+            {(recording.status === 'completed' || recording.status === 'transcribed') && (
+              <Button
+                variant="outline"
+                onClick={() => handleDownload(recording.id, recording.userName)}
+                isLoading={downloadingId === recording.id}
+              >
+                Audio
+              </Button>
+            )}
+            {recording.status === 'transcribed' && recording.transcriptText && (
+              <Button
+                variant="outline"
+                onClick={() => handleTranscriptDownload(recording)}
+              >
+                Transcript
+              </Button>
+            )}
+          </div>
         </div>
       ))}
     </div>

@@ -79,6 +79,11 @@ async def get_meeting_recordings(
                 duration_ms=r.duration_ms,
                 file_size_bytes=r.file_size_bytes,
                 created_at=r.created_at,
+                transcript_text=r.transcript_text,
+                transcript_language=r.transcript_language,
+                transcription_started_at=r.transcription_started_at,
+                transcription_completed_at=r.transcription_completed_at,
+                transcription_error=r.transcription_error,
             )
             for r in recordings
         ],
