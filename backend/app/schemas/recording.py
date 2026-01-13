@@ -23,9 +23,9 @@ class VADSettings(BaseModel):
 
     positive_speech_threshold: float = Field(alias="positiveSpeechThreshold")
     negative_speech_threshold: float = Field(alias="negativeSpeechThreshold")
-    min_speech_frames: int = Field(alias="minSpeechFrames")
-    pre_speech_pad_frames: int = Field(alias="preSpeechPadFrames")
-    redemption_frames: int = Field(alias="redemptionFrames")
+    min_speech_ms: int = Field(alias="minSpeechMs")
+    pre_speech_pad_ms: int = Field(alias="preSpeechPadMs")
+    redemption_ms: int = Field(alias="redemptionMs")
 
     class Config:
         populate_by_name = True

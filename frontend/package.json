@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "postinstall": "node scripts/copy-vad-assets.js"
   },
   "dependencies": {
     "@mit/shared-types": "workspace:*",

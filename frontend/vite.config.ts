@@ -19,4 +19,9 @@ export default defineConfig({
       },
     },
   },
+  optimizeDeps: {
+    // ONNX Runtime WASM 파일 최적화 제외
+    exclude: ['onnxruntime-web'],
+  },
+  assetsInclude: ['**/*.onnx', '**/*.wasm'],
 });

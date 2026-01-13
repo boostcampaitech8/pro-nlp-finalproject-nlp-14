@@ -58,7 +58,6 @@ export function useRecording({
   const {
     isSpeaking,
     currentSegments,
-    vadMetadata,
     startVAD,
     stopVAD,
     resetVAD,
@@ -266,11 +265,11 @@ export function useRecording({
       saveIntervalRef.current = null;
     }
 
-    // VAD 중지 및 메타데이터 저장
+    // VAD 중지 및 메타데이터 저장 (stopVAD가 메타데이터를 반환)
     if (enableVAD) {
-      vadMetadataRef.current = vadMetadata;
-      stopVAD();
-      logger.log('[useRecording] VAD stopped, segments:', vadMetadataRef.current?.segments.length || 0);
+      const finalVadMetadata = stopVAD();
+      vadMetadataRef.current = finalVadMetadata;
+      logger.log('[useRecording] VAD stopped, segments:', finalVadMetadata?.segments.length || 0);
     }
 
     if (!mediaRecorderRef.current || !recordingStartTimeRef.current) {
@@ -388,7 +387,7 @@ export function useRecording({
         resolve();
       }
     });
-  }, [meetingId, enableVAD, vadMetadata, stopVAD]);
+  }, [meetingId, enableVAD, stopVAD]);
 
   /**
    * beforeunload 이벤트 - 새로고침/탭 닫기 시 녹음 데이터 임시저장

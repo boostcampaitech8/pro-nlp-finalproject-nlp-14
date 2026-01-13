@@ -20,9 +20,9 @@ export interface VADMetadata {
   settings: {
     positiveSpeechThreshold: number;
     negativeSpeechThreshold: number;
-    minSpeechFrames: number;
-    preSpeechPadFrames: number;
-    redemptionFrames: number;
+    minSpeechMs: number;
+    preSpeechPadMs: number;
+    redemptionMs: number;
   };
 }
 
@@ -30,9 +30,9 @@ interface UseVADOptions {
   // VAD 감도 설정
   positiveSpeechThreshold?: number;  // 발화 시작 임계값 (기본: 0.5)
   negativeSpeechThreshold?: number;  // 발화 종료 임계값 (기본: 0.35)
-  minSpeechFrames?: number;          // 최소 발화 프레임 수 (기본: 3)
-  preSpeechPadFrames?: number;       // 발화 전 패딩 프레임 (기본: 1)
-  redemptionFrames?: number;         // 발화 종료 유예 프레임 (기본: 8)
+  minSpeechMs?: number;              // 최소 발화 길이 ms (기본: 250)
+  preSpeechPadMs?: number;           // 발화 전 패딩 ms (기본: 300)
+  redemptionMs?: number;             // 발화 종료 유예 ms (기본: 500)
 }
 
 interface UseVADReturn {
@@ -48,7 +48,7 @@ interface UseVADReturn {
 
   // 액션
   startVAD: (stream: MediaStream) => Promise<void>;
-  stopVAD: () => void;
+  stopVAD: () => VADMetadata | null;
   resetVAD: () => void;
 }
 
@@ -56,9 +56,9 @@ interface UseVADReturn {
 const DEFAULT_OPTIONS: Required<UseVADOptions> = {
   positiveSpeechThreshold: 0.5,
   negativeSpeechThreshold: 0.35,
-  minSpeechFrames: 3,
-  preSpeechPadFrames: 1,
-  redemptionFrames: 8,
+  minSpeechMs: 250,
+  preSpeechPadMs: 300,
+  redemptionMs: 500,
 };
 
 export function useVAD(options: UseVADOptions = {}): UseVADReturn {
@@ -96,9 +96,16 @@ export function useVAD(options: UseVADOptions = {}): UseVADReturn {
       const vadOptions: Partial<RealTimeVADOptions> = {
         positiveSpeechThreshold: settings.positiveSpeechThreshold,
         negativeSpeechThreshold: settings.negativeSpeechThreshold,
-        minSpeechFrames: settings.minSpeechFrames,
-        preSpeechPadFrames: settings.preSpeechPadFrames,
-        redemptionFrames: settings.redemptionFrames,
+        minSpeechMs: settings.minSpeechMs,
+        preSpeechPadMs: settings.preSpeechPadMs,
+        redemptionMs: settings.redemptionMs,
+
+        // VAD 에셋 경로 설정 (public/vad 디렉토리)
+        baseAssetPath: '/vad/',
+        onnxWASMBasePath: '/vad/',
+
+        // stream을 getStream 함수로 전달
+        getStream: async () => stream,
 
         // 콜백
         onSpeechStart: () => {
@@ -108,7 +115,7 @@ export function useVAD(options: UseVADOptions = {}): UseVADReturn {
           logger.log('[useVAD] Speech started at', now - (startTimeRef.current || 0), 'ms');
         },
 
-        onSpeechEnd: (audio: Float32Array) => {
+        onSpeechEnd: (_audio: Float32Array) => {
           const now = Date.now();
           if (speechStartRef.current && startTimeRef.current) {
             const segment: VADSegment = {
@@ -131,10 +138,7 @@ export function useVAD(options: UseVADOptions = {}): UseVADReturn {
       };
 
       // stream에서 VAD 생성
-      const vad = await MicVAD.new({
-        ...vadOptions,
-        stream,
-      });
+      const vad = await MicVAD.new(vadOptions);
 
       vadRef.current = vad;
       setIsVADReady(true);
@@ -153,11 +157,27 @@ export function useVAD(options: UseVADOptions = {}): UseVADReturn {
   }, [settings]);
 
   /**
-   * VAD 중지
+   * VAD 중지 및 메타데이터 반환
+   * @returns VADMetadata | null
    */
-  const stopVAD = useCallback(() => {
+  const stopVAD = useCallback((): VADMetadata | null => {
     if (!vadRef.current) {
-      return;
+      // VAD가 시작되지 않았어도 메타데이터가 있으면 반환
+      if (startTimeRef.current && segmentsRef.current.length > 0) {
+        const totalDurationMs = Date.now() - startTimeRef.current;
+        return {
+          segments: [...segmentsRef.current],
+          totalDurationMs,
+          settings: {
+            positiveSpeechThreshold: settings.positiveSpeechThreshold,
+            negativeSpeechThreshold: settings.negativeSpeechThreshold,
+            minSpeechMs: settings.minSpeechMs,
+            preSpeechPadMs: settings.preSpeechPadMs,
+            redemptionMs: settings.redemptionMs,
+          },
+        };
+      }
+      return null;
     }
 
     try {
@@ -182,10 +202,28 @@ export function useVAD(options: UseVADOptions = {}): UseVADReturn {
       speechStartRef.current = null;
 
       logger.log('[useVAD] VAD stopped, segments:', segmentsRef.current.length);
+
+      // 메타데이터 반환
+      if (startTimeRef.current) {
+        const totalDurationMs = Date.now() - startTimeRef.current;
+        return {
+          segments: [...segmentsRef.current],
+          totalDurationMs,
+          settings: {
+            positiveSpeechThreshold: settings.positiveSpeechThreshold,
+            negativeSpeechThreshold: settings.negativeSpeechThreshold,
+            minSpeechMs: settings.minSpeechMs,
+            preSpeechPadMs: settings.preSpeechPadMs,
+            redemptionMs: settings.redemptionMs,
+          },
+        };
+      }
+      return null;
     } catch (err) {
       logger.error('[useVAD] Failed to stop VAD:', err);
+      return null;
     }
-  }, []);
+  }, [settings]);
 
   /**
    * VAD 메타데이터 생성
@@ -203,9 +241,9 @@ export function useVAD(options: UseVADOptions = {}): UseVADReturn {
       settings: {
         positiveSpeechThreshold: settings.positiveSpeechThreshold,
         negativeSpeechThreshold: settings.negativeSpeechThreshold,
-        minSpeechFrames: settings.minSpeechFrames,
-        preSpeechPadFrames: settings.preSpeechPadFrames,
-        redemptionFrames: settings.redemptionFrames,
+        minSpeechMs: settings.minSpeechMs,
+        preSpeechPadMs: settings.preSpeechPadMs,
+        redemptionMs: settings.redemptionMs,
       },
     };
   }, [settings]);
