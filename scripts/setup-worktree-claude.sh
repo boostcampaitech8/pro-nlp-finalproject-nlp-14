@@ -68,6 +68,13 @@ if [ -f "$MAIN_REPO/.env.local" ]; then
     ln -s "$MAIN_REPO/.env.local" .env.local
 fi
 
+# Docker 환경 변수 파일 복사
+if [ -f "$MAIN_REPO/docker/.env" ]; then
+    echo "Copying docker/.env file..."
+    mkdir -p docker
+    cp "$MAIN_REPO/docker/.env" docker/.env
+fi
+
 echo "✅ Worktree setup complete!"
 echo ""
 echo "Claude configuration shared from main repo:"
