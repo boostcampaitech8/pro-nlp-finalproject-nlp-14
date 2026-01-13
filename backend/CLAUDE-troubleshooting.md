@@ -1,6 +1,6 @@
 # Troubleshooting - Backend
 
-**Last Updated**: 2026-01-11 (Updated)
+**Last Updated**: 2026-01-13
 
 ---
 
@@ -114,13 +114,42 @@ except ValueError as e:
 # await pool.enqueue_job("merge_utterances_task", str(meeting_id), _defer_by=5)
 ```
 
-merge는 `transcribe_meeting_task` 내에서 모든 녹음 STT 완료 후 자동 호출됨.
-
 **파일**: `backend/app/api/v1/endpoints/webrtc.py`
 
 ---
 
-### 2.3 KeyError: 'speaker_id' in transcript response
+### 2.3 meeting_transcripts 테이블이 비어있음 (개별 STT 완료 후 merge 안됨)
+
+**증상**:
+- 모든 녹음이 `transcribed` 상태
+- `meeting_transcripts` 테이블에 레코드 없음
+- POST /transcribe 호출 시 400 `NO_COMPLETED_RECORDINGS` 에러
+
+**원인**:
+- 녹음 업로드 시 개별 `transcribe_recording_task`가 실행됨
+- 각 녹음 STT 완료 후 `merge_utterances` 호출 로직 누락
+- `transcribe_meeting_task`는 `COMPLETED` 상태 녹음만 처리 (이미 `TRANSCRIBED`면 무시)
+
+**해결**: `transcribe_recording_task`에 자동 merge 로직 추가
+```python
+# arq_worker.py
+async def transcribe_recording_task(ctx, recording_id, language="ko"):
+    # ... STT 처리 ...
+    await stt_service.complete_transcription(recording_uuid, result)
+
+    # 모든 녹음 STT 완료 확인 후 자동 병합
+    all_processed = await transcript_service.check_all_recordings_processed(meeting_id)
+    if all_processed:
+        await transcript_service.get_or_create_transcript(meeting_id)
+        await transcript_service.merge_utterances(meeting_id)
+```
+
+**파일**: `backend/app/workers/arq_worker.py`
+**브랜치**: `fix/merge-stt`
+
+---
+
+### 2.4 KeyError: 'speaker_id' in transcript response
 
 **증상**: GET /transcript 호출 시 500 에러, `KeyError: 'speaker_id'`
 
@@ -141,7 +170,7 @@ speaker_name=u["speakerName"],
 
 ---
 
-### 2.4 Transcript download URL not working
+### 2.5 Transcript download URL not working
 
 **증상**: Download JSON 버튼 클릭 시 다운로드 안됨
 
@@ -161,7 +190,7 @@ def get_presigned_url(...) -> str:
 
 ---
 
-### 2.5 All recordings failed to transcribe
+### 2.6 All recordings failed to transcribe
 
 **증상**: STT 시작 후 모든 녹음 변환 실패
 
