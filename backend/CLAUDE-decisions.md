@@ -1,6 +1,6 @@
 # Architecture Decisions - Backend
 
-**Last Updated**: 2026-01-11
+**Last Updated**: 2026-01-13
 
 ---
 
@@ -285,7 +285,7 @@ VAD (Voice Activity Detection) 전처리:
 ## ADR-011: Merge Task Timing Decision
 
 **Date**: 2026-01-11
-**Status**: Accepted
+**Status**: Superseded by ADR-012
 
 ### Context
 초기 구현에서 회의 종료 시 `merge_utterances_task`를 5초 후 실행하도록 큐잉. 그러나 STT가 완료되지 않은 상태에서 merge가 실행되어 `NO_TRANSCRIBED_RECORDINGS` 에러 발생.
@@ -295,21 +295,52 @@ VAD (Voice Activity Detection) 전처리:
 - `/transcribe` 호출 시 `transcribe_meeting_task` 실행
 - `transcribe_meeting_task` 내에서 모든 녹음 STT 완료 후 자동으로 `merge_utterances` 호출
 
+### Problem
+이 결정은 수동 `/transcribe` 호출에만 적용됨. 녹음 업로드 시 자동으로 실행되는 `transcribe_recording_task`는 merge를 호출하지 않아 meeting_transcripts가 생성되지 않는 문제 발생.
+
+-> ADR-012에서 해결
+
+---
+
+## ADR-012: Auto-Merge After Individual STT Completion
+
+**Date**: 2026-01-13
+**Status**: Accepted
+
+### Context
+녹음 업로드 완료 시 개별 `transcribe_recording_task`가 자동 실행되어 각 녹음의 STT는 완료되지만, `merge_utterances`가 호출되지 않아 통합 회의록이 생성되지 않음.
+
+두 가지 STT 처리 경로가 존재:
+1. **개별 처리** (자동): 녹음 업로드 -> `transcribe_recording_task` -> merge 없음
+2. **일괄 처리** (수동): `/transcribe` 호출 -> `transcribe_meeting_task` -> merge 포함
+
+### Decision
+`transcribe_recording_task` 완료 후 자동 merge 로직 추가:
+1. 개별 STT 완료 후 `check_all_recordings_processed()` 호출
+2. 모든 녹음이 처리 완료(성공/실패)되면 `merge_utterances()` 자동 실행
+3. STT 실패 시에도 다른 녹음이 모두 처리되었으면 병합 시도
+
 ### Consequences
 **Positive**:
-- STT 완료 후에만 merge 실행 보장
-- 불필요한 태스크 실패 방지
-- 사용자가 STT 시작 시점 제어 가능
+- 녹음 업로드만으로 자동 회의록 생성
+- 사용자가 `/transcribe` 수동 호출 불필요
+- 마지막 녹음 STT 완료 시점에 자동 병합
 
 **Negative**:
-- 자동 merge 불가 (사용자가 /transcribe 호출 필요)
+- 동시 STT 완료 시 race condition 가능성 (실제로는 DB 트랜잭션으로 방지)
 
 ### Implementation
 ```python
-# webrtc.py end_meeting에서 제거
-# await pool.enqueue_job("merge_utterances_task", ...)
+# arq_worker.py transcribe_recording_task
+async def transcribe_recording_task(ctx, recording_id, language="ko"):
+    # ... STT 처리 ...
+    await stt_service.complete_transcription(recording_uuid, result)
 
-# arq_worker.py transcribe_meeting_task에서 처리
-if success_count > 0:
-    transcript = await transcript_service.merge_utterances(meeting_uuid)
+    # 모든 녹음 STT 완료 확인 후 자동 병합
+    all_processed = await transcript_service.check_all_recordings_processed(meeting_id)
+    if all_processed:
+        await transcript_service.get_or_create_transcript(meeting_id)
+        await transcript_service.merge_utterances(meeting_id)
 ```
+
+**파일**: `backend/app/workers/arq_worker.py`

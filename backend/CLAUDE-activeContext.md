@@ -1,11 +1,29 @@
 # Active Context - Phase 2-2: Realtime Features
 
-**Last Updated**: 2026-01-12
-**Current Phase**: 실시간 기능 및 Docker 수정 완료
+**Last Updated**: 2026-01-13
+**Current Phase**: STT Auto-Merge 버그 수정
 
 ---
 
 ## Current Session State
+
+### Phase 2-3: STT Auto-Merge Fix (진행 중)
+
+#### Bug Fix (fix/merge-stt 브랜치)
+- [x] 문제 분석: 개별 STT 완료 후 merge_utterances 미호출
+- [x] `transcribe_recording_task`에 자동 merge 로직 추가
+- [ ] 테스트 및 검증
+- [ ] main 브랜치에 병합
+
+#### 문제 원인
+- 녹음 업로드 시 개별 `transcribe_recording_task` 실행
+- 각 녹음 STT 완료 -> `transcribed` 상태로 변경
+- **merge_utterances 호출 로직 누락** -> meeting_transcripts 테이블 비어있음
+
+#### 해결 방법
+`transcribe_recording_task` 완료 후:
+1. `check_all_recordings_processed()` 호출하여 모든 녹음 처리 확인
+2. 모두 완료되면 자동으로 `merge_utterances()` 실행
 
 ### Phase 2-1: STT Implementation (완료)
 
@@ -48,20 +66,28 @@
 
 ## STT Processing Flow
 
+### 자동 처리 흐름 (개별 녹음 업로드 시)
 ```
-1. 회의 종료 → 녹음 파일 업로드 (status: completed)
-2. POST /meetings/{id}/transcribe 호출
-   → transcribe_meeting_task 큐잉 (ARQ)
+1. 녹음 업로드 완료 -> POST /recordings/{id}/confirm
+2. transcribe_recording_task 개별 큐잉 (ARQ)
 3. ARQ Worker 처리:
-   - 각 녹음 파일 다운로드 (MinIO)
+   - 녹음 파일 다운로드 (MinIO)
    - VAD로 발화 구간 추출
    - OpenAI Whisper API로 STT
    - 결과 저장 (status: transcribed)
-4. 모든 녹음 완료 시 → merge_utterances
+4. 모든 녹음 STT 완료 확인 -> merge_utterances 자동 실행
    - 타임스탬프 기준 정렬
    - 화자 라벨 포함 병합
    - MinIO에 JSON 저장
 5. GET /meetings/{id}/transcript 로 결과 조회
+```
+
+### 수동 처리 흐름 (POST /transcribe 호출 시)
+```
+1. POST /meetings/{id}/transcribe 호출
+2. transcribe_meeting_task 큐잉 (ARQ)
+3. 모든 COMPLETED 녹음 순차 STT 처리
+4. 완료 후 merge_utterances 호출
 ```
 
 ---

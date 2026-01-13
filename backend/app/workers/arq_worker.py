@@ -26,9 +26,11 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
         dict: 작업 결과
     """
     recording_uuid = UUID(recording_id)
+    meeting_id = None
 
     async with async_session_maker() as db:
         stt_service = STTService(db)
+        transcript_service = TranscriptService(db)
 
         try:
             # 녹음 조회
@@ -37,6 +39,7 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
             if not recording:
                 raise ValueError("RECORDING_NOT_FOUND")
 
+            meeting_id = recording.meeting_id
             logger.info(f"Starting transcription task: recording={recording_id}")
 
             # STT 수행
@@ -49,6 +52,17 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
             # 완료 처리
             await stt_service.complete_transcription(recording_uuid, result)
 
+            # 모든 녹음 STT 완료 확인 후 자동 병합
+            all_processed = await transcript_service.check_all_recordings_processed(meeting_id)
+            if all_processed:
+                logger.info(f"All recordings processed, merging utterances: meeting={meeting_id}")
+                try:
+                    transcript = await transcript_service.get_or_create_transcript(meeting_id)
+                    await transcript_service.merge_utterances(meeting_id)
+                    logger.info(f"Utterances merged successfully: meeting={meeting_id}")
+                except Exception as merge_error:
+                    logger.error(f"Failed to merge utterances: meeting={meeting_id}, error={merge_error}")
+
             return {
                 "status": "success",
                 "recording_id": recording_id,
@@ -59,6 +73,18 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
         except Exception as e:
             logger.exception(f"Transcription task failed: recording={recording_id}")
             await stt_service.fail_transcription(recording_uuid, str(e))
+
+            # 실패해도 다른 녹음이 모두 처리되었으면 병합 시도
+            if meeting_id:
+                try:
+                    all_processed = await transcript_service.check_all_recordings_processed(meeting_id)
+                    if all_processed:
+                        logger.info(f"All recordings processed (with failures), attempting merge: meeting={meeting_id}")
+                        await transcript_service.get_or_create_transcript(meeting_id)
+                        await transcript_service.merge_utterances(meeting_id)
+                except Exception as merge_error:
+                    logger.error(f"Failed to merge utterances after failure: meeting={meeting_id}, error={merge_error}")
+
             return {
                 "status": "failed",
                 "recording_id": recording_id,
