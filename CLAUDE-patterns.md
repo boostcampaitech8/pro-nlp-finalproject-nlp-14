@@ -149,13 +149,42 @@
   - 클라이언트에서 실시간 발화 상태 UI 표시 가능
   - 녹음 중 발화 구간 수 표시 가능 (vadSegmentCount)
 
+### Recording Download Pattern
+- **위치**: `frontend/src/components/meeting/RecordingList.tsx`
+- **상태별 다운로드 가능 여부**:
+  - `completed`: Audio 다운로드 가능
+  - `transcribed`: Audio + Transcript 다운로드 가능
+- **다운로드 버튼**:
+  - **Audio**: `recordingService.downloadFile()` -> Blob -> .webm 파일
+  - **Transcript**: `recording.transcriptText` -> Blob -> .txt 파일
+- **패턴**:
+  ```typescript
+  // Audio 다운로드 (completed || transcribed)
+  const blob = await recordingService.downloadFile(meetingId, recordingId);
+  const url = URL.createObjectURL(blob);
+  // ... 다운로드 링크 생성
+
+  // Transcript 다운로드 (transcribed만)
+  const blob = new Blob([recording.transcriptText], { type: 'text/plain;charset=utf-8' });
+  // ... 다운로드 링크 생성
+  ```
+
 ### LocalStorage Caching Pattern
-- **위치**: `frontend/src/stores/meetingRoomStore.ts`
+- **유틸리티 위치**: `frontend/src/utils/audioSettingsStorage.ts`
+- **스토어 위치**: `frontend/src/stores/meetingRoomStore.ts`
 - **용도**: 사용자 설정을 회의 간 유지
 - **저장 항목**:
   - `mit-audio-settings`: 마이크 게인, 입/출력 디바이스 ID
   - `mit-remote-volumes`: 참여자별 볼륨 설정 (userId -> volume)
-- **패턴**:
+- **유틸리티 함수**:
+  ```typescript
+  // utils/audioSettingsStorage.ts
+  export function loadAudioSettings(): Partial<AudioSettings> { ... }
+  export function saveAudioSettings(settings: AudioSettings): void { ... }
+  export function loadRemoteVolumes(): Map<string, number> { ... }
+  export function saveRemoteVolumes(volumes: Map<string, number>): void { ... }
+  ```
+- **스토어 패턴**:
   ```typescript
   // 로드 (스토어 초기화 시)
   const cachedSettings = loadAudioSettings();
@@ -177,6 +206,24 @@
   }
   ```
 - **주의**: remoteVolumes는 참여자 퇴장 시에도 삭제하지 않음 (재입장 시 복원)
+
+### Remote Audio Component Pattern
+- **위치**: `frontend/src/components/meeting/RemoteAudio.tsx`
+- **역할**: 원격 참여자 오디오 재생 및 볼륨 조절
+- **패턴**:
+  ```typescript
+  // Web Audio API GainNode로 볼륨 조절 (0.0 ~ 2.0 범위)
+  const audioContext = new AudioContext();
+  const source = audioContext.createMediaStreamSource(stream);
+  const gainNode = audioContext.createGain();
+  gainNode.gain.value = volume;
+  source.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+
+  // setSinkId로 출력 장치 선택
+  audioElement.setSinkId(outputDeviceId);
+  ```
+- **Props**: `stream`, `odId`, `outputDeviceId`, `volume`
 
 ## Backend Patterns
 
@@ -273,6 +320,7 @@ TeamWithMembers:
 components/
 ├── meeting/
 │   ├── MeetingRoom.tsx         # 메인 회의 UI (접이식 사이드바)
+│   ├── RemoteAudio.tsx         # 원격 오디오 재생 (Web Audio GainNode)
 │   ├── AudioControls.tsx       # 오디오 컨트롤 (음소거, 게인)
 │   ├── DeviceSelector.tsx      # 디바이스 선택 드롭다운
 │   ├── VolumeSlider.tsx        # 볼륨 슬라이더
@@ -288,6 +336,9 @@ components/
 │   └── MeetingListSection.tsx  # 회의 목록 섹션
 ├── ui/
 │   └── MarkdownRenderer.tsx    # Markdown 렌더링 (react-markdown)
+utils/
+├── audioSettingsStorage.ts     # localStorage 오디오 설정 캐싱
+└── ...
 ```
 
 ### Backend Services

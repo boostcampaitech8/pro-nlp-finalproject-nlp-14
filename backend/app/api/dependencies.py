@@ -1,14 +1,18 @@
 """공유 API dependencies - 엔드포인트 간 중복 제거"""
 
 from typing import Annotated
+from urllib.parse import urlparse
 from uuid import UUID
 
+from arq import ArqRedis, create_pool
+from arq.connections import RedisSettings
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.meeting import Meeting, MeetingParticipant
 from app.models.user import User
@@ -76,3 +80,21 @@ async def require_meeting_participant(
             detail={"error": "FORBIDDEN", "message": "회의 참여자만 접근할 수 있습니다."},
         )
     return meeting
+
+
+# ===== ARQ Dependencies =====
+
+
+async def get_arq_pool() -> ArqRedis:
+    """ARQ Redis 연결 풀"""
+    settings = get_settings()
+    parsed = urlparse(settings.arq_redis_url)
+
+    redis_settings = RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        database=int(parsed.path.lstrip("/") or "0"),
+        password=parsed.password,
+    )
+
+    return await create_pool(redis_settings)

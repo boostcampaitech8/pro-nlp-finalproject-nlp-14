@@ -186,9 +186,13 @@ mit/
 | `hooks/useChat.ts` | 채팅 메시지 관리 |
 | `stores/meetingRoomStore.ts` | 회의실 상태 (스트림, 참여자, 연결, localStorage 설정 캐싱) |
 | `services/recordingService.ts` | 녹음 업로드 (Presigned URL + VAD 메타데이터) |
+| `utils/audioSettingsStorage.ts` | localStorage 오디오 설정 캐싱 (마이크 게인, 디바이스, 볼륨) |
 | `services/recordingStorageService.ts` | IndexedDB 증분 저장 |
 | `services/transcriptService.ts` | STT 시작/상태조회/결과조회 |
 | `services/chatService.ts` | 채팅 히스토리 조회 |
+| `components/meeting/MeetingRoom.tsx` | 회의실 메인 컴포넌트 |
+| `components/meeting/RecordingList.tsx` | 녹음 목록 (Audio/Transcript 다운로드) |
+| `components/meeting/RemoteAudio.tsx` | 원격 오디오 재생 (Web Audio API GainNode) |
 | `components/meeting/ChatPanel.tsx` | 채팅 UI (Markdown, 연속 메시지 그룹화) |
 | `components/ui/MarkdownRenderer.tsx` | Markdown 렌더링 (react-markdown) |
 
