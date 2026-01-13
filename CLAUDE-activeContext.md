@@ -11,7 +11,8 @@
 ### Phase 2: PR Review 시스템 - 진행 중
 - [x] 녹음 파일 STT 변환 (OpenAI Whisper API)
   - STT Provider 추상화 (OpenAI/Local/Self-hosted 확장 가능)
-  - VAD (Voice Activity Detection)로 발화 구간만 추출
+  - 클라이언트 VAD (@ricky0123/vad-web, Silero VAD) 우선 사용
+  - 서버 VAD (webrtcvad) 폴백 지원
   - ARQ Worker로 비동기 처리
   - 화자별 발화 병합 (타임스탬프 기반)
 - [x] 실시간 채팅 시스템 (WebSocket + DB 저장)
@@ -27,6 +28,18 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-13] 클라이언트 VAD (Voice Activity Detection) 구현
+- Frontend: @ricky0123/vad-web 패키지 추가 (Silero VAD, ONNX 기반)
+- useVAD.ts: 실시간 발화 감지 훅 (onSpeechStart/onSpeechEnd 콜백)
+- useRecording.ts: VAD 통합, enableVAD 옵션, isSpeaking 상태
+- recordingService.ts: VAD 메타데이터 업로드 지원
+- Backend: vad_segments JSONB 컬럼 추가 (MeetingRecording 모델)
+- recording.py (schema): VADSegment, VADMetadata, VADSettings 스키마
+- stt_service.py: 클라이언트 VAD 우선 사용, 서버 VAD 폴백
+- audio_preprocessor.py: extract_segment() 메서드 추가
+- DB 마이그레이션: 56401abb2fd4_add_vad_segments_to_meeting_recordings.py
+- 효과: 서버 VAD 분석 부하 제거, 클라이언트에서 실시간 발화 상태 표시 가능
+
 [2026-01-13] Transcribed Recording 다운로드 기능 추가
 - Backend: recordings.py - get_meeting_recordings API에서 transcript 필드 반환 추가
   - transcript_text, transcript_language, transcription_started_at, transcription_completed_at, transcription_error

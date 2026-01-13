@@ -8,6 +8,40 @@ from pydantic import BaseModel, Field
 from app.schemas.team import PaginationMeta
 
 
+class VADSegment(BaseModel):
+    """VAD 발화 구간"""
+
+    start_ms: int = Field(alias="startMs")
+    end_ms: int = Field(alias="endMs")
+
+    class Config:
+        populate_by_name = True
+
+
+class VADSettings(BaseModel):
+    """VAD 설정"""
+
+    positive_speech_threshold: float = Field(alias="positiveSpeechThreshold")
+    negative_speech_threshold: float = Field(alias="negativeSpeechThreshold")
+    min_speech_ms: int = Field(alias="minSpeechMs")
+    pre_speech_pad_ms: int = Field(alias="preSpeechPadMs")
+    redemption_ms: int = Field(alias="redemptionMs")
+
+    class Config:
+        populate_by_name = True
+
+
+class VADMetadata(BaseModel):
+    """클라이언트 VAD 메타데이터"""
+
+    segments: list[VADSegment]
+    total_duration_ms: int = Field(alias="totalDurationMs")
+    settings: VADSettings
+
+    class Config:
+        populate_by_name = True
+
+
 class RecordingUploadRequest(BaseModel):
     """녹음 업로드 메타데이터 요청 (기존 방식 - deprecated)"""
 
@@ -26,6 +60,7 @@ class RecordingUploadUrlRequest(BaseModel):
     ended_at: datetime = Field(alias="endedAt")
     duration_ms: int = Field(alias="durationMs")
     file_size_bytes: int = Field(alias="fileSizeBytes")
+    vad_metadata: VADMetadata | None = Field(default=None, alias="vadMetadata")
 
     class Config:
         populate_by_name = True

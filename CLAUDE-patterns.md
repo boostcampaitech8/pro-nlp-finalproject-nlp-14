@@ -94,6 +94,61 @@
 3. 퇴장 시 Presigned URL로 MinIO 직접 업로드
 4. beforeunload 시 localStorage 백업
 
+### Client VAD (Voice Activity Detection) Pattern
+- **위치**: `frontend/src/hooks/useVAD.ts`
+- **라이브러리**: `@ricky0123/vad-web` (Silero VAD, ONNX 기반)
+- **구조**:
+  ```typescript
+  export interface VADSegment {
+    startMs: number;  // 발화 시작 시간 (녹음 시작 기준)
+    endMs: number;    // 발화 종료 시간
+  }
+
+  export interface VADMetadata {
+    segments: VADSegment[];
+    totalDurationMs: number;
+    settings: { positiveSpeechThreshold, minSpeechFrames, ... };
+  }
+
+  export function useVAD(options): {
+    isListening: boolean;
+    isSpeaking: boolean;
+    currentSegments: VADSegment[];
+    vadMetadata: VADMetadata | null;
+    startVAD(stream: MediaStream): void;
+    stopVAD(): VADMetadata;
+    resetVAD(): void;
+  }
+  ```
+- **통합 (useRecording.ts)**:
+  ```typescript
+  // VAD 시작: MediaRecorder 시작과 함께
+  const startRecording = async () => {
+    mediaRecorderRef.current.start();
+    startVAD(localStream);  // VAD 동시 시작
+  };
+
+  // VAD 종료: 업로드 전 메타데이터 캡처
+  const stopRecording = async () => {
+    const vadMeta = stopVAD();
+    await uploadRecording({ ...params, vadMetadata: vadMeta });
+  };
+  ```
+- **Backend 처리 (stt_service.py)**:
+  ```python
+  # 클라이언트 VAD 우선 사용 -> 서버 VAD 폴백 -> 전체 파일 STT
+  if has_client_vad:
+      return await self._transcribe_with_client_vad(...)
+  elif use_vad:
+      return await self._transcribe_with_vad(...)  # 서버 VAD
+  else:
+      return await provider.transcribe(file_data)
+  ```
+- **장점**:
+  - 서버 VAD 분석 부하 제거 (webrtcvad 처리 불필요)
+  - 클라이언트에서 실시간 발화 상태 UI 표시 가능
+  - 녹음 중 발화 구간 수 표시 가능 (vadSegmentCount)
+
 ### Recording Download Pattern
 - **위치**: `frontend/src/components/meeting/RecordingList.tsx`
 - **상태별 다운로드 가능 여부**:

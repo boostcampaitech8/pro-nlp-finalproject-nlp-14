@@ -82,6 +82,7 @@ class RecordingService:
         started_at: datetime,
         ended_at: datetime,
         duration_ms: int,
+        vad_metadata: dict | None = None,
     ) -> tuple[str, str, UUID]:
         """녹음 업로드를 위한 Presigned URL 생성
 
@@ -92,6 +93,7 @@ class RecordingService:
             started_at: 녹음 시작 시간
             ended_at: 녹음 종료 시간
             duration_ms: 녹음 길이 (밀리초)
+            vad_metadata: 클라이언트 VAD 메타데이터 (선택)
 
         Returns:
             (upload_url, file_path, recording_id) 튜플
@@ -120,6 +122,7 @@ class RecordingService:
             ended_at=ended_at,
             duration_ms=duration_ms,
             status=RecordingStatus.PENDING.value,
+            vad_segments=vad_metadata,
         )
         self.db.add(recording)
         await self.db.commit()
@@ -127,7 +130,7 @@ class RecordingService:
 
         logger.info(
             f"Recording upload URL generated: meeting={meeting_id}, user={user_id}, "
-            f"recording={recording.id}"
+            f"recording={recording.id}, vad_segments={len(vad_metadata.get('segments', [])) if vad_metadata else 0}"
         )
 
         return upload_url, file_path, recording.id

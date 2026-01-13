@@ -159,6 +159,51 @@ class AudioPreprocessor:
         audio = AudioSegment.from_file(BytesIO(audio_data))
         return len(audio)
 
+    def extract_segment(
+        self,
+        audio_data: bytes,
+        start_ms: int,
+        end_ms: int,
+        output_format: str = "mp3",
+    ) -> bytes | None:
+        """특정 구간 오디오 추출
+
+        클라이언트 VAD 메타데이터 기반으로 특정 시간 구간의 오디오를 추출합니다.
+
+        Args:
+            audio_data: 원본 오디오 바이트 데이터
+            start_ms: 시작 시간 (밀리초)
+            end_ms: 종료 시간 (밀리초)
+            output_format: 출력 형식 (mp3, wav 등)
+
+        Returns:
+            bytes | None: 추출된 오디오 데이터 또는 None (구간이 유효하지 않은 경우)
+        """
+        try:
+            audio = AudioSegment.from_file(BytesIO(audio_data))
+
+            # 구간 유효성 검사
+            if start_ms < 0:
+                start_ms = 0
+            if end_ms > len(audio):
+                end_ms = len(audio)
+            if start_ms >= end_ms:
+                return None
+
+            # 구간 추출
+            segment_audio = audio[start_ms:end_ms]
+
+            # 출력 형식으로 변환
+            output = BytesIO()
+            segment_audio.export(output, format=output_format)
+            output.seek(0)
+
+            return output.read()
+
+        except Exception as e:
+            logger.error(f"Failed to extract segment ({start_ms}-{end_ms}ms): {e}")
+            return None
+
     def _generate_frames(
         self,
         audio: AudioSegment,
