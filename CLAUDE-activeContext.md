@@ -27,6 +27,23 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-13] Transcribed Recording 다운로드 기능 추가
+- Backend: recordings.py - get_meeting_recordings API에서 transcript 필드 반환 추가
+  - transcript_text, transcript_language, transcription_started_at, transcription_completed_at, transcription_error
+- Frontend: RecordingList.tsx 수정
+  - 다운로드 버튼 조건 변경: completed -> completed || transcribed
+  - Audio 버튼: 음성 파일 다운로드 (.webm)
+  - Transcript 버튼: 개별 transcript 텍스트 다운로드 (.txt)
+
+[2026-01-13] Frontend 코드 리팩토링
+- RemoteAudio 컴포넌트 분리: MeetingRoom.tsx → RemoteAudio.tsx (~136줄 분리)
+  - Web Audio API GainNode를 통한 볼륨 조절
+  - setSinkId를 통한 출력 장치 선택
+- localStorage 헬퍼 분리: meetingRoomStore.ts → utils/audioSettingsStorage.ts
+  - loadAudioSettings, saveAudioSettings
+  - loadRemoteVolumes, saveRemoteVolumes
+- 리팩토링 분석 리포트 생성: reports/refactor/refactor_codebase_13-01-2026_180000.md
+
 [2026-01-13] 수동 백업 시스템 추가
 - make backup: PostgreSQL, MinIO, Redis 전체 백업
 - make backup-list: 백업 목록 조회
