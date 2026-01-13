@@ -3,7 +3,7 @@
 .PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
 .PHONY: infra-up infra-down backend-up backend-down backend-rebuild backend-logs
 .PHONY: frontend-up frontend-down frontend-rebuild frontend-logs
-.PHONY: show-usage
+.PHONY: show-usage backup backup-restore backup-list
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
@@ -57,6 +57,11 @@ help:
 	@echo ""
 	@echo "Monitoring:"
 	@echo "  make show-usage     - Show disk usage (MinIO, PostgreSQL)"
+	@echo ""
+	@echo "Backup:"
+	@echo "  make backup              - Backup PostgreSQL, MinIO, Redis"
+	@echo "  make backup-list         - List available backups"
+	@echo "  make backup-restore name=YYYYMMDD_HHMMSS - Restore from backup"
 
 # ===================
 # Setup & Development
@@ -205,4 +210,110 @@ show-usage:
 		FROM pg_tables \
 		WHERE schemaname = 'public' \
 		ORDER BY pg_total_relation_size('public.' || tablename) DESC;" 2>/dev/null || echo "PostgreSQL not running"
+	@echo ""
+
+# ===================
+# Backup & Restore
+# ===================
+BACKUP_DIR = backup
+BACKUP_TIMESTAMP = $(shell date +%Y%m%d_%H%M%S)
+
+backup:
+	@echo ""
+	@echo "=========================================="
+	@echo "        Creating Backup"
+	@echo "        $(BACKUP_TIMESTAMP)"
+	@echo "=========================================="
+	@mkdir -p $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/postgres
+	@mkdir -p $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/minio
+	@mkdir -p $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/redis
+	@echo ""
+	@echo "[1/3] Backing up PostgreSQL..."
+	@docker exec mit-postgres pg_dump -U mit mit > $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/postgres/mit.sql 2>/dev/null && \
+		echo "      -> $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/postgres/mit.sql" || \
+		echo "      [SKIP] PostgreSQL not running"
+	@echo ""
+	@echo "[2/3] Backing up MinIO..."
+	@docker cp mit-minio:/data $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/minio/ 2>/dev/null && \
+		echo "      -> $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/minio/data/" || \
+		echo "      [SKIP] MinIO not running"
+	@echo ""
+	@echo "[3/3] Backing up Redis..."
+	@docker exec mit-redis redis-cli BGSAVE >/dev/null 2>&1 && sleep 1 && \
+		docker cp mit-redis:/data/dump.rdb $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/redis/ 2>/dev/null && \
+		echo "      -> $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/redis/dump.rdb" || \
+		echo "      [SKIP] Redis not running"
+	@echo ""
+	@echo "=========================================="
+	@echo "        Backup Complete!"
+	@echo "        Location: $(BACKUP_DIR)/$(BACKUP_TIMESTAMP)/"
+	@echo "=========================================="
+	@du -sh $(BACKUP_DIR)/$(BACKUP_TIMESTAMP) 2>/dev/null || true
+	@echo ""
+
+backup-list:
+	@echo ""
+	@echo "=========================================="
+	@echo "        Available Backups"
+	@echo "=========================================="
+	@if [ -d "$(BACKUP_DIR)" ]; then \
+		ls -1d $(BACKUP_DIR)/*/ 2>/dev/null | while read dir; do \
+			name=$$(basename "$$dir"); \
+			size=$$(du -sh "$$dir" 2>/dev/null | cut -f1); \
+			printf "  %s  (%s)\n" "$$name" "$$size"; \
+		done || echo "  No backups found"; \
+	else \
+		echo "  No backups found"; \
+	fi
+	@echo ""
+
+backup-restore:
+	@echo ""
+	@echo "=========================================="
+	@echo "        Restore from Backup"
+	@echo "=========================================="
+	@if [ -z "$(name)" ]; then \
+		echo "Usage: make backup-restore name=YYYYMMDD_HHMMSS"; \
+		echo ""; \
+		echo "Available backups:"; \
+		ls -1d $(BACKUP_DIR)/*/ 2>/dev/null | xargs -I {} basename {} || echo "  No backups found"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(BACKUP_DIR)/$(name)" ]; then \
+		echo "Error: Backup '$(name)' not found"; \
+		exit 1; \
+	fi
+	@echo "Restoring from: $(BACKUP_DIR)/$(name)"
+	@echo ""
+	@echo "[1/3] Restoring PostgreSQL..."
+	@if [ -f "$(BACKUP_DIR)/$(name)/postgres/mit.sql" ]; then \
+		docker exec -i mit-postgres psql -U mit mit < $(BACKUP_DIR)/$(name)/postgres/mit.sql 2>/dev/null && \
+		echo "      -> PostgreSQL restored" || echo "      [FAIL] PostgreSQL restore failed"; \
+	else \
+		echo "      [SKIP] No PostgreSQL backup found"; \
+	fi
+	@echo ""
+	@echo "[2/3] Restoring MinIO..."
+	@if [ -d "$(BACKUP_DIR)/$(name)/minio/data" ]; then \
+		docker cp $(BACKUP_DIR)/$(name)/minio/data/. mit-minio:/data/ 2>/dev/null && \
+		echo "      -> MinIO restored" || echo "      [FAIL] MinIO restore failed"; \
+	else \
+		echo "      [SKIP] No MinIO backup found"; \
+	fi
+	@echo ""
+	@echo "[3/3] Restoring Redis..."
+	@if [ -f "$(BACKUP_DIR)/$(name)/redis/dump.rdb" ]; then \
+		docker exec mit-redis redis-cli SHUTDOWN NOSAVE 2>/dev/null || true; \
+		sleep 1; \
+		docker cp $(BACKUP_DIR)/$(name)/redis/dump.rdb mit-redis:/data/ 2>/dev/null; \
+		$(DOCKER_COMPOSE) restart redis 2>/dev/null && \
+		echo "      -> Redis restored" || echo "      [FAIL] Redis restore failed"; \
+	else \
+		echo "      [SKIP] No Redis backup found"; \
+	fi
+	@echo ""
+	@echo "=========================================="
+	@echo "        Restore Complete!"
+	@echo "=========================================="
 	@echo ""

@@ -69,3 +69,6 @@ temp/
 # MinIO / S3 uploads (local)
 uploads/
 recordings/
+
+# Backups
+backup/

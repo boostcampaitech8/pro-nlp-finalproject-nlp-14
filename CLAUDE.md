@@ -139,6 +139,15 @@ uv add <package>       # 패키지 추가
 uv run pytest          # 테스트 실행
 ```
 
+### Backup
+```bash
+make backup                              # PostgreSQL, MinIO, Redis 전체 백업
+make backup-list                         # 백업 목록 조회
+make backup-restore name=YYYYMMDD_HHMMSS # 특정 백업에서 복원
+```
+
+백업 저장 위치: `backup/YYYYMMDD_HHMMSS/` (postgres/, minio/, redis/)
+
 ## Architecture
 
 ```
