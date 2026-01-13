@@ -179,11 +179,13 @@ mit/
 | 파일 | 역할 |
 |------|------|
 | `hooks/useWebRTC.ts` | WebRTC 연결, 시그널링, 녹음 관리 |
+| `hooks/useRecording.ts` | 녹음 관리 (MediaRecorder + VAD 통합) |
+| `hooks/useVAD.ts` | 클라이언트 VAD (Silero VAD, @ricky0123/vad-web) |
 | `hooks/useAudioDevices.ts` | 오디오 디바이스 선택 |
 | `hooks/useForceMute.ts` | Host 강제 음소거 |
 | `hooks/useChat.ts` | 채팅 메시지 관리 |
 | `stores/meetingRoomStore.ts` | 회의실 상태 (스트림, 참여자, 연결, localStorage 설정 캐싱) |
-| `services/recordingService.ts` | 녹음 업로드 (Presigned URL) |
+| `services/recordingService.ts` | 녹음 업로드 (Presigned URL + VAD 메타데이터) |
 | `services/recordingStorageService.ts` | IndexedDB 증분 저장 |
 | `services/transcriptService.ts` | STT 시작/상태조회/결과조회 |
 | `services/chatService.ts` | 채팅 히스토리 조회 |

@@ -7,6 +7,7 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 import { recordingService } from '@/services/recordingService';
 import { recordingStorageService } from '@/services/recordingStorageService';
 import { ensureValidToken } from '@/services/api';
+import { useVAD, VADMetadata } from '@/hooks/useVAD';
 import logger from '@/utils/logger';
 
 // 녹음 임시 저장 주기 (10초)
@@ -15,6 +16,7 @@ const RECORDING_SAVE_INTERVAL = 10 * 1000;
 interface UseRecordingOptions {
   meetingId: string;
   getLocalStream: () => MediaStream | null;
+  enableVAD?: boolean;  // 클라이언트 VAD 활성화 여부 (기본: true)
 }
 
 interface UseRecordingReturn {
@@ -23,6 +25,10 @@ interface UseRecordingReturn {
   recordingError: string | null;
   isUploading: boolean;
   uploadProgress: number;
+
+  // VAD 상태
+  isSpeaking: boolean;
+  vadSegmentCount: number;
 
   // 액션
   startRecording: () => void;
@@ -33,6 +39,7 @@ interface UseRecordingReturn {
 export function useRecording({
   meetingId,
   getLocalStream,
+  enableVAD = true,
 }: UseRecordingOptions): UseRecordingReturn {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
@@ -45,6 +52,17 @@ export function useRecording({
   const recordingIdRef = useRef<string | null>(null);
   const saveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSavedChunkIndexRef = useRef<number>(-1);
+  const vadMetadataRef = useRef<VADMetadata | null>(null);
+
+  // VAD 훅
+  const {
+    isSpeaking,
+    currentSegments,
+    vadMetadata,
+    startVAD,
+    stopVAD,
+    resetVAD,
+  } = useVAD();
 
   /**
    * 녹음 청크를 IndexedDB에 증분 저장
@@ -159,6 +177,7 @@ export function useRecording({
     setRecordingError(null);
     recordedChunksRef.current = [];
     lastSavedChunkIndexRef.current = -1;
+    vadMetadataRef.current = null;
 
     // 녹음 ID 생성
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -191,6 +210,10 @@ export function useRecording({
           clearInterval(saveIntervalRef.current);
           saveIntervalRef.current = null;
         }
+        // VAD 중지
+        if (enableVAD) {
+          stopVAD();
+        }
       };
 
       mediaRecorder.onstop = () => {
@@ -208,6 +231,14 @@ export function useRecording({
       mediaRecorder.start(1000);
       setIsRecording(true);
 
+      // VAD 시작 (enableVAD가 true인 경우)
+      if (enableVAD) {
+        startVAD(localStream).catch((err) => {
+          logger.error('[useRecording] Failed to start VAD:', err);
+          // VAD 실패해도 녹음은 계속 진행
+        });
+      }
+
       // 주기적으로 IndexedDB에 저장
       saveIntervalRef.current = setInterval(() => {
         saveChunksToStorage();
@@ -219,8 +250,11 @@ export function useRecording({
       setRecordingError('녹음을 시작할 수 없습니다.');
       mediaRecorderRef.current = null;
       recordingIdRef.current = null;
+      if (enableVAD) {
+        resetVAD();
+      }
     }
-  }, [isRecording, meetingId, getLocalStream, saveChunksToStorage]);
+  }, [isRecording, meetingId, getLocalStream, saveChunksToStorage, enableVAD, startVAD, stopVAD, resetVAD]);
 
   /**
    * 녹음 중지 및 서버 업로드
@@ -232,6 +266,13 @@ export function useRecording({
       saveIntervalRef.current = null;
     }
 
+    // VAD 중지 및 메타데이터 저장
+    if (enableVAD) {
+      vadMetadataRef.current = vadMetadata;
+      stopVAD();
+      logger.log('[useRecording] VAD stopped, segments:', vadMetadataRef.current?.segments.length || 0);
+    }
+
     if (!mediaRecorderRef.current || !recordingStartTimeRef.current) {
       logger.log('[useRecording] No active recording');
       return;
@@ -240,6 +281,7 @@ export function useRecording({
     logger.log('[useRecording] Stopping recording and uploading...');
     const currentRecordingId = recordingIdRef.current;
     const startTime = recordingStartTimeRef.current;
+    const currentVadMetadata = vadMetadataRef.current;
 
     return new Promise<void>((resolve) => {
       const mediaRecorder = mediaRecorderRef.current!;
@@ -296,13 +338,15 @@ export function useRecording({
                 startedAt: startTime,
                 endedAt: endTime,
                 durationMs,
+                vadMetadata: currentVadMetadata || undefined,
               },
               (progress) => {
                 setUploadProgress(progress);
                 logger.log(`[useRecording] Upload progress: ${progress}%`);
               }
             );
-            logger.log('[useRecording] Recording uploaded successfully');
+            logger.log('[useRecording] Recording uploaded successfully',
+              currentVadMetadata ? `with ${currentVadMetadata.segments.length} VAD segments` : 'without VAD');
 
             if (currentRecordingId) {
               await recordingStorageService.deleteRecording(currentRecordingId);
@@ -324,6 +368,7 @@ export function useRecording({
         recordedChunksRef.current = [];
         recordingIdRef.current = null;
         lastSavedChunkIndexRef.current = -1;
+        vadMetadataRef.current = null;
         setIsRecording(false);
 
         resolve();
@@ -338,11 +383,12 @@ export function useRecording({
         recordedChunksRef.current = [];
         recordingIdRef.current = null;
         lastSavedChunkIndexRef.current = -1;
+        vadMetadataRef.current = null;
         setIsRecording(false);
         resolve();
       }
     });
-  }, [meetingId]);
+  }, [meetingId, enableVAD, vadMetadata, stopVAD]);
 
   /**
    * beforeunload 이벤트 - 새로고침/탭 닫기 시 녹음 데이터 임시저장
@@ -391,6 +437,8 @@ export function useRecording({
     recordingError,
     isUploading,
     uploadProgress,
+    isSpeaking,
+    vadSegmentCount: currentSegments.length,
     startRecording,
     stopRecording,
     uploadPendingRecordings,

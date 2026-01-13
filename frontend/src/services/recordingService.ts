@@ -1,4 +1,5 @@
 import type { Recording, RecordingDownloadResponse, RecordingListResponse } from '@/types';
+import type { VADMetadata } from '@/hooks/useVAD';
 import api from './api';
 
 export interface RecordingUploadParams {
@@ -7,6 +8,7 @@ export interface RecordingUploadParams {
   startedAt: Date;
   endedAt: Date;
   durationMs: number;
+  vadMetadata?: VADMetadata;  // 클라이언트 VAD 메타데이터 (선택)
 }
 
 // Presigned URL 업로드 응답 타입
@@ -92,7 +94,7 @@ export const recordingService = {
   ): Promise<Recording> {
     const fileSize = params.file.size;
 
-    // 1. Presigned URL 요청
+    // 1. Presigned URL 요청 (VAD 메타데이터 포함)
     const urlResponse = await api.post<RecordingUploadUrlResponse>(
       `/meetings/${params.meetingId}/recordings/upload-url`,
       {
@@ -100,6 +102,7 @@ export const recordingService = {
         endedAt: params.endedAt.toISOString(),
         durationMs: params.durationMs,
         fileSizeBytes: fileSize,
+        vadMetadata: params.vadMetadata || null,
       }
     );
 

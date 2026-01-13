@@ -257,6 +257,11 @@ async def get_recording_upload_url(
     3. /recordings/{recording_id}/confirm 으로 업로드 완료 확인
     """
     try:
+        # VAD 메타데이터를 dict로 변환 (있는 경우)
+        vad_metadata_dict = None
+        if request.vad_metadata:
+            vad_metadata_dict = request.vad_metadata.model_dump(by_alias=True)
+
         upload_url, file_path, recording_id = await recording_service.create_recording_upload(
             meeting_id=meeting.id,
             user_id=current_user.id,
@@ -264,6 +269,7 @@ async def get_recording_upload_url(
             started_at=request.started_at,
             ended_at=request.ended_at,
             duration_ms=request.duration_ms,
+            vad_metadata=vad_metadata_dict,
         )
 
         return RecordingUploadUrlResponse(

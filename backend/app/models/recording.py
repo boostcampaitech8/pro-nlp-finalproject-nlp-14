@@ -105,6 +105,13 @@ class MeetingRecording(Base):
         comment="STT 실패 시 에러 메시지",
     )
 
+    # 클라이언트 VAD 메타데이터
+    vad_segments: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="클라이언트에서 감지한 VAD 발화 구간 JSON",
+    )
+
     # 관계
     meeting: Mapped["Meeting"] = relationship("Meeting", back_populates="recordings")
     user: Mapped["User"] = relationship("User")

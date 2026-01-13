@@ -67,6 +67,9 @@ class STTService:
     ) -> TranscriptionResult:
         """녹음 파일 STT 변환
 
+        클라이언트 VAD 메타데이터가 있으면 우선 사용하고,
+        없으면 서버에서 VAD 분석을 수행합니다.
+
         Args:
             recording: 녹음 객체
             language: 우선 언어 코드
@@ -78,16 +81,26 @@ class STTService:
         # MinIO에서 파일 다운로드
         file_data = storage_service.get_recording_file(recording.file_path)
 
+        # 클라이언트 VAD 메타데이터 확인
+        client_vad = recording.vad_segments
+        has_client_vad = client_vad and client_vad.get("segments")
+
         logger.info(
             f"Processing recording: id={recording.id}, "
-            f"size={len(file_data)} bytes, use_vad={use_vad}"
+            f"size={len(file_data)} bytes, use_vad={use_vad}, "
+            f"client_vad={'yes' if has_client_vad else 'no'}"
         )
 
         # STT Provider 생성
         provider = STTProviderFactory.create()
 
-        if use_vad:
-            # VAD로 발화 구간 추출 후 각각 STT
+        if has_client_vad:
+            # 클라이언트 VAD 메타데이터 사용 (서버 부하 감소)
+            return await self._transcribe_with_client_vad(
+                file_data, provider, language, client_vad
+            )
+        elif use_vad:
+            # 서버 VAD로 발화 구간 추출 후 각각 STT
             return await self._transcribe_with_vad(
                 file_data, provider, language, recording.started_at
             )
@@ -98,6 +111,91 @@ class STTService:
                 file_data = self._preprocessor.convert_to_mp3(file_data)
 
             return await provider.transcribe(file_data, language=language)
+
+    async def _transcribe_with_client_vad(
+        self,
+        file_data: bytes,
+        provider,
+        language: str,
+        vad_metadata: dict,
+    ) -> TranscriptionResult:
+        """클라이언트 VAD 메타데이터 기반 STT
+
+        클라이언트에서 감지한 발화 구간만 추출하여 STT 수행.
+        서버에서 VAD 분석을 수행하지 않아 처리 속도 향상.
+
+        Args:
+            file_data: 원본 오디오 데이터
+            provider: STT Provider
+            language: 언어 코드
+            vad_metadata: 클라이언트 VAD 메타데이터
+
+        Returns:
+            TranscriptionResult: STT 결과
+        """
+        segments = vad_metadata.get("segments", [])
+
+        if not segments:
+            logger.warning("No voice segments in client VAD metadata")
+            return TranscriptionResult(
+                text="",
+                segments=[],
+                language=language,
+                duration_ms=vad_metadata.get("totalDurationMs", 0),
+            )
+
+        logger.info(f"Using client VAD segments: {len(segments)}")
+
+        # 각 구간에서 오디오 추출 및 STT
+        all_segments = []
+        all_texts = []
+        segment_id = 0
+
+        for vad_seg in segments:
+            start_ms = vad_seg.get("startMs", 0)
+            end_ms = vad_seg.get("endMs", 0)
+
+            try:
+                # 해당 구간 오디오 추출
+                segment_audio = self._preprocessor.extract_segment(
+                    file_data, start_ms, end_ms, output_format="mp3"
+                )
+
+                if not segment_audio:
+                    continue
+
+                result = await provider.transcribe(
+                    segment_audio,
+                    language=language,
+                )
+
+                # 원본 타임스탬프로 조정
+                for seg in result.segments:
+                    seg.id = segment_id
+                    seg.start_ms += start_ms
+                    seg.end_ms += start_ms
+                    all_segments.append(seg)
+                    segment_id += 1
+
+                all_texts.append(result.text)
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to transcribe client VAD segment "
+                    f"({start_ms}-{end_ms}ms): {e}"
+                )
+                continue
+
+        # 결과 병합
+        full_text = " ".join(all_texts)
+        duration_ms = vad_metadata.get("totalDurationMs", 0)
+
+        return TranscriptionResult(
+            text=full_text,
+            segments=all_segments,
+            language=language,
+            duration_ms=duration_ms,
+        )
 
     async def _transcribe_with_vad(
         self,
