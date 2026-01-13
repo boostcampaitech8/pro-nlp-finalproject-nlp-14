@@ -27,6 +27,13 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-13] 수동 백업 시스템 추가
+- make backup: PostgreSQL, MinIO, Redis 전체 백업
+- make backup-list: 백업 목록 조회
+- make backup-restore: 특정 백업에서 복원
+- 백업 저장 위치: backup/YYYYMMDD_HHMMSS/ (.gitignore 추가)
+- 프로덕션 자동 백업은 향후 별도 구현 예정
+
 [2026-01-12] Phase 2-2: 실시간 기능 및 UI 개선
 - 채팅 시스템: WebSocket 메시지 + DB 저장, ChatPanel 컴포넌트
 - Host 강제 음소거: force-mute/force-muted 메시지, useForceMute 훅
