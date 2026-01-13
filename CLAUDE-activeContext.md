@@ -27,6 +27,15 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-13] Frontend 코드 리팩토링
+- RemoteAudio 컴포넌트 분리: MeetingRoom.tsx → RemoteAudio.tsx (~136줄 분리)
+  - Web Audio API GainNode를 통한 볼륨 조절
+  - setSinkId를 통한 출력 장치 선택
+- localStorage 헬퍼 분리: meetingRoomStore.ts → utils/audioSettingsStorage.ts
+  - loadAudioSettings, saveAudioSettings
+  - loadRemoteVolumes, saveRemoteVolumes
+- 리팩토링 분석 리포트 생성: reports/refactor/refactor_codebase_13-01-2026_180000.md
+
 [2026-01-13] 수동 백업 시스템 추가
 - make backup: PostgreSQL, MinIO, Redis 전체 백업
 - make backup-list: 백업 목록 조회
