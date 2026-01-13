@@ -3,16 +3,12 @@
 import logging
 from datetime import datetime
 from typing import Annotated
-from urllib.parse import urlparse
 from uuid import UUID
 
-from arq import ArqRedis, create_pool
-from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user, require_meeting_participant
-from app.core.config import get_settings
+from app.api.dependencies import get_arq_pool, get_current_user, require_meeting_participant
 from app.core.constants import PRESIGNED_URL_EXPIRATION
 from app.core.database import get_db
 from app.models.meeting import Meeting
@@ -30,21 +26,6 @@ from app.schemas.team import PaginationMeta
 from app.services.recording_service import RecordingService
 
 logger = logging.getLogger(__name__)
-
-
-async def get_arq_pool() -> ArqRedis:
-    """ARQ Redis 연결 풀"""
-    settings = get_settings()
-    parsed = urlparse(settings.arq_redis_url)
-
-    redis_settings = RedisSettings(
-        host=parsed.hostname or "localhost",
-        port=parsed.port or 6379,
-        database=int(parsed.path.lstrip("/") or "0"),
-        password=parsed.password,
-    )
-
-    return await create_pool(redis_settings)
 
 router = APIRouter(prefix="/meetings", tags=["Recordings"])
 
