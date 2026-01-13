@@ -94,6 +94,26 @@
 3. 퇴장 시 Presigned URL로 MinIO 직접 업로드
 4. beforeunload 시 localStorage 백업
 
+### Recording Download Pattern
+- **위치**: `frontend/src/components/meeting/RecordingList.tsx`
+- **상태별 다운로드 가능 여부**:
+  - `completed`: Audio 다운로드 가능
+  - `transcribed`: Audio + Transcript 다운로드 가능
+- **다운로드 버튼**:
+  - **Audio**: `recordingService.downloadFile()` -> Blob -> .webm 파일
+  - **Transcript**: `recording.transcriptText` -> Blob -> .txt 파일
+- **패턴**:
+  ```typescript
+  // Audio 다운로드 (completed || transcribed)
+  const blob = await recordingService.downloadFile(meetingId, recordingId);
+  const url = URL.createObjectURL(blob);
+  // ... 다운로드 링크 생성
+
+  // Transcript 다운로드 (transcribed만)
+  const blob = new Blob([recording.transcriptText], { type: 'text/plain;charset=utf-8' });
+  // ... 다운로드 링크 생성
+  ```
+
 ### LocalStorage Caching Pattern
 - **유틸리티 위치**: `frontend/src/utils/audioSettingsStorage.ts`
 - **스토어 위치**: `frontend/src/stores/meetingRoomStore.ts`

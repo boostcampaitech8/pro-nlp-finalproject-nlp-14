@@ -189,6 +189,7 @@ mit/
 | `services/transcriptService.ts` | STT 시작/상태조회/결과조회 |
 | `services/chatService.ts` | 채팅 히스토리 조회 |
 | `components/meeting/MeetingRoom.tsx` | 회의실 메인 컴포넌트 |
+| `components/meeting/RecordingList.tsx` | 녹음 목록 (Audio/Transcript 다운로드) |
 | `components/meeting/RemoteAudio.tsx` | 원격 오디오 재생 (Web Audio API GainNode) |
 | `components/meeting/ChatPanel.tsx` | 채팅 UI (Markdown, 연속 메시지 그룹화) |
 | `components/ui/MarkdownRenderer.tsx` | Markdown 렌더링 (react-markdown) |
