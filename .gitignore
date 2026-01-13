@@ -70,5 +70,8 @@ temp/
 uploads/
 recordings/
 
+# reports
+reports/
+
 # Backups
 backup/

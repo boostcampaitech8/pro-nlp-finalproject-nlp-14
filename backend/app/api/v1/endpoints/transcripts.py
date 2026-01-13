@@ -4,14 +4,10 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from arq import ArqRedis, create_pool
-from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from urllib.parse import urlparse
 
-from app.api.dependencies import require_meeting_participant
-from app.core.config import get_settings
+from app.api.dependencies import get_arq_pool, require_meeting_participant
 from app.core.database import get_db
 from app.models.meeting import Meeting
 from app.core.storage import storage_service
@@ -33,21 +29,6 @@ router = APIRouter(prefix="/meetings", tags=["Transcripts"])
 def get_transcript_service(db: Annotated[AsyncSession, Depends(get_db)]) -> TranscriptService:
     """TranscriptService 의존성"""
     return TranscriptService(db)
-
-
-async def get_arq_pool() -> ArqRedis:
-    """ARQ Redis 연결 풀"""
-    settings = get_settings()
-    parsed = urlparse(settings.arq_redis_url)
-
-    redis_settings = RedisSettings(
-        host=parsed.hostname or "localhost",
-        port=parsed.port or 6379,
-        database=int(parsed.path.lstrip("/") or "0"),
-        password=parsed.password,
-    )
-
-    return await create_pool(redis_settings)
 
 
 @router.post(
