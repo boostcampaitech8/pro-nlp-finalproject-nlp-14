@@ -1,11 +1,11 @@
 // 에이전트 서비스 (Mock API)
 // 실제 백엔드 API 연동 전까지 사용하는 Mock 데이터
 
-import type { ActiveCommand, AgentResponse, CommandField } from '@/app/types/command';
+import type { ActiveCommand, AgentResponse, CommandField, ModalData } from '@/app/types/command';
 
 // Mock 응답 정의
 interface MockResponse {
-  type: 'form' | 'direct';
+  type: 'form' | 'direct' | 'modal';
   title?: string;
   description?: string;
   icon?: string;
@@ -13,42 +13,16 @@ interface MockResponse {
   message?: string;
   previewType?: string;
   previewContent?: string;
+  modalData?: ModalData;
 }
 
 const MOCK_RESPONSES: Record<string, MockResponse> = {
-  // 회의 관련
+  // 회의 관련 - 모달로 처리
   meeting_create: {
-    type: 'form',
-    title: '새 회의 만들기',
-    description: '회의 정보를 입력해주세요',
-    icon: '🎯',
-    fields: [
-      {
-        id: 'title',
-        label: '회의 제목',
-        type: 'text',
-        placeholder: '예: 주간 팀 미팅',
-        required: true,
-      },
-      {
-        id: 'team',
-        label: '팀 선택',
-        type: 'select',
-        options: ['개발팀', '디자인팀', '마케팅팀', '전체'],
-        required: true,
-      },
-      {
-        id: 'scheduledAt',
-        label: '예정 시간',
-        type: 'date',
-      },
-      {
-        id: 'description',
-        label: '회의 안건',
-        type: 'textarea',
-        placeholder: '회의에서 다룰 주요 안건을 입력하세요',
-      },
-    ],
+    type: 'modal',
+    modalData: {
+      modalType: 'meeting',
+    },
   },
 
   // 검색 관련
@@ -232,6 +206,15 @@ export const agentService = {
 
     const matched = matchCommand(command);
 
+    // 모달 타입 응답 처리
+    if (matched.type === 'modal' && matched.modalData) {
+      return {
+        type: 'modal',
+        modalData: matched.modalData,
+      };
+    }
+
+    // 폼 타입 응답 처리
     if (matched.type === 'form' && matched.fields) {
       const activeCommand: ActiveCommand = {
         id: `cmd-${Date.now()}`,
@@ -248,6 +231,7 @@ export const agentService = {
       };
     }
 
+    // 직접 응답 처리
     return {
       type: 'direct',
       message: matched.message || `"${command}" 명령을 처리했습니다.`,

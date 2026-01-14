@@ -2,6 +2,7 @@
 import { useCallback } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { usePreviewStore } from '@/app/stores/previewStore';
+import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { agentService } from '@/app/services/agentService';
 import type { HistoryItem } from '@/app/types/command';
 
@@ -18,6 +19,7 @@ export function useCommand() {
   } = useCommandStore();
 
   const { setPreview } = usePreviewStore();
+  const { openModal: openMeetingModal } = useMeetingModalStore();
 
   // 명령 제출
   const submitCommand = useCallback(
@@ -32,7 +34,17 @@ export function useCommand() {
         // agentService를 통해 명령 처리
         const response = await agentService.processCommand(cmd);
 
-        if (response.type === 'form' && response.command) {
+        if (response.type === 'modal' && response.modalData) {
+          // 모달 표시
+          if (response.modalData.modalType === 'meeting') {
+            openMeetingModal({
+              title: response.modalData.title,
+              description: response.modalData.description,
+              scheduledAt: response.modalData.scheduledAt,
+              teamId: response.modalData.teamId,
+            });
+          }
+        } else if (response.type === 'form' && response.command) {
           // Form 표시
           setActiveCommand(response.command);
         } else {
@@ -72,7 +84,7 @@ export function useCommand() {
         setProcessing(false);
       }
     },
-    [inputValue, setInputValue, setProcessing, setActiveCommand, addHistory, setPreview]
+    [inputValue, setInputValue, setProcessing, setActiveCommand, addHistory, setPreview, openMeetingModal]
   );
 
   // Form 제출

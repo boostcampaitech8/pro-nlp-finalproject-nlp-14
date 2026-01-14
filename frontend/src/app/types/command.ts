@@ -39,11 +39,21 @@ export interface Suggestion {
   category: 'meeting' | 'search' | 'action' | 'help';
 }
 
+// 모달 데이터 타입
+export interface ModalData {
+  modalType: 'meeting';
+  title?: string;
+  description?: string;
+  scheduledAt?: string;
+  teamId?: string;
+}
+
 // Mock 데이터를 위한 에이전트 응답 타입
 export interface AgentResponse {
-  type: 'direct' | 'form';
+  type: 'direct' | 'form' | 'modal';
   message?: string;
   command?: ActiveCommand;
+  modalData?: ModalData;
   previewData?: {
     type: string;
     title: string;
