@@ -1,6 +1,11 @@
 {
-  "model": "sonnet",
+  "model": "opus",
   "cleanupPeriodDays": 365,
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/ys/Code/**"
+    ]
+  },
   "hooks": {
     "Stop": [
       {
