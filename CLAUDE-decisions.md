@@ -171,3 +171,62 @@
   - Frontend: `formatTimestamp(utterance.timestamp)` -> "HH:MM:SS"
 - **정렬**: `absolute_timestamp` 기준으로 발화 정렬 (시간 순서 보장)
 - **메타데이터**: `meeting_start`, `meeting_end` 필드 추가 (회의 실제 시작/종료 시각)
+
+## UI Architecture
+
+### D17: Spotlight-style 메인 서비스 페이지
+- **결정**: macOS Spotlight 스타일의 3-column 레이아웃 메인 페이지 구현
+- **근거**:
+  - 현대적인 UX 제공 (Raycast, Alfred 스타일)
+  - 자연어 명령어 입력으로 빠른 작업 수행
+  - 컨텍스트 미리보기로 정보 탐색 효율성 향상
+- **구조**:
+  - 좌측 (280px): 네비게이션, 팀 목록, 현재 세션
+  - 중앙: Spotlight 입력, 명령 결과
+  - 우측 (400px): 선택 항목 미리보기
+- **위치**: `frontend/src/app/`
+
+### D18: Glassmorphism 디자인 시스템
+- **결정**: 반투명 글래스 효과 기반 UI 디자인
+- **근거**:
+  - 시각적 깊이감 제공 (레이어 구분)
+  - 모던한 미적 감각
+  - 다크 테마와 잘 어울림
+- **구현**:
+  - `backdrop-filter: blur()` 사용
+  - `rgba()` 배경색으로 투명도 조절
+  - 커스텀 Tailwind 색상 (`glass`, `card-bg`, `mit-primary`)
+- **주의**: 성능 고려 - 중첩 blur 최소화
+
+### D19: Modal Store 분리 패턴
+- **결정**: 모달 상태를 별도 Zustand 스토어로 관리
+- **근거**:
+  - 모달 트리거와 상태 분리 (여러 위치에서 열기 가능)
+  - 초기 데이터 전달 용이
+  - 컴포넌트 간 결합도 감소
+- **패턴**:
+  ```typescript
+  // 명령어에서 열기
+  openModal({ title: '새 회의', teamId });
+  // 버튼에서 열기
+  <button onClick={() => openModal()}>새 회의</button>
+  // 네비게이션에서 열기
+  openModal({ teamId: currentTeam.id });
+  ```
+- **적용**: `meetingModalStore.ts`
+
+### D20: Command System 아키텍처
+- **결정**: 패턴 매칭 기반 명령어 시스템
+- **근거**:
+  - 자연어 입력 지원 (한글/영어)
+  - 확장 가능한 명령어 추가
+  - 자동완성 및 히스토리 지원
+- **구조**:
+  - `agentService.ts`: 명령어 패턴 정의 및 매칭
+  - `commandStore.ts`: 입력/자동완성/히스토리 상태
+  - `useCommand.ts`: 명령어 실행 및 응답 처리
+- **응답 타입**:
+  - `direct`: 직접 결과 표시
+  - `navigation`: 페이지 이동
+  - `modal`: 모달 열기
+  - `form`: 폼 입력 필요

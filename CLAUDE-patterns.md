@@ -259,6 +259,152 @@
   ```
 - **타입**: `Utterance` 타입은 `packages/shared-types/src/api.ts`에서 자동 생성 (OpenAPI 스키마 기반)
 
+## Spotlight Service Patterns (src/app/)
+
+### 3-Column Layout Pattern
+- **위치**: `src/app/layouts/MainLayout.tsx`
+- **구조**:
+  ```tsx
+  <div className="h-screen flex gradient-bg overflow-hidden">
+    {/* 좌측 사이드바 - 280px 고정 */}
+    <aside className="w-[280px] flex-shrink-0 glass-sidebar">
+      <LeftSidebar />
+    </aside>
+
+    {/* 중앙 컨텐츠 - flex-1 */}
+    <main className="flex-1 flex flex-col min-h-0">
+      <SpotlightInput />
+      <div className="flex-1 overflow-y-auto">
+        {/* 컨텐츠 */}
+      </div>
+    </main>
+
+    {/* 우측 사이드바 - 400px 고정 */}
+    <aside className="w-[400px] flex-shrink-0">
+      <PreviewPanel />
+    </aside>
+  </div>
+  ```
+
+### Glassmorphism Design System
+- **위치**: `src/index.css`
+- **핵심 클래스**:
+  ```css
+  /* 글래스 카드 */
+  .glass-card {
+    @apply bg-card-bg backdrop-blur-lg border border-glass rounded-xl;
+  }
+
+  /* 글래스 사이드바 */
+  .glass-sidebar {
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(40px) saturate(150%);
+  }
+
+  /* 글래스 입력창 */
+  .glass-input {
+    @apply bg-input-bg backdrop-blur-xl border-2 border-glass-light rounded-2xl;
+  }
+  ```
+- **Tailwind 확장** (tailwind.config.js):
+  ```javascript
+  colors: {
+    'mit-primary': '#3b82f6',
+    'mit-secondary': '#8b5cf6',
+    'card-bg': 'rgba(255, 255, 255, 0.03)',
+    'glass': 'rgba(255, 255, 255, 0.08)',
+  }
+  ```
+
+### Spotlight Command System Pattern
+- **스토어**: `src/app/stores/commandStore.ts`
+- **서비스**: `src/app/services/agentService.ts`
+- **훅**: `src/app/hooks/useCommand.ts`
+- **구조**:
+  ```typescript
+  // commandStore.ts - 상태 관리
+  interface CommandState {
+    input: string;
+    suggestions: CommandSuggestion[];
+    history: CommandHistoryItem[];
+    isProcessing: boolean;
+    setInput: (input: string) => void;
+    addToHistory: (item: CommandHistoryItem) => void;
+  }
+
+  // agentService.ts - 명령어 매칭
+  const COMMAND_PATTERNS: CommandPattern[] = [
+    { pattern: /^회의\s*(시작|생성|만들기)/, command: 'meeting_create', ... },
+    { pattern: /^팀\s*(목록|리스트)/, command: 'team_list', ... },
+  ];
+
+  // useCommand.ts - 훅
+  function useCommand() {
+    const handleSubmit = async (input: string) => {
+      const response = await agentService.processCommand(input);
+      if (response.type === 'modal') {
+        openMeetingModal(response.modalData);
+      } else if (response.type === 'navigation') {
+        navigate(response.path);
+      }
+    };
+  }
+  ```
+
+### Modal Store Pattern
+- **위치**: `src/app/stores/meetingModalStore.ts`
+- **패턴**: Zustand 기반 모달 상태 분리
+- **구조**:
+  ```typescript
+  interface MeetingModalState {
+    isOpen: boolean;
+    initialData: MeetingModalData | null;
+    openModal: (data?: MeetingModalData) => void;
+    closeModal: () => void;
+  }
+
+  // 사용
+  const { openModal } = useMeetingModalStore();
+  openModal({ title: '새 회의', teamId: 'xxx' });
+  ```
+- **장점**:
+  - 모달 상태와 트리거 분리
+  - 여러 위치에서 모달 열기 가능 (명령어, 버튼, 네비게이션)
+
+### Preview Panel Pattern
+- **위치**: `src/app/stores/previewStore.ts`
+- **역할**: 우측 사이드바 미리보기 컨텐츠 관리
+- **구조**:
+  ```typescript
+  interface PreviewState {
+    type: 'none' | 'meeting' | 'team' | 'search' | 'help';
+    data: PreviewData | null;
+    setPreview: (type: PreviewType, data?: PreviewData) => void;
+    clearPreview: () => void;
+  }
+  ```
+
+### framer-motion Animation Pattern
+- **위치**: `src/app/components/spotlight/SpotlightInput.tsx`
+- **패턴**:
+  ```tsx
+  import { motion, AnimatePresence } from 'framer-motion';
+
+  // 페이드 인/아웃
+  <AnimatePresence>
+    {suggestions.length > 0 && (
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.15 }}
+      >
+        {/* 자동완성 목록 */}
+      </motion.div>
+    )}
+  </AnimatePresence>
+  ```
+
 ## Backend Patterns
 
 ### API Structure

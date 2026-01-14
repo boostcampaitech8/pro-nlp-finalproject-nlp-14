@@ -28,6 +28,41 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-15] Spotlight-style 메인 서비스 페이지 구현 (MIT-9)
+- 목적: macOS Spotlight 스타일의 현대적인 메인 페이지 구현
+- 구현 내용:
+  - 3-column 레이아웃 (280px 좌측 사이드바, 중앙 컨텐츠, 400px 우측 사이드바)
+  - Glassmorphism 디자인 시스템 (backdrop-blur, rgba 배경)
+  - shadcn/ui 컴포넌트 통합 (Dialog, ScrollArea, Tooltip 등)
+  - Spotlight 명령어 시스템 (자동완성, 히스토리)
+  - framer-motion 애니메이션
+- 새 파일 구조 (src/app/):
+  - components/meeting/MeetingModal.tsx - 회의 생성 모달
+  - components/sidebar/{LeftSidebar,Navigation,CurrentSession}.tsx - 사이드바
+  - components/spotlight/SpotlightInput.tsx - 명령어 입력
+  - components/ui/* - shadcn/ui 컴포넌트
+  - hooks/useCommand.ts - 명령어 처리
+  - layouts/MainLayout.tsx - 3-column 레이아웃
+  - pages/MainPage.tsx - 메인 페이지
+  - services/agentService.ts - 명령어 매칭/처리
+  - stores/{commandStore,meetingModalStore,previewStore}.ts - 상태 관리
+  - types/command.ts - 명령어 타입
+- Zustand 스토어:
+  - commandStore: 명령어 입력, 자동완성, 히스토리
+  - meetingModalStore: 회의 모달 상태
+  - previewStore: 미리보기 패널 상태
+- 기존 페이지 마이그레이션:
+  - HomePage, TeamDetailPage, MeetingDetailPage에 네비게이션 추가
+  - CurrentSession에 회의 링크, 새 회의 버튼 추가
+  - Navigation에 팀 목록, 회의 생성 버튼 추가
+- 테스트/빌드 결과:
+  - TypeScript: 에러 없음
+  - ESLint: 소스 코드 에러 없음
+  - Tests: 24 passed, 61 skipped
+  - Build: 성공 (1.2MB JS bundle)
+- 수정된 CSS:
+  - index.css: hover:bg-white/8 -> hover:bg-white/5 (Tailwind 호환)
+
 [2026-01-14] Frontend 테스트 인프라 개선 (진행 중)
 - 목적: 테스트 환경 안정화 및 react-markdown 모킹
 - test/setup.ts: jest-dom matcher 설정 방식 변경
