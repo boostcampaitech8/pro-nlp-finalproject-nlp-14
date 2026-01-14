@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useAuth } from '@/hooks/useAuth';
+import { MainLayout } from '@/app/layouts/MainLayout';
 import { MainPage } from '@/app/pages/MainPage';
 import { HomePage } from '@/dashboard/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -33,15 +34,17 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* 새 서비스 페이지 (Spotlight UI) */}
+      {/* 새 서비스 페이지 (Spotlight UI) - MainLayout 사용 */}
       <Route
         path="/"
         element={
           <PrivateRoute>
-            <MainPage />
+            <MainLayout />
           </PrivateRoute>
         }
-      />
+      >
+        <Route index element={<MainPage />} />
+      </Route>
 
       {/* 기존 Dashboard 페이지 */}
       <Route
