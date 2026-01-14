@@ -1,51 +1,47 @@
 // 새 서비스 메인 페이지 (Spotlight UI)
-// Phase 4에서 Spotlight 컴포넌트 전체 구현 예정
-
-import { Command } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { useCommandStore } from '@/app/stores/commandStore';
+import {
+  SpotlightInput,
+  CommandSuggestions,
+  CommandHistory,
+  InteractiveForm,
+} from '@/app/components/spotlight';
+import { ScrollArea } from '@/app/components/ui';
 
 export function MainPage() {
+  const { activeCommand } = useCommandStore();
+
   return (
-    <div className="flex-1 flex flex-col">
-      {/* 상단: 추천 명령어 영역 (Phase 4에서 구현) */}
-      <section className="flex-1 flex items-end justify-center px-12 pb-8">
-        <div className="text-center">
-          <p className="text-white/40 text-sm mb-4">
-            추천 명령어가 여기에 표시됩니다
-          </p>
-        </div>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* 상단: 추천 명령어 */}
+      <section className="flex-1 flex items-end justify-center px-8 pb-6 overflow-hidden">
+        <ScrollArea className="w-full max-h-full">
+          <div className="pb-2">
+            <CommandSuggestions />
+          </div>
+        </ScrollArea>
       </section>
 
       {/* 중앙: Spotlight 입력 영역 */}
-      <section className="px-12 py-8 bg-black/20 border-y border-glass">
-        <div className="max-w-2xl mx-auto">
-          {/* Spotlight 입력창 플레이스홀더 */}
-          <div className="glass-input flex items-center gap-4 px-6 py-4">
-            <Command className="w-5 h-5 text-white/40" />
-            <input
-              type="text"
-              placeholder="무엇을 도와드릴까요? (예: '새 회의 시작', '지난 회의록 검색')"
-              className="flex-1 bg-transparent text-white placeholder:text-white/40 outline-none text-[15px]"
-              disabled
-            />
-            <div className="flex gap-1">
-              <span className="shortcut-key">Cmd</span>
-              <span className="shortcut-key">K</span>
-            </div>
-          </div>
+      <section className="px-8 py-6 bg-black/20 border-y border-glass">
+        <div className="max-w-3xl mx-auto">
+          <SpotlightInput />
 
-          <p className="text-center text-white/30 text-xs mt-4">
-            Phase 4에서 Spotlight 기능이 구현됩니다
-          </p>
+          {/* Interactive Form (조건부 렌더링) */}
+          <AnimatePresence mode="wait">
+            {activeCommand && <InteractiveForm command={activeCommand} />}
+          </AnimatePresence>
         </div>
       </section>
 
-      {/* 하단: 히스토리 영역 (Phase 4에서 구현) */}
-      <section className="flex-1 flex items-start justify-center px-12 pt-8">
-        <div className="text-center">
-          <p className="text-white/40 text-sm">
-            명령 히스토리가 여기에 표시됩니다
-          </p>
-        </div>
+      {/* 하단: 명령 히스토리 */}
+      <section className="flex-1 overflow-hidden px-8 pt-6">
+        <ScrollArea className="h-full">
+          <div className="pb-6">
+            <CommandHistory />
+          </div>
+        </ScrollArea>
       </section>
     </div>
   );
