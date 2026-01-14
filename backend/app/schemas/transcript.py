@@ -57,6 +57,7 @@ class UtteranceResponse(BaseModel):
     start_ms: int = Field(serialization_alias="startMs")
     end_ms: int = Field(serialization_alias="endMs")
     text: str
+    timestamp: datetime  # 실제 발화 시각 (wall-clock time)
 
     class Config:
         populate_by_name = True
@@ -72,6 +73,8 @@ class MeetingTranscriptResponse(BaseModel):
     utterances: list[UtteranceResponse] | None = None
     total_duration_ms: int | None = Field(default=None, serialization_alias="totalDurationMs")
     speaker_count: int | None = Field(default=None, serialization_alias="speakerCount")
+    meeting_start: datetime | None = Field(default=None, serialization_alias="meetingStart")
+    meeting_end: datetime | None = Field(default=None, serialization_alias="meetingEnd")
     file_path: str | None = Field(default=None, serialization_alias="filePath")
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime | None = Field(default=None, serialization_alias="updatedAt")

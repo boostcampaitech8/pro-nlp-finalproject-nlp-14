@@ -165,6 +165,7 @@ async def get_meeting_transcript(
         # utterances 변환 (DB에는 camelCase로 저장됨)
         utterances = None
         if transcript.utterances:
+            from datetime import datetime
             utterances = [
                 UtteranceResponse(
                     id=u["id"],
@@ -173,6 +174,7 @@ async def get_meeting_transcript(
                     start_ms=u["startMs"],
                     end_ms=u["endMs"],
                     text=u["text"],
+                    timestamp=datetime.fromisoformat(u["timestamp"]),
                 )
                 for u in transcript.utterances
             ]
@@ -185,6 +187,8 @@ async def get_meeting_transcript(
             utterances=utterances,
             total_duration_ms=transcript.total_duration_ms,
             speaker_count=transcript.speaker_count,
+            meeting_start=transcript.meeting_start,
+            meeting_end=transcript.meeting_end,
             file_path=transcript.file_path,
             created_at=transcript.created_at,
             updated_at=transcript.updated_at,

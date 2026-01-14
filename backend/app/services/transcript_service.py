@@ -3,7 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -28,6 +28,7 @@ class Utterance:
     start_ms: int
     end_ms: int
     text: str
+    absolute_timestamp: datetime  # 실제 시간 (wall-clock time)
 
     def to_dict(self) -> dict:
         return {
@@ -37,6 +38,7 @@ class Utterance:
             "startMs": self.start_ms,
             "endMs": self.end_ms,
             "text": self.text,
+            "timestamp": self.absolute_timestamp.isoformat(),  # ISO 8601 형식
         }
 
 
@@ -210,7 +212,7 @@ class TranscriptService:
         if not transcribed_recordings:
             raise ValueError("NO_TRANSCRIBED_RECORDINGS")
 
-        # 모든 세그먼트 수집 (화자 정보 포함)
+        # 모든 세그먼트 수집 (화자 정보 + 실제 시간 포함)
         all_utterances = []
         utterance_id = 0
 
@@ -218,30 +220,41 @@ class TranscriptService:
             user = recording.user
             speaker_name = user.name if user else "Unknown"
             speaker_id = str(recording.user_id)
+            recording_start = recording.started_at
 
             for segment in recording.transcript_segments:
+                start_ms = segment.get("startMs", 0)
+                end_ms = segment.get("endMs", 0)
+
+                # 실제 시간 계산: 녹음 시작 시각 + 세그먼트 상대 시간
+                absolute_timestamp = recording_start + timedelta(milliseconds=start_ms)
+
                 utterance = Utterance(
                     id=utterance_id,
                     speaker_id=speaker_id,
                     speaker_name=speaker_name,
-                    start_ms=segment.get("startMs", 0),
-                    end_ms=segment.get("endMs", 0),
+                    start_ms=start_ms,
+                    end_ms=end_ms,
                     text=segment.get("text", ""),
+                    absolute_timestamp=absolute_timestamp,
                 )
                 all_utterances.append(utterance)
                 utterance_id += 1
 
-        # 타임스탬프 기준 정렬
-        all_utterances.sort(key=lambda u: u.start_ms)
+        # 실제 시간 기준 정렬 (대화 맥락 명확화)
+        all_utterances.sort(key=lambda u: u.absolute_timestamp)
 
         # ID 재할당
         for i, utterance in enumerate(all_utterances):
             utterance.id = i
 
-        # 전체 텍스트 생성 (화자 라벨 포함)
+        # 전체 텍스트 생성 (화자 라벨 + 실제 시간 포함)
         full_text_parts = []
         for utterance in all_utterances:
-            full_text_parts.append(f"[{utterance.speaker_name}] {utterance.text}")
+            timestamp_str = utterance.absolute_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            full_text_parts.append(
+                f"[{timestamp_str}] [{utterance.speaker_name}] {utterance.text}"
+            )
 
         full_text = "\n".join(full_text_parts)
 
@@ -253,11 +266,20 @@ class TranscriptService:
         speaker_ids = set(r.user_id for r in transcribed_recordings)
         utterances_dict = [u.to_dict() for u in all_utterances]
 
+        # 회의 시작/종료 시각 계산
+        meeting_start = min(r.started_at for r in transcribed_recordings)
+        meeting_end = max(
+            r.ended_at if r.ended_at else r.started_at
+            for r in transcribed_recordings
+        )
+
         # MinIO에 회의록 JSON 파일 업로드
         transcript_json = {
             "meetingId": str(meeting_id),
             "totalDurationMs": total_duration_ms,
             "speakerCount": len(speaker_ids),
+            "meetingStart": meeting_start.isoformat(),  # 회의 실제 시작 시각
+            "meetingEnd": meeting_end.isoformat(),      # 회의 실제 종료 시각
             "utterances": utterances_dict,
             "fullText": full_text,
             "createdAt": datetime.now(timezone.utc).isoformat(),
@@ -274,6 +296,8 @@ class TranscriptService:
         transcript.file_path = file_path
         transcript.total_duration_ms = total_duration_ms
         transcript.speaker_count = len(speaker_ids)
+        transcript.meeting_start = meeting_start
+        transcript.meeting_end = meeting_end
         transcript.updated_at = datetime.now(timezone.utc)
 
         await self.db.commit()
