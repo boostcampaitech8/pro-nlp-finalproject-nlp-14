@@ -97,7 +97,7 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
 
   // 초기 로딩 및 폴링
   useEffect(() => {
-    let intervalId: NodeJS.Timeout | null = null;
+    let intervalId: number | null = null;
 
     const load = async () => {
       try {

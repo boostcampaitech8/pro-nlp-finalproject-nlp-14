@@ -28,6 +28,23 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-14] Frontend 테스트 인프라 개선 (진행 중)
+- 목적: 테스트 환경 안정화 및 react-markdown 모킹
+- test/setup.ts: jest-dom matcher 설정 방식 변경
+  - @testing-library/jest-dom/vitest import에서 expect.extend(matchers) 방식으로 변경
+- tsconfig.json: 테스트 파일 빌드 제외
+  - exclude: ["**/*.test.ts", "**/*.test.tsx", "src/test", "vitest.config.ts"]
+- vitest.config.ts: MarkdownRenderer mock alias 추가
+  - @/components/ui/MarkdownRenderer -> ./src/test/mocks/MarkdownRenderer.tsx
+- Mock 파일 생성:
+  - src/__mocks__/react-markdown.tsx: react-markdown 라이브러리 mock (기본 Markdown 변환)
+  - src/test/mocks/MarkdownRenderer.tsx: MarkdownRenderer 컴포넌트 mock
+- 테스트 파일 수정:
+  - ParticipantList.test.tsx: act() wrapper 추가 (비동기 렌더링 처리)
+  - 기타 테스트 파일들 수정 중
+- 현재 상태: 24 tests passed, 61 skipped (MarkdownRenderer.test.tsx 13개 skip 포함)
+- 남은 작업: act() 경고 해결, skip된 테스트 재활성화
+
 [2026-01-14] Transcript 실제 시각 표시 (MIT-7)
 - Backend: transcript_service.py - Utterance에 absolute_timestamp 필드 추가
   - recording.started_at + segment.startMs로 wall-clock time 계산

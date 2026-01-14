@@ -3,9 +3,12 @@
  * 전역 설정 및 모의 객체 정의
  */
 
-import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach, beforeAll, vi } from 'vitest';
+import { afterEach, beforeAll, expect, vi } from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+
+// jest-dom 매처를 vitest expect에 추가
+expect.extend(matchers);
 
 // 각 테스트 후 자동 cleanup
 afterEach(() => {

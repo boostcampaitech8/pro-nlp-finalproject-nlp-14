@@ -8,6 +8,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@/components/ui/MarkdownRenderer': path.resolve(
+        __dirname,
+        './src/test/mocks/MarkdownRenderer.tsx'
+      ),
     },
   },
   test: {
