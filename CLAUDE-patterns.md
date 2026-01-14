@@ -225,6 +225,40 @@
   ```
 - **Props**: `stream`, `odId`, `outputDeviceId`, `volume`
 
+### Transcript Display Pattern
+- **위치**: `frontend/src/components/meeting/TranscriptSection.tsx`
+- **역할**: 회의록 발화 목록 표시 (실제 시각 포함)
+- **패턴**:
+  ```typescript
+  // 실제 발화 시각 포맷팅 (HH:MM:SS)
+  function formatTimestamp(timestamp: string | null | undefined): string {
+    if (!timestamp) return '-';
+    const date = new Date(timestamp);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+  }
+
+  // 발화 목록 렌더링
+  {transcript.utterances.map((utterance) => (
+    <div key={utterance.id} className="flex gap-3">
+      <div className="flex-shrink-0 w-24">
+        <span className="text-xs text-gray-400">
+          {formatTimestamp(utterance.timestamp)}  // 실제 시각
+        </span>
+      </div>
+      <div className="flex-1">
+        <span className="font-medium text-blue-600">
+          [{utterance.speakerName}]
+        </span>
+        <span className="text-gray-700">{utterance.text}</span>
+      </div>
+    </div>
+  ))}
+  ```
+- **타입**: `Utterance` 타입은 `packages/shared-types/src/api.ts`에서 자동 생성 (OpenAPI 스키마 기반)
+
 ## Backend Patterns
 
 ### API Structure
@@ -397,12 +431,40 @@ segments = preprocessor.extract_speech_segments(audio_data)
 
 ### Transcript Merge Pattern
 ```python
-# 화자별 녹음을 타임스탬프 기반으로 병합
-# 결과: 시간순 정렬된 Utterance 목록
-utterances = [
-    {"speaker_id": "user-1", "start_ms": 0, "text": "안녕하세요"},
-    {"speaker_id": "user-2", "start_ms": 3800, "text": "네, 안녕하세요"},
-]
+# 화자별 녹음을 wall-clock timestamp 기반으로 병합
+# 각 녹음의 started_at + segment.startMs로 실제 시각 계산
+for recording in transcribed_recordings:
+    recording_start = recording.started_at  # 녹음 시작 시각 (datetime)
+
+    for segment in recording.transcript_segments:
+        start_ms = segment.get("startMs", 0)
+        # 실제 발화 시각 계산
+        absolute_timestamp = recording_start + timedelta(milliseconds=start_ms)
+
+        utterance = Utterance(
+            id=utterance_id,
+            speaker_id=str(recording.user_id),
+            speaker_name=user.name,
+            start_ms=start_ms,
+            end_ms=segment.get("endMs", 0),
+            text=segment.get("text", ""),
+            absolute_timestamp=absolute_timestamp,  # wall-clock time
+        )
+        all_utterances.append(utterance)
+
+# 실제 시간 기준 정렬 (대화 맥락 명확화)
+all_utterances.sort(key=lambda u: u.absolute_timestamp)
+
+# JSON 저장 시 ISO 8601 형식
+utterance.to_dict() -> {
+    "id": 0,
+    "speakerId": "uuid",
+    "speakerName": "이름",
+    "startMs": 0,
+    "endMs": 1500,
+    "text": "발화 내용",
+    "timestamp": "2026-01-14T15:30:45.123456+00:00"
+}
 ```
 
 ### Environment Variables (STT)
