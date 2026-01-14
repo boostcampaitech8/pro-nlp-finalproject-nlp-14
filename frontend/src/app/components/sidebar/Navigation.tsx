@@ -1,14 +1,20 @@
 // 네비게이션 컴포넌트
+import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Home,
-  FolderOpen,
-  FileText,
+  Search,
   Calendar,
   Settings,
   LayoutDashboard,
+  Users,
+  Plus,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTeamStore } from '@/stores/teamStore';
+import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
+import { ScrollArea } from '@/app/components/ui';
 
 interface NavItem {
   id: string;
@@ -20,8 +26,7 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { id: 'home', label: 'Home', icon: Home, href: '/' },
-  { id: 'projects', label: 'Projects', icon: FolderOpen, href: '/projects' },
-  { id: 'documents', label: 'Documents', icon: FileText, href: '/documents' },
+  { id: 'search', label: 'Search', icon: Search, href: '/search' },
   { id: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
 ];
 
@@ -32,6 +37,15 @@ const bottomNavItems: NavItem[] = [
 
 export function Navigation() {
   const location = useLocation();
+  const { teams, fetchTeams, teamsLoading } = useTeamStore();
+  const { openModal: openMeetingModal } = useMeetingModalStore();
+
+  // 팀 목록 로드
+  useEffect(() => {
+    if (teams.length === 0) {
+      fetchTeams();
+    }
+  }, [teams.length, fetchTeams]);
 
   const renderNavItem = (item: NavItem) => {
     const isActive = location.pathname === item.href;
@@ -55,6 +69,10 @@ export function Navigation() {
     );
   };
 
+  const handleNewMeeting = () => {
+    openMeetingModal();
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* 메인 네비게이션 */}
@@ -63,8 +81,59 @@ export function Navigation() {
         {mainNavItems.map(renderNavItem)}
       </div>
 
+      {/* 팀 섹션 */}
+      <div className="mt-6 flex-1 min-h-0 flex flex-col">
+        <div className="flex items-center justify-between px-3 mb-2">
+          <p className="text-nav-title">Teams</p>
+          <button
+            onClick={handleNewMeeting}
+            className="w-5 h-5 rounded flex items-center justify-center text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+            title="새 회의 시작"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="space-y-0.5 pr-2">
+            {teamsLoading && teams.length === 0 ? (
+              <div className="px-3 py-2 text-white/30 text-sm">
+                Loading...
+              </div>
+            ) : teams.length === 0 ? (
+              <Link
+                to="/dashboard"
+                className="px-3 py-2 text-white/50 text-sm hover:text-white/70 block"
+              >
+                Create your first team
+              </Link>
+            ) : (
+              teams.map((team) => {
+                const isActive = location.pathname === `/dashboard/teams/${team.id}`;
+                return (
+                  <Link
+                    key={team.id}
+                    to={`/dashboard/teams/${team.id}`}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors group',
+                      isActive
+                        ? 'bg-white/10 text-white'
+                        : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+                    )}
+                  >
+                    <Users className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate flex-1">{team.name}</span>
+                    <ChevronRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-50 transition-opacity" />
+                  </Link>
+                );
+              })
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+
       {/* 하단 네비게이션 */}
-      <div className="mt-auto space-y-1">
+      <div className="mt-4 space-y-1 pt-4 border-t border-white/5">
         <p className="text-nav-title px-3 mb-2">System</p>
         {bottomNavItems.map(renderNavItem)}
       </div>

@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Home } from 'lucide-react';
 
 import { MeetingInfoCard } from '@/components/meeting/MeetingInfoCard';
 import { ParticipantSection } from '@/components/meeting/ParticipantSection';
@@ -170,14 +171,23 @@ export function MeetingDetailPage() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
+            <Link
+              to="/"
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              title="Home"
+            >
+              <Home className="w-4 h-4" />
+            </Link>
             {currentMeeting && (
               <Link
                 to={`/dashboard/teams/${currentMeeting.teamId}`}
-                className="text-gray-500 hover:text-gray-700"
+                className="flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors"
               >
-                &larr; Back to Team
+                <ArrowLeft className="w-4 h-4" />
+                <span className="text-sm">Team</span>
               </Link>
             )}
+            <span className="text-gray-300">|</span>
             <h1 className="text-xl font-bold text-gray-900">
               {currentMeeting?.title || 'Meeting'}
             </h1>
