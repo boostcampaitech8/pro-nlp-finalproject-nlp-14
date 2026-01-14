@@ -28,6 +28,19 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-14] Transcript 실제 시각 표시 (MIT-7)
+- Backend: transcript_service.py - Utterance에 absolute_timestamp 필드 추가
+  - recording.started_at + segment.startMs로 wall-clock time 계산
+  - 실제 시간 기준으로 발화 정렬 (대화 맥락 명확화)
+  - meeting_start/meeting_end 계산 및 DB 저장
+- Backend: models/transcript.py - meeting_start, meeting_end 컬럼 추가
+- Backend: schemas/transcript.py - timestamp, meetingStart, meetingEnd 필드 추가
+- Backend: endpoints/transcripts.py - timestamp 파싱 및 응답 포함
+- DB Migration: a568e7cad9bd - meeting_start, meeting_end 컬럼 추가
+- API Contract: transcript.yaml - Utterance에 timestamp (date-time) 필드 추가, MeetingTranscript에 meetingStart/meetingEnd 추가
+- Frontend: TranscriptSection.tsx - formatTimestamp() 함수 추가, 발화 시간을 HH:MM:SS 형식으로 표시
+- 효과: 여러 참여자의 발화가 실제 시간 순서대로 표시되어 회의 흐름 파악 용이
+
 [2026-01-13] 클라이언트 VAD (Voice Activity Detection) 구현
 - Frontend: @ricky0123/vad-web 패키지 추가 (Silero VAD, ONNX 기반)
 - useVAD.ts: 실시간 발화 감지 훅 (onSpeechStart/onSpeechEnd 콜백)

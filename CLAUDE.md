@@ -193,6 +193,7 @@ mit/
 | `components/meeting/MeetingRoom.tsx` | 회의실 메인 컴포넌트 |
 | `components/meeting/RecordingList.tsx` | 녹음 목록 (Audio/Transcript 다운로드) |
 | `components/meeting/RemoteAudio.tsx` | 원격 오디오 재생 (Web Audio API GainNode) |
+| `components/meeting/TranscriptSection.tsx` | 트랜스크립트 표시 (실제 시각 timestamp 포함) |
 | `components/meeting/ChatPanel.tsx` | 채팅 UI (Markdown, 연속 메시지 그룹화) |
 | `components/ui/MarkdownRenderer.tsx` | Markdown 렌더링 (react-markdown) |
 
@@ -212,7 +213,7 @@ mit/
 | `core/webrtc_config.py` | ICE 서버 설정 (STUN only) |
 | `core/storage.py` | MinIO 스토리지 서비스 |
 | `services/stt_service.py` | STT 변환 로직 |
-| `services/transcript_service.py` | 회의록 병합/관리 |
+| `services/transcript_service.py` | 회의록 병합/관리 (wall-clock timestamp 기반 정렬) |
 | `services/stt/base.py` | STT Provider 추상 클래스 |
 | `services/stt/openai_provider.py` | OpenAI Whisper 구현체 |
 | `workers/arq_worker.py` | ARQ 비동기 작업 Worker |

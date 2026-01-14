@@ -70,6 +70,16 @@ class MeetingTranscript(Base):
         Integer,
         nullable=True,
     )
+    meeting_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="회의 실제 시작 시각",
+    )
+    meeting_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="회의 실제 종료 시각",
+    )
     error: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,

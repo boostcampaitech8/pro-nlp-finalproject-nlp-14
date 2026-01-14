@@ -876,6 +876,11 @@ export interface components {
             endMs: number;
             /** @description 발화 텍스트 */
             text: string;
+            /**
+             * Format: date-time
+             * @description 실제 발화 시각 (wall-clock time, ISO 8601)
+             */
+            timestamp: string;
         };
         MeetingTranscript: {
             id: components["schemas"]["UUID"];
@@ -889,6 +894,18 @@ export interface components {
             totalDurationMs?: number | null;
             /** @description 화자 수 */
             speakerCount?: number | null;
+            /**
+             * Format: date-time
+             * @description 회의 실제 시작 시각
+             */
+            meetingStart?: string | null;
+            /**
+             * Format: date-time
+             * @description 회의 실제 종료 시각
+             */
+            meetingEnd?: string | null;
+            /** @description MinIO에 저장된 회의록 파일 경로 */
+            filePath?: string | null;
             createdAt: components["schemas"]["Timestamp"];
             /** Format: date-time */
             updatedAt?: string | null;

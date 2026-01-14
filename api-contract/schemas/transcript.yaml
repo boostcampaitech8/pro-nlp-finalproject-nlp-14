@@ -44,6 +44,7 @@ components:
         - startMs
         - endMs
         - text
+        - timestamp
       properties:
         id:
           type: integer
@@ -62,6 +63,10 @@ components:
         text:
           type: string
           description: 발화 텍스트
+        timestamp:
+          type: string
+          format: date-time
+          description: 실제 발화 시각 (wall-clock time, ISO 8601)
 
     MeetingTranscript:
       type: object
@@ -95,6 +100,20 @@ components:
           type: integer
           nullable: true
           description: 화자 수
+        meetingStart:
+          type: string
+          format: date-time
+          nullable: true
+          description: 회의 실제 시작 시각
+        meetingEnd:
+          type: string
+          format: date-time
+          nullable: true
+          description: 회의 실제 종료 시각
+        filePath:
+          type: string
+          nullable: true
+          description: MinIO에 저장된 회의록 파일 경로
         createdAt:
           $ref: './common.yaml#/components/schemas/Timestamp'
         updatedAt:

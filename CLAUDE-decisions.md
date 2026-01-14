@@ -155,3 +155,19 @@
   - `mit-remote-volumes`: userId별 볼륨 (Map -> Object 변환)
 - **구현 위치**: `meetingRoomStore.ts`의 setter 함수들
 - **주의**: 스토어 reset() 시에도 캐시 설정은 유지
+
+## STT & Transcript
+
+### D16: Transcript 실제 시각 저장
+- **결정**: 발화 시각을 녹음 상대 시간이 아닌 wall-clock timestamp로 저장
+- **근거**:
+  - 여러 참여자의 녹음을 병합할 때 실제 대화 순서 보장
+  - 각 녹음의 `started_at`이 다르므로 상대 시간(`startMs`)만으로는 순서 불명확
+  - UI에서 실제 발화 시각 표시 가능 (예: "15:30:45")
+- **구현**:
+  - Backend: `absolute_timestamp = recording.started_at + timedelta(milliseconds=startMs)`
+  - DB: `timestamp` 필드에 ISO 8601 형식으로 저장
+  - API: `Utterance` 스키마에 `timestamp` (date-time) 필드 추가
+  - Frontend: `formatTimestamp(utterance.timestamp)` -> "HH:MM:SS"
+- **정렬**: `absolute_timestamp` 기준으로 발화 정렬 (시간 순서 보장)
+- **메타데이터**: `meeting_start`, `meeting_end` 필드 추가 (회의 실제 시작/종료 시각)
