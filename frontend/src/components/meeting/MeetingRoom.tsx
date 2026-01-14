@@ -109,7 +109,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
       if (onLeave) {
         onLeave();
       } else {
-        navigate(`/meetings/${meetingId}`);
+        navigate(`/dashboard/meetings/${meetingId}`);
       }
     }
   };

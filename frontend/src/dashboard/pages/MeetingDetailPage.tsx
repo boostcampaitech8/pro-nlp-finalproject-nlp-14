@@ -58,7 +58,7 @@ export function MeetingDetailPage() {
     try {
       await api.post(`/meetings/${meetingId}/start`);
       await fetchMeeting(meetingId);
-      navigate(`/meetings/${meetingId}/room`);
+      navigate(`/dashboard/meetings/${meetingId}/room`);
     } catch (error) {
       console.error('Failed to start meeting:', error);
       alert('회의를 시작할 수 없습니다.');
@@ -109,7 +109,7 @@ export function MeetingDetailPage() {
     setDeleting(true);
     try {
       await deleteMeeting(meetingId);
-      navigate(`/teams/${currentMeeting.teamId}`);
+      navigate(`/dashboard/teams/${currentMeeting.teamId}`);
     } finally {
       setDeleting(false);
     }
@@ -157,7 +157,7 @@ export function MeetingDetailPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-600 mb-4">{meetingError}</p>
-          <Link to="/" className="text-blue-600 hover:underline">
+          <Link to="/dashboard" className="text-blue-600 hover:underline">
             Back to Home
           </Link>
         </div>
@@ -172,7 +172,7 @@ export function MeetingDetailPage() {
           <div className="flex items-center gap-4">
             {currentMeeting && (
               <Link
-                to={`/teams/${currentMeeting.teamId}`}
+                to={`/dashboard/teams/${currentMeeting.teamId}`}
                 className="text-gray-500 hover:text-gray-700"
               >
                 &larr; Back to Team
