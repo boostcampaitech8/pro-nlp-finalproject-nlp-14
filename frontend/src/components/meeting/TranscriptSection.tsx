@@ -41,6 +41,15 @@ function formatDuration(ms: number | null | undefined): string {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
+function formatTimestamp(timestamp: string | null | undefined): string {
+  if (!timestamp) return '-';
+  const date = new Date(timestamp);
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const seconds = date.getSeconds().toString().padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
+}
+
 export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectionProps) {
   const [status, setStatus] = useState<TranscriptStatusResponse | null>(null);
   const [transcript, setTranscript] = useState<MeetingTranscript | null>(null);
@@ -266,7 +275,7 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
                 <div key={utterance.id} className="flex gap-3">
                   <div className="flex-shrink-0 w-24">
                     <span className="text-xs text-gray-400">
-                      {formatDuration(utterance.startMs)}
+                      {formatTimestamp(utterance.timestamp)}
                     </span>
                   </div>
                   <div className="flex-1">
