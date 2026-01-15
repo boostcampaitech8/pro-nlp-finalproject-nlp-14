@@ -154,7 +154,23 @@ make backup-restore name=YYYYMMDD_HHMMSS # 특정 백업에서 복원
 mit/
 ├── api-contract/                # API 명세 (SSOT) - OpenAPI 3.0
 ├── packages/shared-types/       # FE/BE 공유 타입 (자동 생성)
-├── frontend/                    # React + TypeScript + Vite + Zustand + Tailwind
+├── frontend/
+│   └── src/
+│       ├── app/                 # Spotlight 메인 서비스 (3-column 레이아웃)
+│       │   ├── components/      # spotlight/, sidebar/, meeting/, preview/, ui/
+│       │   ├── constants/       # 상수 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS)
+│       │   ├── hooks/           # useCommand.ts
+│       │   ├── layouts/         # MainLayout.tsx
+│       │   ├── pages/           # MainPage.tsx
+│       │   ├── services/        # agentService.ts
+│       │   ├── stores/          # commandStore, meetingModalStore, previewStore
+│       │   ├── types/           # command.ts
+│       │   └── utils/           # dateUtils (formatRelativeTime, formatDuration)
+│       ├── components/          # 회의실 컴포넌트 (meeting/, team/, ui/)
+│       ├── dashboard/           # 대시보드 페이지
+│       ├── hooks/               # WebRTC, Recording, VAD 훅
+│       ├── services/            # API 서비스
+│       └── stores/              # authStore, teamStore, meetingRoomStore
 ├── backend/                     # FastAPI + Python 3.11 + SQLAlchemy 2.0 + uv
 │   └── workers/                 # ARQ Worker (STT 비동기 처리)
 └── docker/                      # Docker Compose (PostgreSQL, Redis, MinIO, stt-worker)
@@ -175,7 +191,25 @@ mit/
 
 ## Key Components
 
-### Frontend
+### Frontend - Spotlight Service (src/app/)
+| 파일 | 역할 |
+|------|------|
+| `app/layouts/MainLayout.tsx` | 3-column 레이아웃 (280px-flex-400px) |
+| `app/pages/MainPage.tsx` | 메인 서비스 페이지 |
+| `app/components/spotlight/SpotlightInput.tsx` | 명령어 입력창 (자동완성) |
+| `app/components/sidebar/LeftSidebar.tsx` | 좌측 사이드바 (네비게이션, 세션) |
+| `app/components/sidebar/Navigation.tsx` | 팀 목록, 메뉴 |
+| `app/components/sidebar/CurrentSession.tsx` | 현재 회의 상태 |
+| `app/components/meeting/MeetingModal.tsx` | 회의 생성 모달 |
+| `app/hooks/useCommand.ts` | 명령어 실행 훅 |
+| `app/services/agentService.ts` | 명령어 매칭/처리 |
+| `app/stores/commandStore.ts` | 명령어 입력/히스토리 상태 |
+| `app/stores/meetingModalStore.ts` | 회의 모달 상태 |
+| `app/stores/previewStore.ts` | 미리보기 패널 상태 |
+| `app/constants/index.ts` | 상수 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS) |
+| `app/utils/dateUtils.ts` | 날짜 유틸 (formatRelativeTime, formatDuration) |
+
+### Frontend - Meeting Room (src/)
 | 파일 | 역할 |
 |------|------|
 | `hooks/useWebRTC.ts` | WebRTC 연결, 시그널링, 녹음 관리 |

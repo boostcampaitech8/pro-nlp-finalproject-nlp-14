@@ -2,12 +2,14 @@ import type { ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useAuth } from '@/hooks/useAuth';
-import { HomePage } from '@/pages/HomePage';
+import { MainLayout } from '@/app/layouts/MainLayout';
+import { MainPage } from '@/app/pages/MainPage';
+import { HomePage } from '@/dashboard/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
-import { MeetingDetailPage } from '@/pages/MeetingDetailPage';
-import MeetingRoomPage from '@/pages/MeetingRoomPage';
+import { MeetingDetailPage } from '@/dashboard/pages/MeetingDetailPage';
+import MeetingRoomPage from '@/dashboard/pages/MeetingRoomPage';
 import { RegisterPage } from '@/pages/RegisterPage';
-import { TeamDetailPage } from '@/pages/TeamDetailPage';
+import { TeamDetailPage } from '@/dashboard/pages/TeamDetailPage';
 import logger from '@/utils/logger';
 
 // 인증된 사용자만 접근 가능
@@ -28,10 +30,25 @@ function PrivateRoute({ children }: { children: ReactNode }) {
 function App() {
   return (
     <Routes>
+      {/* 인증 페이지 */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+
+      {/* 새 서비스 페이지 (Spotlight UI) - MainLayout 사용 */}
       <Route
         path="/"
+        element={
+          <PrivateRoute>
+            <MainLayout />
+          </PrivateRoute>
+        }
+      >
+        <Route index element={<MainPage />} />
+      </Route>
+
+      {/* 기존 Dashboard 페이지 */}
+      <Route
+        path="/dashboard"
         element={
           <PrivateRoute>
             <HomePage />
@@ -39,7 +56,7 @@ function App() {
         }
       />
       <Route
-        path="/teams/:teamId"
+        path="/dashboard/teams/:teamId"
         element={
           <PrivateRoute>
             <TeamDetailPage />
@@ -47,7 +64,7 @@ function App() {
         }
       />
       <Route
-        path="/meetings/:meetingId"
+        path="/dashboard/meetings/:meetingId"
         element={
           <PrivateRoute>
             <MeetingDetailPage />
@@ -55,13 +72,15 @@ function App() {
         }
       />
       <Route
-        path="/meetings/:meetingId/room"
+        path="/dashboard/meetings/:meetingId/room"
         element={
           <PrivateRoute>
             <MeetingRoomPage />
           </PrivateRoute>
         }
       />
+
+      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

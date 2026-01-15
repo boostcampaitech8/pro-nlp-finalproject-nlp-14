@@ -171,3 +171,113 @@
   - Frontend: `formatTimestamp(utterance.timestamp)` -> "HH:MM:SS"
 - **정렬**: `absolute_timestamp` 기준으로 발화 정렬 (시간 순서 보장)
 - **메타데이터**: `meeting_start`, `meeting_end` 필드 추가 (회의 실제 시작/종료 시각)
+
+## UI Architecture
+
+### D17: Spotlight-style 메인 서비스 페이지
+- **결정**: macOS Spotlight 스타일의 3-column 레이아웃 메인 페이지 구현
+- **근거**:
+  - 현대적인 UX 제공 (Raycast, Alfred 스타일)
+  - 자연어 명령어 입력으로 빠른 작업 수행
+  - 컨텍스트 미리보기로 정보 탐색 효율성 향상
+- **구조**:
+  - 좌측 (280px): 네비게이션, 팀 목록, 현재 세션
+  - 중앙: Spotlight 입력, 명령 결과
+  - 우측 (400px): 선택 항목 미리보기
+- **위치**: `frontend/src/app/`
+
+### D18: Glassmorphism 디자인 시스템
+- **결정**: 반투명 글래스 효과 기반 UI 디자인
+- **근거**:
+  - 시각적 깊이감 제공 (레이어 구분)
+  - 모던한 미적 감각
+  - 다크 테마와 잘 어울림
+- **구현**:
+  - `backdrop-filter: blur()` 사용
+  - `rgba()` 배경색으로 투명도 조절
+  - 커스텀 Tailwind 색상 (`glass`, `card-bg`, `mit-primary`)
+- **주의**: 성능 고려 - 중첩 blur 최소화
+
+### D19: Modal Store 분리 패턴
+- **결정**: 모달 상태를 별도 Zustand 스토어로 관리
+- **근거**:
+  - 모달 트리거와 상태 분리 (여러 위치에서 열기 가능)
+  - 초기 데이터 전달 용이
+  - 컴포넌트 간 결합도 감소
+- **패턴**:
+  ```typescript
+  // 명령어에서 열기
+  openModal({ title: '새 회의', teamId });
+  // 버튼에서 열기
+  <button onClick={() => openModal()}>새 회의</button>
+  // 네비게이션에서 열기
+  openModal({ teamId: currentTeam.id });
+  ```
+- **적용**: `meetingModalStore.ts`
+
+### D20: Command System 아키텍처
+- **결정**: 패턴 매칭 기반 명령어 시스템
+- **근거**:
+  - 자연어 입력 지원 (한글/영어)
+  - 확장 가능한 명령어 추가
+  - 자동완성 및 히스토리 지원
+- **구조**:
+  - `agentService.ts`: 명령어 패턴 정의 및 매칭
+  - `commandStore.ts`: 입력/자동완성/히스토리 상태
+  - `useCommand.ts`: 명령어 실행 및 응답 처리
+- **응답 타입**:
+  - `direct`: 직접 결과 표시
+  - `navigation`: 페이지 이동
+  - `modal`: 모달 열기
+  - `form`: 폼 입력 필요
+
+## Code Quality
+
+### D21: Constants 중앙 관리
+- **결정**: 매직 넘버와 반복 설정값을 `constants/index.ts`에서 관리
+- **근거**:
+  - DRY 원칙 (값 변경 시 한 곳만 수정)
+  - 코드 가독성 향상 (의미 있는 상수명)
+  - 일관성 유지 (여러 파일에서 동일 값 사용)
+- **적용 항목**:
+  - `HISTORY_LIMIT`, `SUGGESTIONS_DISPLAY_LIMIT` (UI 제한)
+  - `STATUS_COLORS` (상태별 Tailwind 클래스)
+  - `PREVIEW_TITLES` (타입별 제목)
+  - `API_DELAYS` (Mock API 딜레이)
+
+### D22: Type Guard 우선 사용
+- **결정**: `as` type assertion 대신 type guard 함수 사용
+- **근거**:
+  - 런타임 타입 검증으로 안전성 향상
+  - 예상치 못한 타입에 대한 폴백 처리 가능
+  - 컴파일 타임과 런타임 타입 일치 보장
+- **패턴**:
+  ```typescript
+  function isValidPreviewType(type: string): type is PreviewType {
+    return VALID_TYPES.includes(type as PreviewType);
+  }
+  ```
+
+### D23: Form State 통합
+- **결정**: 관련된 폼 필드를 단일 객체로 통합
+- **근거**:
+  - 여러 useState가 각각 re-render 유발하는 문제 해결
+  - 폼 초기화/리셋 로직 단순화
+  - 관련 상태의 응집도 향상
+- **패턴**: FormData 인터페이스 + updateField 헬퍼
+
+### D24: useRef for Non-UI State
+- **결정**: UI 렌더링에 영향 없는 값은 useState 대신 useRef 사용
+- **근거**:
+  - re-render에도 값 유지 (타이머 시작 시간 등)
+  - 불필요한 re-render 방지
+  - useEffect 의존성 배열 간소화
+- **주의**: UI에 반영해야 하는 값은 여전히 useState 사용
+
+### D25: Suggestions SSOT (Single Source of Truth)
+- **결정**: suggestions 데이터를 agentService에서만 관리
+- **근거**:
+  - commandStore의 defaultSuggestions 중복 제거
+  - API 연동 시 자연스러운 전환
+  - 데이터 일관성 보장
+- **구현**: MainPage useEffect에서 agentService.getSuggestions() 호출

@@ -28,6 +28,66 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-15] Spotlight 서비스 코드 리팩토링
+- 목적: 코드 품질 개선, 버그 수정, DRY 원칙 적용
+- Phase 1: LeftSidebar Timer Bug Fix
+  - useState -> useRef 변경으로 re-render 시 duration 리셋 버그 수정
+  - startTimeRef.current로 회의 시작 시간 추적
+- Phase 2: Type Safety (useCommand.ts)
+  - isValidPreviewType 타입 가드 함수 추가
+  - 필드 키를 label -> id로 변경 (i18n 호환)
+- Phase 3: Duplicate Data 제거
+  - commandStore의 defaultSuggestions 제거
+  - MainPage에서 agentService.getSuggestions()로 로드
+- Phase 4: Constants & Utils 추출
+  - src/app/constants/index.ts 생성 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS 등)
+  - src/app/utils/dateUtils.ts 생성 (formatRelativeTime, formatDuration)
+  - 6개 파일에서 하드코딩 값 -> 상수 참조로 변경
+- Phase 5: Navigation 개선
+  - SectionTitle 컴포넌트 추출 (반복 클래스 제거)
+- Phase 6: MeetingModal Form State 통합
+  - 5개 개별 useState -> 1개 formData 객체로 통합
+  - updateField 헬퍼 함수로 필드 업데이트
+- Phase 7: Placeholder 버튼 정리
+  - PreviewHeader에서 미구현 ExternalLink, Maximize2 버튼 제거
+- 수정된 파일: 10개 (2개 신규, 8개 수정)
+- TypeScript 빌드: 에러 없음
+
+[2026-01-15] Spotlight-style 메인 서비스 페이지 구현 (MIT-9)
+- 목적: macOS Spotlight 스타일의 현대적인 메인 페이지 구현
+- 구현 내용:
+  - 3-column 레이아웃 (280px 좌측 사이드바, 중앙 컨텐츠, 400px 우측 사이드바)
+  - Glassmorphism 디자인 시스템 (backdrop-blur, rgba 배경)
+  - shadcn/ui 컴포넌트 통합 (Dialog, ScrollArea, Tooltip 등)
+  - Spotlight 명령어 시스템 (자동완성, 히스토리)
+  - framer-motion 애니메이션
+- 새 파일 구조 (src/app/):
+  - components/meeting/MeetingModal.tsx - 회의 생성 모달
+  - components/sidebar/{LeftSidebar,Navigation,CurrentSession}.tsx - 사이드바
+  - components/spotlight/SpotlightInput.tsx - 명령어 입력
+  - components/ui/* - shadcn/ui 컴포넌트
+  - hooks/useCommand.ts - 명령어 처리
+  - layouts/MainLayout.tsx - 3-column 레이아웃
+  - pages/MainPage.tsx - 메인 페이지
+  - services/agentService.ts - 명령어 매칭/처리
+  - stores/{commandStore,meetingModalStore,previewStore}.ts - 상태 관리
+  - types/command.ts - 명령어 타입
+- Zustand 스토어:
+  - commandStore: 명령어 입력, 자동완성, 히스토리
+  - meetingModalStore: 회의 모달 상태
+  - previewStore: 미리보기 패널 상태
+- 기존 페이지 마이그레이션:
+  - HomePage, TeamDetailPage, MeetingDetailPage에 네비게이션 추가
+  - CurrentSession에 회의 링크, 새 회의 버튼 추가
+  - Navigation에 팀 목록, 회의 생성 버튼 추가
+- 테스트/빌드 결과:
+  - TypeScript: 에러 없음
+  - ESLint: 소스 코드 에러 없음
+  - Tests: 24 passed, 61 skipped
+  - Build: 성공 (1.2MB JS bundle)
+- 수정된 CSS:
+  - index.css: hover:bg-white/8 -> hover:bg-white/5 (Tailwind 호환)
+
 [2026-01-14] Frontend 테스트 인프라 개선 (진행 중)
 - 목적: 테스트 환경 안정화 및 react-markdown 모킹
 - test/setup.ts: jest-dom matcher 설정 방식 변경

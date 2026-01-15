@@ -5,16 +5,15 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Home } from 'lucide-react';
 
 import { MeetingInfoCard } from '@/components/meeting/MeetingInfoCard';
-import { ParticipantSection } from '@/components/meeting/ParticipantSection';
 import { RecordingList } from '@/components/meeting/RecordingList';
 import { TranscriptSection } from '@/components/meeting/TranscriptSection';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
-import type { MeetingStatus, ParticipantRole, TeamMember } from '@/types';
-import { teamService } from '@/services/teamService';
+import type { MeetingStatus } from '@/types';
 import api from '@/services/api';
 
 export function MeetingDetailPage() {
@@ -28,12 +27,8 @@ export function MeetingDetailPage() {
     fetchMeeting,
     updateMeeting,
     deleteMeeting,
-    addParticipant,
-    updateParticipantRole,
-    removeParticipant,
   } = useTeamStore();
 
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -44,12 +39,6 @@ export function MeetingDetailPage() {
     }
   }, [meetingId, fetchMeeting]);
 
-  useEffect(() => {
-    if (currentMeeting) {
-      teamService.listMembers(currentMeeting.teamId).then(setTeamMembers).catch(() => {});
-    }
-  }, [currentMeeting]);
-
   // 회의 시작 (host만)
   const handleStartMeeting = async () => {
     if (!meetingId) return;
@@ -58,7 +47,7 @@ export function MeetingDetailPage() {
     try {
       await api.post(`/meetings/${meetingId}/start`);
       await fetchMeeting(meetingId);
-      navigate(`/meetings/${meetingId}/room`);
+      navigate(`/dashboard/meetings/${meetingId}/room`);
     } catch (error) {
       console.error('Failed to start meeting:', error);
       alert('회의를 시작할 수 없습니다.');
@@ -87,7 +76,7 @@ export function MeetingDetailPage() {
   // 회의 참여 (ongoing 상태일 때)
   const handleJoinMeeting = () => {
     if (!meetingId) return;
-    navigate(`/meetings/${meetingId}/room`);
+    navigate(`/dashboard/meetings/${meetingId}/room`);
   };
 
   // 회의 정보 저장
@@ -109,40 +98,14 @@ export function MeetingDetailPage() {
     setDeleting(true);
     try {
       await deleteMeeting(meetingId);
-      navigate(`/teams/${currentMeeting.teamId}`);
+      navigate(`/dashboard/teams/${currentMeeting.teamId}`);
     } finally {
       setDeleting(false);
     }
   };
 
-  // 참여자 추가
-  const handleAddParticipant = async (userId: string, role: ParticipantRole) => {
-    if (!meetingId) return;
-    await addParticipant(meetingId, { userId, role });
-  };
-
-  // 참여자 역할 변경
-  const handleUpdateParticipantRole = async (userId: string, role: ParticipantRole) => {
-    if (!meetingId) return;
-    await updateParticipantRole(meetingId, userId, { role });
-  };
-
-  // 참여자 제거
-  const handleRemoveParticipant = async (userId: string, participantName: string) => {
-    if (!meetingId) return;
-    if (!confirm(`Are you sure you want to remove ${participantName} from this meeting?`)) return;
-    await removeParticipant(meetingId, userId);
-  };
-
-  const currentUserParticipant = currentMeeting?.participants.find(
-    (p) => p.userId === user?.id
-  );
-  const isHost = currentUserParticipant?.role === 'host';
-
-  // 아직 참여자가 아닌 팀 멤버들
-  const availableMembers = teamMembers.filter(
-    (member) => !currentMeeting?.participants.some((p) => p.userId === member.userId)
-  );
+  // 회의 생성자가 host
+  const isHost = currentMeeting?.createdBy === user?.id;
 
   if (meetingsLoading && !currentMeeting) {
     return (
@@ -157,7 +120,7 @@ export function MeetingDetailPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-600 mb-4">{meetingError}</p>
-          <Link to="/" className="text-blue-600 hover:underline">
+          <Link to="/dashboard" className="text-blue-600 hover:underline">
             Back to Home
           </Link>
         </div>
@@ -170,14 +133,23 @@ export function MeetingDetailPage() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
+            <Link
+              to="/"
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              title="Home"
+            >
+              <Home className="w-4 h-4" />
+            </Link>
             {currentMeeting && (
               <Link
-                to={`/teams/${currentMeeting.teamId}`}
-                className="text-gray-500 hover:text-gray-700"
+                to={`/dashboard/teams/${currentMeeting.teamId}`}
+                className="flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors"
               >
-                &larr; Back to Team
+                <ArrowLeft className="w-4 h-4" />
+                <span className="text-sm">Team</span>
               </Link>
             )}
+            <span className="text-gray-300">|</span>
             <h1 className="text-xl font-bold text-gray-900">
               {currentMeeting?.title || 'Meeting'}
             </h1>
@@ -209,7 +181,6 @@ export function MeetingDetailPage() {
           <MeetingInfoCard
             meeting={currentMeeting}
             isHost={isHost}
-            isParticipant={!!currentUserParticipant}
             starting={starting}
             ending={ending}
             onStartMeeting={handleStartMeeting}
@@ -218,19 +189,6 @@ export function MeetingDetailPage() {
             onSave={handleSaveMeeting}
             onDelete={handleDeleteMeeting}
             deleting={deleting}
-          />
-        )}
-
-        {/* 참여자 섹션 */}
-        {currentMeeting && (
-          <ParticipantSection
-            participants={currentMeeting.participants}
-            availableMembers={availableMembers}
-            currentUserId={user?.id}
-            isHost={isHost}
-            onAddParticipant={handleAddParticipant}
-            onUpdateRole={handleUpdateParticipantRole}
-            onRemoveParticipant={handleRemoveParticipant}
           />
         )}
 

@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Home } from 'lucide-react';
 
 import { MeetingListSection } from '@/components/team/MeetingListSection';
 import { TeamInfoCard } from '@/components/team/TeamInfoCard';
@@ -50,7 +51,7 @@ export function TeamDetailPage() {
     setDeleting(true);
     try {
       await deleteTeam(teamId);
-      navigate('/');
+      navigate('/dashboard');
     } finally {
       setDeleting(false);
     }
@@ -106,7 +107,7 @@ export function TeamDetailPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-600 mb-4">{teamError}</p>
-          <Link to="/" className="text-blue-600 hover:underline">
+          <Link to="/dashboard" className="text-blue-600 hover:underline">
             Back to Home
           </Link>
         </div>
@@ -119,9 +120,21 @@ export function TeamDetailPage() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link to="/" className="text-gray-500 hover:text-gray-700">
-              &larr; Back
+            <Link
+              to="/"
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              title="Home"
+            >
+              <Home className="w-4 h-4" />
             </Link>
+            <Link
+              to="/dashboard"
+              className="flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-sm">Dashboard</span>
+            </Link>
+            <span className="text-gray-300">|</span>
             <h1 className="text-xl font-bold text-gray-900">
               {currentTeam?.name || 'Team'}
             </h1>

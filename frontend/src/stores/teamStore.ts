@@ -1,17 +1,14 @@
 import type {
-  AddMeetingParticipantRequest,
   CreateMeetingRequest,
   CreateTeamRequest,
   ErrorResponse,
   InviteTeamMemberRequest,
   Meeting,
-  MeetingParticipant,
   MeetingStatus,
   MeetingWithParticipants,
   Team,
   TeamMember,
   TeamWithMembers,
-  UpdateMeetingParticipantRequest,
   UpdateMeetingRequest,
   UpdateTeamMemberRequest,
   UpdateTeamRequest,
@@ -67,11 +64,6 @@ interface TeamState {
   createMeeting: (teamId: string, data: CreateMeetingRequest) => Promise<Meeting>;
   updateMeeting: (meetingId: string, data: UpdateMeetingRequest) => Promise<void>;
   deleteMeeting: (meetingId: string) => Promise<void>;
-
-  // 회의 참여자 액션
-  addParticipant: (meetingId: string, data: AddMeetingParticipantRequest) => Promise<MeetingParticipant>;
-  updateParticipantRole: (meetingId: string, userId: string, data: UpdateMeetingParticipantRequest) => Promise<void>;
-  removeParticipant: (meetingId: string, userId: string) => Promise<void>;
 
   // 에러 클리어
   clearErrors: () => void;
@@ -291,80 +283,6 @@ export const useTeamStore = create<TeamState>((set) => ({
       }));
     } catch (error) {
       const message = getErrorMessage(error, 'Failed to delete meeting');
-      set({ meetingError: message, meetingsLoading: false });
-      throw error;
-    }
-  },
-
-  // 회의 참여자 액션
-  addParticipant: async (meetingId: string, data: AddMeetingParticipantRequest) => {
-    set({ meetingsLoading: true, meetingError: null });
-    try {
-      const participant = await meetingService.addParticipant(meetingId, data);
-      set((state) => ({
-        currentMeeting: state.currentMeeting?.id === meetingId
-          ? {
-              ...state.currentMeeting,
-              participants: [...state.currentMeeting.participants, participant],
-            }
-          : state.currentMeeting,
-        meetingsLoading: false,
-      }));
-      return participant;
-    } catch (error) {
-      const message = getErrorMessage(error, 'Failed to add participant');
-      set({ meetingError: message, meetingsLoading: false });
-      throw error;
-    }
-  },
-
-  updateParticipantRole: async (
-    meetingId: string,
-    userId: string,
-    data: UpdateMeetingParticipantRequest
-  ) => {
-    set({ meetingsLoading: true, meetingError: null });
-    try {
-      const updatedParticipant = await meetingService.updateParticipantRole(
-        meetingId,
-        userId,
-        data
-      );
-      set((state) => ({
-        currentMeeting: state.currentMeeting?.id === meetingId
-          ? {
-              ...state.currentMeeting,
-              participants: state.currentMeeting.participants.map((p) =>
-                p.userId === userId ? updatedParticipant : p
-              ),
-            }
-          : state.currentMeeting,
-        meetingsLoading: false,
-      }));
-    } catch (error) {
-      const message = getErrorMessage(error, 'Failed to update participant role');
-      set({ meetingError: message, meetingsLoading: false });
-      throw error;
-    }
-  },
-
-  removeParticipant: async (meetingId: string, userId: string) => {
-    set({ meetingsLoading: true, meetingError: null });
-    try {
-      await meetingService.removeParticipant(meetingId, userId);
-      set((state) => ({
-        currentMeeting: state.currentMeeting?.id === meetingId
-          ? {
-              ...state.currentMeeting,
-              participants: state.currentMeeting.participants.filter(
-                (p) => p.userId !== userId
-              ),
-            }
-          : state.currentMeeting,
-        meetingsLoading: false,
-      }));
-    } catch (error) {
-      const message = getErrorMessage(error, 'Failed to remove participant');
       set({ meetingError: message, meetingsLoading: false });
       throw error;
     }

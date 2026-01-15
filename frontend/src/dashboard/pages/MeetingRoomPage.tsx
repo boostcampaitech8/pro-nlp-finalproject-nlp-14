@@ -87,7 +87,7 @@ export default function MeetingRoomPage() {
           <p className="text-white text-lg mb-2">오류</p>
           <p className="text-gray-400 mb-4">{error || '회의를 찾을 수 없습니다.'}</p>
           <button
-            onClick={() => navigate(`/meetings/${meetingId}`)}
+            onClick={() => navigate(`/dashboard/meetings/${meetingId}`)}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
             회의 상세로 돌아가기
@@ -110,7 +110,7 @@ export default function MeetingRoomPage() {
       meetingId={meetingId!}
       userId={user.id}
       meetingTitle={meeting.title}
-      onLeave={() => navigate(`/meetings/${meetingId}`)}
+      onLeave={() => navigate(`/dashboard/meetings/${meetingId}`)}
     />
   );
 }

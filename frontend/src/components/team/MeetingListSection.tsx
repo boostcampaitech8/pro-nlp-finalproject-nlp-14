@@ -140,7 +140,7 @@ export function MeetingListSection({
           {meetings.map((meeting) => (
             <Link
               key={meeting.id}
-              to={`/meetings/${meeting.id}`}
+              to={`/dashboard/meetings/${meeting.id}`}
               className="block bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
             >
               <div className="flex items-start justify-between">
