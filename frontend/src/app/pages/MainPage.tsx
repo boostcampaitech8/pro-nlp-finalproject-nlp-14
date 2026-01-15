@@ -1,6 +1,8 @@
 // 새 서비스 메인 페이지 (Spotlight UI)
+import { useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useCommandStore } from '@/app/stores/commandStore';
+import { agentService } from '@/app/services/agentService';
 import {
   SpotlightInput,
   CommandSuggestions,
@@ -10,7 +12,12 @@ import {
 import { ScrollArea } from '@/app/components/ui';
 
 export function MainPage() {
-  const { activeCommand } = useCommandStore();
+  const { activeCommand, setSuggestions } = useCommandStore();
+
+  // 추천 명령어 로드
+  useEffect(() => {
+    agentService.getSuggestions().then(setSuggestions);
+  }, [setSuggestions]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -24,7 +31,7 @@ export function MainPage() {
       </section>
 
       {/* 중앙: Spotlight 입력 영역 */}
-      <section className="px-8 py-6 bg-black/20 border-y border-glass">
+      <section className="px-8 py-6">
         <div className="max-w-3xl mx-auto">
           <SpotlightInput />
 

@@ -1,5 +1,6 @@
 // 명령 상태 관리 스토어
 import { create } from 'zustand';
+import { HISTORY_LIMIT } from '@/app/constants';
 import type { ActiveCommand, HistoryItem, Suggestion } from '@/app/types/command';
 
 interface CommandState {
@@ -23,42 +24,6 @@ interface CommandState {
   setSuggestions: (suggestions: Suggestion[]) => void;
 }
 
-// 기본 추천 명령어
-const defaultSuggestions: Suggestion[] = [
-  {
-    id: '1',
-    title: '새 회의 시작',
-    description: '팀원들과 새로운 회의를 시작합니다',
-    icon: '🎯',
-    command: '새 회의 시작',
-    category: 'meeting',
-  },
-  {
-    id: '2',
-    title: '지난 회의록 검색',
-    description: '이전 회의 내용을 검색합니다',
-    icon: '🔍',
-    command: '회의록 검색',
-    category: 'search',
-  },
-  {
-    id: '3',
-    title: '오늘 일정 확인',
-    description: '오늘 예정된 회의를 확인합니다',
-    icon: '📅',
-    command: '오늘 일정',
-    category: 'action',
-  },
-  {
-    id: '4',
-    title: '팀 현황 보기',
-    description: '팀 멤버와 활동 현황을 확인합니다',
-    icon: '👥',
-    command: '팀 현황',
-    category: 'action',
-  },
-];
-
 export const useCommandStore = create<CommandState>((set) => ({
   // 초기 상태
   inputValue: '',
@@ -66,7 +31,7 @@ export const useCommandStore = create<CommandState>((set) => ({
   isProcessing: false,
   activeCommand: null,
   history: [],
-  suggestions: defaultSuggestions,
+  suggestions: [], // agentService.getSuggestions()로 로드
 
   // Actions
   setInputValue: (value) => set({ inputValue: value }),
@@ -91,7 +56,7 @@ export const useCommandStore = create<CommandState>((set) => ({
 
   addHistory: (item) =>
     set((state) => ({
-      history: [item, ...state.history].slice(0, 50), // 최대 50개
+      history: [item, ...state.history].slice(0, HISTORY_LIMIT),
     })),
 
   clearHistory: () => set({ history: [] }),

@@ -2,6 +2,7 @@
 // 실제 백엔드 API 연동 전까지 사용하는 Mock 데이터
 
 import type { ActiveCommand, AgentResponse, CommandField, ModalData } from '@/app/types/command';
+import { API_DELAYS } from '@/app/constants';
 
 // Mock 응답 정의
 interface MockResponse {
@@ -201,8 +202,8 @@ export const agentService = {
    * @returns AgentResponse
    */
   async processCommand(command: string): Promise<AgentResponse> {
-    // API 호출 시뮬레이션 (500ms 딜레이)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // API 호출 시뮬레이션
+    await new Promise((resolve) => setTimeout(resolve, API_DELAYS.COMMAND_PROCESS));
 
     const matched = matchCommand(command);
 
@@ -257,8 +258,8 @@ export const agentService = {
     commandTitle: string,
     fields: Record<string, string>
   ): Promise<AgentResponse> {
-    // API 호출 시뮬레이션 (800ms 딜레이)
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    // API 호출 시뮬레이션
+    await new Promise((resolve) => setTimeout(resolve, API_DELAYS.FORM_SUBMIT));
 
     // 필드 값 포맷팅
     const fieldSummary = Object.entries(fields)
@@ -291,7 +292,7 @@ ${new Date().toLocaleString('ko-KR')}`,
    */
   async getSuggestions() {
     // API 호출 시뮬레이션
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, API_DELAYS.SUGGESTIONS_FETCH));
 
     return [
       {

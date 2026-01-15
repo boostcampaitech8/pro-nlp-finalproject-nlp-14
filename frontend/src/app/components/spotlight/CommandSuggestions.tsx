@@ -1,6 +1,7 @@
 // 추천 명령어 컴포넌트
 import { useCommandStore } from '@/app/stores/commandStore';
 import { useCommand } from '@/app/hooks/useCommand';
+import { SUGGESTIONS_DISPLAY_LIMIT } from '@/app/constants';
 import type { Suggestion } from '@/app/types/command';
 
 interface SuggestionCardProps {
@@ -50,7 +51,7 @@ export function CommandSuggestions() {
       </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {suggestions.slice(0, 4).map((suggestion) => (
+        {suggestions.slice(0, SUGGESTIONS_DISPLAY_LIMIT).map((suggestion) => (
           <SuggestionCard
             key={suggestion.id}
             suggestion={suggestion}

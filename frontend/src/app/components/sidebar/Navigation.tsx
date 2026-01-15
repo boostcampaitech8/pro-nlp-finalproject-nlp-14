@@ -35,6 +35,11 @@ const bottomNavItems: NavItem[] = [
   { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
 ];
 
+// 섹션 타이틀 컴포넌트
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <p className="text-nav-title px-3 mb-2">{children}</p>;
+}
+
 export function Navigation() {
   const location = useLocation();
   const { teams, fetchTeams, teamsLoading } = useTeamStore();
@@ -77,7 +82,7 @@ export function Navigation() {
     <div className="flex flex-col h-full">
       {/* 메인 네비게이션 */}
       <div className="space-y-1">
-        <p className="text-nav-title px-3 mb-2">Main</p>
+        <SectionTitle>Main</SectionTitle>
         {mainNavItems.map(renderNavItem)}
       </div>
 
@@ -134,7 +139,7 @@ export function Navigation() {
 
       {/* 하단 네비게이션 */}
       <div className="mt-4 space-y-1 pt-4 border-t border-white/5">
-        <p className="text-nav-title px-3 mb-2">System</p>
+        <SectionTitle>System</SectionTitle>
         {bottomNavItems.map(renderNavItem)}
       </div>
     </div>

@@ -25,15 +25,36 @@ interface MeetingModalProps {
   };
 }
 
+// 폼 데이터 타입
+interface FormData {
+  title: string;
+  description: string;
+  scheduledAt: string;
+  teamId: string;
+}
+
+const initialFormData: FormData = {
+  title: '',
+  description: '',
+  scheduledAt: '',
+  teamId: '',
+};
+
 export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalProps) {
   const navigate = useNavigate();
   const { teams, fetchTeams, createMeeting, meetingsLoading } = useTeamStore();
 
-  const [title, setTitle] = useState(initialData?.title || '');
-  const [description, setDescription] = useState(initialData?.description || '');
-  const [scheduledAt, setScheduledAt] = useState(initialData?.scheduledAt || '');
-  const [selectedTeamId, setSelectedTeamId] = useState(initialData?.teamId || '');
+  const [formData, setFormData] = useState<FormData>({
+    ...initialFormData,
+    ...initialData,
+    teamId: initialData?.teamId || '',
+  });
   const [error, setError] = useState<string | null>(null);
+
+  // 폼 필드 업데이트 헬퍼
+  const updateField = <K extends keyof FormData>(field: K, value: FormData[K]) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
 
   // 팀 목록 로드
   useEffect(() => {
@@ -44,32 +65,32 @@ export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalPr
 
   // 첫 번째 팀 자동 선택
   useEffect(() => {
-    if (teams.length > 0 && !selectedTeamId) {
-      setSelectedTeamId(teams[0].id);
+    if (teams.length > 0 && !formData.teamId) {
+      updateField('teamId', teams[0].id);
     }
-  }, [teams, selectedTeamId]);
+  }, [teams, formData.teamId]);
 
   // initialData 변경 시 폼 업데이트
   useEffect(() => {
     if (initialData) {
-      setTitle(initialData.title || '');
-      setDescription(initialData.description || '');
-      setScheduledAt(initialData.scheduledAt || '');
-      if (initialData.teamId) {
-        setSelectedTeamId(initialData.teamId);
-      }
+      setFormData({
+        title: initialData.title || '',
+        description: initialData.description || '',
+        scheduledAt: initialData.scheduledAt || '',
+        teamId: initialData.teamId || formData.teamId,
+      });
     }
   }, [initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!title.trim()) {
+    if (!formData.title.trim()) {
       setError('회의 제목을 입력해주세요.');
       return;
     }
 
-    if (!selectedTeamId) {
+    if (!formData.teamId) {
       setError('팀을 선택해주세요.');
       return;
     }
@@ -77,19 +98,17 @@ export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalPr
     setError(null);
 
     try {
-      const meeting = await createMeeting(selectedTeamId, {
-        title: title.trim(),
-        description: description.trim() || undefined,
-        scheduledAt: scheduledAt || undefined,
+      const meeting = await createMeeting(formData.teamId, {
+        title: formData.title.trim(),
+        description: formData.description.trim() || undefined,
+        scheduledAt: formData.scheduledAt || undefined,
       });
 
       // 모달 닫기
       onOpenChange(false);
 
       // 폼 초기화
-      setTitle('');
-      setDescription('');
-      setScheduledAt('');
+      setFormData({ ...initialFormData, teamId: formData.teamId });
 
       // 회의실로 이동
       navigate(`/dashboard/meetings/${meeting.id}/room`);
@@ -133,8 +152,8 @@ export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalPr
               <span className="text-mit-warning ml-1">*</span>
             </label>
             <select
-              value={selectedTeamId}
-              onChange={(e) => setSelectedTeamId(e.target.value)}
+              value={formData.teamId}
+              onChange={(e) => updateField('teamId', e.target.value)}
               className={cn(inputBaseClasses, 'cursor-pointer')}
               required
             >
@@ -156,8 +175,8 @@ export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalPr
               <span className="text-mit-warning ml-1">*</span>
             </label>
             <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={formData.title}
+              onChange={(e) => updateField('title', e.target.value)}
               placeholder="예: 주간 팀 미팅"
               className={inputBaseClasses}
               required
@@ -170,8 +189,8 @@ export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalPr
               회의 안건
             </label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={formData.description}
+              onChange={(e) => updateField('description', e.target.value)}
               placeholder="회의에서 다룰 주요 안건을 입력하세요"
               rows={3}
               className={cn(inputBaseClasses, 'resize-none')}
@@ -186,8 +205,8 @@ export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalPr
             </label>
             <input
               type="datetime-local"
-              value={scheduledAt}
-              onChange={(e) => setScheduledAt(e.target.value)}
+              value={formData.scheduledAt}
+              onChange={(e) => updateField('scheduledAt', e.target.value)}
               className={inputBaseClasses}
             />
           </div>
@@ -212,7 +231,7 @@ export function MeetingModal({ open, onOpenChange, initialData }: MeetingModalPr
             <Button
               type="submit"
               variant="glass-primary"
-              disabled={meetingsLoading || !title.trim() || !selectedTeamId}
+              disabled={meetingsLoading || !formData.title.trim() || !formData.teamId}
             >
               {meetingsLoading ? '생성 중...' : '회의 시작'}
             </Button>

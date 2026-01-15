@@ -1,10 +1,17 @@
 // 명령 처리 훅
 import { useCallback } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
-import { usePreviewStore } from '@/app/stores/previewStore';
+import { usePreviewStore, type PreviewType } from '@/app/stores/previewStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { agentService } from '@/app/services/agentService';
 import type { HistoryItem } from '@/app/types/command';
+
+// 유효한 프리뷰 타입 목록
+const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result'];
+
+function isValidPreviewType(type: string): type is PreviewType {
+  return VALID_PREVIEW_TYPES.includes(type as PreviewType);
+}
 
 export function useCommand() {
   const {
@@ -61,11 +68,21 @@ export function useCommand() {
 
           // 프리뷰 패널 업데이트
           if (response.previewData) {
-            setPreview(response.previewData.type as 'meeting' | 'document' | 'command-result', {
-              title: response.previewData.title,
-              content: response.previewData.content,
-              createdAt: new Date().toISOString(),
-            });
+            const previewType = response.previewData.type;
+            if (isValidPreviewType(previewType)) {
+              setPreview(previewType, {
+                title: response.previewData.title,
+                content: response.previewData.content,
+                createdAt: new Date().toISOString(),
+              });
+            } else {
+              console.warn(`Unknown preview type: ${previewType}, falling back to command-result`);
+              setPreview('command-result', {
+                title: response.previewData.title,
+                content: response.previewData.content,
+                createdAt: new Date().toISOString(),
+              });
+            }
           }
         }
       } catch (error) {
@@ -94,11 +111,11 @@ export function useCommand() {
     setProcessing(true);
 
     try {
-      // 필드 값 추출
+      // 필드 값 추출 (id를 키로 사용하여 i18n 호환성 확보)
       const fieldValues: Record<string, string> = {};
       activeCommand.fields.forEach((f) => {
         if (f.value) {
-          fieldValues[f.label] = f.value;
+          fieldValues[f.id] = f.value;
         }
       });
 

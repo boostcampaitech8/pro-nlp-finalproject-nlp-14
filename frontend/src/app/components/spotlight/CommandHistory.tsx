@@ -1,6 +1,8 @@
 // 명령 히스토리 컴포넌트
 import { useCommandStore } from '@/app/stores/commandStore';
 import { usePreviewStore } from '@/app/stores/previewStore';
+import { STATUS_COLORS } from '@/app/constants';
+import { formatRelativeTime } from '@/app/utils/dateUtils';
 import type { HistoryItem } from '@/app/types/command';
 import { cn } from '@/lib/utils';
 
@@ -10,29 +12,6 @@ interface CommandCardProps {
 }
 
 function CommandCard({ item, onClick }: CommandCardProps) {
-  const statusColors = {
-    success: 'bg-mit-success/20 text-mit-success',
-    error: 'bg-mit-warning/20 text-mit-warning',
-    pending: 'bg-mit-primary/20 text-mit-primary',
-  };
-
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-
-    if (minutes < 1) return '방금 전';
-    if (minutes < 60) return `${minutes}분 전`;
-
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}시간 전`;
-
-    return date.toLocaleDateString('ko-KR', {
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
   return (
     <button
       onClick={onClick}
@@ -51,7 +30,7 @@ function CommandCard({ item, onClick }: CommandCardProps) {
             <span
               className={cn(
                 'px-2 py-0.5 rounded-full text-[10px] font-medium uppercase',
-                statusColors[item.status]
+                STATUS_COLORS[item.status]
               )}
             >
               {item.status === 'success' ? '완료' : item.status === 'error' ? '실패' : '진행'}
@@ -61,7 +40,7 @@ function CommandCard({ item, onClick }: CommandCardProps) {
         </div>
 
         <span className="text-meta flex-shrink-0">
-          {formatTime(item.timestamp)}
+          {formatRelativeTime(item.timestamp)}
         </span>
       </div>
     </button>

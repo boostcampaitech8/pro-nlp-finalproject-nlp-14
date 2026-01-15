@@ -1,5 +1,5 @@
 // 좌측 사이드바 (280px)
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Logo } from './Logo';
 import { CurrentSession } from './CurrentSession';
 import { Navigation } from './Navigation';
@@ -12,7 +12,7 @@ export function LeftSidebar() {
   const { meetingId, participants, connectionState } = useMeetingRoomStore();
   const { currentMeeting, fetchMeeting } = useTeamStore();
   const [duration, setDuration] = useState<string>('');
-  const [startTime] = useState<Date | null>(null);
+  const startTimeRef = useRef<Date | null>(null);
 
   // 회의 정보 로드
   useEffect(() => {
@@ -25,10 +25,16 @@ export function LeftSidebar() {
   useEffect(() => {
     if (!meetingId || connectionState !== 'connected') {
       setDuration('');
+      startTimeRef.current = null; // 회의 종료 시 초기화
       return;
     }
 
-    const start = startTime || new Date();
+    // 회의 시작 시 시작 시간 기록 (최초 1회만)
+    if (!startTimeRef.current) {
+      startTimeRef.current = new Date();
+    }
+
+    const start = startTimeRef.current;
     const updateDuration = () => {
       const now = new Date();
       const diff = Math.floor((now.getTime() - start.getTime()) / 1000);
@@ -46,7 +52,7 @@ export function LeftSidebar() {
     updateDuration();
     const interval = setInterval(updateDuration, 1000);
     return () => clearInterval(interval);
-  }, [meetingId, connectionState, startTime]);
+  }, [meetingId, connectionState]);
 
   const isInMeeting = meetingId && connectionState === 'connected';
   const participantCount = participants.size;
