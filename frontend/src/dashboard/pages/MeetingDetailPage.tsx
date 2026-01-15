@@ -8,14 +8,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Home } from 'lucide-react';
 
 import { MeetingInfoCard } from '@/components/meeting/MeetingInfoCard';
-import { ParticipantSection } from '@/components/meeting/ParticipantSection';
 import { RecordingList } from '@/components/meeting/RecordingList';
 import { TranscriptSection } from '@/components/meeting/TranscriptSection';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
-import type { MeetingStatus, ParticipantRole, TeamMember } from '@/types';
-import { teamService } from '@/services/teamService';
+import type { MeetingStatus } from '@/types';
 import api from '@/services/api';
 
 export function MeetingDetailPage() {
@@ -29,12 +27,8 @@ export function MeetingDetailPage() {
     fetchMeeting,
     updateMeeting,
     deleteMeeting,
-    addParticipant,
-    updateParticipantRole,
-    removeParticipant,
   } = useTeamStore();
 
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -44,12 +38,6 @@ export function MeetingDetailPage() {
       fetchMeeting(meetingId);
     }
   }, [meetingId, fetchMeeting]);
-
-  useEffect(() => {
-    if (currentMeeting) {
-      teamService.listMembers(currentMeeting.teamId).then(setTeamMembers).catch(() => {});
-    }
-  }, [currentMeeting]);
 
   // 회의 시작 (host만)
   const handleStartMeeting = async () => {
@@ -116,34 +104,8 @@ export function MeetingDetailPage() {
     }
   };
 
-  // 참여자 추가
-  const handleAddParticipant = async (userId: string, role: ParticipantRole) => {
-    if (!meetingId) return;
-    await addParticipant(meetingId, { userId, role });
-  };
-
-  // 참여자 역할 변경
-  const handleUpdateParticipantRole = async (userId: string, role: ParticipantRole) => {
-    if (!meetingId) return;
-    await updateParticipantRole(meetingId, userId, { role });
-  };
-
-  // 참여자 제거
-  const handleRemoveParticipant = async (userId: string, participantName: string) => {
-    if (!meetingId) return;
-    if (!confirm(`Are you sure you want to remove ${participantName} from this meeting?`)) return;
-    await removeParticipant(meetingId, userId);
-  };
-
-  const currentUserParticipant = currentMeeting?.participants.find(
-    (p) => p.userId === user?.id
-  );
-  const isHost = currentUserParticipant?.role === 'host';
-
-  // 아직 참여자가 아닌 팀 멤버들
-  const availableMembers = teamMembers.filter(
-    (member) => !currentMeeting?.participants.some((p) => p.userId === member.userId)
-  );
+  // 회의 생성자가 host
+  const isHost = currentMeeting?.createdBy === user?.id;
 
   if (meetingsLoading && !currentMeeting) {
     return (
@@ -219,7 +181,6 @@ export function MeetingDetailPage() {
           <MeetingInfoCard
             meeting={currentMeeting}
             isHost={isHost}
-            isParticipant={!!currentUserParticipant}
             starting={starting}
             ending={ending}
             onStartMeeting={handleStartMeeting}
@@ -228,19 +189,6 @@ export function MeetingDetailPage() {
             onSave={handleSaveMeeting}
             onDelete={handleDeleteMeeting}
             deleting={deleting}
-          />
-        )}
-
-        {/* 참여자 섹션 */}
-        {currentMeeting && (
-          <ParticipantSection
-            participants={currentMeeting.participants}
-            availableMembers={availableMembers}
-            currentUserId={user?.id}
-            isHost={isHost}
-            onAddParticipant={handleAddParticipant}
-            onUpdateRole={handleUpdateParticipantRole}
-            onRemoveParticipant={handleRemoveParticipant}
           />
         )}
 

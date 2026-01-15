@@ -10,11 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import get_current_user, require_meeting_participant
+from app.api.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.core.webrtc_config import ICE_SERVERS, MAX_PARTICIPANTS, WSErrorCode
 from app.models.meeting import Meeting, MeetingParticipant, MeetingStatus, ParticipantRole
+from app.models.team import TeamMember
 from app.models.user import User
 from app.schemas.webrtc import (
     EndMeetingResponse,
@@ -42,7 +43,7 @@ async def get_meeting_room(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    """회의실 정보 조회"""
+    """회의실 정보 조회 (팀 멤버만 접근 가능)"""
     # 회의 조회
     query = (
         select(Meeting)
@@ -55,10 +56,14 @@ async def get_meeting_room(
     if not meeting:
         raise HTTPException(status_code=404, detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."})
 
-    # 참여자인지 확인
-    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
-    if not is_participant:
-        raise HTTPException(status_code=403, detail={"error": "FORBIDDEN", "message": "회의 참여자만 접근할 수 있습니다."})
+    # 팀 멤버인지 확인
+    member_query = select(TeamMember).where(
+        TeamMember.team_id == meeting.team_id,
+        TeamMember.user_id == current_user.id,
+    )
+    member_result = await db.execute(member_query)
+    if not member_result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail={"error": "FORBIDDEN", "message": "팀 멤버만 회의실에 접근할 수 있습니다."})
 
     # 현재 연결된 참여자 목록
     connected_participants = connection_manager.get_participants(meeting_id)
@@ -234,10 +239,14 @@ async def websocket_endpoint(
                 await websocket.close(code=WSErrorCode.MEETING_ALREADY_ENDED, reason="Meeting already ended")
             return
 
-        # 참여자인지 확인
-        participant = next((p for p in meeting.participants if p.user_id == user_uuid), None)
-        if not participant:
-            await websocket.close(code=WSErrorCode.NOT_PARTICIPANT, reason="Not a participant")
+        # 팀 멤버인지 확인
+        member_query = select(TeamMember).where(
+            TeamMember.team_id == meeting.team_id,
+            TeamMember.user_id == user_uuid,
+        )
+        member_result = await db.execute(member_query)
+        if not member_result.scalar_one_or_none():
+            await websocket.close(code=WSErrorCode.NOT_PARTICIPANT, reason="Not a team member")
             return
 
         # 최대 참여자 수 확인
@@ -246,12 +255,15 @@ async def websocket_endpoint(
             await websocket.close(code=WSErrorCode.ROOM_FULL, reason="Room is full")
             return
 
+        # 역할 결정: 회의 생성자는 host, 나머지는 participant
+        role = ParticipantRole.HOST.value if meeting.created_by == user_uuid else ParticipantRole.PARTICIPANT.value
+
         # 연결 등록
         await connection_manager.connect(
             meeting_id=meeting_id,
             user_id=user_uuid,
             user_name=user.name,
-            role=participant.role,
+            role=role,
             websocket=websocket,
         )
 

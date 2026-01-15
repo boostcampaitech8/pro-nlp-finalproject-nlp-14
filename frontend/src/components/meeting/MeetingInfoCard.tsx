@@ -17,7 +17,6 @@ import type { Meeting, MeetingStatus } from '@/types';
 interface MeetingInfoCardProps {
   meeting: Meeting;
   isHost: boolean;
-  isParticipant: boolean;
   starting: boolean;
   ending: boolean;
   onStartMeeting: () => void;
@@ -31,7 +30,6 @@ interface MeetingInfoCardProps {
 export function MeetingInfoCard({
   meeting,
   isHost,
-  isParticipant,
   starting,
   ending,
   onStartMeeting,
@@ -144,7 +142,7 @@ export function MeetingInfoCard({
                   Start Meeting
                 </Button>
               )}
-              {meeting.status === 'ongoing' && isParticipant && (
+              {meeting.status === 'ongoing' && (
                 <Button onClick={onJoinMeeting}>
                   Join Meeting
                 </Button>
