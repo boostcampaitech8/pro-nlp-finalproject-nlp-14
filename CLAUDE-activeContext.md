@@ -28,6 +28,31 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-15] Spotlight 서비스 코드 리팩토링
+- 목적: 코드 품질 개선, 버그 수정, DRY 원칙 적용
+- Phase 1: LeftSidebar Timer Bug Fix
+  - useState -> useRef 변경으로 re-render 시 duration 리셋 버그 수정
+  - startTimeRef.current로 회의 시작 시간 추적
+- Phase 2: Type Safety (useCommand.ts)
+  - isValidPreviewType 타입 가드 함수 추가
+  - 필드 키를 label -> id로 변경 (i18n 호환)
+- Phase 3: Duplicate Data 제거
+  - commandStore의 defaultSuggestions 제거
+  - MainPage에서 agentService.getSuggestions()로 로드
+- Phase 4: Constants & Utils 추출
+  - src/app/constants/index.ts 생성 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS 등)
+  - src/app/utils/dateUtils.ts 생성 (formatRelativeTime, formatDuration)
+  - 6개 파일에서 하드코딩 값 -> 상수 참조로 변경
+- Phase 5: Navigation 개선
+  - SectionTitle 컴포넌트 추출 (반복 클래스 제거)
+- Phase 6: MeetingModal Form State 통합
+  - 5개 개별 useState -> 1개 formData 객체로 통합
+  - updateField 헬퍼 함수로 필드 업데이트
+- Phase 7: Placeholder 버튼 정리
+  - PreviewHeader에서 미구현 ExternalLink, Maximize2 버튼 제거
+- 수정된 파일: 10개 (2개 신규, 8개 수정)
+- TypeScript 빌드: 에러 없음
+
 [2026-01-15] Spotlight-style 메인 서비스 페이지 구현 (MIT-9)
 - 목적: macOS Spotlight 스타일의 현대적인 메인 페이지 구현
 - 구현 내용:

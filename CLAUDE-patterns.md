@@ -405,6 +405,131 @@
   </AnimatePresence>
   ```
 
+### Constants Extraction Pattern
+- **위치**: `src/app/constants/index.ts`
+- **용도**: 매직 넘버, 반복 설정값 중앙 관리
+- **패턴**:
+  ```typescript
+  // constants/index.ts
+  export const HISTORY_LIMIT = 50;
+  export const SUGGESTIONS_DISPLAY_LIMIT = 4;
+
+  export const STATUS_COLORS = {
+    success: 'bg-mit-success/20 text-mit-success',
+    error: 'bg-mit-warning/20 text-mit-warning',
+    pending: 'bg-mit-primary/20 text-mit-primary',
+  } as const;
+
+  export const API_DELAYS = {
+    COMMAND_PROCESS: 500,
+    FORM_SUBMIT: 800,
+    SUGGESTIONS_FETCH: 200,
+  } as const;
+
+  // 사용
+  import { HISTORY_LIMIT, STATUS_COLORS } from '@/app/constants';
+  history.slice(0, HISTORY_LIMIT);
+  ```
+
+### Date Utils Pattern
+- **위치**: `src/app/utils/dateUtils.ts`
+- **용도**: 날짜/시간 포맷팅 함수 재사용
+- **패턴**:
+  ```typescript
+  // 상대 시간 (방금 전, 5분 전, 2시간 전)
+  export function formatRelativeTime(date: Date): string;
+
+  // Duration (1:30:45, 5:30)
+  export function formatDuration(startTime: Date): string;
+  ```
+
+### Form State Consolidation Pattern
+- **위치**: `src/app/components/meeting/MeetingModal.tsx`
+- **용도**: 여러 useState를 단일 객체로 통합하여 re-render 최적화
+- **패턴**:
+  ```typescript
+  // Before: 5개 useState - 각각 re-render 유발
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  // ...
+
+  // After: 단일 formData 객체
+  interface FormData {
+    title: string;
+    description: string;
+    scheduledAt: string;
+    teamId: string;
+  }
+
+  const [formData, setFormData] = useState<FormData>(initialFormData);
+
+  // 헬퍼 함수로 필드 업데이트
+  const updateField = <K extends keyof FormData>(field: K, value: FormData[K]) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // 사용
+  <Input value={formData.title} onChange={(e) => updateField('title', e.target.value)} />
+  ```
+
+### Type Guard Pattern
+- **위치**: `src/app/hooks/useCommand.ts`
+- **용도**: 런타임 타입 검증으로 안전한 타입 단언
+- **패턴**:
+  ```typescript
+  // 유효한 타입 목록 정의
+  const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result'];
+
+  // 타입 가드 함수
+  function isValidPreviewType(type: string): type is PreviewType {
+    return VALID_PREVIEW_TYPES.includes(type as PreviewType);
+  }
+
+  // 사용 - as 대신 타입 가드
+  if (isValidPreviewType(response.previewData.type)) {
+    setPreview(response.previewData.type, data);  // 안전하게 타입 추론
+  } else {
+    console.warn(`Unknown preview type: ${response.previewData.type}`);
+    setPreview('command-result', data);  // 폴백
+  }
+  ```
+
+### useRef for Persistent State Pattern
+- **위치**: `src/app/components/sidebar/LeftSidebar.tsx`
+- **용도**: re-render에도 유지해야 하는 값 (타이머 시작 시간 등)
+- **패턴**:
+  ```typescript
+  // Before: useState - re-render마다 초기화
+  const [startTime] = useState<Date | null>(null);
+
+  // After: useRef - re-render에도 값 유지
+  const startTimeRef = useRef<Date | null>(null);
+
+  useEffect(() => {
+    if (shouldStart && !startTimeRef.current) {
+      startTimeRef.current = new Date();
+    }
+    // startTimeRef.current는 의존성 배열에 불필요
+  }, [shouldStart]);
+  ```
+- **주의**: UI에 반영해야 하는 값은 useState 사용, 내부 로직에만 필요한 값은 useRef
+
+### Section Component Extraction Pattern
+- **위치**: `src/app/components/sidebar/Navigation.tsx`
+- **용도**: 반복되는 스타일/구조 컴포넌트화
+- **패턴**:
+  ```typescript
+  // 반복되는 섹션 타이틀 추출
+  function SectionTitle({ children }: { children: React.ReactNode }) {
+    return <p className="text-nav-title px-3 mb-2">{children}</p>;
+  }
+
+  // 사용
+  <SectionTitle>Main</SectionTitle>
+  <SectionTitle>Teams</SectionTitle>
+  <SectionTitle>System</SectionTitle>
+  ```
+
 ## Backend Patterns
 
 ### API Structure

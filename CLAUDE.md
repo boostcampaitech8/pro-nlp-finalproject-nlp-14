@@ -158,12 +158,14 @@ mit/
 │   └── src/
 │       ├── app/                 # Spotlight 메인 서비스 (3-column 레이아웃)
 │       │   ├── components/      # spotlight/, sidebar/, meeting/, preview/, ui/
+│       │   ├── constants/       # 상수 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS)
 │       │   ├── hooks/           # useCommand.ts
 │       │   ├── layouts/         # MainLayout.tsx
 │       │   ├── pages/           # MainPage.tsx
 │       │   ├── services/        # agentService.ts
 │       │   ├── stores/          # commandStore, meetingModalStore, previewStore
-│       │   └── types/           # command.ts
+│       │   ├── types/           # command.ts
+│       │   └── utils/           # dateUtils (formatRelativeTime, formatDuration)
 │       ├── components/          # 회의실 컴포넌트 (meeting/, team/, ui/)
 │       ├── dashboard/           # 대시보드 페이지
 │       ├── hooks/               # WebRTC, Recording, VAD 훅
@@ -204,6 +206,8 @@ mit/
 | `app/stores/commandStore.ts` | 명령어 입력/히스토리 상태 |
 | `app/stores/meetingModalStore.ts` | 회의 모달 상태 |
 | `app/stores/previewStore.ts` | 미리보기 패널 상태 |
+| `app/constants/index.ts` | 상수 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS) |
+| `app/utils/dateUtils.ts` | 날짜 유틸 (formatRelativeTime, formatDuration) |
 
 ### Frontend - Meeting Room (src/)
 | 파일 | 역할 |

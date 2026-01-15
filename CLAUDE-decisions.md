@@ -230,3 +230,54 @@
   - `navigation`: 페이지 이동
   - `modal`: 모달 열기
   - `form`: 폼 입력 필요
+
+## Code Quality
+
+### D21: Constants 중앙 관리
+- **결정**: 매직 넘버와 반복 설정값을 `constants/index.ts`에서 관리
+- **근거**:
+  - DRY 원칙 (값 변경 시 한 곳만 수정)
+  - 코드 가독성 향상 (의미 있는 상수명)
+  - 일관성 유지 (여러 파일에서 동일 값 사용)
+- **적용 항목**:
+  - `HISTORY_LIMIT`, `SUGGESTIONS_DISPLAY_LIMIT` (UI 제한)
+  - `STATUS_COLORS` (상태별 Tailwind 클래스)
+  - `PREVIEW_TITLES` (타입별 제목)
+  - `API_DELAYS` (Mock API 딜레이)
+
+### D22: Type Guard 우선 사용
+- **결정**: `as` type assertion 대신 type guard 함수 사용
+- **근거**:
+  - 런타임 타입 검증으로 안전성 향상
+  - 예상치 못한 타입에 대한 폴백 처리 가능
+  - 컴파일 타임과 런타임 타입 일치 보장
+- **패턴**:
+  ```typescript
+  function isValidPreviewType(type: string): type is PreviewType {
+    return VALID_TYPES.includes(type as PreviewType);
+  }
+  ```
+
+### D23: Form State 통합
+- **결정**: 관련된 폼 필드를 단일 객체로 통합
+- **근거**:
+  - 여러 useState가 각각 re-render 유발하는 문제 해결
+  - 폼 초기화/리셋 로직 단순화
+  - 관련 상태의 응집도 향상
+- **패턴**: FormData 인터페이스 + updateField 헬퍼
+
+### D24: useRef for Non-UI State
+- **결정**: UI 렌더링에 영향 없는 값은 useState 대신 useRef 사용
+- **근거**:
+  - re-render에도 값 유지 (타이머 시작 시간 등)
+  - 불필요한 re-render 방지
+  - useEffect 의존성 배열 간소화
+- **주의**: UI에 반영해야 하는 값은 여전히 useState 사용
+
+### D25: Suggestions SSOT (Single Source of Truth)
+- **결정**: suggestions 데이터를 agentService에서만 관리
+- **근거**:
+  - commandStore의 defaultSuggestions 중복 제거
+  - API 연동 시 자연스러운 전환
+  - 데이터 일관성 보장
+- **구현**: MainPage useEffect에서 agentService.getSuggestions() 호출
