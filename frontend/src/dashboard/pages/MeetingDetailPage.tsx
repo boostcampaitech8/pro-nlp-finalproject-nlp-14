@@ -76,7 +76,7 @@ export function MeetingDetailPage() {
   // 회의 참여 (ongoing 상태일 때)
   const handleJoinMeeting = () => {
     if (!meetingId) return;
-    navigate(`/meetings/${meetingId}/room`);
+    navigate(`/dashboard/meetings/${meetingId}/room`);
   };
 
   // 회의 정보 저장

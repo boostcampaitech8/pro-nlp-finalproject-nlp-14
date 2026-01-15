@@ -10,6 +10,8 @@ type MessageHandler = (message: ServerMessage) => void;
 
 const RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_ATTEMPTS = 5;
+const SEND_RETRY_DELAY = 50;
+const SEND_MAX_RETRIES = 10;
 
 export class SignalingClient {
   private ws: WebSocket | null = null;
@@ -105,16 +107,34 @@ export class SignalingClient {
   }
 
   /**
-   * 메시지 전송
+   * 메시지 전송 (재시도 로직 포함)
    */
   send(message: ClientMessage): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      logger.warn('[Signaling] Cannot send - not connected');
+    this.sendWithRetry(message, 0);
+  }
+
+  /**
+   * 재시도 로직이 포함된 메시지 전송
+   */
+  private sendWithRetry(message: ClientMessage, retryCount: number): void {
+    // WebSocket이 OPEN 상태면 즉시 전송
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      logger.log('[Signaling] Sending:', message.type);
+      this.ws.send(JSON.stringify(message));
       return;
     }
 
-    logger.log('[Signaling] Sending:', message.type);
-    this.ws.send(JSON.stringify(message));
+    // 연결 중(CONNECTING)이고 재시도 횟수가 남았으면 재시도
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING && retryCount < SEND_MAX_RETRIES) {
+      logger.log(`[Signaling] WebSocket connecting, retry ${retryCount + 1}/${SEND_MAX_RETRIES} for:`, message.type);
+      setTimeout(() => {
+        this.sendWithRetry(message, retryCount + 1);
+      }, SEND_RETRY_DELAY);
+      return;
+    }
+
+    // 전송 불가
+    logger.warn('[Signaling] Cannot send - not connected, message:', message.type);
   }
 
   /**
