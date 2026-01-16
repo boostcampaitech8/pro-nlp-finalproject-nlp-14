@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWebRTC } from '@/hooks/useWebRTC';
+import { useLiveKit } from '@/hooks/useLiveKit';
 import { useMultiAudioLevels } from '@/hooks/useAudioLevel';
 import { AudioControls } from './AudioControls';
 import { ParticipantList } from './ParticipantList';
@@ -58,7 +58,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     // 채팅
     chatMessages,
     sendChatMessage,
-  } = useWebRTC(meetingId);
+  } = useLiveKit(meetingId);
 
   // 현재 사용자가 Host인지 확인
   const currentParticipant = participants.get(userId);

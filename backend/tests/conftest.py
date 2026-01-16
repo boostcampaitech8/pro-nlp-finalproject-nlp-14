@@ -3,7 +3,7 @@
 테스트 인프라:
 - 테스트 DB 세션
 - FastAPI TestClient
-- Mock 서비스 (MinIO, Redis, aiortc)
+- Mock 서비스 (MinIO, Redis)
 - 테스트 데이터 fixture
 """
 
@@ -212,41 +212,6 @@ def mock_redis():
     mock.exists = AsyncMock(return_value=0)
 
     return mock
-
-
-@pytest.fixture
-def mock_rtc_peer_connection():
-    """aiortc RTCPeerConnection Mock"""
-    with patch("aiortc.RTCPeerConnection") as mock_class:
-        mock_pc = MagicMock()
-
-        # Offer/Answer 생성
-        mock_pc.createOffer = AsyncMock(
-            return_value=MagicMock(sdp="v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\n", type="offer")
-        )
-        mock_pc.createAnswer = AsyncMock(
-            return_value=MagicMock(sdp="v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\n", type="answer")
-        )
-
-        # SDP 설정
-        mock_pc.setLocalDescription = AsyncMock()
-        mock_pc.setRemoteDescription = AsyncMock()
-
-        # ICE
-        mock_pc.addIceCandidate = AsyncMock()
-        mock_pc.iceGatheringState = "complete"
-
-        # 상태
-        mock_pc.connectionState = "connected"
-        mock_pc.localDescription = MagicMock(
-            sdp="v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\n", type="offer"
-        )
-
-        # 정리
-        mock_pc.close = AsyncMock()
-
-        mock_class.return_value = mock_pc
-        yield mock_pc
 
 
 # ===== 테스트 데이터 Fixture =====

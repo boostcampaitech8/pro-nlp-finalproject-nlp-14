@@ -4,9 +4,11 @@
 
 ### Phase 1: 미팅 시스템 - 완료
 - 인증 (JWT), 팀 CRUD, 회의 CRUD, 멤버/참여자 관리
-- WebRTC Mesh P2P + 화면공유 (STUN only)
-- 클라이언트 녹음 (MediaRecorder + IndexedDB + Presigned URL 업로드)
+- LiveKit SFU 미디어 라우팅 (Mesh P2P -> SFU 마이그레이션 완료)
+- 서버 녹음 (LiveKit Egress -> MinIO)
+- 클라이언트 VAD -> DataPacket으로 발화 이벤트 전송
 - 마이크 게인 조절, 오디오 디바이스 선택 UI
+- 화면공유, Host 강제 음소거, 채팅 (DataPacket 기반)
 
 ### Phase 2: PR Review 시스템 - 진행 중
 - [x] 녹음 파일 STT 변환 (OpenAI Whisper API)
@@ -28,6 +30,71 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-16] LiveKit SDK 타입 오류 수정 및 TURN TLS 이슈 확인
+- 목적: make docker-rebuild 빌드 실패 수정
+- 문제 1: TypeScript TS2353 오류 - rtcConfig 타입 불일치
+  - 위치: frontend/src/hooks/useLiveKit.ts:484
+  - 원인: LiveKit SDK 2.17.0에서 `rtcConfig`는 `RoomConnectOptions`에만 존재
+    - `RoomOptions` (Room constructor) - rtcConfig 없음
+    - `RoomConnectOptions` (room.connect()) - rtcConfig 있음
+  - 해결: rtcConfig를 new Room()에서 room.connect()로 이동
+    - Before: new Room({ adaptiveStream, dynacast, rtcConfig })
+    - After: new Room({ adaptiveStream, dynacast }) + room.connect(url, token, { rtcConfig })
+  - 수정 파일: frontend/src/hooks/useLiveKit.ts (line 480-483, 535-546)
+- 문제 2: LiveKit 컨테이너 unhealthy (수정하지 않음, 보고만)
+  - 오류: `TURN tls cert required: open : no such file or directory`
+  - 원인: TURN TLS 활성화됨 (`tls_port: 5349`) 그러나 인증서 미설정
+    - docker-compose.yml에 `turn.enabled: true`, `tls_port: 5349` 설정
+    - `cert_file`, `key_file` 경로 미지정
+    - .env에 `LIVEKIT_TURN_DOMAIN=turn.mit-hub.com` 설정됨
+  - 해결 옵션:
+    1. TURN TLS 비활성화: `tls_port` 제거 (UDP only)
+    2. 인증서 경로 지정: `cert_file`, `key_file` 설정
+    3. TURN 완전 비활성화: `turn.enabled: false` (STUN only)
+  - 참고: https://docs.livekit.io/realtime/self-hosting/deployment/#turn-configuration
+
+[2026-01-16] LiveKit Egress 및 WebSocket 프록시 수정
+- 목적: LiveKit Egress Redis 크래시 및 WebSocket 연결 실패 수정
+- 문제 1: LiveKit Egress nil pointer dereference (Redis 연결 실패)
+  - 원인: EGRESS_CONFIG_FILE로 설정 파일 마운트 시 설정 파싱 문제
+  - 해결: EGRESS_CONFIG_BODY 환경변수로 인라인 설정 전달 (LIVEKIT_CONFIG와 동일 방식)
+  - 수정 파일: docker/docker-compose.yml (livekit-egress 서비스)
+  - 추가: depends_on healthcheck 조건 추가 (livekit, redis, minio)
+- 문제 2: 클라이언트 LiveKit 연결 실패
+  - 원인: nginx에 /livekit/ 프록시 설정 누락
+  - 해결: frontend/nginx.conf에 /livekit/ -> livekit:7880 WebSocket 프록시 추가
+  - 타임아웃: 7일 (장시간 연결 유지)
+- egress.yaml: deprecated 처리 (설정은 docker-compose에서 인라인 전달)
+- 참고: https://docs.livekit.io/home/self-hosting/egress/
+
+[2026-01-15] WebRTC Mesh P2P -> LiveKit SFU 마이그레이션 (MIT-14)
+- 목적: 서버 측 녹음 및 실시간 STT 준비를 위한 아키텍처 변경
+- Docker:
+  - livekit 서비스 추가 (livekit/livekit-server:latest)
+  - livekit-egress 서비스 추가 (서버 녹음용)
+  - livekit.yaml, egress.yaml 설정 파일 생성
+- Backend:
+  - services/livekit_service.py 신규 생성 (토큰 생성, Egress 녹음 관리)
+  - api/v1/endpoints/webrtc.py 수정 (LiveKit 토큰 발급 REST API)
+  - api/v1/endpoints/livekit_webhooks.py 신규 생성 (녹음 완료 웹훅)
+  - pyproject.toml: livekit-api 의존성 추가
+- Frontend:
+  - hooks/useLiveKit.ts 신규 생성 (~800 lines, 핵심 훅)
+    - Room.connect() 기반 연결
+    - DataPacket으로 VAD 이벤트, 채팅, 강제 음소거 전송
+    - Web Audio GainNode로 마이크 게인, 원격 볼륨 조절
+    - localStorage 캐싱 유지 (useWebRTC와 동일 인터페이스)
+  - components/meeting/MeetingRoom.tsx: useLiveKit 훅으로 교체
+  - hooks/useWebRTC.ts: deprecated 마킹 (레거시 코드 유지)
+  - package.json: livekit-client ^2.7.0 추가
+- 제거된 기능:
+  - 클라이언트 녹음 (MediaRecorder + IndexedDB) -> 서버 녹음으로 대체
+  - WebSocket 시그널링 -> LiveKit Room 연결로 대체
+- 유지된 기능:
+  - 화면공유, 음소거, 디바이스 선택, 마이크 gain, 원격 볼륨
+  - Host 강제 음소거, 채팅 (DataPacket 기반으로 변경)
+  - localStorage 오디오 설정 캐싱
+
 [2026-01-15] Spotlight 서비스 코드 리팩토링
 - 목적: 코드 품질 개선, 버그 수정, DRY 원칙 적용
 - Phase 1: LeftSidebar Timer Bug Fix

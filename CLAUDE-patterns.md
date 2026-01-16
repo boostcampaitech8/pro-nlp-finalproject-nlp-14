@@ -13,51 +13,158 @@
   const store = useMeetingRoomStore();
   ```
 
-### WebRTC Hook (useWebRTC)
-- **위치**: `frontend/src/hooks/useWebRTC.ts`
-- **역할**: WebRTC 연결, 시그널링, 녹음 관리 (통합 훅)
-- **분리된 훅 구조**:
+### LiveKit Hook (useLiveKit) - 현재 사용
+- **위치**: `frontend/src/hooks/useLiveKit.ts`
+- **역할**: LiveKit SFU 연결, 미디어 관리, 채팅, VAD 이벤트 (핵심 훅)
+- **인터페이스**:
+  ```typescript
+  interface UseLiveKitReturn {
+    // 연결 상태
+    connectionState: ConnectionState;
+    participants: Map<string, RoomParticipant>;
+    error: string | null;
+
+    // 미디어 스트림
+    localStream: MediaStream | null;
+    remoteStreams: Map<string, MediaStream>;
+    isAudioMuted: boolean;
+
+    // 오디오 설정 (localStorage 캐싱)
+    audioInputDeviceId: string | null;
+    audioOutputDeviceId: string | null;
+    micGain: number;
+    remoteVolumes: Map<string, number>;
+
+    // 화면공유
+    isScreenSharing: boolean;
+    screenStream: MediaStream | null;
+    remoteScreenStreams: Map<string, MediaStream>;
+
+    // 녹음 (서버 측)
+    isRecording: boolean;
+    isUploading: boolean;
+
+    // 채팅
+    chatMessages: ChatMessage[];
+
+    // 액션
+    joinRoom: (userId: string) => Promise<void>;
+    leaveRoom: () => Promise<void>;
+    toggleMute: () => void;
+    forceMute: (targetUserId: string, muted: boolean) => void;
+    changeAudioInputDevice: (deviceId: string) => Promise<void>;
+    changeAudioOutputDevice: (deviceId: string) => void;
+    changeMicGain: (gain: number) => void;
+    changeRemoteVolume: (userId: string, volume: number) => void;
+    startScreenShare: () => Promise<void>;
+    stopScreenShare: () => void;
+    sendChatMessage: (content: string) => void;
+  }
   ```
-  hooks/
-  ├── useWebRTC.ts           # 통합 훅 (다른 훅들 조합)
-  ├── useSignaling.ts        # 시그널링 서버 연결/메시지
-  ├── usePeerConnections.ts  # RTCPeerConnection 관리
-  ├── useAudioDevices.ts     # 오디오 디바이스 선택
-  ├── useScreenShare.ts      # 화면공유 관리
-  └── useRecording.ts        # 녹음 관리
+- **핵심 패턴**:
+  ```typescript
+  // Room 생성 (rtcConfig는 여기에 포함하지 않음)
+  const room = new Room({
+    adaptiveStream: true,
+    dynacast: true,
+  });
+  const token = await fetchToken(meetingId, userId);
+
+  // Room 연결 (rtcConfig는 connect()에 전달)
+  await room.connect(wsUrl, token, {
+    rtcConfig: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+      iceTransportPolicy: 'all', // TURN 필요시 'relay'
+    },
+  });
+
+  // 로컬 오디오 퍼블리시
+  const tracks = await createLocalTracks({ audio: true, video: false });
+  await room.localParticipant.publishTrack(tracks[0]);
+
+  // 원격 트랙 구독 (자동)
+  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    if (track.kind === Track.Kind.Audio) {
+      const stream = new MediaStream([track.mediaStreamTrack]);
+      setRemoteStreams(prev => new Map(prev).set(participant.identity, stream));
+    }
+  });
+
+  // DataPacket 전송 (채팅, VAD, 강제 음소거)
+  room.localParticipant.publishData(
+    new TextEncoder().encode(JSON.stringify({ type: 'chat', content })),
+    { reliable: true }
+  );
   ```
-- **패턴**:
-  - ref 사용으로 cleanup 시 최신 상태 참조
-  - useCallback으로 함수 메모이제이션
-  - 연결 시 자동 녹음 시작, 퇴장 시 업로드
-  - cleanup useEffect는 `[]` dependency로 unmount 시에만 실행
+- **Web Audio 통합**:
+  ```typescript
+  // 마이크 게인 조절
+  const gainNode = audioContext.createGain();
+  gainNode.gain.value = micGain;
+  source.connect(gainNode).connect(destination);
+
+  // 원격 볼륨 조절 (RemoteAudio 컴포넌트에서)
+  const remoteGain = audioContext.createGain();
+  remoteGain.gain.value = remoteVolumes.get(odId) ?? 1.0;
+  ```
+- **localStorage 캐싱**: useWebRTC와 동일한 캐싱 로직 유지
+
+### WebRTC Hook (useWebRTC) - REMOVED
+- **상태**: 삭제됨 (LiveKit SFU 마이그레이션 완료)
+- **삭제된 파일**:
+  - `useWebRTC.ts` - 통합 Mesh P2P 훅
+  - `useSignaling.ts` - 시그널링 연결
+  - `usePeerConnections.ts` - RTCPeerConnection 관리
+- **대체**: `useLiveKit.ts` 사용 (위 참조)
 
 ### Audio Processing
 - **GainNode**: 마이크 볼륨 조절 (0.0 ~ 2.0)
 - **processedAudioRef**: Web Audio API로 처리된 스트림 관리
 - **디바이스 선택**: useAudioDevices 훅으로 입/출력 장치 관리
 
-### Chat System
+### Chat System (DataPacket 기반)
 - **위치**: `frontend/src/components/meeting/ChatPanel.tsx`
 - **기능**:
-  - WebSocket으로 실시간 메시지 전송/수신
+  - LiveKit DataPacket (RELIABLE 모드)으로 실시간 메시지 전송/수신
   - DB 저장으로 히스토리 유지
   - 회의 입장 시 GET /meetings/{id}/chat으로 히스토리 로드
   - Markdown 렌더링 지원
   - 연속 메시지 그룹화 (같은 사람, 1분 이내)
   - Shift+Enter 줄바꿈, Enter 전송
+- **DataPacket 구조**:
+  ```typescript
+  interface ChatDataPacket {
+    type: 'chat';
+    content: string;
+    userId: string;
+    userName: string;
+    timestamp: string;
+  }
+  ```
 - **Props**:
   - `hideHeader`: 헤더 숨김 (접이식 UI용)
   - `currentUserId`: 본인 메시지 구분
 
-### Force Mute (Host 강제 음소거)
+### Force Mute (Host 강제 음소거 - DataPacket 기반)
 - **메시지 플로우**:
   ```
-  Host -> force-mute(targetUserId, muted) -> Server
-  Server -> force-muted(muted, byUserId) -> Target
-  Server -> participant-muted(userId, muted) -> All
+  Host -> DataPacket {type: 'force-mute', targetUserId, muted} -> LiveKit Server
+  LiveKit Server -> DataPacket forward -> Target Participant
+  Target -> setMicrophoneEnabled(!muted)
   ```
-- **권한 검증**: `connection_manager.get_participant()` role 확인
+- **DataPacket 구조**:
+  ```typescript
+  interface ForceMutePacket {
+    type: 'force-mute';
+    targetUserId: string;
+    muted: boolean;
+    byUserId: string;
+  }
+  ```
+- **권한 검증**: useLiveKit 훅에서 participant role 확인
 
 ### Collapsible Sidebar Pattern
 - **상태**: `showParticipants`, `showChat` (useState)
@@ -88,11 +195,15 @@
   </div>
   ```
 
-### Recording Flow
-1. 연결 시 MediaRecorder 자동 시작
-2. 10초마다 IndexedDB에 증분 저장 (recordingStorageService)
-3. 퇴장 시 Presigned URL로 MinIO 직접 업로드
-4. beforeunload 시 localStorage 백업
+### Recording Flow (LiveKit Egress - 서버 녹음)
+1. 첫 참여자 입장 시 Backend에서 자동 녹음 시작 (Room Composite Egress)
+2. LiveKit Egress가 모든 참여자 오디오를 합성하여 녹음
+3. 마지막 참여자 퇴장 시 Backend에서 녹음 중지
+4. egress_ended 웹훅으로 파일 경로 수신, STT 작업 큐잉
+5. MinIO에 직접 저장 (클라이언트 업로드 불필요)
+
+### Recording Flow (Legacy - REMOVED)
+레거시 클라이언트 녹음 코드 삭제됨. 서버 녹음(LiveKit Egress)으로 완전 대체.
 
 ### Client VAD (Voice Activity Detection) Pattern
 - **위치**: `frontend/src/hooks/useVAD.ts`
@@ -620,6 +731,14 @@ TeamWithMembers:
 
 ## File Organization
 
+### Frontend Hooks
+```
+hooks/
+├── useLiveKit.ts          # LiveKit SFU 연결, 미디어 관리, 채팅 (핵심)
+├── useVAD.ts              # 클라이언트 VAD (Silero VAD, ONNX)
+└── useAudioDevices.ts     # 오디오 디바이스 선택
+```
+
 ### Frontend Components
 ```
 components/
@@ -652,16 +771,16 @@ services/
 ├── auth_service.py          # 인증 (JWT)
 ├── team_service.py          # 팀 CRUD
 ├── meeting_service.py       # 회의 CRUD
-├── signaling_service.py     # WebSocket 연결 관리
+├── livekit_service.py       # LiveKit 토큰 생성, Egress 녹음 관리
+├── vad_event_service.py     # VAD 이벤트 처리 (DataPacket 수신)
 ├── recording_service.py     # 녹음 업로드/다운로드
 ├── stt_service.py           # STT 변환 로직
 ├── transcript_service.py    # 회의록 병합/관리
 ├── audio_preprocessor.py    # VAD 전처리
-├── stt/
-│   ├── base.py              # STTProvider 추상 클래스
-│   ├── openai_provider.py   # OpenAI Whisper 구현
-│   └── factory.py           # Provider 팩토리
-└── sfu_service.py           # (미사용, 향후 SFU 전환용)
+└── stt/
+    ├── base.py              # STTProvider 추상 클래스
+    ├── openai_provider.py   # OpenAI Whisper 구현
+    └── factory.py           # Provider 팩토리
 ```
 
 ## STT (Speech-to-Text) Patterns
@@ -744,3 +863,67 @@ OPENAI_API_KEY=sk-xxx           # OpenAI API 키
 STT_PROVIDER=openai             # openai, local, self_hosted
 ARQ_REDIS_URL=redis://redis:6379/1  # Worker용 별도 Redis DB
 ```
+
+## Docker Configuration Patterns
+
+### LiveKit Config Inline Pattern
+- **위치**: `docker/docker-compose.yml`
+- **용도**: docker-compose의 `${VAR}` 치환을 활용한 설정 전달
+- **패턴**:
+  ```yaml
+  # LiveKit 서버 설정 (LIVEKIT_CONFIG)
+  livekit:
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        keys:
+          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+        redis:
+          address: redis:6379
+
+  # LiveKit Egress 설정 (EGRESS_CONFIG_BODY)
+  livekit-egress:
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://livekit:7880
+        redis:
+          address: redis:6379
+        s3:
+          access_key: ${MINIO_ROOT_USER:-minioadmin}
+          secret: ${MINIO_ROOT_PASSWORD:-minioadmin}
+          endpoint: http://minio:9000
+          bucket: recordings
+          force_path_style: true
+  ```
+- **주의**:
+  - `EGRESS_CONFIG_FILE` + 파일 마운트보다 인라인 설정이 더 안정적
+  - `REDIS_ADDRESS` 환경변수는 Egress에서 지원 안 됨 (config에 직접 설정)
+  - depends_on에 healthcheck 조건 추가 권장
+
+### nginx WebSocket Proxy Pattern
+- **위치**: `frontend/nginx.conf`
+- **용도**: LiveKit WebSocket 연결 프록시
+- **패턴**:
+  ```nginx
+  location /livekit/ {
+      proxy_pass http://livekit:7880/;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+
+      # 장시간 WebSocket 연결 유지 (회의 중 연결 끊김 방지)
+      proxy_connect_timeout 7d;
+      proxy_send_timeout 7d;
+      proxy_read_timeout 7d;
+  }
+  ```
+- **주의**:
+  - `proxy_http_version 1.1` 필수 (HTTP/1.1 WebSocket 업그레이드)
+  - `Connection "upgrade"` 필수 (WebSocket 핸드셰이크)
+  - 타임아웃은 충분히 길게 설정 (회의 시간 고려)

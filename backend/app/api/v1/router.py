@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth,
     chat,
+    livekit_webhooks,
     meetings,
     recordings,
     team_members,
@@ -22,3 +23,4 @@ api_router.include_router(webrtc.router)
 api_router.include_router(recordings.router)
 api_router.include_router(transcripts.router)
 api_router.include_router(chat.router)
+api_router.include_router(livekit_webhooks.router)

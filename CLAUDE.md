@@ -168,7 +168,7 @@ mit/
 │       │   └── utils/           # dateUtils (formatRelativeTime, formatDuration)
 │       ├── components/          # 회의실 컴포넌트 (meeting/, team/, ui/)
 │       ├── dashboard/           # 대시보드 페이지
-│       ├── hooks/               # WebRTC, Recording, VAD 훅
+│       ├── hooks/               # LiveKit, VAD, 오디오 디바이스 훅
 │       ├── services/            # API 서비스
 │       └── stores/              # authStore, teamStore, meetingRoomStore
 ├── backend/                     # FastAPI + Python 3.11 + SQLAlchemy 2.0 + uv
@@ -176,17 +176,23 @@ mit/
 └── docker/                      # Docker Compose (PostgreSQL, Redis, MinIO, stt-worker)
 ```
 
-### WebRTC Architecture
-- **Mesh P2P**: 클라이언트 간 직접 연결 (STUN only, TURN 미사용)
-- **시그널링**: FastAPI WebSocket
-- **클라이언트 녹음**: MediaRecorder API -> IndexedDB 증분 저장 -> Presigned URL로 MinIO 직접 업로드
-- **오디오 컨트롤**: 마이크 게인 조절, 디바이스 선택
+### WebRTC Architecture (LiveKit SFU)
+- **LiveKit SFU**: 중앙 서버 기반 미디어 라우팅 (Mesh P2P 대체)
+- **서버 녹음**: LiveKit Egress -> MinIO 직접 저장 (클라이언트 녹음 제거)
+- **클라이언트 VAD**: @ricky0123/vad-web -> DataPacket으로 발화 이벤트 서버 전송
+- **오디오 컨트롤**: 마이크 게인 조절, 디바이스 선택 (Web Audio GainNode)
 - **설정 캐싱**: localStorage에 오디오 설정, 참여자별 볼륨 저장 (회의 간 유지)
+- **실시간 STT 준비**: VAD 이벤트 서버 수집 (추후 STT 트리거용)
+
+### Legacy WebRTC (Removed)
+- **Mesh P2P**: 레거시 코드 삭제됨 (useWebRTC.ts, useSignaling.ts, usePeerConnections.ts)
 
 ### Deployment Architecture
 ```
-[Client] --> [Host nginx:443 SSL] --> [Docker nginx:3000] --> /api/* --> [backend:8000]
-             (snsn.kr)                                    --> /*     --> static files
+[Client] --> [Host nginx:443 SSL] --> [Docker nginx:3000] --> /api/*     --> [backend:8000]
+             (snsn.kr)                                    --> /livekit/* --> [livekit:7880] (WebSocket)
+                                                          --> /storage/* --> [minio:9000]
+                                                          --> /*         --> static files
 ```
 
 ## Key Components
@@ -212,16 +218,11 @@ mit/
 ### Frontend - Meeting Room (src/)
 | 파일 | 역할 |
 |------|------|
-| `hooks/useWebRTC.ts` | WebRTC 연결, 시그널링, 녹음 관리 |
-| `hooks/useRecording.ts` | 녹음 관리 (MediaRecorder + VAD 통합) |
+| `hooks/useLiveKit.ts` | LiveKit SFU 연결, DataPacket 통신, 서버 녹음 (핵심 훅) |
 | `hooks/useVAD.ts` | 클라이언트 VAD (Silero VAD, @ricky0123/vad-web) |
 | `hooks/useAudioDevices.ts` | 오디오 디바이스 선택 |
-| `hooks/useForceMute.ts` | Host 강제 음소거 |
-| `hooks/useChat.ts` | 채팅 메시지 관리 |
 | `stores/meetingRoomStore.ts` | 회의실 상태 (스트림, 참여자, 연결, localStorage 설정 캐싱) |
-| `services/recordingService.ts` | 녹음 업로드 (Presigned URL + VAD 메타데이터) |
 | `utils/audioSettingsStorage.ts` | localStorage 오디오 설정 캐싱 (마이크 게인, 디바이스, 볼륨) |
-| `services/recordingStorageService.ts` | IndexedDB 증분 저장 |
 | `services/transcriptService.ts` | STT 시작/상태조회/결과조회 |
 | `services/chatService.ts` | 채팅 히스토리 조회 |
 | `components/meeting/MeetingRoom.tsx` | 회의실 메인 컴포넌트 |
@@ -236,15 +237,13 @@ mit/
 |------|------|
 | `api/dependencies.py` | 공유 의존성 (인증, 회의 검증) - DRY 원칙 |
 | `core/constants.py` | 애플리케이션 상수 (파일 크기, URL 만료 시간) |
-| `services/signaling_service.py` | WebSocket 연결 관리 (ConnectionManager) |
-| `services/recording_service.py` | 녹음 비즈니스 로직 (Service Layer) |
+| `services/livekit_service.py` | LiveKit 토큰 생성 및 Egress 녹음 관리 |
 | `services/chat_service.py` | 채팅 메시지 CRUD |
-| `handlers/websocket_message_handlers.py` | WebSocket 메시지 핸들러 (Strategy Pattern) |
-| `api/v1/endpoints/webrtc.py` | WebSocket 시그널링 엔드포인트 |
-| `api/v1/endpoints/recordings.py` | 녹음 업로드/다운로드 API |
+| `api/v1/endpoints/webrtc.py` | LiveKit 토큰 발급 및 녹음 API |
+| `api/v1/endpoints/livekit_webhooks.py` | LiveKit 이벤트 웹훅 (녹음 완료, 참여자 변경) |
+| `api/v1/endpoints/recordings.py` | 녹음 다운로드 API |
 | `api/v1/endpoints/transcripts.py` | STT 시작/상태/조회 API |
 | `api/v1/endpoints/chat.py` | 채팅 히스토리 API |
-| `core/webrtc_config.py` | ICE 서버 설정 (STUN only) |
 | `core/storage.py` | MinIO 스토리지 서비스 |
 | `services/stt_service.py` | STT 변환 로직 |
 | `services/transcript_service.py` | 회의록 병합/관리 (wall-clock timestamp 기반 정렬) |
@@ -254,9 +253,8 @@ mit/
 | `models/chat.py` | ChatMessage 모델 |
 
 ### Backend Design Patterns
-- **Strategy Pattern**: `websocket_message_handlers.py` - 메시지 타입별 핸들러 분리
-- **Composition**: `RecordingSession` - WebRTC 연결 + 저장 분리
-- **Service Layer**: `RecordingService` - Endpoint ↔ 비즈니스 로직 분리
+- **Service Layer**: `LiveKitService` - 토큰 생성, Egress 녹음 관리
+- **Webhook Pattern**: `livekit_webhooks.py` - LiveKit 이벤트 수신 및 처리
 - **Shared Dependencies**: `api/dependencies.py` - 중복 코드 180+ lines 제거
 - **Provider Pattern**: `stt/` - STT Provider 추상화 (OpenAI/Local/Self-hosted 확장)
 - **Async Worker**: `workers/arq_worker.py` - ARQ 기반 비동기 STT 처리

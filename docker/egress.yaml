@@ -1,0 +1,15 @@
+# [DEPRECATED] LiveKit Egress Configuration
+# 이 파일은 더 이상 사용되지 않습니다.
+# docker-compose.yml의 EGRESS_CONFIG_BODY 환경변수로 설정이 전달됩니다.
+#
+# 참고: https://docs.livekit.io/egress/self-hosting/
+#
+# 이전 설정 (참고용):
+# redis:
+#   address: redis:6379
+# log_level: info
+# cpu_cost:
+#   track_composite_cpu_cost: 2.0
+#   track_cpu_cost: 1.0
+#   room_composite_cpu_cost: 3.0
+# template_base: /home/egress/templates

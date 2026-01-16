@@ -1,28 +1,111 @@
 # Architecture Decisions
 
-## WebRTC
+## WebRTC / LiveKit
 
-### D1: Mesh P2P (STUN only)
+### D1: Mesh P2P (STUN only) - DEPRECATED
 - **결정**: TURN 서버 없이 STUN만 사용
 - **근거**:
   - 프로토타입 단계에서 비용 절감
   - 같은 네트워크/NAT 호환 환경에서 충분히 동작
 - **제한**: Symmetric NAT 환경에서 연결 실패 가능
-- **향후**: 사용자 증가 시 TURN 서버 추가 또는 SFU 전환 고려
+- **상태**: D26 LiveKit SFU로 대체됨
 
-### D2: 클라이언트 측 녹음
+### D2: 클라이언트 측 녹음 - DEPRECATED
 - **결정**: MediaRecorder API로 클라이언트에서 녹음
 - **근거**:
   - SFU 없이 구현 가능
   - 서버 부하 최소화
   - 각 참여자별 개별 녹음 가능
 - **구현**: IndexedDB 증분 저장 + Presigned URL 업로드
+- **상태**: D26 서버 녹음(LiveKit Egress)으로 대체됨
 
-### D3: 화면공유 별도 피어 연결
+### D3: 화면공유 별도 피어 연결 - DEPRECATED
 - **결정**: 화면공유용 RTCPeerConnection 분리
 - **근거**:
   - 오디오와 화면 트랙 독립적 관리
   - 화면공유 시작/중지가 오디오에 영향 없음
+- **상태**: D26 LiveKit 통합 트랙 관리로 대체됨
+
+### D26: LiveKit SFU 마이그레이션
+- **결정**: Mesh P2P에서 LiveKit SFU로 아키텍처 전환
+- **근거**:
+  - 서버 측 녹음 필요 (실시간 STT 준비)
+  - 클라이언트 녹음 안정성 문제 (브라우저 크래시, 네트워크 끊김)
+  - 확장성 (참여자 수 증가 시 Mesh O(n^2) 연결 한계)
+  - 중앙 서버에서 미디어 제어 용이 (강제 음소거 등)
+- **구현**:
+  - Docker: livekit, livekit-egress 서비스 추가
+  - Backend: LiveKitService (토큰 생성), livekit_webhooks (이벤트 수신)
+  - Frontend: useLiveKit 훅 (useWebRTC 인터페이스 유지)
+- **DataPacket 활용**:
+  - VAD 이벤트: 발화 시작/끝 서버 전송
+  - 채팅: RELIABLE 모드로 실시간 메시지
+  - 강제 음소거: Host -> Target 제어 메시지
+- **녹음**:
+  - LiveKit Egress로 서버 측 녹음
+  - MinIO에 직접 저장
+  - egress_ended 웹훅으로 STT 큐잉
+- **호환성**:
+  - 기존 useWebRTC 인터페이스 유지 (MeetingRoom 변경 최소화)
+  - localStorage 캐싱 로직 그대로 유지
+
+### D27: LiveKit Egress 설정 방식
+- **결정**: `EGRESS_CONFIG_BODY` 환경변수로 인라인 YAML 설정 전달
+- **근거**:
+  - `EGRESS_CONFIG_FILE` + 파일 마운트 방식에서 설정 파싱 문제 발생
+  - docker-compose의 `${VAR}` 치환이 인라인 설정에서 정상 동작
+  - `LIVEKIT_CONFIG`와 동일한 패턴으로 일관성 유지
+- **지원되는 환경변수** (공식 문서):
+  - `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_WS_URL` - 지원됨
+  - `REDIS_ADDRESS` - **지원 안 됨** (반드시 config에 설정)
+- **참고**: https://docs.livekit.io/home/self-hosting/egress/
+
+### D28: nginx LiveKit WebSocket 프록시
+- **결정**: `/livekit/` 경로를 LiveKit 서버로 WebSocket 프록시
+- **근거**:
+  - 클라이언트가 `wss://domain.com/livekit/`로 연결
+  - nginx에서 `livekit:7880`으로 프록시
+  - 장시간 연결 유지를 위해 7일 타임아웃 설정
+- **구현**: `frontend/nginx.conf`
+  ```nginx
+  location /livekit/ {
+      proxy_pass http://livekit:7880/;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_connect_timeout 7d;
+      proxy_send_timeout 7d;
+      proxy_read_timeout 7d;
+  }
+  ```
+
+### D29: LiveKit rtcConfig 배치
+- **결정**: `rtcConfig`는 Room constructor가 아닌 `room.connect()` 메서드에 전달
+- **근거**:
+  - LiveKit SDK 2.17.0 타입 정의 분석:
+    - `RoomOptions` (Room constructor) - `adaptiveStream`, `dynacast` 등만 포함
+    - `RoomConnectOptions` (room.connect()) - `rtcConfig` 포함
+  - TypeScript TS2353 에러: `rtcConfig does not exist in type Partial<InternalRoomOptions>`
+- **구현**:
+  ```typescript
+  // Room 생성 - rtcConfig 없음
+  const room = new Room({
+    adaptiveStream: true,
+    dynacast: true,
+  });
+
+  // 연결 시 rtcConfig 전달
+  await room.connect(wsUrl, token, {
+    rtcConfig: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+      iceTransportPolicy: 'all',
+    },
+  });
+  ```
+- **참고**: LiveKit SDK 버전 업그레이드 시 타입 정의 변경 확인 필요
 
 ## Storage
 
