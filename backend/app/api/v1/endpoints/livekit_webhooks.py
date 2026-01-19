@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.models.recording import MeetingRecording, RecordingStatus
 from app.services.vad_event_service import vad_event_service
 
 logger = logging.getLogger(__name__)
@@ -126,8 +127,18 @@ async def handle_egress_ended(body: dict, db: AsyncSession) -> None:
     if status == "EGRESS_COMPLETE" and file_results:
         file_info = file_results[0]
         file_path = file_info.get("filename", "")
-        file_size = file_info.get("size", 0)
-        duration_ms = file_info.get("duration", 0)
+        # size와 duration은 문자열로 올 수 있음
+        try:
+            file_size = int(file_info.get("size", 0))
+        except (ValueError, TypeError):
+            file_size = 0
+        # duration은 나노초 단위 (문자열로 올 수 있음), ms로 변환
+        duration_ns = file_info.get("duration", 0)
+        try:
+            duration_ns = int(duration_ns) if duration_ns else 0
+        except (ValueError, TypeError):
+            duration_ns = 0
+        duration_ms = duration_ns // 1_000_000 if duration_ns else 0
 
         logger.info(
             f"[LiveKit] Egress completed: room={room_name}, "
@@ -140,26 +151,35 @@ async def handle_egress_ended(body: dict, db: AsyncSession) -> None:
             try:
                 meeting_id = UUID(meeting_id_str)
 
-                # TODO: DB에 녹음 레코드 생성
-                # from app.models.recording import MeetingRecording, RecordingStatus
-                # recording = MeetingRecording(
-                #     meeting_id=meeting_id,
-                #     file_path=file_path,
-                #     file_size=file_size,
-                #     duration_ms=duration_ms,
-                #     status=RecordingStatus.COMPLETED,
-                # )
-                # db.add(recording)
-                # await db.commit()
+                # Composite 녹음 레코드 생성 (user_id는 NULL)
+                recording = MeetingRecording(
+                    meeting_id=meeting_id,
+                    user_id=None,  # Composite 녹음은 특정 사용자가 아님
+                    file_path=file_path,
+                    file_size_bytes=file_size,
+                    duration_ms=duration_ms,
+                    status=RecordingStatus.COMPLETED.value,
+                    started_at=datetime.now(),  # Egress 시작 시간 (정확한 시간은 별도 저장 필요)
+                    ended_at=datetime.now(),
+                )
+                db.add(recording)
+                await db.commit()
+                await db.refresh(recording)
 
-                # TODO: STT 작업 큐잉
+                logger.info(
+                    f"[LiveKit] Composite recording saved: meeting={meeting_id}, "
+                    f"recording_id={recording.id}"
+                )
+
+                # TODO: STT 작업 큐잉 (필요시 활성화)
                 # from app.workers.arq_worker import arq_redis
-                # await arq_redis.enqueue_job("transcribe_recording_task", recording.id)
-
-                logger.info(f"[LiveKit] Recording saved for meeting: {meeting_id}")
+                # await arq_redis.enqueue_job("transcribe_recording_task", str(recording.id))
 
             except ValueError:
                 logger.error(f"[LiveKit] Invalid meeting ID in room name: {room_name}")
+            except Exception as e:
+                logger.error(f"[LiveKit] Failed to save recording: {e}")
+                await db.rollback()
 
     elif status == "EGRESS_FAILED":
         error = egress_info.get("error", "Unknown error")

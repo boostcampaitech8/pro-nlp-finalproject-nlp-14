@@ -800,7 +800,8 @@ export interface components {
         Recording: {
             id: components["schemas"]["UUID"];
             meetingId: components["schemas"]["UUID"];
-            userId: components["schemas"]["UUID"];
+            /** @description 녹음한 사용자 ID (Server Recording은 null) */
+            userId?: components["schemas"]["UUID"];
             userName?: string | null;
             status: components["schemas"]["RecordingStatus"];
             startedAt: components["schemas"]["Timestamp"];
