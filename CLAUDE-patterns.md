@@ -110,7 +110,7 @@
   const remoteGain = audioContext.createGain();
   remoteGain.gain.value = remoteVolumes.get(odId) ?? 1.0;
   ```
-- **localStorage 캐싱**: useWebRTC와 동일한 캐싱 로직 유지
+- **localStorage 캐싱**: 마이크 게인, 디바이스 설정, 참여자별 볼륨 유지
 
 
 ### Audio Processing

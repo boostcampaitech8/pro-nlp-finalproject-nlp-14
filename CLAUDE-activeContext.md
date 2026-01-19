@@ -17,10 +17,11 @@
   - 서버 VAD (webrtcvad) 폴백 지원
   - ARQ Worker로 비동기 처리
   - 화자별 발화 병합 (타임스탬프 기반)
-- [x] 실시간 채팅 시스템 (WebSocket + DB 저장)
+- [x] 실시간 채팅 시스템 (DataPacket + DB 저장)
 - [x] Host 강제 음소거 기능
 - [x] Markdown 렌더링 지원
 - [x] 참가자 다중 선택 추가
+- [x] 서버 녹음 (LiveKit Egress Composite) UI 지원
 - [ ] 회의록 기본 기능 구현 (자동 생성, 조회, 수정)
 - [ ] 회의록 Review UI (Comment, Suggestion)
 - [ ] Ground Truth 관리
@@ -30,6 +31,12 @@
 > 최근 작업 기록 (이전 기록: CLAUDE-archived-worklog.md)
 
 ```
+[2026-01-19] Memory Bank 최적화
+- CLAUDE-activeContext.md 86% 축소 (16KB -> 2KB)
+- CLAUDE-patterns.md에서 REMOVED/DEPRECATED 섹션 제거
+- CLAUDE-decisions.md에서 deprecated decisions (D1-D3, D10) 제거
+- backend/CLAUDE-*.md 파일 현재 상태로 업데이트
+
 [2026-01-19] LiveKit Egress Composite 녹음 수정
 - RecordingResponse 스키마 user_id nullable 처리 (composite 녹음 지원)
 - RecordingList.tsx: "Server Recording" 표시 (user_id가 null인 경우)
