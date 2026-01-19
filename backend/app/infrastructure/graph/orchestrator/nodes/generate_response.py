@@ -2,8 +2,8 @@ import logging
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from integration.llm import llm
-from orchestrator.state import GraphState
+from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.orchestrator.state import GraphState
 
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)

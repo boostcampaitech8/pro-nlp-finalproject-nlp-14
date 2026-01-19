@@ -1,7 +1,7 @@
 import logging
 from typing import Literal
 
-from orchestrator.state import GraphState
+from app.infrastructure.graph.orchestrator.state import GraphState
 
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)

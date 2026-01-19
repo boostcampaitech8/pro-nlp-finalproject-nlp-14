@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from orchestrator import app
+from app.infrastructure.graph.orchestrator import app
 
 # # 그래프를 PNG 이미지 데이터로 변환
 # try:
