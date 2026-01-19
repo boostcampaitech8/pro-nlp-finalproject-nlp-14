@@ -82,11 +82,11 @@ services:
           port_range_start: 50000
           port_range_end: 50100
           # 프로덕션: 외부에서 접근 가능한 IP (Linux 서버에서 사용)
-          # use_external_ip: true
-          # node_ip: ${LIVEKIT_NODE_IP:-}
+          use_external_ip: true
+          node_ip: ${LIVEKIT_NODE_IP:-}
           # Docker Desktop for Mac 로컬 테스트용 (외부 클라이언트 연결 불가):
-          use_external_ip: false
-          node_ip: 172.28.0.10
+          # use_external_ip: false
+          # node_ip: 172.28.0.10
         # 내장 TURN 서버 (NAT/방화벽 환경 대응)
         turn:
           enabled: true
@@ -97,8 +97,9 @@ services:
           # relay 포트 범위 - Docker 포트 매핑과 일치해야 함
           relay_range_start: 30000
           relay_range_end: 30050
-          cert_file: /etc/letsencrypt/live/turn.mit-hub.com/fullchain.pem
-          key_file: /etc/letsencrypt/live/turn.mit-hub.com/privkey.pem
+          # SAN 인증서 사용 (www.mit-hub.com + turn.mit-hub.com 포함)
+          cert_file: /etc/letsencrypt/live/www.mit-hub.com/fullchain.pem
+          key_file: /etc/letsencrypt/live/www.mit-hub.com/privkey.pem
         redis:
           address: redis:6379
         logging:
