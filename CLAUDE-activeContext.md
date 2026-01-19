@@ -30,6 +30,31 @@
 > 작업 완료 시 여기에 기록해주세요.
 
 ```
+[2026-01-18] LiveKit TURN TLS 활성화 설정
+- 목적: NAT/방화벽 환경에서 WebRTC 연결 성공률 향상
+- 문제: TURN TLS 설정이 불완전하여 LiveKit 서버 시작 실패
+  - 오류 1: `TURN domain required` - LIVEKIT_TURN_DOMAIN 환경변수 비어있음
+  - 오류 2: `TURN tls cert required` - 인증서 경로 미설정
+- 해결 과정:
+  1. docker-compose.yml 수정:
+     - 포트 5349 추가 (TURN TLS)
+     - Let's Encrypt 인증서 볼륨 마운트 (`/etc/letsencrypt:/etc/letsencrypt:ro`)
+     - LIVEKIT_CONFIG에 cert_file, key_file 경로 추가
+  2. 인증서 심볼릭 링크 문제:
+     - Let's Encrypt live 디렉토리 파일들이 archive로 심볼릭 링크
+     - 개별 디렉토리 마운트시 링크 깨짐 -> 전체 /etc/letsencrypt 마운트로 해결
+  3. 인증서 권한 문제 (진행 중):
+     - privkey.pem 기본 권한 600 (소유자만 읽기)
+     - Docker 컨테이너에서 읽기 위해 chmod 644 또는 755 필요
+- 수정 파일:
+  - docker/docker-compose.yml (livekit 서비스 ports, volumes, LIVEKIT_CONFIG)
+  - docker/.env.example (TURN TLS 설정 가이드 추가)
+- 사용자 수동 작업:
+  - DNS: turn.mit-hub.com A 레코드 -> 118.91.7.85 (완료)
+  - certbot: sudo certbot certonly --standalone -d turn.mit-hub.com (완료)
+  - 권한: sudo chmod 644 /etc/letsencrypt/archive/turn.mit-hub.com/privkey1.pem (대기)
+  - .env: LIVEKIT_TURN_DOMAIN=turn.mit-hub.com (설정 필요)
+
 [2026-01-16] LiveKit SDK 타입 오류 수정 및 TURN TLS 이슈 확인
 - 목적: make docker-rebuild 빌드 실패 수정
 - 문제 1: TypeScript TS2353 오류 - rtcConfig 타입 불일치

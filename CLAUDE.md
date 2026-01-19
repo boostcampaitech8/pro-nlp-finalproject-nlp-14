@@ -178,6 +178,7 @@ mit/
 
 ### WebRTC Architecture (LiveKit SFU)
 - **LiveKit SFU**: 중앙 서버 기반 미디어 라우팅 (Mesh P2P 대체)
+- **TURN TLS**: NAT/방화벽 환경 WebRTC 연결용 (turn.mit-hub.com:5349, Let's Encrypt 인증서)
 - **서버 녹음**: LiveKit Egress -> MinIO 직접 저장 (클라이언트 녹음 제거)
 - **클라이언트 VAD**: @ricky0123/vad-web -> DataPacket으로 발화 이벤트 서버 전송
 - **오디오 컨트롤**: 마이크 게인 조절, 디바이스 선택 (Web Audio GainNode)

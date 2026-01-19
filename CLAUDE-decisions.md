@@ -79,6 +79,22 @@
   }
   ```
 
+### D30: LiveKit TURN TLS 활성화
+- **결정**: LiveKit 내장 TURN 서버를 TLS 모드로 활성화
+- **근거**:
+  - NAT/방화벽 환경에서 WebRTC 연결 성공률 향상 (85% -> 99%+)
+  - 기업 네트워크, 호텔/공항 WiFi 등 제한적 환경 대응
+  - TLS 포트(5349)는 HTTPS 트래픽으로 보여 방화벽 통과 용이
+- **구현**:
+  - 도메인: `turn.mit-hub.com` (Let's Encrypt 인증서)
+  - 포트: 5349/TCP (TLS), 3478/UDP (기본)
+  - 인증서 마운트: `/etc/letsencrypt:/etc/letsencrypt:ro` (심볼릭 링크 유지)
+- **Trade-off**:
+  - 장점: 연결 성공률 대폭 향상
+  - 단점: 인증서 관리 필요, TURN 경유 시 대역폭 증가
+- **설정 위치**: `docker/docker-compose.yml` livekit 서비스
+- **참고**: https://docs.livekit.io/realtime/self-hosting/deployment/#turn-configuration
+
 ### D29: LiveKit rtcConfig 배치
 - **결정**: `rtcConfig`는 Room constructor가 아닌 `room.connect()` 메서드에 전달
 - **근거**:

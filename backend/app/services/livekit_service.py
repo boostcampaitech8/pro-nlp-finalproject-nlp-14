@@ -102,14 +102,16 @@ class LiveKitService:
             return False
 
         try:
-            room_service = api.RoomService(self._ws_url, self._api_key, self._api_secret)
-            await room_service.create_room(
-                api.CreateRoomRequest(
-                    name=room_name,
-                    max_participants=max_participants,
-                    empty_timeout=300,  # 빈 룸 5분 후 삭제
+            async with api.LiveKitAPI(
+                self._ws_url, self._api_key, self._api_secret
+            ) as lk_api:
+                await lk_api.room.create_room(
+                    api.CreateRoomRequest(
+                        name=room_name,
+                        max_participants=max_participants,
+                        empty_timeout=300,  # 빈 룸 5분 후 삭제
+                    )
                 )
-            )
             logger.info(f"[LiveKit] Room created: {room_name}")
             return True
         except Exception as e:
@@ -129,8 +131,10 @@ class LiveKitService:
             return False
 
         try:
-            room_service = api.RoomService(self._ws_url, self._api_key, self._api_secret)
-            await room_service.delete_room(api.DeleteRoomRequest(room=room_name))
+            async with api.LiveKitAPI(
+                self._ws_url, self._api_key, self._api_secret
+            ) as lk_api:
+                await lk_api.room.delete_room(api.DeleteRoomRequest(room=room_name))
             logger.info(f"[LiveKit] Room deleted: {room_name}")
             return True
         except Exception as e:
@@ -150,18 +154,20 @@ class LiveKitService:
             return []
 
         try:
-            room_service = api.RoomService(self._ws_url, self._api_key, self._api_secret)
-            response = await room_service.list_participants(
-                api.ListParticipantsRequest(room=room_name)
-            )
-            return [
-                {
-                    "id": p.identity,
-                    "name": p.name,
-                    "joined_at": datetime.fromtimestamp(p.joined_at),
-                }
-                for p in response.participants
-            ]
+            async with api.LiveKitAPI(
+                self._ws_url, self._api_key, self._api_secret
+            ) as lk_api:
+                response = await lk_api.room.list_participants(
+                    api.ListParticipantsRequest(room=room_name)
+                )
+                return [
+                    {
+                        "id": p.identity,
+                        "name": p.name,
+                        "joined_at": datetime.fromtimestamp(p.joined_at),
+                    }
+                    for p in response.participants
+                ]
         except Exception as e:
             logger.error(f"[LiveKit] Failed to list participants: {e}")
             return []
@@ -194,8 +200,6 @@ class LiveKitService:
             return self._active_egress[meeting_key]
 
         try:
-            egress_service = api.EgressService(self._ws_url, self._api_key, self._api_secret)
-
             # S3 업로드 설정 (MinIO)
             settings = get_settings()
             s3_upload = api.S3Upload(
@@ -207,9 +211,12 @@ class LiveKitService:
             )
 
             # Room Composite Egress - 모든 트랙 믹싱
+            # audio_only=True여도 template base url 필요 (브라우저 기반 렌더링)
+            # self-hosted: egress 컨테이너 내장 템플릿 사용 (localhost:7980)
             request = api.RoomCompositeEgressRequest(
                 room_name=room_name,
                 audio_only=True,  # 오디오만 녹음
+                custom_base_url="http://localhost:7980",  # Egress 내장 템플릿
                 file_outputs=[
                     api.EncodedFileOutput(
                         file_type=api.EncodedFileType.OGG,  # OGG Opus 포맷
@@ -219,8 +226,11 @@ class LiveKitService:
                 ],
             )
 
-            info = await egress_service.start_room_composite_egress(request)
-            egress_id = info.egress_id
+            async with api.LiveKitAPI(
+                self._ws_url, self._api_key, self._api_secret
+            ) as lk_api:
+                info = await lk_api.egress.start_room_composite_egress(request)
+                egress_id = info.egress_id
 
             self._active_egress[meeting_key] = egress_id
             logger.info(f"[LiveKit] Recording started: meeting={meeting_id}, egress={egress_id}")
@@ -244,20 +254,35 @@ class LiveKitService:
             return False
 
         meeting_key = str(meeting_id)
+        room_name = self.get_room_name(meeting_id)
 
-        if meeting_key not in self._active_egress:
-            logger.warning(f"[LiveKit] No active recording for meeting {meeting_id}")
-            return False
-
-        egress_id = self._active_egress[meeting_key]
+        # 메모리에서 egress_id 확인, 없으면 LiveKit API로 조회
+        egress_id = self._active_egress.get(meeting_key)
 
         try:
-            egress_service = api.EgressService(self._ws_url, self._api_key, self._api_secret)
-            await egress_service.stop_egress(api.StopEgressRequest(egress_id=egress_id))
+            async with api.LiveKitAPI(
+                self._ws_url, self._api_key, self._api_secret
+            ) as lk_api:
+                # 메모리에 없으면 LiveKit에서 활성 egress 조회
+                if not egress_id:
+                    response = await lk_api.egress.list_egress(
+                        api.ListEgressRequest(room_name=room_name, active=True)
+                    )
+                    if response.items:
+                        egress_id = response.items[0].egress_id
+                        logger.info(f"[LiveKit] Found active egress from API: {egress_id}")
+                    else:
+                        logger.warning(f"[LiveKit] No active recording for meeting {meeting_id}")
+                        return False
 
-            del self._active_egress[meeting_key]
+                # Egress 중지
+                await lk_api.egress.stop_egress(api.StopEgressRequest(egress_id=egress_id))
+
+            # 메모리에서 제거
+            if meeting_key in self._active_egress:
+                del self._active_egress[meeting_key]
+
             logger.info(f"[LiveKit] Recording stopped: meeting={meeting_id}, egress={egress_id}")
-
             return True
 
         except Exception as e:
@@ -289,8 +314,6 @@ class LiveKitService:
             return None
 
         try:
-            egress_service = api.EgressService(self._ws_url, self._api_key, self._api_secret)
-
             settings = get_settings()
             s3_upload = api.S3Upload(
                 access_key=settings.minio_access_key,
@@ -309,7 +332,11 @@ class LiveKitService:
                 ),
             )
 
-            info = await egress_service.start_track_egress(request)
+            async with api.LiveKitAPI(
+                self._ws_url, self._api_key, self._api_secret
+            ) as lk_api:
+                info = await lk_api.egress.start_track_egress(request)
+
             logger.info(f"[LiveKit] Track recording started: user={user_id}, track={track_id}")
 
             return info.egress_id

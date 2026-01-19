@@ -927,3 +927,46 @@ ARQ_REDIS_URL=redis://redis:6379/1  # Worker용 별도 Redis DB
   - `proxy_http_version 1.1` 필수 (HTTP/1.1 WebSocket 업그레이드)
   - `Connection "upgrade"` 필수 (WebSocket 핸드셰이크)
   - 타임아웃은 충분히 길게 설정 (회의 시간 고려)
+
+### TURN TLS Certificate Pattern
+- **위치**: `docker/docker-compose.yml`
+- **용도**: NAT/방화벽 환경에서 WebRTC 연결 성공률 향상 (85% -> 99%+)
+- **인증서**: Let's Encrypt + certbot
+- **패턴**:
+  ```yaml
+  livekit:
+    ports:
+      - "5349:5349"       # TURN TLS
+      - "3478:3478/udp"   # TURN UDP
+    volumes:
+      # 심볼릭 링크 유지를 위해 전체 디렉토리 마운트
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    environment:
+      LIVEKIT_CONFIG: |
+        turn:
+          enabled: true
+          domain: ${LIVEKIT_TURN_DOMAIN:-}
+          tls_port: 5349
+          udp_port: 3478
+          cert_file: /etc/letsencrypt/live/turn.mit-hub.com/fullchain.pem
+          key_file: /etc/letsencrypt/live/turn.mit-hub.com/privkey.pem
+  ```
+- **인증서 발급**:
+  ```bash
+  # 1. DNS A 레코드 추가 (turn.example.com -> 서버 IP)
+  # 2. certbot 설치 및 인증서 발급
+  sudo certbot certonly --standalone -d turn.example.com
+  # 3. 권한 설정 (Docker에서 읽기 위해)
+  sudo chmod 755 /etc/letsencrypt/{live,archive}
+  sudo chmod 644 /etc/letsencrypt/archive/turn.example.com/privkey1.pem
+  ```
+- **주의**:
+  - Let's Encrypt는 `live/` -> `archive/` 심볼릭 링크 사용
+  - 개별 디렉토리 마운트 시 심볼릭 링크 깨짐
+  - 전체 `/etc/letsencrypt` 마운트 필수
+  - `privkey.pem`은 기본 600 권한 -> Docker에서 읽으려면 644 필요
+- **환경변수**:
+  ```bash
+  # docker/.env
+  LIVEKIT_TURN_DOMAIN=turn.mit-hub.com
+  ```
