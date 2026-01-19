@@ -1,6 +1,6 @@
 # Architecture Decisions - Backend
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-01-19
 
 ---
 
@@ -29,7 +29,7 @@
 ## ADR-002: Strategy Pattern for WebSocket Handlers
 
 **Date**: 2026-01-08
-**Status**: Accepted
+**Status**: Accepted (Pattern applicable to LiveKit webhooks)
 
 ### Context
 `webrtc.py`의 `handle_websocket_messages()` 함수가 11개 분기의 if-elif 체인으로 구성되어 있었음. 새 메시지 타입 추가 시 함수 수정 필요 (Open/Closed Principle 위반).
@@ -59,7 +59,7 @@ Strategy Pattern 적용:
 ## ADR-003: RecordingSession Decomposition
 
 **Date**: 2026-01-08
-**Status**: Accepted
+**Status**: Superseded (LiveKit Egress로 서버 녹음 대체)
 
 ### Context
 `RecordingSession` 클래스가 7가지 책임을 가진 God Class였음:

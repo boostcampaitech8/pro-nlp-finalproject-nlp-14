@@ -2,30 +2,6 @@
 
 ## WebRTC / LiveKit
 
-### D1: Mesh P2P (STUN only) - DEPRECATED
-- **결정**: TURN 서버 없이 STUN만 사용
-- **근거**:
-  - 프로토타입 단계에서 비용 절감
-  - 같은 네트워크/NAT 호환 환경에서 충분히 동작
-- **제한**: Symmetric NAT 환경에서 연결 실패 가능
-- **상태**: D26 LiveKit SFU로 대체됨
-
-### D2: 클라이언트 측 녹음 - DEPRECATED
-- **결정**: MediaRecorder API로 클라이언트에서 녹음
-- **근거**:
-  - SFU 없이 구현 가능
-  - 서버 부하 최소화
-  - 각 참여자별 개별 녹음 가능
-- **구현**: IndexedDB 증분 저장 + Presigned URL 업로드
-- **상태**: D26 서버 녹음(LiveKit Egress)으로 대체됨
-
-### D3: 화면공유 별도 피어 연결 - DEPRECATED
-- **결정**: 화면공유용 RTCPeerConnection 분리
-- **근거**:
-  - 오디오와 화면 트랙 독립적 관리
-  - 화면공유 시작/중지가 오디오에 영향 없음
-- **상태**: D26 LiveKit 통합 트랙 관리로 대체됨
-
 ### D26: LiveKit SFU 마이그레이션
 - **결정**: Mesh P2P에서 LiveKit SFU로 아키텍처 전환
 - **근거**:
@@ -218,22 +194,6 @@
   - meeting-participant.yaml -> meeting.yaml
 
 ## Frontend Architecture
-
-### D10: useWebRTC 훅 분리
-- **결정**: useWebRTC를 기능별 하위 훅으로 분리
-- **근거**:
-  - 단일 책임 원칙 (SRP) 준수
-  - 테스트 용이성 향상
-  - 코드 가독성 및 유지보수성 개선
-- **구조**:
-  ```
-  useWebRTC (통합)
-  ├── useSignaling        # 시그널링 연결/메시지
-  ├── usePeerConnections  # P2P 연결 관리
-  ├── useAudioDevices     # 오디오 디바이스
-  ├── useScreenShare      # 화면공유
-  └── useRecording        # 녹음
-  ```
 
 ### D11: 페이지 컴포넌트 분리
 - **결정**: 대형 페이지 컴포넌트를 기능별 섹션 컴포넌트로 분리

@@ -112,13 +112,6 @@
   ```
 - **localStorage 캐싱**: useWebRTC와 동일한 캐싱 로직 유지
 
-### WebRTC Hook (useWebRTC) - REMOVED
-- **상태**: 삭제됨 (LiveKit SFU 마이그레이션 완료)
-- **삭제된 파일**:
-  - `useWebRTC.ts` - 통합 Mesh P2P 훅
-  - `useSignaling.ts` - 시그널링 연결
-  - `usePeerConnections.ts` - RTCPeerConnection 관리
-- **대체**: `useLiveKit.ts` 사용 (위 참조)
 
 ### Audio Processing
 - **GainNode**: 마이크 볼륨 조절 (0.0 ~ 2.0)
@@ -202,8 +195,6 @@
 4. egress_ended 웹훅으로 파일 경로 수신, STT 작업 큐잉
 5. MinIO에 직접 저장 (클라이언트 업로드 불필요)
 
-### Recording Flow (Legacy - REMOVED)
-레거시 클라이언트 녹음 코드 삭제됨. 서버 녹음(LiveKit Egress)으로 완전 대체.
 
 ### Client VAD (Voice Activity Detection) Pattern
 - **위치**: `frontend/src/hooks/useVAD.ts`
@@ -653,11 +644,6 @@ backend/app/
 └── core/              # 설정, 보안, DB
 ```
 
-### WebSocket Signaling
-- **위치**: `backend/app/services/signaling_service.py`
-- **패턴**: ConnectionManager 싱글톤으로 회의별 연결 관리
-- **메시지 타입**: join, leave, offer, answer, ice-candidate, mute, screen-share-*
-
 ### Recording Upload (Presigned URL)
 1. `POST /recordings/upload-url` - URL 발급 + DB 레코드 생성 (pending)
 2. 클라이언트가 MinIO에 직접 PUT
@@ -734,10 +720,11 @@ TeamWithMembers:
 ### Frontend Hooks
 ```
 hooks/
-├── useLiveKit.ts          # LiveKit SFU 연결, 미디어 관리, 채팅 (핵심)
+├── useLiveKit.ts          # LiveKit SFU 연결, 미디어 관리, 채팅, 녹음 (핵심)
 ├── useVAD.ts              # 클라이언트 VAD (Silero VAD, ONNX)
 └── useAudioDevices.ts     # 오디오 디바이스 선택
 ```
+**참고**: 레거시 Mesh P2P 훅 (useWebRTC, useSignaling, usePeerConnections) 삭제됨
 
 ### Frontend Components
 ```
@@ -771,17 +758,18 @@ services/
 ├── auth_service.py          # 인증 (JWT)
 ├── team_service.py          # 팀 CRUD
 ├── meeting_service.py       # 회의 CRUD
-├── livekit_service.py       # LiveKit 토큰 생성, Egress 녹음 관리
+├── livekit_service.py       # LiveKit 토큰 생성, Room Composite Egress 녹음 관리
 ├── vad_event_service.py     # VAD 이벤트 처리 (DataPacket 수신)
 ├── recording_service.py     # 녹음 업로드/다운로드
 ├── stt_service.py           # STT 변환 로직
-├── transcript_service.py    # 회의록 병합/관리
-├── audio_preprocessor.py    # VAD 전처리
+├── transcript_service.py    # 회의록 병합/관리 (wall-clock timestamp 기반)
+├── chat_service.py          # 채팅 메시지 CRUD
 └── stt/
     ├── base.py              # STTProvider 추상 클래스
     ├── openai_provider.py   # OpenAI Whisper 구현
     └── factory.py           # Provider 팩토리
 ```
+**참고**: 레거시 signaling_service.py 삭제됨 (LiveKit으로 대체)
 
 ## STT (Speech-to-Text) Patterns
 

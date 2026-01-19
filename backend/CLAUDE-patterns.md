@@ -1,6 +1,6 @@
 # Code Patterns - Backend
 
-**Last Updated**: 2026-01-11
+**Last Updated**: 2026-01-19
 
 ---
 
@@ -59,11 +59,13 @@ class RecordingService:
 
 ---
 
-## 2. WebSocket Message Handling
+## 2. LiveKit Webhooks & DataPacket Handling
+
+> **참고**: 기존 WebSocket 시그널링은 LiveKit SFU로 대체됨. 아래 Strategy Pattern은 LiveKit 웹훅 핸들러에도 동일하게 적용 가능.
 
 ### 2.1 Strategy Pattern
 
-**Pattern**: 메시지 타입별 핸들러 클래스 분리
+**Pattern**: 이벤트 타입별 핸들러 클래스 분리
 
 ```python
 # Protocol 정의
@@ -332,37 +334,3 @@ class STTProviderFactory:
 - 테스트 시 Mock Provider 주입 가능
 - 설정으로 Provider 선택 가능
 
----
-
-## 9. React Refs for Stable References
-
-### 9.1 useRef로 의존성 순환 방지
-
-**Pattern**: useEffect 내에서 안정적인 함수 참조
-
-```typescript
-// hooks/useWebRTC.ts
-const startRecordingRef = useRef<() => void>();
-const hasStartedRecordingRef = useRef(false);
-
-// Ref에 함수 할당
-useEffect(() => {
-  startRecordingRef.current = recording.startRecording;
-}, [recording.startRecording]);
-
-// 안정적인 참조로 useEffect 실행
-useEffect(() => {
-  if (connectionState === 'connected' && !hasStartedRecordingRef.current) {
-    hasStartedRecordingRef.current = true;
-    const timer = setTimeout(() => {
-      startRecordingRef.current?.();
-    }, 500);
-    return () => clearTimeout(timer);
-  }
-}, [connectionState]);  // 최소 의존성
-```
-
-**Why**:
-- `recording` 객체를 의존성으로 넣으면 매 렌더링마다 cleanup 실행
-- useRef는 리렌더링 없이 값 유지
-- 의존성 배열 최소화로 불필요한 effect 재실행 방지
