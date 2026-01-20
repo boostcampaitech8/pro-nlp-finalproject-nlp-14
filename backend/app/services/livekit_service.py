@@ -194,12 +194,28 @@ class LiveKitService:
 
         meeting_key = str(meeting_id)
 
-        # 이미 녹음 중인지 확인
-        if meeting_key in self._active_egress:
-            logger.warning(f"[LiveKit] Recording already active for meeting {meeting_id}")
-            return self._active_egress[meeting_key]
-
         try:
+            # LiveKit API로 실제 활성 egress 확인 (메모리 캐시보다 신뢰할 수 있음)
+            async with api.LiveKitAPI(
+                self._ws_url, self._api_key, self._api_secret
+            ) as lk_api:
+                response = await lk_api.egress.list_egress(
+                    api.ListEgressRequest(room_name=room_name, active=True)
+                )
+                if response.items:
+                    active_egress_id = response.items[0].egress_id
+                    logger.warning(
+                        f"[LiveKit] Recording already active for meeting {meeting_id}: {active_egress_id}"
+                    )
+                    # 메모리 캐시 동기화
+                    self._active_egress[meeting_key] = active_egress_id
+                    return active_egress_id
+
+            # 메모리 캐시에 있지만 실제 활성 egress가 없으면 정리
+            if meeting_key in self._active_egress:
+                logger.info(f"[LiveKit] Cleaning stale egress cache for meeting {meeting_id}")
+                del self._active_egress[meeting_key]
+
             # S3 업로드 설정 (MinIO)
             settings = get_settings()
             s3_upload = api.S3Upload(
@@ -348,6 +364,16 @@ class LiveKitService:
     def get_ws_url_for_client(self) -> str:
         """클라이언트용 WebSocket URL 반환"""
         return self._external_url
+
+    def clear_active_egress(self, meeting_id: UUID) -> None:
+        """활성 egress 캐시 정리 (webhook에서 호출)
+
+        Egress가 종료(완료/실패/중단)되면 메모리 캐시에서 제거합니다.
+        """
+        meeting_key = str(meeting_id)
+        if meeting_key in self._active_egress:
+            logger.info(f"[LiveKit] Cleared egress cache for meeting {meeting_id}")
+            del self._active_egress[meeting_key]
 
     @staticmethod
     def get_room_name(meeting_id: UUID) -> str:

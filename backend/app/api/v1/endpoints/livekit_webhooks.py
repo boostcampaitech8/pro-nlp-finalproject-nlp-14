@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.recording import MeetingRecording, RecordingStatus
+from app.services.livekit_service import livekit_service
 from app.services.vad_event_service import vad_event_service
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,16 @@ async def handle_egress_ended(body: dict, db: AsyncSession) -> None:
     egress_info = body.get("egressInfo", {})
     room_name = egress_info.get("roomName", "")
     egress_id = egress_info.get("egressId", "")
-    status = egress_info.get("status")  # EGRESS_COMPLETE, EGRESS_FAILED
+    status = egress_info.get("status")  # EGRESS_COMPLETE, EGRESS_FAILED, EGRESS_ABORTED
+
+    # 회의 ID 추출하여 활성 egress 캐시 정리 (모든 종료 상태에서 수행)
+    if room_name.startswith("meeting-"):
+        meeting_id_str = room_name[8:]
+        try:
+            meeting_id = UUID(meeting_id_str)
+            livekit_service.clear_active_egress(meeting_id)
+        except ValueError:
+            pass
 
     # 파일 정보 추출
     file_results = egress_info.get("fileResults", [])
@@ -184,6 +194,10 @@ async def handle_egress_ended(body: dict, db: AsyncSession) -> None:
     elif status == "EGRESS_FAILED":
         error = egress_info.get("error", "Unknown error")
         logger.error(f"[LiveKit] Egress failed: room={room_name}, error={error}")
+
+    elif status == "EGRESS_ABORTED":
+        error = egress_info.get("error", "Unknown error")
+        logger.warning(f"[LiveKit] Egress aborted: room={room_name}, egress={egress_id}, error={error}")
 
 
 async def handle_participant_joined(body: dict) -> None:
