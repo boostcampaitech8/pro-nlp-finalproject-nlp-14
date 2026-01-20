@@ -13,8 +13,13 @@ from uuid import UUID
 from livekit import api
 
 from app.core.config import get_settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
+
+# Redis 키 prefix
+EGRESS_KEY_PREFIX = "livekit:egress:"
+EGRESS_TTL_SECONDS = 86400  # 24시간
 
 
 class LiveKitService:
@@ -27,8 +32,26 @@ class LiveKitService:
         self._ws_url = settings.livekit_ws_url
         self._external_url = settings.livekit_external_url
 
-        # 진행 중인 Egress 추적 (meeting_id -> egress_id)
-        self._active_egress: dict[str, str] = {}
+    # ===== Redis 기반 Egress 상태 관리 =====
+
+    async def _get_active_egress(self, meeting_id: UUID) -> str | None:
+        """Redis에서 활성 egress ID 조회"""
+        redis_client = await get_redis()
+        return await redis_client.get(f"{EGRESS_KEY_PREFIX}{meeting_id}")
+
+    async def _set_active_egress(self, meeting_id: UUID, egress_id: str) -> None:
+        """Redis에 활성 egress ID 저장"""
+        redis_client = await get_redis()
+        await redis_client.set(
+            f"{EGRESS_KEY_PREFIX}{meeting_id}",
+            egress_id,
+            ex=EGRESS_TTL_SECONDS,
+        )
+
+    async def _clear_active_egress(self, meeting_id: UUID) -> None:
+        """Redis에서 활성 egress ID 삭제"""
+        redis_client = await get_redis()
+        await redis_client.delete(f"{EGRESS_KEY_PREFIX}{meeting_id}")
 
     @property
     def is_configured(self) -> bool:
@@ -192,10 +215,8 @@ class LiveKitService:
             logger.warning("[LiveKit] Not configured, skipping recording")
             return None
 
-        meeting_key = str(meeting_id)
-
         try:
-            # LiveKit API로 실제 활성 egress 확인 (메모리 캐시보다 신뢰할 수 있음)
+            # LiveKit API로 실제 활성 egress 확인 (Redis 캐시보다 신뢰할 수 있음)
             async with api.LiveKitAPI(
                 self._ws_url, self._api_key, self._api_secret
             ) as lk_api:
@@ -207,14 +228,15 @@ class LiveKitService:
                     logger.warning(
                         f"[LiveKit] Recording already active for meeting {meeting_id}: {active_egress_id}"
                     )
-                    # 메모리 캐시 동기화
-                    self._active_egress[meeting_key] = active_egress_id
+                    # Redis 캐시 동기화
+                    await self._set_active_egress(meeting_id, active_egress_id)
                     return active_egress_id
 
-            # 메모리 캐시에 있지만 실제 활성 egress가 없으면 정리
-            if meeting_key in self._active_egress:
+            # Redis 캐시에 있지만 실제 활성 egress가 없으면 정리
+            cached_egress = await self._get_active_egress(meeting_id)
+            if cached_egress:
                 logger.info(f"[LiveKit] Cleaning stale egress cache for meeting {meeting_id}")
-                del self._active_egress[meeting_key]
+                await self._clear_active_egress(meeting_id)
 
             # S3 업로드 설정 (MinIO)
             settings = get_settings()
@@ -248,7 +270,7 @@ class LiveKitService:
                 info = await lk_api.egress.start_room_composite_egress(request)
                 egress_id = info.egress_id
 
-            self._active_egress[meeting_key] = egress_id
+            await self._set_active_egress(meeting_id, egress_id)
             logger.info(f"[LiveKit] Recording started: meeting={meeting_id}, egress={egress_id}")
 
             return egress_id
@@ -269,17 +291,16 @@ class LiveKitService:
         if not self.is_configured:
             return False
 
-        meeting_key = str(meeting_id)
         room_name = self.get_room_name(meeting_id)
 
-        # 메모리에서 egress_id 확인, 없으면 LiveKit API로 조회
-        egress_id = self._active_egress.get(meeting_key)
+        # Redis에서 egress_id 확인, 없으면 LiveKit API로 조회
+        egress_id = await self._get_active_egress(meeting_id)
 
         try:
             async with api.LiveKitAPI(
                 self._ws_url, self._api_key, self._api_secret
             ) as lk_api:
-                # 메모리에 없으면 LiveKit에서 활성 egress 조회
+                # Redis에 없으면 LiveKit에서 활성 egress 조회
                 if not egress_id:
                     response = await lk_api.egress.list_egress(
                         api.ListEgressRequest(room_name=room_name, active=True)
@@ -294,9 +315,8 @@ class LiveKitService:
                 # Egress 중지
                 await lk_api.egress.stop_egress(api.StopEgressRequest(egress_id=egress_id))
 
-            # 메모리에서 제거
-            if meeting_key in self._active_egress:
-                del self._active_egress[meeting_key]
+            # Redis에서 제거
+            await self._clear_active_egress(meeting_id)
 
             logger.info(f"[LiveKit] Recording stopped: meeting={meeting_id}, egress={egress_id}")
             return True
@@ -365,15 +385,13 @@ class LiveKitService:
         """클라이언트용 WebSocket URL 반환"""
         return self._external_url
 
-    def clear_active_egress(self, meeting_id: UUID) -> None:
+    async def clear_active_egress(self, meeting_id: UUID) -> None:
         """활성 egress 캐시 정리 (webhook에서 호출)
 
-        Egress가 종료(완료/실패/중단)되면 메모리 캐시에서 제거합니다.
+        Egress가 종료(완료/실패/중단)되면 Redis 캐시에서 제거합니다.
         """
-        meeting_key = str(meeting_id)
-        if meeting_key in self._active_egress:
-            logger.info(f"[LiveKit] Cleared egress cache for meeting {meeting_id}")
-            del self._active_egress[meeting_key]
+        await self._clear_active_egress(meeting_id)
+        logger.info(f"[LiveKit] Cleared egress cache for meeting {meeting_id}")
 
     @staticmethod
     def get_room_name(meeting_id: UUID) -> str:
