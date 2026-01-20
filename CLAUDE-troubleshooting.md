@@ -128,3 +128,98 @@
     </main>
   </div>
   ```
+
+### WebRTC/TURN ICE 연결 실패 (responsesReceived: 0)
+- **증상**: LiveKit 로그에서 ICE candidate pair 모두 failed, `requestsSent: 8, responsesReceived: 0`
+- **원인**: 공유기에서 UDP 포트 포트포워딩 누락
+- **진단 방법**:
+  ```bash
+  docker logs mit-livekit 2>&1 | grep -iE "ice candidate pair"
+  # "state": "failed", "responsesReceived": 0 확인
+  ```
+- **해결**: 공유기에서 다음 포트 모두 포트포워딩:
+  | 포트 | 프로토콜 | 용도 |
+  |------|----------|------|
+  | 5349 | TCP | TURN TLS |
+  | 3478 | UDP | TURN UDP |
+  | 50000-50100 | UDP | WebRTC RTC |
+  | 30000-30050 | UDP | TURN relay |
+
+### nginx stream SNI 라우팅 (443 포트 공유)
+- **용도**: 443 포트 하나로 HTTPS + TURN TLS를 SNI 기반으로 분리
+- **필요한 경우**: 방화벽에서 443만 열 수 있고 5349를 열 수 없을 때
+- **불필요한 경우**: Docker가 5349를 직접 노출하고 공유기에서 포트포워딩 가능할 때
+- **설정 예시** (필요 시):
+  ```nginx
+  stream {
+      map $ssl_preread_server_name $backend {
+          turn.mit-hub.com    livekit_turn;
+          default             https_backend;
+      }
+      upstream livekit_turn { server 127.0.0.1:5349; }
+      upstream https_backend { server 127.0.0.1:8443; }
+      server {
+          listen 443;
+          ssl_preread on;
+          proxy_pass $backend;
+      }
+  }
+  ```
+- **주의**: stream 사용 시 http 블록에서는 8443 등 다른 포트 사용 필요
+
+### LiveKit 웹훅에서 녹음 레코드가 생성되지 않음
+- **증상**: egress_ended 이벤트 수신 시 DB에 recording이 생성되지 않음
+- **원인**: `MessageToDict(preserving_proto_field_name=True)`가 snake_case 필드명 출력
+  - 코드: `egressInfo`, `roomName`, `fileResults` (camelCase) 기대
+  - 실제: `egress_info`, `room_name`, `file_results` (snake_case) 수신
+- **해결**: `livekit_webhooks.py`에서 `preserving_proto_field_name=False` 설정
+  ```python
+  # camelCase 필드명 사용 (egressInfo, roomName 등)
+  return MessageToDict(event, preserving_proto_field_name=False)
+  ```
+- **파일**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
+
+### Python logging이 출력되지 않음
+- **증상**: `logger.info()` 호출해도 콘솔에 로그 미출력
+- **원인**: FastAPI 기본 설정에서 logging 미구성
+- **해결**: `main.py`에 logging.basicConfig() 추가
+  ```python
+  import logging
+  logging.basicConfig(
+      level=logging.INFO,
+      format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+      datefmt="%Y-%m-%d %H:%M:%S",
+  )
+  ```
+- **파일**: `backend/app/main.py`
+
+### LiveKit WebhookReceiver 초기화 오류
+- **증상**: `WebhookReceiver.__init__() takes 2 positional arguments but 3 were given`
+- **원인**: livekit-api SDK 버전 변경으로 API 시그니처 변경
+- **해결**: TokenVerifier를 먼저 생성 후 WebhookReceiver에 전달
+  ```python
+  token_verifier = api.TokenVerifier(
+      api_key=settings.livekit_api_key,
+      api_secret=settings.livekit_api_secret,
+  )
+  webhook_receiver = api.WebhookReceiver(token_verifier)
+  event = webhook_receiver.receive(body.decode(), authorization)
+  ```
+- **파일**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
+
+### LiveKit Egress 녹음 상태 동기화 오류
+- **증상**: 녹음 시작/중지 시 400 Bad Request
+  - 시작 시: "Recording already active" (실제로는 녹음 없음)
+  - 중지 시: "egress with status EGRESS_ABORTED cannot be stopped"
+- **원인**: Backend `_active_egress` 메모리 캐시가 실제 LiveKit Egress 상태와 동기화 안됨
+  - Egress가 ABORTED 되어도 메모리 캐시에 남아있음
+  - Webhook에서 ABORTED 상태 처리 누락
+- **Egress ABORTED 원인**: `"Start signal not received"`, `"Source closed"`
+  - RoomComposite Egress Chrome이 룸 연결 전에 룸이 닫힘
+  - 참여자가 너무 빨리 퇴장하거나 트랙이 없는 상태
+- **해결**:
+  1. `livekit_service.py`: `start_room_recording()`에서 메모리 캐시 대신 LiveKit API로 실제 상태 확인
+  2. `livekit_webhooks.py`: `handle_egress_ended()`에서 모든 종료 상태(COMPLETE/FAILED/ABORTED)에서 캐시 정리
+- **파일**:
+  - `backend/app/services/livekit_service.py`
+  - `backend/app/api/v1/endpoints/livekit_webhooks.py`

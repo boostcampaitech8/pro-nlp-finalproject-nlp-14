@@ -92,7 +92,7 @@ class RecordingResponse(BaseModel):
 
     id: UUID
     meeting_id: UUID = Field(serialization_alias="meetingId")
-    user_id: UUID = Field(serialization_alias="userId")
+    user_id: UUID | None = Field(default=None, serialization_alias="userId")
     user_name: str | None = Field(default=None, serialization_alias="userName")
     status: str
     started_at: datetime = Field(serialization_alias="startedAt")

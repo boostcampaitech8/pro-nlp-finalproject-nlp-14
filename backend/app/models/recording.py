@@ -39,10 +39,11 @@ class MeetingRecording(Base):
         ForeignKey("meetings.id"),
         nullable=False,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
+        comment="녹음한 사용자 ID (Composite 녹음은 NULL)",
     )
     file_path: Mapped[str] = mapped_column(
         String(500),

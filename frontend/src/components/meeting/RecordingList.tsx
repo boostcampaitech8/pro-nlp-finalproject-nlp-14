@@ -48,7 +48,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
     fetchRecordings();
   }, [meetingId]);
 
-  const handleDownload = async (recordingId: string, userName: string | null | undefined) => {
+  const handleDownload = async (recordingId: string, recording: Recording) => {
     try {
       setDownloadingId(recordingId);
       const blob = await recordingService.downloadFile(meetingId, recordingId);
@@ -57,7 +57,8 @@ export function RecordingList({ meetingId }: RecordingListProps) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `recording_${userName || 'unknown'}.webm`;
+      const displayName = recording.userId ? (recording.userName || 'unknown') : 'server';
+      link.download = `recording_${displayName}.webm`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -77,7 +78,8 @@ export function RecordingList({ meetingId }: RecordingListProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `transcript_${recording.userName || 'unknown'}.txt`;
+    const displayName = recording.userId ? (recording.userName || 'unknown') : 'server';
+    link.download = `transcript_${displayName}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -118,7 +120,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-1">
               <p className="font-medium text-gray-900">
-                {recording.userName || 'Unknown User'}
+                {recording.userId ? (recording.userName || 'Unknown User') : 'Server Recording'}
               </p>
               <span
                 className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -145,7 +147,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
             {(recording.status === 'completed' || recording.status === 'transcribed') && (
               <Button
                 variant="outline"
-                onClick={() => handleDownload(recording.id, recording.userName)}
+                onClick={() => handleDownload(recording.id, recording)}
                 isLoading={downloadingId === recording.id}
               >
                 Audio

@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # ARQ Worker 설정
     arq_redis_url: str = "redis://localhost:6379/1"
 
+    # LiveKit (SFU) 설정
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
+    livekit_ws_url: str = "ws://localhost:7880"  # 내부 통신용
+    livekit_external_url: str = "ws://localhost:7880"  # 클라이언트용
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):

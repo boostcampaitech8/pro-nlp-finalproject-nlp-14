@@ -25,7 +25,6 @@ components:
       required:
         - id
         - meetingId
-        - userId
         - status
         - startedAt
         - createdAt
@@ -36,6 +35,8 @@ components:
           $ref: './common.yaml#/components/schemas/UUID'
         userId:
           $ref: './common.yaml#/components/schemas/UUID'
+          nullable: true
+          description: 녹음한 사용자 ID (Server Recording은 null)
         userName:
           type: string
           nullable: true

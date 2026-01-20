@@ -8,12 +8,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Home } from 'lucide-react';
 
 import { MeetingInfoCard } from '@/components/meeting/MeetingInfoCard';
+import { ParticipantSection } from '@/components/meeting/ParticipantSection';
 import { RecordingList } from '@/components/meeting/RecordingList';
 import { TranscriptSection } from '@/components/meeting/TranscriptSection';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
-import type { MeetingStatus } from '@/types';
+import type { MeetingStatus, ParticipantRole, TeamMember } from '@/types';
+import { teamService } from '@/services/teamService';
 import api from '@/services/api';
 
 export function MeetingDetailPage() {
@@ -27,8 +29,12 @@ export function MeetingDetailPage() {
     fetchMeeting,
     updateMeeting,
     deleteMeeting,
+    addParticipant,
+    updateParticipantRole,
+    removeParticipant,
   } = useTeamStore();
 
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -38,6 +44,12 @@ export function MeetingDetailPage() {
       fetchMeeting(meetingId);
     }
   }, [meetingId, fetchMeeting]);
+
+  useEffect(() => {
+    if (currentMeeting) {
+      teamService.listMembers(currentMeeting.teamId).then(setTeamMembers).catch(() => {});
+    }
+  }, [currentMeeting]);
 
   // 회의 시작 (host만)
   const handleStartMeeting = async () => {
@@ -104,8 +116,32 @@ export function MeetingDetailPage() {
     }
   };
 
+  // 참여자 추가
+  const handleAddParticipant = async (userId: string, role: ParticipantRole) => {
+    if (!meetingId) return;
+    await addParticipant(meetingId, { userId, role });
+  };
+
+  // 참여자 역할 수정
+  const handleUpdateRole = async (userId: string, role: ParticipantRole) => {
+    if (!meetingId) return;
+    await updateParticipantRole(meetingId, userId, { role });
+  };
+
+  // 참여자 제거
+  const handleRemoveParticipant = async (userId: string, name: string) => {
+    if (!meetingId) return;
+    if (!confirm(`Are you sure you want to remove ${name}?`)) return;
+    await removeParticipant(meetingId, userId);
+  };
+
   // 회의 생성자가 host
   const isHost = currentMeeting?.createdBy === user?.id;
+
+  // 이미 참여자인 멤버를 제외한 팀 멤버 목록
+  const availableMembers = teamMembers.filter(
+    (member) => !currentMeeting?.participants.some((p) => p.userId === member.userId)
+  );
 
   if (meetingsLoading && !currentMeeting) {
     return (
@@ -190,6 +226,21 @@ export function MeetingDetailPage() {
             onDelete={handleDeleteMeeting}
             deleting={deleting}
           />
+        )}
+
+        {/* 참여자 섹션 */}
+        {currentMeeting && (
+          <div className="mt-8">
+            <ParticipantSection
+              participants={currentMeeting.participants}
+              availableMembers={availableMembers}
+              currentUserId={user?.id}
+              isHost={isHost}
+              onAddParticipant={handleAddParticipant}
+              onUpdateRole={handleUpdateRole}
+              onRemoveParticipant={handleRemoveParticipant}
+            />
+          </div>
         )}
 
         {/* 녹음 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
