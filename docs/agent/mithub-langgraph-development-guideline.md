@@ -1,4 +1,12 @@
-# LangGraph 개발 가이드라인
+# MitHub LangGraph Development Guideline
+
+> 목적: LangGraph 그래프/노드 추가 시 일관된 절차와 수정 위치를 제공한다.
+> 대상: LangGraph 그래프/노드 구현자.
+> 범위: 개발 절차, 파일 수정 가이드, 체크리스트.
+> 비범위: 네이밍/코딩 규칙 및 아키텍처 결정.
+> 관련 문서: [MitHub LangGraph Coding Convention](./mithub-langgraph-coding-convention.md), [MitHub LangGraph Architecture](./mithub-langgraph-architecture.md)
+
+---
 
 ## 1. 목적
 
@@ -12,7 +20,7 @@
 
 ### 2.1 노드 계약(Contract) 정의
 
-Contract는 docstring 형식으로 고정한다.
+Contract는 docstring 형식으로 고정한다. 상세 형식은 [MitHub LangGraph Coding Convention](./mithub-langgraph-coding-convention.md)을 따른다.
 
 - 노드가 읽는 값(state 키), 쓰는 값(state 키)을 먼저 정의한다.
 - 외부 부작용(DB/외부 API/스토리지/웹소켓 등)과 실패 정책(재시도/폴백/라우팅 변경/에러 기록)을 함께 적는다.
@@ -34,7 +42,7 @@ def route_intent(state: "OrchestrationState") -> dict:
 
 - 각 워크플로우는 state.py에서 사용하는 모든 state 키를 선언한다. (새 키 추가 시 state.py 수정이 선행)
 - 각 키는 반드시 Annotated로 설명/메타데이터를 포함한다. (최소: desc)
-- 서브그래프 전용 키는 prefix를 강제한다: `rag_*`, `mit_search_*` 등.
+- 서브그래프 전용 키는 prefix를 강제한다: `rag_*`, `mit_search_*` 등. (상세 규칙은 코딩 컨벤션 참고)
 - 여러 워크플로우에서 재사용되는 복합 데이터 구조는 `schema/`의 Pydantic 모델로 정의하고, state에서는 그 모델 타입을 참조한다.
 
 ### 2.3 노드 구현 (workflows/<name>/nodes/)
@@ -43,7 +51,7 @@ def route_intent(state: "OrchestrationState") -> dict:
 - 노드 코드는 `nodes/` 디렉토리에만 둔다. 필요 시 `nodes/<submodule>/`로 세분화한다.
   - 예: `nodes/indexing/`, `nodes/pre_retrieval/`, `nodes/retrieval/`
 - 외부 연동/초기화 로직은 `utils/`, 단순 계산/가공은 `tools/`로 분리한다.
-- 노드 내부에서 환경변수 직접 접근(`os.getenv`) 금지 → `config.py` 경유
+- 노드 네이밍/로깅/비동기/타입 규칙은 코딩 컨벤션을 따른다.
 
 **예시: patch 반환 + state 읽기/쓰기 최소화**
 
@@ -105,6 +113,7 @@ builder.add_conditional_edges("intent_router",
 ### 2.6 graph.py / main.py 노출
 
 - graph.py는 그래프 빌드/컴파일의 공개 API만 제공한다.
+- 서브그래프는 체크포인터 없이 컴파일하고, 부모 그래프와 공유한다.
 - main.py는 실행 엔트리포인트(invoke/ainvoke)를 단일화한다.
 - 호출 시 필요한 실행 메타데이터(thread_id 등)는 config로 전달하고, state에 섞지 않는다.
 
@@ -127,3 +136,72 @@ async def run(user_input: str, *, thread_id: str):
     cfg = {"configurable": {"thread_id": thread_id}}
     return await graph.ainvoke(state, config=cfg)
 ```
+
+---
+
+## 3. 공통 모듈 수정 가이드 (필요 시)
+
+### 3.1 schema/models.py
+
+- 여러 워크플로우에서 재사용되는 복합 데이터 구조는 `schema/models.py`에 정의한다.
+- 네이밍 규칙은 코딩 컨벤션의 클래스/타입 규칙을 따른다.
+
+```python
+# schema/models.py
+class RoutingDecision(BaseModel):
+    next: str
+    reason: str
+```
+
+### 3.2 config.py
+
+- 환경변수 접근은 `GraphSettings`를 통해서만 한다.
+- 기본값과 범위는 명시적으로 설정한다.
+
+```python
+# config.py
+class GraphSettings(BaseSettings):
+    llm_model: str = "gpt-4o-mini"
+
+    class Config:
+        env_prefix = "GRAPH_"
+```
+
+### 3.3 utils/llm_factory.py
+
+- 베이스 LLM을 만들고, 용도별 설정은 `.bind()`로 분리한다.
+- 노드에서는 직접 생성하지 않고 `get_*_llm()` 계열 함수를 사용한다.
+
+```python
+# utils/llm_factory.py
+@lru_cache
+def get_base_llm(model: str | None = None) -> ChatOpenAI:
+    return ChatOpenAI(model=model or get_settings().llm_model)
+
+def get_planner_llm() -> BaseChatModel:
+    return get_base_llm().bind(temperature=0.3)
+```
+
+---
+
+## 4. 체크리스트
+
+### 새 노드 추가 시
+
+- [ ] **노드 함수명**: `동사_목적어` 형태인가?
+- [ ] **동사**: 원형 동사인가? (동명사 X, 과거형 X)
+- [ ] **동사 적절성**: 카테고리에 맞는 동사인가?
+- [ ] **Contract docstring**: reads/writes/side-effects/failures 명시
+- [ ] **에러 코드**: `UPPER_SNAKE_CASE`, `행위_결과` 형태
+- [ ] **반환**: `dict` 패치 형태
+- [ ] **LLM**: `get_*_llm()` 사용
+- [ ] **환경변수**: `config.py` 경유
+
+### 새 서브그래프 추가 시
+
+- [ ] **디렉토리명**: 명사/명사구인가?
+- [ ] **State 클래스**: `<Name>State` 형태, OrchestrationState 상속
+- [ ] **State 필드 prefix**: 서브그래프명 prefix 사용
+- [ ] **add_node 등록명**: 행위자는 역할 명사, 서브그래프는 디렉토리명인가?
+- [ ] **graph.py**: 체크포인터 없이 컴파일
+- [ ] **orchestration connect.py**: `add_node("name", graph)` 등록

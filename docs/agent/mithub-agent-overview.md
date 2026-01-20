@@ -1,11 +1,18 @@
 # MitHub Agent Overview
 
+> 목적: MitHub 에이전트의 비전/역할/결정사항을 요약한다.
+> 대상: 기획/개발/운영 전원.
+> 범위: 고수준 개요와 결정 사항.
+> 관련 문서: [MitHub LangGraph Architecture](./mithub-langgraph-architecture.md), [MitHub LangGraph Development Guideline](./mithub-langgraph-development-guideline.md), [MitHub LangGraph Coding Convention](./mithub-langgraph-coding-convention.md)
+
+---
+
 ## 1. 핵심 컨셉 및 아키텍처
 
 - **목표:** 단순 회의록 작성을 넘어, 회의의 맥락(Context)을 이해하고 의사결정의 정합성을 관리하는 에이전트 구축.
 
 - **기술 스택:**
-    - **Agent Framework:** LangGraph, DeepAgent 고려.
+    - **Agent Framework:** LangGraph.
     - **Database:** 회의록 및 사내 문서 관리를 위한 Graph DB(지식 그래프) 구축 (메타데이터, PDF/HWP 지원).
     - **RAG:** 실시간 스크립트 기반 RAG 및 사내 문서 검색.
 
@@ -38,7 +45,7 @@
 
 ## 4. 결정 사항
 
-- **Agent Framework:** LangGraph 채택 (상세: [langgraph-agentic-flow-architecture.md](./langgraph-agentic-flow-architecture.md))
+- **Agent Framework:** LangGraph 채택 (상세: [mithub-langgraph-architecture.md](./mithub-langgraph-architecture.md))
 - **그래프 구조:** Orchestration(메인 그래프) + 기능별 서브그래프 방식 채택
 - **서브그래프 통합:** `add_node("name", compiled_graph)` Native Subgraph 방식 사용
 - **State 관리:** OrchestrationState를 루트 State로, 서브그래프는 이를 상속/호환

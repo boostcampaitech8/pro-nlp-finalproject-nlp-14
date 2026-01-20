@@ -1,4 +1,12 @@
-# MitHub Graph Architecture (LangGraph)
+# MitHub LangGraph Architecture
+
+> 목적: MitHub의 LangGraph 기반 그래프 구조와 결정사항을 공유한다.
+> 대상: 기획/개발 전원.
+> 범위: 그래프 구조, 서브그래프 전략, 상태 설계, 디렉토리 구조.
+> 비범위: 구현 규칙/개발 절차.
+> 관련 문서: [MitHub Agent Overview](./mithub-agent-overview.md), [MitHub LangGraph Development Guideline](./mithub-langgraph-development-guideline.md), [MitHub LangGraph Coding Convention](./mithub-langgraph-coding-convention.md)
+
+---
 
 ## 1. LangGraph 간략 설명
 
@@ -134,7 +142,7 @@ backend/app/infrastructure/graph/
 | 디렉토리 | 역할 | 예시 |
 |---------|------|------|
 | `schema/` | 전역 Pydantic 모델 정의 | `PlanOutput`, `RoutingDecision` |
-| `utils/` | LLM, API 클라이언트 등 공통 유틸 | `get_llm()`, `get_embeddings()` |
+| `utils/` | LLM, API 클라이언트 등 공통 유틸 | `get_*_llm()`, `get_embeddings()` |
 | `tools/` | 단순 함수형 도구 (그래프 아님) | `calculate()`, `format_date()` |
 | `workflows/orchestration/` | 메인 그래프 | 라우팅, 최종 응답 생성 |
 | `workflows/rag/` | RAG 서브그래프 | 문서 검색, 답변 생성 |
@@ -165,6 +173,13 @@ cursor: dict | None                     # 증분 처리용 커서 (선택)
                                         # {"transcript_seq": int}
 errors: list[ErrorRecord] | None        # 실패 기록/재시도 판단 (선택)
 ```
+
+### State 규칙
+
+- 서브그래프 State는 OrchestrationState를 상속한다.
+- 서브그래프 전용 필드는 `<subgraph>_` prefix를 사용한다.
+- 누적 필드는 reducer(`Annotated[list[T], add]`)를 사용한다.
+- 공용 복합 모델은 `schema/`에 정의한다.
 
 ---
 
