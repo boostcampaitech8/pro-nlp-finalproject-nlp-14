@@ -6,7 +6,10 @@ export type PreviewType =
   | 'meeting'
   | 'document'
   | 'search-result'
-  | 'command-result';
+  | 'command-result'
+  | 'timeline'
+  | 'action-items'
+  | 'branch-diff';
 
 export interface PreviewData {
   id?: string;

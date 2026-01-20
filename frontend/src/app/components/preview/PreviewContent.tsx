@@ -1,6 +1,9 @@
 // 프리뷰 콘텐츠 컴포넌트
 import { FileText, Calendar, Users } from 'lucide-react';
 import type { PreviewType, PreviewData } from '@/app/stores/previewStore';
+import TimelineView from './TimelineView';
+import ActionItemsView from './ActionItemsView';
+import BranchDiffView from './BranchDiffView';
 
 interface PreviewContentProps {
   type: PreviewType;
@@ -104,6 +107,30 @@ export function PreviewContent({ type, data }: PreviewContentProps) {
       return <DocumentPreview data={data} />;
     case 'command-result':
       return <CommandResultPreview data={data} />;
+    case 'timeline':
+      try {
+        const timelineItems = data.content ? JSON.parse(data.content) : [];
+        return <TimelineView items={timelineItems} title={data.title || '변경 이력'} />;
+      } catch (error) {
+        console.error('Failed to parse timeline data:', error);
+        return <CommandResultPreview data={{ content: '타임라인 데이터를 불러올 수 없습니다' }} />;
+      }
+    case 'action-items':
+      try {
+        const actionItems = data.content ? JSON.parse(data.content) : [];
+        return <ActionItemsView items={actionItems} />;
+      } catch (error) {
+        console.error('Failed to parse action items data:', error);
+        return <CommandResultPreview data={{ content: '액션 아이템 데이터를 불러올 수 없습니다' }} />;
+      }
+    case 'branch-diff':
+      try {
+        const diffData = data.content ? JSON.parse(data.content) : {};
+        return <BranchDiffView {...diffData} />;
+      } catch (error) {
+        console.error('Failed to parse branch diff data:', error);
+        return <CommandResultPreview data={{ content: '브랜치 비교 데이터를 불러올 수 없습니다' }} />;
+      }
     default:
       return <EmptyPreview />;
   }
