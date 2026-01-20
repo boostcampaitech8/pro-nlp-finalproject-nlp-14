@@ -157,15 +157,15 @@ mit/
 ├── frontend/
 │   └── src/
 │       ├── app/                 # Spotlight 메인 서비스 (3-column 레이아웃)
-│       │   ├── components/      # spotlight/, sidebar/, meeting/, preview/, ui/
-│       │   ├── constants/       # 상수 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS)
-│       │   ├── hooks/           # useCommand.ts
+│       │   ├── components/      # spotlight/, sidebar/, meeting/, preview/, conversation/
+│       │   ├── constants/       # 상수, layoutConfig, animations, mockData
+│       │   ├── hooks/           # useCommand.ts, useConversationCommand.ts
 │       │   ├── layouts/         # MainLayout.tsx
 │       │   ├── pages/           # MainPage.tsx
-│       │   ├── services/        # agentService.ts
-│       │   ├── stores/          # commandStore, meetingModalStore, previewStore
-│       │   ├── types/           # command.ts
-│       │   └── utils/           # dateUtils (formatRelativeTime, formatDuration)
+│       │   ├── services/        # agentService, commandMatcher, mockResponses
+│       │   ├── stores/          # commandStore, conversationStore, previewStore
+│       │   ├── types/           # command.ts, conversation.ts
+│       │   └── utils/           # dateUtils, previewUtils, historyUtils
 │       ├── components/          # 회의실 컴포넌트 (meeting/, team/, ui/)
 │       ├── dashboard/           # 대시보드 페이지
 │       ├── hooks/               # LiveKit, VAD, 오디오 디바이스 훅
@@ -211,7 +211,9 @@ mit/
 | `app/components/meeting/MeetingModal.tsx` | 회의 생성 모달 |
 | `app/hooks/useCommand.ts` | 명령어 실행 훅 (대화 모드 연동) |
 | `app/hooks/useConversationCommand.ts` | 대화 모드 전용 명령 처리 훅 |
-| `app/services/agentService.ts` | 명령어 매칭/처리 |
+| `app/services/agentService.ts` | 명령어 처리 서비스 (processCommand, submitForm) |
+| `app/services/commandMatcher.ts` | Strategy Pattern 명령어 매칭 |
+| `app/services/mockResponses.ts` | Mock 응답 데이터 정의 |
 | `app/stores/commandStore.ts` | 명령어 입력/히스토리 상태 |
 | `app/stores/conversationStore.ts` | 대화 모드 상태 (메시지, 레이아웃 모드) |
 | `app/stores/meetingModalStore.ts` | 회의 모달 상태 |
@@ -221,6 +223,8 @@ mit/
 | `app/constants/layoutConfig.ts` | 레이아웃 모드 설정 |
 | `app/constants/animations.ts` | Framer Motion variants |
 | `app/utils/dateUtils.ts` | 날짜 유틸 (formatRelativeTime, formatDuration) |
+| `app/utils/previewUtils.ts` | 프리뷰 검증/업데이트 유틸 |
+| `app/utils/historyUtils.ts` | 히스토리 아이템 생성 유틸 |
 
 ### Frontend - Conversation Components (src/app/components/conversation/)
 | 파일 | 역할 |

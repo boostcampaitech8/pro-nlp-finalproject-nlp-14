@@ -284,6 +284,80 @@
 - **용도**: `as` 대신 런타임 타입 검증으로 안전한 타입 단언
 - **패턴**: `isValidType(type): type is T { return VALID_TYPES.includes(type) }`
 
+### Utility Extraction Pattern (DRY)
+- **위치**: `src/app/utils/previewUtils.ts`, `src/app/utils/historyUtils.ts`
+- **용도**: 여러 훅에서 중복되는 로직을 공유 유틸리티로 추출
+- **패턴**:
+  ```typescript
+  // previewUtils.ts - 프리뷰 검증 및 업데이트
+  export const VALID_PREVIEW_TYPES: PreviewType[] = [
+    'meeting', 'document', 'command-result', ...
+  ];
+  export function isValidPreviewType(type: string): type is PreviewType {
+    return VALID_PREVIEW_TYPES.includes(type as PreviewType);
+  }
+  export function updatePreviewStore(
+    setPreview: (type: PreviewType, data: PreviewDataOutput) => void,
+    input: PreviewDataInput
+  ): void { /* ... */ }
+
+  // historyUtils.ts - 히스토리 아이템 생성
+  export function createSuccessHistoryItem(command: string, result: string, icon?: string): HistoryItem
+  export function createErrorHistoryItem(command: string, result?: string): HistoryItem
+  ```
+- **적용 위치**: `useCommand.ts`, `useConversationCommand.ts`
+
+### Strategy Pattern for Command Matching
+- **위치**: `src/app/services/commandMatcher.ts`
+- **용도**: 명령어 매칭 로직을 데이터 중심 패턴으로 분리 (cyclomatic complexity 감소)
+- **패턴**:
+  ```typescript
+  interface CommandPattern {
+    keywords: string[];
+    excludeKeywords?: string[];
+    response: keyof typeof MOCK_RESPONSES;
+    condition?: (command: string, context?: SessionContext | null) => boolean;
+  }
+
+  const COMMAND_PATTERNS: CommandPattern[] = [
+    { keywords: ['회의', '미팅'], condition: (cmd) => cmd.includes('시작'), response: 'meeting_create' },
+    { keywords: ['검색', '찾'], response: 'search' },
+    { keywords: ['일정', '스케줄', '오늘'], response: 'schedule' },
+    // ... 패턴 추가 시 여기에만 추가
+  ];
+
+  export function matchCommand(command: string, context?: SessionContext | null): MockResponse
+  ```
+- **장점**:
+  - if-else 분기 대신 선언적 패턴 배열
+  - 새 명령어 추가 시 패턴 배열에만 추가
+  - 테스트 용이 (각 패턴 독립적)
+
+### Mock Data Separation Pattern
+- **위치**: `src/app/services/mockResponses.ts`
+- **용도**: 비즈니스 로직(agentService)에서 Mock 데이터 분리
+- **패턴**:
+  ```typescript
+  // mockResponses.ts - 데이터 정의만
+  export interface MockResponse {
+    type: 'form' | 'direct' | 'modal';
+    tool?: AgentTool;
+    title?: string;
+    fields?: CommandField[];
+    // ...
+  }
+  export const MOCK_RESPONSES: Record<string, MockResponse> = { ... };
+
+  // agentService.ts - 비즈니스 로직만
+  import { matchCommand } from './commandMatcher';
+  const matched = matchCommand(command, context);
+  // 응답 타입별 처리 ...
+  ```
+- **장점**:
+  - 단일 책임 원칙 (데이터 vs 로직)
+  - agentService 384 lines -> ~146 lines
+  - Mock -> 실제 API 전환 시 agentService만 수정
+
 ### useRef for Persistent State Pattern
 - **용도**: UI 렌더링에 영향 없는 값 (타이머 시작 시간 등)은 useRef 사용
 - **주의**: UI에 반영해야 하는 값은 useState 사용

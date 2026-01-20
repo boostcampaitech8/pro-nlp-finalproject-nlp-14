@@ -31,6 +31,17 @@
 > 최근 작업 기록 (이전 기록: CLAUDE-archived-worklog.md)
 
 ```
+[2026-01-21] Conversation System 리팩토링 (MIT-9)
+- 리팩토링 분석 보고서 기반 작업 수행
+- Phase 1: 유틸리티 함수 추출
+  - previewUtils.ts: 프리뷰 검증 및 업데이트 로직 (~30 lines 중복 제거)
+  - historyUtils.ts: 히스토리 아이템 생성 로직 (~30 lines 중복 제거)
+- Phase 2: Mock 데이터 분리
+  - mockResponses.ts: Mock 응답 데이터 정의 분리
+  - commandMatcher.ts: Strategy Pattern으로 명령어 매칭 (cyclomatic complexity 12 -> ~3)
+  - agentService.ts: 384 lines -> ~146 lines 감소
+- 테스트: Docker 배포 환경(mit-hub.com)에서 baseline + post-refactoring 검증 완료
+
 [2026-01-21] Spotlight Chat-like Conversation System 구현 (MIT-9)
 - 기능: 명령 실행 시 입력창이 하단으로 이동, 대화 버블로 상호작용
 - 레이아웃 모드: center-only, fullscreen, center-right-merged (기본값: fullscreen)

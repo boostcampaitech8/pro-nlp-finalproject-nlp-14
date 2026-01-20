@@ -219,6 +219,32 @@
 - **D24**: useRef for Non-UI State (re-render 방지)
 - **D25**: Suggestions SSOT (agentService에서만 관리)
 
+### D34: agentService 리팩토링
+- **결정**: agentService를 3개 파일로 분리 (데이터, 매칭, 서비스)
+- **근거**:
+  - God Object 패턴 해소 (384 lines -> ~146 lines)
+  - Cyclomatic complexity 감소 (matchCommand 12 -> ~3)
+  - 단일 책임 원칙 적용
+- **구현**:
+  - `mockResponses.ts`: Mock 응답 데이터 정의
+  - `commandMatcher.ts`: Strategy Pattern으로 명령어 매칭
+  - `agentService.ts`: 비즈니스 로직 (processCommand, submitForm)
+- **Trade-off**:
+  - 장점: 유지보수성 향상, 테스트 용이, Mock -> 실제 API 전환 용이
+  - 단점: 파일 수 증가 (1 -> 3)
+
+### D35: Hook 중복 코드 유틸리티 추출
+- **결정**: useCommand와 useConversationCommand의 중복 코드를 공유 유틸리티로 추출
+- **근거**:
+  - 동일 로직 ~60 lines 중복 (preview 업데이트, history 생성)
+  - DRY 원칙 위반
+- **구현**:
+  - `utils/previewUtils.ts`: `updatePreviewStore`, `isValidPreviewType`
+  - `utils/historyUtils.ts`: `createSuccessHistoryItem`, `createErrorHistoryItem`
+- **Trade-off**:
+  - 장점: 중복 제거, 일관된 동작 보장, 변경 시 단일 지점 수정
+  - 단점: 간접 참조 증가
+
 ### D33: Conversation Mode Architecture
 - **결정**: Spotlight 입력창을 채팅 인터페이스로 변환하는 대화 모드 구현
 - **근거**:
