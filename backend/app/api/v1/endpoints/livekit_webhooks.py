@@ -8,10 +8,11 @@ LiveKit 서버에서 발생하는 이벤트를 처리합니다:
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from livekit import api
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -25,32 +26,54 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/livekit", tags=["LiveKit Webhooks"])
 
 
-async def verify_livekit_signature(
+async def verify_and_parse_webhook(
     request: Request,
     authorization: str = Header(None),
-) -> bool:
-    """LiveKit 웹훅 서명 검증
+) -> dict[str, Any] | None:
+    """LiveKit 웹훅 서명 검증 및 이벤트 파싱
 
-    LiveKit은 Authorization 헤더에 Bearer 토큰을 전송합니다.
-    실제 구현에서는 livekit-api의 웹훅 검증 기능을 사용합니다.
+    livekit-api의 WebhookReceiver를 사용하여 서명을 검증하고
+    이벤트를 파싱합니다.
+
+    Returns:
+        검증된 이벤트 딕셔너리 또는 None (검증 실패 시)
     """
     settings = get_settings()
 
     if not authorization:
         logger.warning("[LiveKit Webhook] Missing Authorization header")
-        return False
+        return None
 
-    # TODO: livekit-api 웹훅 검증 구현
-    # from livekit import api
-    # webhook_receiver = api.WebhookReceiver(settings.livekit_api_key, settings.livekit_api_secret)
-    # event = webhook_receiver.receive(body, authorization)
-
-    # 현재는 API key가 설정되어 있으면 통과 (개발용)
-    if not settings.livekit_api_key:
+    if not settings.livekit_api_key or not settings.livekit_api_secret:
         logger.warning("[LiveKit Webhook] LiveKit not configured")
-        return False
+        return None
 
-    return True
+    try:
+        body = await request.body()
+
+        # TokenVerifier를 먼저 생성한 후 WebhookReceiver에 전달
+        token_verifier = api.TokenVerifier(
+            api_key=settings.livekit_api_key,
+            api_secret=settings.livekit_api_secret,
+        )
+        webhook_receiver = api.WebhookReceiver(token_verifier)
+
+        # receive() 메서드가 서명 검증 + 이벤트 파싱 수행
+        event = webhook_receiver.receive(body.decode(), authorization)
+
+        if event is None:
+            logger.warning("[LiveKit Webhook] Invalid webhook signature")
+            return None
+
+        # WebhookEvent를 dict로 변환 (MessageToDict 사용)
+        from google.protobuf.json_format import MessageToDict
+
+        # camelCase 필드명 사용 (egressInfo, roomName 등)
+        return MessageToDict(event, preserving_proto_field_name=False)
+
+    except Exception as e:
+        logger.error(f"[LiveKit Webhook] Signature verification failed: {e}")
+        return None
 
 
 @router.post("/webhook")
@@ -72,15 +95,10 @@ async def livekit_webhook(
     - egress_updated: 녹음 진행 상태
     - egress_ended: 녹음 완료
     """
-    # 서명 검증
-    if not await verify_livekit_signature(request, authorization):
+    # 서명 검증 및 이벤트 파싱
+    body = await verify_and_parse_webhook(request, authorization)
+    if body is None:
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
-
-    try:
-        body = await request.json()
-    except Exception as e:
-        logger.error(f"[LiveKit Webhook] Failed to parse body: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     event_type = body.get("event")
     logger.info(f"[LiveKit Webhook] Received event: {event_type}")
@@ -127,7 +145,7 @@ async def handle_egress_ended(body: dict, db: AsyncSession) -> None:
         meeting_id_str = room_name[8:]
         try:
             meeting_id = UUID(meeting_id_str)
-            livekit_service.clear_active_egress(meeting_id)
+            await livekit_service.clear_active_egress(meeting_id)
         except ValueError:
             pass
 
