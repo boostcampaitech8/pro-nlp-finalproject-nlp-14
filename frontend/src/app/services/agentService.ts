@@ -3,10 +3,16 @@
 
 import type { ActiveCommand, AgentResponse, CommandField, ModalData } from '@/app/types/command';
 import { API_DELAYS } from '@/app/constants';
+import {
+  PROJECT_X_BUDGET_TIMELINE,
+  ACTION_ITEMS,
+} from '@/app/constants/mockData';
+import type { SessionContext, AgentTool } from '@/app/types/command';
 
 // Mock 응답 정의
 interface MockResponse {
   type: 'form' | 'direct' | 'modal';
+  tool?: AgentTool;  // 추가
   title?: string;
   description?: string;
   icon?: string;
@@ -21,6 +27,7 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
   // 회의 관련 - 모달로 처리
   meeting_create: {
     type: 'modal',
+    tool: 'mit_action',
     modalData: {
       modalType: 'meeting',
     },
@@ -29,6 +36,7 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
   // 검색 관련
   search: {
     type: 'form',
+    tool: 'mit_search',
     title: '회의록 검색',
     description: '검색 조건을 입력해주세요',
     icon: '🔍',
@@ -58,6 +66,7 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
   // 예산 관련 (기획서 예시)
   budget: {
     type: 'form',
+    tool: 'mit_branch',
     title: '예산 변경 제안',
     description: '예산 변경 내용을 입력해주세요',
     icon: '💰',
@@ -88,22 +97,16 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
   // Blame 이력 조회
   blame: {
     type: 'direct',
+    tool: 'mit_blame',
     message: '예산 변경 이력을 조회했습니다.',
-    previewType: 'document',
-    previewContent: `## 예산 변경 이력
-
-| 날짜 | 금액 | 변경자 | 사유 |
-|------|------|--------|------|
-| 2026-01-10 | 5,000만원 | 김OO | 최종 확정 |
-| 2026-01-05 | 4,500만원 | 이OO | 범위 확대로 인한 조정 |
-| 2026-01-01 | 3,000만원 | 박OO | 초기 제안 |
-
-총 3건의 변경 이력이 있습니다.`,
+    previewType: 'timeline',
+    previewContent: JSON.stringify(PROJECT_X_BUDGET_TIMELINE),
   },
 
   // 일정 조회
   schedule: {
     type: 'direct',
+    tool: 'mit_search',
     message: '오늘 예정된 회의가 2건 있습니다.',
     previewType: 'meeting',
     previewContent: `## 오늘의 일정
@@ -122,6 +125,7 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
   // 팀 현황
   team_status: {
     type: 'direct',
+    tool: 'mit_search',
     message: '팀 현황을 불러왔습니다.',
     previewType: 'document',
     previewContent: `## 팀 현황 요약
@@ -135,6 +139,23 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
 - 어제: 스프린트 회고 회의
 - 그제: 기술 리뷰 세션
 - 지난주: 신규 입사자 온보딩`,
+  },
+
+  // Action Items
+  action_items: {
+    type: 'direct',
+    tool: 'mit_action',
+    message: '이번 주 Action Item 목록입니다.',
+    previewType: 'action-items',
+    previewContent: JSON.stringify(ACTION_ITEMS),
+  },
+
+  // Merge
+  merge: {
+    type: 'direct',
+    tool: 'mit_merge',
+    message: '변경 사항이 확정되었습니다.',
+    previewType: 'timeline',
   },
 
   // 기본 응답
@@ -156,8 +177,30 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
 };
 
 // 키워드 기반 응답 매칭
-function matchCommand(command: string): MockResponse {
+function matchCommand(command: string, context?: SessionContext | null): MockResponse {
   const lowerCommand = command.toLowerCase();
+
+  // 컨텍스트 기반 명령어 처리
+  if (context) {
+    // "확정해줘" - branchId 있을 때 merge
+    if ((lowerCommand.includes('확정') || lowerCommand.includes('머지')) && context.branchId) {
+      return {
+        ...MOCK_RESPONSES.merge,
+        message: `${context.target}을(를) ${context.proposedValue}으로 확정했습니다. 변경 이력이 기록되었습니다.`,
+      };
+    }
+
+    // 금액 변경 의도 감지
+    const amountMatch = command.match(/(\d+천만원|\d+억)/);
+    if (amountMatch && context.target) {
+      return {
+        ...MOCK_RESPONSES.budget,
+        fields: MOCK_RESPONSES.budget.fields?.map(f =>
+          f.id === 'amount' ? { ...f, value: amountMatch[1] } : f
+        ),
+      };
+    }
+  }
 
   // 회의 시작/생성
   if (
@@ -192,6 +235,11 @@ function matchCommand(command: string): MockResponse {
     return MOCK_RESPONSES.team_status;
   }
 
+  // Action Items
+  if (lowerCommand.includes('action') || lowerCommand.includes('할 일') || lowerCommand.includes('액션')) {
+    return MOCK_RESPONSES.action_items;
+  }
+
   return MOCK_RESPONSES.default;
 }
 
@@ -199,18 +247,20 @@ export const agentService = {
   /**
    * 명령어 처리
    * @param command 사용자가 입력한 명령어
+   * @param context 세션 컨텍스트 (선택)
    * @returns AgentResponse
    */
-  async processCommand(command: string): Promise<AgentResponse> {
+  async processCommand(command: string, context?: SessionContext | null): Promise<AgentResponse> {
     // API 호출 시뮬레이션
     await new Promise((resolve) => setTimeout(resolve, API_DELAYS.COMMAND_PROCESS));
 
-    const matched = matchCommand(command);
+    const matched = matchCommand(command, context);
 
     // 모달 타입 응답 처리
     if (matched.type === 'modal' && matched.modalData) {
       return {
         type: 'modal',
+        tool: matched.tool,
         modalData: matched.modalData,
       };
     }
@@ -228,6 +278,7 @@ export const agentService = {
 
       return {
         type: 'form',
+        tool: matched.tool,
         command: activeCommand,
       };
     }
@@ -235,6 +286,7 @@ export const agentService = {
     // 직접 응답 처리
     return {
       type: 'direct',
+      tool: matched.tool,
       message: matched.message || `"${command}" 명령을 처리했습니다.`,
       previewData: matched.previewContent
         ? {

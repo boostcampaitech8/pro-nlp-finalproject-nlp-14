@@ -1,7 +1,7 @@
 // 명령 상태 관리 스토어
 import { create } from 'zustand';
 import { HISTORY_LIMIT } from '@/app/constants';
-import type { ActiveCommand, HistoryItem, Suggestion } from '@/app/types/command';
+import type { ActiveCommand, HistoryItem, Suggestion, SessionContext } from '@/app/types/command';
 
 interface CommandState {
   // 상태
@@ -11,6 +11,7 @@ interface CommandState {
   activeCommand: ActiveCommand | null;
   history: HistoryItem[];
   suggestions: Suggestion[];
+  sessionContext: SessionContext | null;
 
   // Actions
   setInputValue: (value: string) => void;
@@ -22,6 +23,9 @@ interface CommandState {
   clearHistory: () => void;
   clearActiveCommand: () => void;
   setSuggestions: (suggestions: Suggestion[]) => void;
+  setContext: (context: SessionContext) => void;
+  updateContext: (partial: Partial<SessionContext>) => void;
+  clearContext: () => void;
 }
 
 export const useCommandStore = create<CommandState>((set) => ({
@@ -32,6 +36,7 @@ export const useCommandStore = create<CommandState>((set) => ({
   activeCommand: null,
   history: [],
   suggestions: [], // agentService.getSuggestions()로 로드
+  sessionContext: null,
 
   // Actions
   setInputValue: (value) => set({ inputValue: value }),
@@ -64,4 +69,15 @@ export const useCommandStore = create<CommandState>((set) => ({
   clearActiveCommand: () => set({ activeCommand: null, isProcessing: false }),
 
   setSuggestions: (suggestions) => set({ suggestions }),
+
+  setContext: (context) => set({ sessionContext: context }),
+
+  updateContext: (partial) =>
+    set((state) => ({
+      sessionContext: state.sessionContext
+        ? { ...state.sessionContext, ...partial }
+        : (partial as SessionContext),
+    })),
+
+  clearContext: () => set({ sessionContext: null }),
 }));

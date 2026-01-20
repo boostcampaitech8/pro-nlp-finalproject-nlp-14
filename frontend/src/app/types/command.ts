@@ -48,6 +48,20 @@ export interface ModalData {
   teamId?: string;
 }
 
+// Tool 타입 정의
+export type MitTool = 'mit_blame' | 'mit_search' | 'mit_branch' | 'mit_merge';
+export type UtilTool = 'mit_summary' | 'mit_action';
+export type McpTool = 'mcp_jira' | 'mcp_notion' | 'mcp_slack' | 'mcp_calendar';
+export type AgentTool = MitTool | UtilTool | McpTool;
+
+// 세션 컨텍스트 (시나리오 흐름 유지용)
+export interface SessionContext {
+  target?: string;          // "프로젝트 X 예산"
+  currentValue?: string;    // "5,000만원"
+  branchId?: string;        // branch 생성 시 ID
+  proposedValue?: string;   // "6,000만원"
+}
+
 // Mock 데이터를 위한 에이전트 응답 타입
 export interface AgentResponse {
   type: 'direct' | 'form' | 'modal';
@@ -59,4 +73,6 @@ export interface AgentResponse {
     title: string;
     content: string;
   };
+  tool?: AgentTool;
+  context?: SessionContext;
 }
