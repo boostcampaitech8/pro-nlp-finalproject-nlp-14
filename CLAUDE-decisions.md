@@ -80,6 +80,40 @@
 - **설정 위치**: `docker/docker-compose.yml` livekit 서비스
 - **참고**: https://docs.livekit.io/realtime/self-hosting/deployment/#turn-configuration
 
+### D31: LiveKit 웹훅 서명 검증
+- **결정**: TokenVerifier + WebhookReceiver 패턴으로 서명 검증
+- **근거**:
+  - 보안: 웹훅 요청이 실제 LiveKit 서버에서 왔는지 검증 필수
+  - livekit-api SDK 업데이트로 API 시그니처 변경됨
+- **구현**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
+  ```python
+  token_verifier = api.TokenVerifier(api_key, api_secret)
+  webhook_receiver = api.WebhookReceiver(token_verifier)
+  event = webhook_receiver.receive(body.decode(), authorization)
+  # MessageToDict로 camelCase 변환 (preserving_proto_field_name=False)
+  return MessageToDict(event, preserving_proto_field_name=False)
+  ```
+- **주의**:
+  - `preserving_proto_field_name=False` 필수 (camelCase 필드명)
+  - SDK 버전 변경 시 API 시그니처 확인 필요
+
+### D32: Redis 기반 Egress 상태 관리
+- **결정**: 메모리 캐시 대신 Redis로 활성 Egress 상태 저장
+- **근거**:
+  - 서버 재시작 시에도 상태 유지
+  - 다중 인스턴스 환경에서 상태 공유 가능
+  - 24시간 TTL로 자동 만료 (orphan 방지)
+- **구현**: `backend/app/services/livekit_service.py`
+  ```python
+  EGRESS_KEY_PREFIX = "livekit:egress:"
+  EGRESS_TTL_SECONDS = 86400  # 24시간
+
+  async def _set_active_egress(self, meeting_id: UUID, egress_id: str):
+      redis = await get_redis()
+      await redis.set(f"{EGRESS_KEY_PREFIX}{meeting_id}", egress_id, ex=EGRESS_TTL_SECONDS)
+  ```
+- **Redis 클라이언트**: `backend/app/core/redis.py` (싱글톤 패턴)
+
 ### D29: LiveKit rtcConfig 배치
 - **결정**: `rtcConfig`는 Room constructor가 아닌 `room.connect()` 메서드에 전달
 - **근거**:

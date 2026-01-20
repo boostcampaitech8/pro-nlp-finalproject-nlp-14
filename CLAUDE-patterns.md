@@ -223,6 +223,70 @@
 
 > **상세 Backend 패턴 및 ADR**: `backend/CLAUDE-patterns.md`, `backend/CLAUDE-decisions.md` 참조
 
+### Redis Client Singleton Pattern
+- **위치**: `backend/app/core/redis.py`
+- **패턴**:
+  ```python
+  import redis.asyncio as redis
+  from app.core.config import get_settings
+
+  _redis_client: redis.Redis | None = None
+
+  async def get_redis() -> redis.Redis:
+      global _redis_client
+      if _redis_client is None:
+          settings = get_settings()
+          _redis_client = redis.from_url(settings.redis_url)
+      return _redis_client
+  ```
+- **사용**: `redis = await get_redis()`
+
+### LiveKit Webhook Signature Verification Pattern
+- **위치**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
+- **패턴**:
+  ```python
+  from livekit import api
+  from google.protobuf.json_format import MessageToDict
+
+  async def verify_and_parse_webhook(request: Request, authorization: str) -> dict | None:
+      # 1. TokenVerifier 생성
+      token_verifier = api.TokenVerifier(api_key, api_secret)
+
+      # 2. WebhookReceiver에 전달
+      webhook_receiver = api.WebhookReceiver(token_verifier)
+
+      # 3. 서명 검증 + 이벤트 파싱
+      event = webhook_receiver.receive(body.decode(), authorization)
+
+      # 4. Protobuf -> dict 변환 (camelCase 필드명!)
+      return MessageToDict(event, preserving_proto_field_name=False)
+  ```
+- **주의**:
+  - `preserving_proto_field_name=False` 필수 (egressInfo, roomName 등 camelCase)
+  - `True`로 설정하면 egress_info, room_name 등 snake_case 출력
+
+### Egress State Management Pattern (Redis)
+- **위치**: `backend/app/services/livekit_service.py`
+- **패턴**:
+  ```python
+  EGRESS_KEY_PREFIX = "livekit:egress:"
+  EGRESS_TTL_SECONDS = 86400  # 24시간
+
+  async def _set_active_egress(self, meeting_id: UUID, egress_id: str):
+      redis = await get_redis()
+      await redis.set(f"{EGRESS_KEY_PREFIX}{meeting_id}", egress_id, ex=EGRESS_TTL_SECONDS)
+
+  async def _get_active_egress(self, meeting_id: UUID) -> str | None:
+      redis = await get_redis()
+      result = await redis.get(f"{EGRESS_KEY_PREFIX}{meeting_id}")
+      return result.decode() if result else None
+
+  async def clear_active_egress(self, meeting_id: UUID):
+      redis = await get_redis()
+      await redis.delete(f"{EGRESS_KEY_PREFIX}{meeting_id}")
+  ```
+- **웹훅에서 정리**: egress_ended 이벤트 시 모든 종료 상태(COMPLETE/FAILED/ABORTED)에서 호출
+
 ## API Contract Patterns
 
 ### Schema File Structure

@@ -31,6 +31,18 @@
 > 최근 작업 기록 (이전 기록: CLAUDE-archived-worklog.md)
 
 ```
+[2026-01-20] LiveKit 웹훅 서명 검증 및 녹음 생성 버그 수정
+- 문제: 회의 종료 후 녹음 레코드가 DB에 생성되지 않음
+- 원인 1: MessageToDict(preserving_proto_field_name=True)가 snake_case 출력
+  - 코드는 egressInfo, roomName (camelCase) 기대
+  - 실제: egress_info, room_name (snake_case) 수신
+- 원인 2: Python logging 미설정으로 디버그 로그 미출력
+- 수정:
+  - livekit_webhooks.py: MessageToDict에 preserving_proto_field_name=False 설정
+  - main.py: logging.basicConfig() 추가
+  - 웹훅 서명 검증: TokenVerifier + WebhookReceiver 패턴 구현
+- 추가: Redis 기반 egress 상태 관리, 녹음 시작 알림 UI
+
 [2026-01-20] LiveKit Egress 녹음 상태 동기화 버그 수정
 - 증상: 녹음 시작/중지 시 400 Bad Request
 - 원인: _active_egress 메모리 캐시가 실제 LiveKit 상태와 동기화 안됨

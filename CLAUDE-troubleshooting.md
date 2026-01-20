@@ -167,6 +167,46 @@
   ```
 - **주의**: stream 사용 시 http 블록에서는 8443 등 다른 포트 사용 필요
 
+### LiveKit 웹훅에서 녹음 레코드가 생성되지 않음
+- **증상**: egress_ended 이벤트 수신 시 DB에 recording이 생성되지 않음
+- **원인**: `MessageToDict(preserving_proto_field_name=True)`가 snake_case 필드명 출력
+  - 코드: `egressInfo`, `roomName`, `fileResults` (camelCase) 기대
+  - 실제: `egress_info`, `room_name`, `file_results` (snake_case) 수신
+- **해결**: `livekit_webhooks.py`에서 `preserving_proto_field_name=False` 설정
+  ```python
+  # camelCase 필드명 사용 (egressInfo, roomName 등)
+  return MessageToDict(event, preserving_proto_field_name=False)
+  ```
+- **파일**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
+
+### Python logging이 출력되지 않음
+- **증상**: `logger.info()` 호출해도 콘솔에 로그 미출력
+- **원인**: FastAPI 기본 설정에서 logging 미구성
+- **해결**: `main.py`에 logging.basicConfig() 추가
+  ```python
+  import logging
+  logging.basicConfig(
+      level=logging.INFO,
+      format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+      datefmt="%Y-%m-%d %H:%M:%S",
+  )
+  ```
+- **파일**: `backend/app/main.py`
+
+### LiveKit WebhookReceiver 초기화 오류
+- **증상**: `WebhookReceiver.__init__() takes 2 positional arguments but 3 were given`
+- **원인**: livekit-api SDK 버전 변경으로 API 시그니처 변경
+- **해결**: TokenVerifier를 먼저 생성 후 WebhookReceiver에 전달
+  ```python
+  token_verifier = api.TokenVerifier(
+      api_key=settings.livekit_api_key,
+      api_secret=settings.livekit_api_secret,
+  )
+  webhook_receiver = api.WebhookReceiver(token_verifier)
+  event = webhook_receiver.receive(body.decode(), authorization)
+  ```
+- **파일**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
+
 ### LiveKit Egress 녹음 상태 동기화 오류
 - **증상**: 녹음 시작/중지 시 400 Bad Request
   - 시작 시: "Recording already active" (실제로는 녹음 없음)

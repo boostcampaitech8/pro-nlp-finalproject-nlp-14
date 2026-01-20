@@ -1,6 +1,6 @@
 # Active Context - Backend
 
-**Last Updated**: 2026-01-19
+**Last Updated**: 2026-01-20
 **Current Phase**: Phase 2 - PR Review System
 
 ---
@@ -8,9 +8,10 @@
 ## Current State
 
 ### LiveKit SFU 마이그레이션 완료 (MIT-14)
-- **livekit_service.py**: 토큰 생성, Room Composite Egress 녹음 관리
-- **livekit_webhooks.py**: egress_ended 이벤트로 녹음 파일 DB 저장
+- **livekit_service.py**: 토큰 생성, Room Composite Egress 녹음 관리, Redis 상태 저장
+- **livekit_webhooks.py**: 웹훅 서명 검증, egress_ended 이벤트로 녹음 파일 DB 저장
 - **vad_event_service.py**: DataPacket VAD 이벤트 수집
+- **core/redis.py**: 비동기 Redis 클라이언트 (싱글톤)
 
 ### STT Pipeline (완료)
 - STT Provider 추상화 (OpenAI Whisper)
@@ -23,8 +24,9 @@
 
 | 파일 | 역할 |
 |------|------|
-| `services/livekit_service.py` | LiveKit 토큰 생성, Egress 녹음 |
-| `api/v1/endpoints/livekit_webhooks.py` | LiveKit 이벤트 웹훅 |
+| `core/redis.py` | 비동기 Redis 클라이언트 (싱글톤) |
+| `services/livekit_service.py` | LiveKit 토큰 생성, Egress 녹음, Redis 상태 관리 |
+| `api/v1/endpoints/livekit_webhooks.py` | LiveKit 이벤트 웹훅 (서명 검증) |
 | `services/stt_service.py` | STT 변환 로직 |
 | `services/transcript_service.py` | 회의록 병합/관리 |
 | `workers/arq_worker.py` | ARQ 비동기 작업 Worker |
