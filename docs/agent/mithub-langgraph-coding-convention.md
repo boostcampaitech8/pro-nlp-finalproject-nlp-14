@@ -64,8 +64,6 @@
 
 | 노드 유형 | 네이밍 패턴 | 예시 |
 |----------|-----------|-----|
-| **시작 노드** | `prepare_*`, `initialize_*` | `prepare_context`, `initialize_state` |
-| **종료 노드** | `finalize_*`, `complete_*` | `finalize_response`, `complete_workflow` |
 | **라우터 노드** | `route_*`, `decide_*` | `route_intent`, `decide_next_action` |
 | **검증 노드** | `validate_*`, `verify_*` | `validate_input`, `verify_permissions` |
 | **폴백 노드** | `fallback_*`, `handle_*_error` | `fallback_generate`, `handle_retrieval_error` |
