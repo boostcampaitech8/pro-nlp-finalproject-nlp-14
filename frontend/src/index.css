@@ -166,6 +166,27 @@
   .badge-warning {
     @apply bg-red-500/20 text-red-300 px-2 py-0.5 rounded-full text-[11px] font-semibold;
   }
+
+  /* 채팅 버블 스타일 */
+  .chat-bubble-user {
+    @apply bg-mit-primary/20 border border-mit-primary/30;
+  }
+
+  .chat-bubble-agent {
+    @apply bg-card-bg border border-glass;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* 채팅 컨테이너 */
+  .chat-container {
+    @apply flex flex-col h-full;
+  }
+
+  /* 채팅 메시지 목록 */
+  .chat-messages {
+    @apply flex-1 overflow-y-auto px-4 py-6;
+  }
 }
 
 /* 커스텀 스크롤바 스타일 */
@@ -204,4 +225,77 @@
 
 .dark-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* 채팅 버블 내 마크다운 스타일 (어두운 배경용) */
+.chat-bubble-markdown {
+  @apply text-[15px] leading-relaxed;
+}
+
+.chat-bubble-markdown h1,
+.chat-bubble-markdown h2,
+.chat-bubble-markdown h3,
+.chat-bubble-markdown h4 {
+  @apply text-white font-semibold;
+  margin-top: 0.75em;
+  margin-bottom: 0.5em;
+}
+
+.chat-bubble-markdown h1:first-child,
+.chat-bubble-markdown h2:first-child,
+.chat-bubble-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.chat-bubble-markdown h2 {
+  @apply text-[17px] pb-2 border-b border-white/10;
+}
+
+.chat-bubble-markdown h3 {
+  @apply text-[15px] text-mit-primary;
+}
+
+.chat-bubble-markdown p {
+  @apply text-white/90 mb-2;
+}
+
+.chat-bubble-markdown ul,
+.chat-bubble-markdown ol {
+  @apply text-white/80 pl-4 mb-2 space-y-1;
+}
+
+.chat-bubble-markdown li {
+  @apply text-[14px];
+}
+
+.chat-bubble-markdown li::marker {
+  @apply text-mit-primary;
+}
+
+.chat-bubble-markdown strong {
+  @apply text-white font-semibold;
+}
+
+.chat-bubble-markdown code {
+  @apply bg-white/10 px-1.5 py-0.5 rounded text-[13px] text-mit-primary;
+}
+
+.chat-bubble-markdown pre {
+  @apply bg-black/30 p-3 rounded-lg overflow-x-auto my-2;
+}
+
+.chat-bubble-markdown pre code {
+  @apply bg-transparent p-0;
+}
+
+.chat-bubble-markdown a {
+  @apply text-mit-primary hover:underline;
+}
+
+.chat-bubble-markdown blockquote {
+  @apply border-l-2 border-mit-primary/50 pl-3 text-white/70 italic my-2;
+}
+
+.chat-bubble-markdown hr {
+  @apply border-white/10 my-3;
 }

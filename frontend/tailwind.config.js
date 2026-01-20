@@ -128,6 +128,22 @@ export default {
           from: { transform: 'translateX(-10px)', opacity: '0' },
           to: { transform: 'translateX(0)', opacity: '1' },
         },
+        'slide-in-from-right': {
+          from: { transform: 'translateX(10px)', opacity: '0' },
+          to: { transform: 'translateX(0)', opacity: '1' },
+        },
+        'message-in-left': {
+          from: { transform: 'translateX(-20px) scale(0.95)', opacity: '0' },
+          to: { transform: 'translateX(0) scale(1)', opacity: '1' },
+        },
+        'message-in-right': {
+          from: { transform: 'translateX(20px) scale(0.95)', opacity: '0' },
+          to: { transform: 'translateX(0) scale(1)', opacity: '1' },
+        },
+        'typing-dot': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-5px)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -137,6 +153,10 @@ export default {
         'slide-in-from-top': 'slide-in-from-top 0.2s ease-out',
         'slide-in-from-bottom': 'slide-in-from-bottom 0.2s ease-out',
         'slide-in-from-left': 'slide-in-from-left 0.2s ease-out',
+        'slide-in-from-right': 'slide-in-from-right 0.2s ease-out',
+        'message-in-left': 'message-in-left 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+        'message-in-right': 'message-in-right 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+        'typing-dot': 'typing-dot 0.6s ease-in-out infinite',
       },
     },
   },
