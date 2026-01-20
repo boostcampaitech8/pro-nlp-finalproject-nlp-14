@@ -26,6 +26,8 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
   const [isLeaving, setIsLeaving] = useState(false);
   const [showParticipants, setShowParticipants] = useState(true);
   const [showChat, setShowChat] = useState(true);
+  const [showRecordingNotice, setShowRecordingNotice] = useState(false);
+  const prevRecordingRef = useRef(false);
 
   const {
     connectionState,
@@ -97,6 +99,16 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     }
   }, [joinRoom, userId]);
 
+  // 녹음 시작 알림 (녹음이 false -> true로 변경될 때만)
+  useEffect(() => {
+    if (isRecording && !prevRecordingRef.current) {
+      setShowRecordingNotice(true);
+      const timer = setTimeout(() => setShowRecordingNotice(false), 5000);
+      return () => clearTimeout(timer);
+    }
+    prevRecordingRef.current = isRecording;
+  }, [isRecording]);
+
   // 회의 퇴장
   const handleLeave = async () => {
     if (isLeaving) return;
@@ -147,6 +159,16 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
 
   return (
     <div className="h-screen bg-gray-900 flex flex-col overflow-hidden">
+      {/* 녹음 시작 알림 토스트 */}
+      {showRecordingNotice && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50
+                        bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg
+                        flex items-center gap-2 animate-fade-in">
+          <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+          녹음이 시작되었습니다
+        </div>
+      )}
+
       {/* 원격 오디오 재생 (숨김) */}
       {Array.from(remoteStreams.entries()).map(([odId, stream]) => (
         <RemoteAudio
