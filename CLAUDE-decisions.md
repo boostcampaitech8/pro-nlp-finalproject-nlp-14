@@ -63,8 +63,17 @@
   - TLS 포트(5349)는 HTTPS 트래픽으로 보여 방화벽 통과 용이
 - **구현**:
   - 도메인: `turn.mit-hub.com` (Let's Encrypt 인증서)
-  - 포트: 5349/TCP (TLS), 3478/UDP (기본)
   - 인증서 마운트: `/etc/letsencrypt:/etc/letsencrypt:ro` (심볼릭 링크 유지)
+- **필수 포트포워딩** (공유기/방화벽):
+  | 포트 | 프로토콜 | 용도 |
+  |------|----------|------|
+  | 5349 | TCP | TURN TLS |
+  | 3478 | UDP | TURN UDP |
+  | 50000-50100 | UDP | WebRTC RTC |
+  | 30000-30050 | UDP | TURN relay |
+- **nginx stream (선택적)**:
+  - 5349 직접 노출 가능하면 불필요
+  - 443만 열 수 있는 환경에서만 SNI 기반 라우팅 설정
 - **Trade-off**:
   - 장점: 연결 성공률 대폭 향상
   - 단점: 인증서 관리 필요, TURN 경유 시 대역폭 증가

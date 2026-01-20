@@ -31,6 +31,15 @@
 > 최근 작업 기록 (이전 기록: CLAUDE-archived-worklog.md)
 
 ```
+[2026-01-20] LiveKit TURN/WebRTC 연결 디버깅
+- ICE candidate pair 실패 원인 분석: UDP 포트 미개방
+- 필수 포트포워딩 목록 정리:
+  - 5349/TCP (TURN TLS) - 열림
+  - 3478/UDP (TURN UDP)
+  - 50000-50100/UDP (WebRTC RTC)
+  - 30000-30050/UDP (TURN relay)
+- nginx stream 블록: 5349 직접 노출 시 불필요 (443 공유 시에만 필요)
+
 [2026-01-19] Memory Bank 최적화
 - CLAUDE-activeContext.md 86% 축소 (16KB -> 2KB)
 - CLAUDE-patterns.md에서 REMOVED/DEPRECATED 섹션 제거

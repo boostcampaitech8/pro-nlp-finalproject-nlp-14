@@ -128,3 +128,41 @@
     </main>
   </div>
   ```
+
+### WebRTC/TURN ICE 연결 실패 (responsesReceived: 0)
+- **증상**: LiveKit 로그에서 ICE candidate pair 모두 failed, `requestsSent: 8, responsesReceived: 0`
+- **원인**: 공유기에서 UDP 포트 포트포워딩 누락
+- **진단 방법**:
+  ```bash
+  docker logs mit-livekit 2>&1 | grep -iE "ice candidate pair"
+  # "state": "failed", "responsesReceived": 0 확인
+  ```
+- **해결**: 공유기에서 다음 포트 모두 포트포워딩:
+  | 포트 | 프로토콜 | 용도 |
+  |------|----------|------|
+  | 5349 | TCP | TURN TLS |
+  | 3478 | UDP | TURN UDP |
+  | 50000-50100 | UDP | WebRTC RTC |
+  | 30000-30050 | UDP | TURN relay |
+
+### nginx stream SNI 라우팅 (443 포트 공유)
+- **용도**: 443 포트 하나로 HTTPS + TURN TLS를 SNI 기반으로 분리
+- **필요한 경우**: 방화벽에서 443만 열 수 있고 5349를 열 수 없을 때
+- **불필요한 경우**: Docker가 5349를 직접 노출하고 공유기에서 포트포워딩 가능할 때
+- **설정 예시** (필요 시):
+  ```nginx
+  stream {
+      map $ssl_preread_server_name $backend {
+          turn.mit-hub.com    livekit_turn;
+          default             https_backend;
+      }
+      upstream livekit_turn { server 127.0.0.1:5349; }
+      upstream https_backend { server 127.0.0.1:8443; }
+      server {
+          listen 443;
+          ssl_preread on;
+          proxy_pass $backend;
+      }
+  }
+  ```
+- **주의**: stream 사용 시 http 블록에서는 8443 등 다른 포트 사용 필요
