@@ -61,80 +61,12 @@ def get_recording_size(self, file_path: str) -> int:
 
 ---
 
-### 1.3 LiveKit 웹훅에서 녹음 레코드가 생성되지 않음
+### 1.3 LiveKit Issues
 
-**증상**: egress_ended 이벤트 수신 시 DB에 recording이 생성되지 않음
-
-**원인**: `MessageToDict(preserving_proto_field_name=True)`가 snake_case 필드명 출력
-- 코드: `egressInfo`, `roomName`, `fileResults` (camelCase) 기대
-- 실제: `egress_info`, `room_name`, `file_results` (snake_case) 수신
-
-**해결**: `livekit_webhooks.py`에서 `preserving_proto_field_name=False` 설정
-```python
-# camelCase 필드명 사용 (egressInfo, roomName 등)
-return MessageToDict(event, preserving_proto_field_name=False)
-```
-
-**파일**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
-
----
-
-### 1.4 LiveKit WebhookReceiver 초기화 오류
-
-**증상**: `WebhookReceiver.__init__() takes 2 positional arguments but 3 were given`
-
-**원인**: livekit-api SDK 버전 변경으로 API 시그니처 변경
-
-**해결**: TokenVerifier를 먼저 생성 후 WebhookReceiver에 전달
-```python
-token_verifier = api.TokenVerifier(
-    api_key=settings.livekit_api_key,
-    api_secret=settings.livekit_api_secret,
-)
-webhook_receiver = api.WebhookReceiver(token_verifier)
-event = webhook_receiver.receive(body.decode(), authorization)
-```
-
-**파일**: `backend/app/api/v1/endpoints/livekit_webhooks.py`
-
----
-
-### 1.5 LiveKit Egress 녹음 상태 동기화 오류
-
-**증상**: 녹음 시작/중지 시 400 Bad Request
-- 시작: "Recording already active" (실제로는 녹음 없음)
-- 중지: "egress with status EGRESS_ABORTED cannot be stopped"
-
-**원인**: `_active_egress` 메모리 캐시가 실제 LiveKit Egress 상태와 동기화 안됨
-- Egress ABORTED 시 webhook에서 캐시 정리 누락
-- `start_room_recording()`이 메모리 캐시만 확인
-
-**Egress ABORTED 원인** (`"Start signal not received"`, `"Source closed"`):
-- RoomComposite Egress Chrome이 룸 연결 전에 룸이 닫힘
-- 참여자가 너무 빨리 퇴장하거나 트랙이 없는 상태
-
-**해결**:
-```python
-# livekit_service.py - start_room_recording()
-# 메모리 캐시 대신 LiveKit API로 실제 상태 확인
-async with api.LiveKitAPI(...) as lk_api:
-    response = await lk_api.egress.list_egress(
-        api.ListEgressRequest(room_name=room_name, active=True)
-    )
-    if response.items:
-        return response.items[0].egress_id  # 이미 활성
-    # 캐시에 있지만 실제로 없으면 정리
-    if meeting_key in self._active_egress:
-        del self._active_egress[meeting_key]
-
-# livekit_webhooks.py - handle_egress_ended()
-# 모든 종료 상태에서 캐시 정리
-livekit_service.clear_active_egress(meeting_id)
-```
-
-**파일**:
-- `backend/app/services/livekit_service.py`
-- `backend/app/api/v1/endpoints/livekit_webhooks.py`
+> **LiveKit 관련 트러블슈팅은 `CLAUDE-troubleshooting.md` (루트)를 참조하세요.**
+> - 웹훅 녹음 레코드 미생성 (MessageToDict camelCase)
+> - WebhookReceiver 초기화 오류 (TokenVerifier 패턴)
+> - Egress 상태 동기화 오류 (Redis 캐시)
 
 ---
 
