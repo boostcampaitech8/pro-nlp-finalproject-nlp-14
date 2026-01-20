@@ -31,6 +31,14 @@
 > 최근 작업 기록 (이전 기록: CLAUDE-archived-worklog.md)
 
 ```
+[2026-01-20] LiveKit Egress 녹음 상태 동기화 버그 수정
+- 증상: 녹음 시작/중지 시 400 Bad Request
+- 원인: _active_egress 메모리 캐시가 실제 LiveKit 상태와 동기화 안됨
+- 수정:
+  - livekit_service.py: start_room_recording()에서 LiveKit API로 실제 상태 확인
+  - livekit_service.py: clear_active_egress() 메서드 추가
+  - livekit_webhooks.py: 모든 종료 상태(COMPLETE/FAILED/ABORTED)에서 캐시 정리
+
 [2026-01-20] LiveKit TURN/WebRTC 연결 디버깅
 - ICE candidate pair 실패 원인 분석: UDP 포트 미개방
 - 필수 포트포워딩 목록 정리:

@@ -166,3 +166,20 @@
   }
   ```
 - **주의**: stream 사용 시 http 블록에서는 8443 등 다른 포트 사용 필요
+
+### LiveKit Egress 녹음 상태 동기화 오류
+- **증상**: 녹음 시작/중지 시 400 Bad Request
+  - 시작 시: "Recording already active" (실제로는 녹음 없음)
+  - 중지 시: "egress with status EGRESS_ABORTED cannot be stopped"
+- **원인**: Backend `_active_egress` 메모리 캐시가 실제 LiveKit Egress 상태와 동기화 안됨
+  - Egress가 ABORTED 되어도 메모리 캐시에 남아있음
+  - Webhook에서 ABORTED 상태 처리 누락
+- **Egress ABORTED 원인**: `"Start signal not received"`, `"Source closed"`
+  - RoomComposite Egress Chrome이 룸 연결 전에 룸이 닫힘
+  - 참여자가 너무 빨리 퇴장하거나 트랙이 없는 상태
+- **해결**:
+  1. `livekit_service.py`: `start_room_recording()`에서 메모리 캐시 대신 LiveKit API로 실제 상태 확인
+  2. `livekit_webhooks.py`: `handle_egress_ended()`에서 모든 종료 상태(COMPLETE/FAILED/ABORTED)에서 캐시 정리
+- **파일**:
+  - `backend/app/services/livekit_service.py`
+  - `backend/app/api/v1/endpoints/livekit_webhooks.py`

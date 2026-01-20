@@ -1,6 +1,6 @@
 # Troubleshooting - Backend
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-01-20
 
 ---
 
@@ -58,6 +58,45 @@ def get_recording_size(self, file_path: str) -> int:
 ```
 
 **파일**: `backend/app/core/storage.py`
+
+---
+
+### 1.3 LiveKit Egress 녹음 상태 동기화 오류
+
+**증상**: 녹음 시작/중지 시 400 Bad Request
+- 시작: "Recording already active" (실제로는 녹음 없음)
+- 중지: "egress with status EGRESS_ABORTED cannot be stopped"
+
+**원인**: `_active_egress` 메모리 캐시가 실제 LiveKit Egress 상태와 동기화 안됨
+- Egress ABORTED 시 webhook에서 캐시 정리 누락
+- `start_room_recording()`이 메모리 캐시만 확인
+
+**Egress ABORTED 원인** (`"Start signal not received"`, `"Source closed"`):
+- RoomComposite Egress Chrome이 룸 연결 전에 룸이 닫힘
+- 참여자가 너무 빨리 퇴장하거나 트랙이 없는 상태
+
+**해결**:
+```python
+# livekit_service.py - start_room_recording()
+# 메모리 캐시 대신 LiveKit API로 실제 상태 확인
+async with api.LiveKitAPI(...) as lk_api:
+    response = await lk_api.egress.list_egress(
+        api.ListEgressRequest(room_name=room_name, active=True)
+    )
+    if response.items:
+        return response.items[0].egress_id  # 이미 활성
+    # 캐시에 있지만 실제로 없으면 정리
+    if meeting_key in self._active_egress:
+        del self._active_egress[meeting_key]
+
+# livekit_webhooks.py - handle_egress_ended()
+# 모든 종료 상태에서 캐시 정리
+livekit_service.clear_active_egress(meeting_id)
+```
+
+**파일**:
+- `backend/app/services/livekit_service.py`
+- `backend/app/api/v1/endpoints/livekit_webhooks.py`
 
 ---
 
