@@ -108,244 +108,79 @@
   ```
 - **참고**: LiveKit SDK 버전 업그레이드 시 타입 정의 변경 확인 필요
 
-## Storage
+## Storage & Authentication
+
+> **상세 Backend ADR**: `backend/CLAUDE-decisions.md` 참조
 
 ### D4: Presigned URL 업로드
-- **결정**: 녹음 파일은 MinIO에 직접 업로드
-- **근거**:
-  - nginx 파일 크기 제한 우회
-  - 서버 메모리 부하 감소
-- **흐름**:
-  1. Backend에서 presigned URL 발급
-  2. Frontend가 MinIO에 직접 PUT
-  3. Backend에서 업로드 확인
+- MinIO 직접 업로드 (nginx 크기 제한 우회, 서버 메모리 부하 감소)
 
 ### D5: IndexedDB 증분 저장
-- **결정**: 녹음 청크를 10초마다 IndexedDB에 저장
-- **근거**:
-  - 브라우저 크래시/새로고침 시 데이터 손실 방지
-  - 메모리 사용량 관리
-- **구현**: recordingStorageService로 청크 관리
-
-## Authentication
+- 10초마다 IndexedDB 저장 (브라우저 크래시 대비)
 
 ### D6: JWT + 자동 갱신
-- **결정**: 30분 access token + 7일 refresh token
-- **근거**: 보안과 UX 균형
-- **구현**:
-  - 회의 중 15분마다 자동 갱신 (ensureValidToken)
-  - auth:logout 이벤트로 전역 로그아웃 처리
+- 30분 access + 7일 refresh, 회의 중 15분마다 자동 갱신
 
 ## State Management
 
 ### D7: Zustand 개별 Selector
-- **결정**: 스토어 전체 대신 개별 상태 selector 사용
-- **근거**: useCallback 의존성으로 인한 무한 루프 방지
-- **패턴**:
-  ```typescript
-  // 상태
-  const connectionState = useMeetingRoomStore((s) => s.connectionState);
-  // 액션
-  const setConnectionState = useMeetingRoomStore((s) => s.setConnectionState);
-  ```
+- 스토어 전체 대신 개별 selector 사용 (무한 루프 방지)
 
 ## API Design
 
 ### D8: API Contract First
-- **결정**: OpenAPI 명세를 Single Source of Truth로 사용
-- **근거**: FE/BE 타입 일관성 보장
-- **워크플로우**:
-  1. api-contract/openapi.yaml 수정
-  2. pnpm run generate:types
-  3. Backend 구현
-  4. Frontend 구현
+- OpenAPI 명세가 SSOT, FE/BE 타입 일관성 보장
 
 ### D9: UUID 사용
-- **결정**: 모든 엔티티에 UUID 사용 (auto-increment 금지)
-- **근거**:
-  - 분산 시스템 확장성
-  - ID 추측 공격 방지
+- 모든 엔티티에 UUID (분산 시스템 확장성, ID 추측 공격 방지)
 
 ### D12: 페이지네이션 표준화
-- **결정**: 모든 목록 API는 `items` + `meta` 형식 사용
-- **근거**: 일관된 응답 포맷으로 프론트엔드 코드 재사용성 향상
-- **패턴**:
-  ```yaml
-  ListResponse:
-    properties:
-      items: [...]
-      meta:
-        $ref: './common.yaml#/components/schemas/PaginationMeta'
-  ```
+- 모든 목록 API는 `items` + `meta` 형식
 
 ### D13: OpenAPI allOf 합성
-- **결정**: 확장 스키마에 allOf 패턴 사용 (TeamWithMembers, MeetingWithParticipants)
-- **근거**:
-  - DRY 원칙 준수 (중복 속성 제거)
-  - 기본 스키마 변경 시 자동 반영
-- **패턴**:
-  ```yaml
-  TeamWithMembers:
-    allOf:
-      - $ref: '#/components/schemas/Team'
-      - type: object
-        properties:
-          members: [...]
-  ```
+- 확장 스키마에 allOf 패턴 사용 (DRY 원칙)
 
 ### D14: 스키마 파일 통합
-- **결정**: 작은 스키마 파일을 도메인 파일에 통합
-- **근거**:
-  - 파일 수 감소 (9 -> 7)
-  - 관련 스키마 응집도 향상
-- **적용**:
-  - team-member.yaml -> team.yaml
-  - meeting-participant.yaml -> meeting.yaml
+- 작은 스키마를 도메인 파일에 통합 (team-member -> team)
 
 ## Frontend Architecture
 
 ### D11: 페이지 컴포넌트 분리
-- **결정**: 대형 페이지 컴포넌트를 기능별 섹션 컴포넌트로 분리
-- **근거**:
-  - 파일 크기 감소 및 가독성 향상
-  - 컴포넌트 재사용 가능
-- **적용**:
-  - MeetingDetailPage → MeetingInfoCard, ParticipantSection, RecordingList
-  - TeamDetailPage → TeamInfoCard, TeamMemberSection, MeetingListSection
+- 대형 페이지를 기능별 섹션 컴포넌트로 분리 (MeetingDetailPage -> InfoCard, ParticipantSection, RecordingList)
 
 ### D15: LocalStorage 사용자 설정 캐싱
-- **결정**: 회의실 오디오 설정을 localStorage에 캐싱
-- **근거**:
-  - 사용자가 다른 회의에서도 선호 설정 유지 기대
-  - 참여자별 볼륨 설정은 다른 회의에서도 동일 참여자에게 적용
-- **저장 항목**:
-  - `mit-audio-settings`: micGain, audioInputDeviceId, audioOutputDeviceId
-  - `mit-remote-volumes`: userId별 볼륨 (Map -> Object 변환)
-- **구현 위치**: `meetingRoomStore.ts`의 setter 함수들
-- **주의**: 스토어 reset() 시에도 캐시 설정은 유지
+- 오디오 설정을 localStorage에 캐싱, 스토어 reset() 시에도 유지
+- 저장: `mit-audio-settings`, `mit-remote-volumes`
 
 ## STT & Transcript
 
 ### D16: Transcript 실제 시각 저장
-- **결정**: 발화 시각을 녹음 상대 시간이 아닌 wall-clock timestamp로 저장
-- **근거**:
-  - 여러 참여자의 녹음을 병합할 때 실제 대화 순서 보장
-  - 각 녹음의 `started_at`이 다르므로 상대 시간(`startMs`)만으로는 순서 불명확
-  - UI에서 실제 발화 시각 표시 가능 (예: "15:30:45")
-- **구현**:
-  - Backend: `absolute_timestamp = recording.started_at + timedelta(milliseconds=startMs)`
-  - DB: `timestamp` 필드에 ISO 8601 형식으로 저장
-  - API: `Utterance` 스키마에 `timestamp` (date-time) 필드 추가
-  - Frontend: `formatTimestamp(utterance.timestamp)` -> "HH:MM:SS"
-- **정렬**: `absolute_timestamp` 기준으로 발화 정렬 (시간 순서 보장)
-- **메타데이터**: `meeting_start`, `meeting_end` 필드 추가 (회의 실제 시작/종료 시각)
+- wall-clock timestamp 저장 (`recording.started_at + startMs`)
+- 여러 참여자 녹음 병합 시 실제 대화 순서 보장
+- UI에서 실제 발화 시각 표시 (HH:MM:SS)
 
 ## UI Architecture
 
 ### D17: Spotlight-style 메인 서비스 페이지
-- **결정**: macOS Spotlight 스타일의 3-column 레이아웃 메인 페이지 구현
-- **근거**:
-  - 현대적인 UX 제공 (Raycast, Alfred 스타일)
-  - 자연어 명령어 입력으로 빠른 작업 수행
-  - 컨텍스트 미리보기로 정보 탐색 효율성 향상
-- **구조**:
-  - 좌측 (280px): 네비게이션, 팀 목록, 현재 세션
-  - 중앙: Spotlight 입력, 명령 결과
-  - 우측 (400px): 선택 항목 미리보기
-- **위치**: `frontend/src/app/`
+- 3-column 레이아웃: 좌측 280px + 중앙 flex + 우측 400px
+- 자연어 명령어 + 컨텍스트 미리보기
 
 ### D18: Glassmorphism 디자인 시스템
-- **결정**: 반투명 글래스 효과 기반 UI 디자인
-- **근거**:
-  - 시각적 깊이감 제공 (레이어 구분)
-  - 모던한 미적 감각
-  - 다크 테마와 잘 어울림
-- **구현**:
-  - `backdrop-filter: blur()` 사용
-  - `rgba()` 배경색으로 투명도 조절
-  - 커스텀 Tailwind 색상 (`glass`, `card-bg`, `mit-primary`)
-- **주의**: 성능 고려 - 중첩 blur 최소화
+- `backdrop-filter: blur()`, `rgba()` 배경색, 커스텀 Tailwind 색상
+- 주의: 중첩 blur 최소화 (성능)
 
 ### D19: Modal Store 분리 패턴
-- **결정**: 모달 상태를 별도 Zustand 스토어로 관리
-- **근거**:
-  - 모달 트리거와 상태 분리 (여러 위치에서 열기 가능)
-  - 초기 데이터 전달 용이
-  - 컴포넌트 간 결합도 감소
-- **패턴**:
-  ```typescript
-  // 명령어에서 열기
-  openModal({ title: '새 회의', teamId });
-  // 버튼에서 열기
-  <button onClick={() => openModal()}>새 회의</button>
-  // 네비게이션에서 열기
-  openModal({ teamId: currentTeam.id });
-  ```
-- **적용**: `meetingModalStore.ts`
+- 모달 상태를 별도 Zustand 스토어로 관리 (여러 위치에서 열기 가능)
 
 ### D20: Command System 아키텍처
-- **결정**: 패턴 매칭 기반 명령어 시스템
-- **근거**:
-  - 자연어 입력 지원 (한글/영어)
-  - 확장 가능한 명령어 추가
-  - 자동완성 및 히스토리 지원
-- **구조**:
-  - `agentService.ts`: 명령어 패턴 정의 및 매칭
-  - `commandStore.ts`: 입력/자동완성/히스토리 상태
-  - `useCommand.ts`: 명령어 실행 및 응답 처리
-- **응답 타입**:
-  - `direct`: 직접 결과 표시
-  - `navigation`: 페이지 이동
-  - `modal`: 모달 열기
-  - `form`: 폼 입력 필요
+- 패턴 매칭 기반 명령어 시스템 (한글/영어, 자동완성, 히스토리)
+- 응답 타입: direct, navigation, modal, form
 
 ## Code Quality
 
-### D21: Constants 중앙 관리
-- **결정**: 매직 넘버와 반복 설정값을 `constants/index.ts`에서 관리
-- **근거**:
-  - DRY 원칙 (값 변경 시 한 곳만 수정)
-  - 코드 가독성 향상 (의미 있는 상수명)
-  - 일관성 유지 (여러 파일에서 동일 값 사용)
-- **적용 항목**:
-  - `HISTORY_LIMIT`, `SUGGESTIONS_DISPLAY_LIMIT` (UI 제한)
-  - `STATUS_COLORS` (상태별 Tailwind 클래스)
-  - `PREVIEW_TITLES` (타입별 제목)
-  - `API_DELAYS` (Mock API 딜레이)
-
-### D22: Type Guard 우선 사용
-- **결정**: `as` type assertion 대신 type guard 함수 사용
-- **근거**:
-  - 런타임 타입 검증으로 안전성 향상
-  - 예상치 못한 타입에 대한 폴백 처리 가능
-  - 컴파일 타임과 런타임 타입 일치 보장
-- **패턴**:
-  ```typescript
-  function isValidPreviewType(type: string): type is PreviewType {
-    return VALID_TYPES.includes(type as PreviewType);
-  }
-  ```
-
-### D23: Form State 통합
-- **결정**: 관련된 폼 필드를 단일 객체로 통합
-- **근거**:
-  - 여러 useState가 각각 re-render 유발하는 문제 해결
-  - 폼 초기화/리셋 로직 단순화
-  - 관련 상태의 응집도 향상
-- **패턴**: FormData 인터페이스 + updateField 헬퍼
-
-### D24: useRef for Non-UI State
-- **결정**: UI 렌더링에 영향 없는 값은 useState 대신 useRef 사용
-- **근거**:
-  - re-render에도 값 유지 (타이머 시작 시간 등)
-  - 불필요한 re-render 방지
-  - useEffect 의존성 배열 간소화
-- **주의**: UI에 반영해야 하는 값은 여전히 useState 사용
-
-### D25: Suggestions SSOT (Single Source of Truth)
-- **결정**: suggestions 데이터를 agentService에서만 관리
-- **근거**:
-  - commandStore의 defaultSuggestions 중복 제거
-  - API 연동 시 자연스러운 전환
-  - 데이터 일관성 보장
-- **구현**: MainPage useEffect에서 agentService.getSuggestions() 호출
+### D21-D25: Frontend 코드 품질 결정
+- **D21**: Constants 중앙 관리 (`constants/index.ts`)
+- **D22**: Type Guard 우선 사용 (`as` 대신)
+- **D23**: Form State 통합 (단일 formData 객체)
+- **D24**: useRef for Non-UI State (re-render 방지)
+- **D25**: Suggestions SSOT (agentService에서만 관리)
