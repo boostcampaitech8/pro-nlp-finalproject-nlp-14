@@ -64,7 +64,7 @@ services:
       - "7882:7882/udp"   # WebRTC UDP
       - "50000-50100:50000-50100/udp"  # RTC UDP 포트 범위
       - "3478:3478/udp"   # TURN UDP
-      - "443:443"         # TURN TLS (기본 HTTPS 포트)
+      - "5349:5349"       # TURN TLS (nginx 443 충돌 회피)
       - "30000-30050:30000-30050/udp"  # TURN relay 포트 범위
     volumes:
       # TURN TLS 인증서 (Let's Encrypt)
@@ -91,8 +91,8 @@ services:
         turn:
           enabled: true
           domain: ${LIVEKIT_TURN_DOMAIN:-}
-          # Docker에서는 443 포트 사용 (외부 nginx와 일치)
-          tls_port: 443
+          # 5349 포트 사용 (nginx 443 충돌 회피)
+          tls_port: 5349
           udp_port: 3478
           # relay 포트 범위 - Docker 포트 매핑과 일치해야 함
           relay_range_start: 30000
