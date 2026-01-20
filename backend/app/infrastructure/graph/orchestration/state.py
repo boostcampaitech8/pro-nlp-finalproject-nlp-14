@@ -28,5 +28,8 @@ class GraphState(TypedDict):
     executor_result: Annotated[str, operator.add]
     executed_tools: Annotated[List[Dict[str, Any]], operator.add]
 
+    # Routing 관련
+    next_node: Annotated[str, "next node to route"]
+
     # Response
     response: Annotated[str, operator.add]
