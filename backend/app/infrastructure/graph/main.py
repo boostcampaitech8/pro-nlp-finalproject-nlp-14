@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.infrastructure.graph.orchestrator import app
+from app.infrastructure.graph.orchestration import app
 
 # # 그래프를 PNG 이미지 데이터로 변환
 # try:
@@ -19,7 +19,7 @@ if __name__ == "__main__":
     import uuid
     from datetime import datetime
 
-    user_input = input("질문을 입력하세요.")
+    user_input = input("질문을 입력하세요: ")
 
     if user_input.strip():
         try:
@@ -29,6 +29,7 @@ if __name__ == "__main__":
                 "run_id": str(uuid.uuid4()),
                 "user_id": "single_run_user",
                 "executed_at": datetime.now(),
+                "executed_tools": [],  # 빈 리스트로 초기화
             }
 
             # 3. 그래프 실행 (로그가 출력됨)
@@ -36,11 +37,22 @@ if __name__ == "__main__":
             final_state = app.invoke(initial_state)
 
             # 4. 최종 응답 출력
-            print("\n" + "-"*30)
-            print(f"{final_state['response']}")
-            print("-"*30 + "\n")
+            print("\n" + "="*50)
+            print("최종 답변:")
+            print("="*50)
+            print(final_state.get('response', '응답 없음'))
+            print("="*50 + "\n")
+
+            # 디버깅용: 실행된 도구 목록
+            if final_state.get('executed_tools'):
+                print("\n실행된 도구 목록:")
+                for i, tool in enumerate(final_state['executed_tools'], 1):
+                    print(f"{i}. {tool.get('name', 'unknown')}")
+
         except Exception as e:
             print(f"실행 중 오류 발생: {e}")
+            import traceback
+            traceback.print_exc()
     else:
         print("입력된 내용이 없어 프로그램을 종료합니다.")
 
