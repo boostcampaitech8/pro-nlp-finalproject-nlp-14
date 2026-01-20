@@ -1,14 +1,16 @@
 // Spotlight 입력창 컴포넌트
 import { useRef, useEffect } from 'react';
-import { Command, Mic, Settings, Loader2 } from 'lucide-react';
+import { Command, Mic, Settings, Loader2, MessageCircle } from 'lucide-react';
 import { useCommand } from '@/app/hooks/useCommand';
 import { useCommandStore } from '@/app/stores/commandStore';
+import { useConversationStore } from '@/app/stores/conversationStore';
 import { cn } from '@/lib/utils';
 
 export function SpotlightInput() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { inputValue, setInputValue, submitCommand } = useCommand();
   const { isProcessing, isInputFocused, setInputFocused } = useCommandStore();
+  const { startConversation, addMessage } = useConversationStore();
 
   // Cmd+K 단축키 처리
   useEffect(() => {
@@ -23,9 +25,30 @@ export function SpotlightInput() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // 대화 모드로 전환하며 명령 실행
+  const handleSubmitWithConversation = () => {
+    if (!inputValue.trim() || isProcessing) return;
+
+    // 대화 모드 시작
+    startConversation();
+
+    // 사용자 메시지 추가
+    addMessage({ type: 'user', content: inputValue.trim() });
+
+    // 로딩 메시지 추가
+    addMessage({
+      type: 'agent',
+      content: '',
+      agentData: { responseType: 'loading' },
+    });
+
+    // 기존 명령 실행 (결과는 대화에 반영됨)
+    submitCommand();
+  };
+
   const handleSubmit = () => {
     if (!inputValue.trim() || isProcessing) return;
-    submitCommand();
+    handleSubmitWithConversation();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -33,6 +56,15 @@ export function SpotlightInput() {
       e.preventDefault();
       handleSubmit();
     }
+  };
+
+  // 대화 모드로 전환만 (입력 없이)
+  const handleStartConversation = () => {
+    startConversation();
+    addMessage({
+      type: 'system',
+      content: '대화를 시작합니다. 무엇이든 물어보세요.',
+    });
   };
 
   return (
@@ -73,6 +105,13 @@ export function SpotlightInput() {
           disabled={isProcessing}
         >
           <Mic className="w-4 h-4 text-white/60" />
+        </button>
+        <button
+          className="action-btn"
+          title="대화 모드"
+          onClick={handleStartConversation}
+        >
+          <MessageCircle className="w-4 h-4 text-white/60" />
         </button>
         <button
           className="action-btn"

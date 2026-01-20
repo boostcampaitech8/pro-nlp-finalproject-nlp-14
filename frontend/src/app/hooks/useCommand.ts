@@ -3,11 +3,12 @@ import { useCallback } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { usePreviewStore, type PreviewType } from '@/app/stores/previewStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
+import { useConversationStore } from '@/app/stores/conversationStore';
 import { agentService } from '@/app/services/agentService';
 import type { HistoryItem } from '@/app/types/command';
 
 // 유효한 프리뷰 타입 목록
-const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result'];
+const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result', 'timeline', 'action-items', 'branch-diff'];
 
 function isValidPreviewType(type: string): type is PreviewType {
   return VALID_PREVIEW_TYPES.includes(type as PreviewType);
@@ -41,6 +42,9 @@ export function useCommand() {
         // agentService를 통해 명령 처리
         const response = await agentService.processCommand(cmd);
 
+        // 스토어에서 최신 상태 직접 가져오기 (closure 문제 방지)
+        const { isConversationActive: isActive, updateLastAgentMessage: updateAgent, setPendingForm: setForm } = useConversationStore.getState();
+
         if (response.type === 'modal' && response.modalData) {
           // 모달 표시
           if (response.modalData.modalType === 'meeting') {
@@ -51,9 +55,28 @@ export function useCommand() {
               teamId: response.modalData.teamId,
             });
           }
+          // 대화 모드일 때 에이전트 메시지 업데이트
+          if (isActive) {
+            updateAgent({
+              content: '회의 생성 모달이 열렸습니다.',
+              agentData: { responseType: 'text' },
+            });
+          }
         } else if (response.type === 'form' && response.command) {
           // Form 표시
-          setActiveCommand(response.command);
+          if (isActive) {
+            // 대화 모드에서는 conversation store 사용
+            setForm(response.command);
+            updateAgent({
+              content: response.command.description || '아래 폼을 작성해주세요.',
+              agentData: {
+                responseType: 'form',
+                form: response.command,
+              },
+            });
+          } else {
+            setActiveCommand(response.command);
+          }
         } else {
           // 직접 결과 표시
           const historyItem: HistoryItem = {
@@ -65,6 +88,21 @@ export function useCommand() {
             status: 'success',
           };
           addHistory(historyItem);
+
+          // 대화 모드일 때 에이전트 메시지 업데이트
+          if (isActive) {
+            updateAgent({
+              content: response.message || '완료되었습니다.',
+              agentData: {
+                responseType: 'result',
+                previewType: response.previewData?.type as PreviewType,
+                previewData: response.previewData ? {
+                  title: response.previewData.title,
+                  content: response.previewData.content,
+                } : undefined,
+              },
+            });
+          }
 
           // 프리뷰 패널 업데이트
           if (response.previewData) {
@@ -96,6 +134,16 @@ export function useCommand() {
           status: 'error',
         };
         addHistory(historyItem);
+
+        // 대화 모드일 때 에러 메시지 추가 (최신 상태 가져오기)
+        const { isConversationActive: isActive, updateLastAgentMessage: updateAgent } = useConversationStore.getState();
+        if (isActive) {
+          updateAgent({
+            content: '명령 처리 중 오류가 발생했습니다.',
+            agentData: { responseType: 'text' },
+          });
+        }
+
         console.error('Command processing error:', error);
       } finally {
         setProcessing(false);
