@@ -218,3 +218,34 @@
 - **D23**: Form State 통합 (단일 formData 객체)
 - **D24**: useRef for Non-UI State (re-render 방지)
 - **D25**: Suggestions SSOT (agentService에서만 관리)
+
+### D33: Conversation Mode Architecture
+- **결정**: Spotlight 입력창을 채팅 인터페이스로 변환하는 대화 모드 구현
+- **근거**:
+  - 감성적인 대화형 UX 제공 (명령어 -> 채팅 버블)
+  - 폼 입력을 대화 흐름에 자연스럽게 통합
+  - 다양한 레이아웃 모드로 사용자 선호도 지원
+- **구현**:
+  - 스토어: `conversationStore.ts` (Zustand + persist)
+  - 메시지 타입: `user`, `agent`, `system`
+  - 레이아웃: `fullscreen` (기본값), `center-only`, `center-right-merged`
+  - 마크다운 렌더링: AgentMessageBubble에서 previewData.content를 MarkdownRenderer로 표시
+- **컴포넌트 구조**:
+  ```
+  frontend/src/app/components/conversation/
+  ├── ConversationContainer.tsx   # 메인 컨테이너
+  ├── ChatMessageList.tsx         # 메시지 목록 (자동 스크롤)
+  ├── ChatMessage.tsx             # 메시지 라우터
+  ├── UserMessageBubble.tsx       # 사용자 버블 (우측)
+  ├── AgentMessageBubble.tsx      # 에이전트 버블 (좌측)
+  ├── SystemMessageBubble.tsx     # 시스템 버블 (중앙)
+  ├── EmbeddedForm.tsx            # 채팅 내 폼
+  ├── ChatSpotlightInput.tsx      # 하단 고정 입력창
+  └── TypingIndicator.tsx         # 로딩 표시
+  ```
+- **Closure 문제 해결**:
+  - 문제: async 콜백에서 훅 값이 생성 시점에 캡처됨
+  - 해결: `useConversationStore.getState()`로 최신 상태 조회
+- **Trade-off**:
+  - 장점: 직관적 대화형 UX, 폼 통합
+  - 단점: 추가 상태 관리 복잡도

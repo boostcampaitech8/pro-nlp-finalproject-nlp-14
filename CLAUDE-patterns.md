@@ -205,6 +205,78 @@
 - **위치**: `src/app/utils/dateUtils.ts`
 - **함수**: `formatRelativeTime(date)` - 상대 시간, `formatDuration(startTime)` - Duration
 
+### Conversation Mode Pattern
+- **위치**: `src/app/stores/conversationStore.ts`
+- **상태**: `isConversationActive`, `messages`, `pendingForm`, `layoutMode`
+- **메시지 타입**: `user` (우측 정렬), `agent` (좌측 정렬), `system` (중앙 정렬)
+- **Layout 모드**:
+  - `fullscreen`: 전체 화면 채팅 (기본값, 모든 사이드바 숨김)
+  - `center-only`: 중앙 영역만 채팅 (좌/우 사이드바 유지)
+  - `center-right-merged`: 중앙+우측 병합 (좌측만 유지)
+- **컴포넌트 구조**:
+  ```
+  ConversationContainer
+  ├── ChatMessageList (자동 스크롤)
+  │   ├── UserMessageBubble
+  │   ├── AgentMessageBubble (폼/결과 포함)
+  │   └── SystemMessageBubble
+  └── ChatSpotlightInput (하단 고정)
+  ```
+
+### Zustand Closure 방지 패턴
+- **문제**: async 콜백에서 Zustand 훅으로 destructure한 값은 콜백 생성 시점 값으로 고정
+  ```typescript
+  // Bad - isActive는 콜백 생성 시점 값 (closure 캡처)
+  const { isConversationActive } = useConversationStore();
+  const handleSubmit = async () => {
+    // ... async operation
+    if (isConversationActive) { /* 항상 false일 수 있음 */ }
+  };
+  ```
+- **해결**: `store.getState()`로 실행 시점에 최신 상태 조회
+  ```typescript
+  const handleSubmit = async () => {
+    // ... async operation
+    const { isConversationActive } = useConversationStore.getState();
+    if (isConversationActive) { /* 최신 값 사용 */ }
+  };
+  ```
+- **적용 위치**: `src/app/hooks/useCommand.ts`, `src/app/hooks/useConversationCommand.ts`
+
+### Chat Bubble Animation Pattern
+- **위치**: `src/app/constants/animations.ts`
+- **Framer Motion variants**:
+  ```typescript
+  // 사용자 메시지: 오른쪽에서 슬라이드
+  userMessage: { initial: { x: 20, opacity: 0 }, animate: { x: 0, opacity: 1 } }
+
+  // 에이전트 메시지: 왼쪽에서 슬라이드
+  agentMessage: { initial: { x: -20, opacity: 0 }, animate: { x: 0, opacity: 1 } }
+  ```
+- **Glass Morphism 버블 스타일**: `glass-card` 클래스 적용
+
+### Chat Bubble Markdown Rendering Pattern
+- **위치**: `src/app/components/conversation/AgentMessageBubble.tsx`
+- **용도**: 에이전트 응답에서 마크다운 콘텐츠를 채팅 버블 내에서 렌더링
+- **조건**: `agentData.responseType === 'result' && agentData.previewData?.content`
+- **컴포넌트**: `MarkdownRenderer` (src/components/ui/MarkdownRenderer.tsx) 재사용
+- **스타일**: `.chat-bubble-markdown` 클래스 (src/index.css)
+  - 어두운 배경에 맞는 밝은 텍스트 색상
+  - h2: 하단 보더 구분선, h3: mit-primary 색상 강조
+  - 리스트 마커: mit-primary 색상
+  - 코드, 인용문, 링크 등 스타일 포함
+- **패턴**:
+  ```tsx
+  {agentData?.responseType === 'result' && agentData.previewData?.content ? (
+    <MarkdownRenderer
+      content={agentData.previewData.content}
+      className="chat-bubble-markdown"
+    />
+  ) : (
+    message.content && <p>{message.content}</p>
+  )}
+  ```
+
 ### Form State Consolidation Pattern
 - **용도**: 여러 useState를 단일 formData 객체로 통합, `updateField<K>` 헬퍼 사용
 

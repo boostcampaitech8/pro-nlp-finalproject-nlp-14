@@ -31,6 +31,18 @@
 > 최근 작업 기록 (이전 기록: CLAUDE-archived-worklog.md)
 
 ```
+[2026-01-21] Spotlight Chat-like Conversation System 구현 (MIT-9)
+- 기능: 명령 실행 시 입력창이 하단으로 이동, 대화 버블로 상호작용
+- 레이아웃 모드: center-only, fullscreen, center-right-merged (기본값: fullscreen)
+- 컴포넌트: ConversationContainer, ChatMessageList, UserMessageBubble, AgentMessageBubble 등
+- 스토어: conversationStore (isConversationActive, messages, pendingForm, layoutMode)
+- 버그 수정: React closure 문제로 agent message 로딩 상태 고착
+  - 원인: Zustand 훅에서 destructure한 값이 async 콜백 생성 시점에 캡처됨
+  - 수정: useConversationStore.getState()로 최신 상태 직접 조회
+- 채팅 버블 마크다운 렌더링: AgentMessageBubble에서 previewData.content를 마크다운으로 표시
+  - MarkdownRenderer 컴포넌트 재사용
+  - 어두운 배경용 스타일: .chat-bubble-markdown (index.css)
+
 [2026-01-20] LiveKit 웹훅 서명 검증 및 녹음 생성 버그 수정
 - 문제: 회의 종료 후 녹음 레코드가 DB에 생성되지 않음
 - 원인 1: MessageToDict(preserving_proto_field_name=True)가 snake_case 출력

@@ -201,20 +201,39 @@ mit/
 ### Frontend - Spotlight Service (src/app/)
 | 파일 | 역할 |
 |------|------|
-| `app/layouts/MainLayout.tsx` | 3-column 레이아웃 (280px-flex-400px) |
-| `app/pages/MainPage.tsx` | 메인 서비스 페이지 |
-| `app/components/spotlight/SpotlightInput.tsx` | 명령어 입력창 (자동완성) |
+| `app/layouts/MainLayout.tsx` | 3-column 레이아웃 (280px-flex-400px), 대화 모드 레이아웃 전환 |
+| `app/pages/MainPage.tsx` | 메인 서비스 페이지, 대화/일반 모드 조건부 렌더링 |
+| `app/components/spotlight/SpotlightInput.tsx` | 명령어 입력창, 대화 모드 트리거 |
+| `app/components/conversation/` | 채팅 대화 모드 컴포넌트 (아래 참조) |
 | `app/components/sidebar/LeftSidebar.tsx` | 좌측 사이드바 (네비게이션, 세션) |
 | `app/components/sidebar/Navigation.tsx` | 팀 목록, 메뉴 |
 | `app/components/sidebar/CurrentSession.tsx` | 현재 회의 상태 |
 | `app/components/meeting/MeetingModal.tsx` | 회의 생성 모달 |
-| `app/hooks/useCommand.ts` | 명령어 실행 훅 |
+| `app/hooks/useCommand.ts` | 명령어 실행 훅 (대화 모드 연동) |
+| `app/hooks/useConversationCommand.ts` | 대화 모드 전용 명령 처리 훅 |
 | `app/services/agentService.ts` | 명령어 매칭/처리 |
 | `app/stores/commandStore.ts` | 명령어 입력/히스토리 상태 |
+| `app/stores/conversationStore.ts` | 대화 모드 상태 (메시지, 레이아웃 모드) |
 | `app/stores/meetingModalStore.ts` | 회의 모달 상태 |
 | `app/stores/previewStore.ts` | 미리보기 패널 상태 |
+| `app/types/conversation.ts` | 대화 모드 타입 (Message, LayoutMode) |
 | `app/constants/index.ts` | 상수 (HISTORY_LIMIT, STATUS_COLORS, API_DELAYS) |
+| `app/constants/layoutConfig.ts` | 레이아웃 모드 설정 |
+| `app/constants/animations.ts` | Framer Motion variants |
 | `app/utils/dateUtils.ts` | 날짜 유틸 (formatRelativeTime, formatDuration) |
+
+### Frontend - Conversation Components (src/app/components/conversation/)
+| 파일 | 역할 |
+|------|------|
+| `ConversationContainer.tsx` | 대화 모드 메인 컨테이너 |
+| `ChatMessageList.tsx` | 메시지 목록 (자동 스크롤) |
+| `ChatMessage.tsx` | 메시지 타입별 라우터 |
+| `UserMessageBubble.tsx` | 사용자 메시지 버블 (우측 정렬) |
+| `AgentMessageBubble.tsx` | 에이전트 응답 버블 (좌측, 폼/결과 포함) |
+| `SystemMessageBubble.tsx` | 시스템 메시지 (중앙 정렬) |
+| `EmbeddedForm.tsx` | 채팅 내 임베디드 폼 |
+| `ChatSpotlightInput.tsx` | 하단 고정 입력창, 레이아웃 모드 전환 |
+| `TypingIndicator.tsx` | 타이핑/로딩 인디케이터 |
 
 ### Frontend - Meeting Room (src/)
 | 파일 | 역할 |
