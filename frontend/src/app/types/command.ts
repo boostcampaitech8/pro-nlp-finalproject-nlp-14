@@ -21,13 +21,15 @@ export interface ActiveCommand {
   icon?: string;
 }
 
+export type HistoryStatus = 'success' | 'error' | 'pending';
+
 export interface HistoryItem {
   id: string;
   command: string;
   result: string;
   timestamp: Date;
   icon: string;
-  status: 'success' | 'error' | 'pending';
+  status: HistoryStatus;
 }
 
 export interface Suggestion {

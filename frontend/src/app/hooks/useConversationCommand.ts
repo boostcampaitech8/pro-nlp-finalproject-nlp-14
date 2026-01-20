@@ -5,14 +5,8 @@ import { useCommandStore } from '@/app/stores/commandStore';
 import { usePreviewStore, type PreviewType } from '@/app/stores/previewStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { agentService } from '@/app/services/agentService';
-import type { HistoryItem } from '@/app/types/command';
-
-// 유효한 프리뷰 타입 목록
-const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result', 'timeline', 'action-items', 'branch-diff'];
-
-function isValidPreviewType(type: string): type is PreviewType {
-  return VALID_PREVIEW_TYPES.includes(type as PreviewType);
-}
+import { updatePreviewStore } from '@/app/utils/previewUtils';
+import { createSuccessHistoryItem } from '@/app/utils/historyUtils';
 
 export function useConversationCommand() {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -91,32 +85,11 @@ export function useConversationCommand() {
 
           // 프리뷰 패널 업데이트
           if (response.previewData) {
-            const previewType = response.previewData.type;
-            if (isValidPreviewType(previewType)) {
-              setPreview(previewType, {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            } else {
-              setPreview('command-result', {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            }
+            updatePreviewStore(setPreview, response.previewData);
           }
 
           // 히스토리에도 추가
-          const historyItem: HistoryItem = {
-            id: `history-${Date.now()}`,
-            command,
-            result: response.message || '완료',
-            timestamp: new Date(),
-            icon: '✅',
-            status: 'success',
-          };
-          addHistory(historyItem);
+          addHistory(createSuccessHistoryItem(command, response.message || '완료'));
         }
       } catch (error) {
         // 에러 처리
@@ -182,23 +155,18 @@ export function useConversationCommand() {
 
       // 프리뷰 업데이트
       if (response.previewData) {
-        setPreview('command-result', {
-          title: response.previewData.title,
-          content: response.previewData.content,
-          createdAt: new Date().toISOString(),
+        updatePreviewStore(setPreview, {
+          ...response.previewData,
+          type: 'command-result',
         });
       }
 
       // 히스토리 추가
-      const historyItem: HistoryItem = {
-        id: `history-${Date.now()}`,
-        command: pendingForm.title,
-        result: response.message || `${pendingForm.title} 완료`,
-        timestamp: new Date(),
-        icon: pendingForm.icon || '✅',
-        status: 'success',
-      };
-      addHistory(historyItem);
+      addHistory(createSuccessHistoryItem(
+        pendingForm.title,
+        response.message || `${pendingForm.title} 완료`,
+        pendingForm.icon
+      ));
 
       setPendingForm(null);
     } catch (error) {

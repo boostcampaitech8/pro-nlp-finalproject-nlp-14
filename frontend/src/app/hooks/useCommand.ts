@@ -5,14 +5,8 @@ import { usePreviewStore, type PreviewType } from '@/app/stores/previewStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { useConversationStore } from '@/app/stores/conversationStore';
 import { agentService } from '@/app/services/agentService';
-import type { HistoryItem } from '@/app/types/command';
-
-// 유효한 프리뷰 타입 목록
-const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result', 'timeline', 'action-items', 'branch-diff'];
-
-function isValidPreviewType(type: string): type is PreviewType {
-  return VALID_PREVIEW_TYPES.includes(type as PreviewType);
-}
+import { updatePreviewStore } from '@/app/utils/previewUtils';
+import { createSuccessHistoryItem, createErrorHistoryItem } from '@/app/utils/historyUtils';
 
 export function useCommand() {
   const {
@@ -79,15 +73,7 @@ export function useCommand() {
           }
         } else {
           // 직접 결과 표시
-          const historyItem: HistoryItem = {
-            id: `history-${Date.now()}`,
-            command: cmd,
-            result: response.message || '완료',
-            timestamp: new Date(),
-            icon: '✅',
-            status: 'success',
-          };
-          addHistory(historyItem);
+          addHistory(createSuccessHistoryItem(cmd, response.message || '완료'));
 
           // 대화 모드일 때 에이전트 메시지 업데이트
           if (isActive) {
@@ -106,34 +92,12 @@ export function useCommand() {
 
           // 프리뷰 패널 업데이트
           if (response.previewData) {
-            const previewType = response.previewData.type;
-            if (isValidPreviewType(previewType)) {
-              setPreview(previewType, {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            } else {
-              console.warn(`Unknown preview type: ${previewType}, falling back to command-result`);
-              setPreview('command-result', {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            }
+            updatePreviewStore(setPreview, response.previewData);
           }
         }
       } catch (error) {
         // 에러 처리
-        const historyItem: HistoryItem = {
-          id: `history-${Date.now()}`,
-          command: cmd,
-          result: '명령 처리 중 오류가 발생했습니다.',
-          timestamp: new Date(),
-          icon: '❌',
-          status: 'error',
-        };
-        addHistory(historyItem);
+        addHistory(createErrorHistoryItem(cmd));
 
         // 대화 모드일 때 에러 메시지 추가 (최신 상태 가져오기)
         const { isConversationActive: isActive, updateLastAgentMessage: updateAgent } = useConversationStore.getState();
@@ -174,36 +138,23 @@ export function useCommand() {
         fieldValues
       );
 
-      const historyItem: HistoryItem = {
-        id: `history-${Date.now()}`,
-        command: activeCommand.title,
-        result: response.message || `${activeCommand.title} 완료`,
-        timestamp: new Date(),
-        icon: activeCommand.icon || '✅',
-        status: 'success',
-      };
-      addHistory(historyItem);
+      addHistory(createSuccessHistoryItem(
+        activeCommand.title,
+        response.message || `${activeCommand.title} 완료`,
+        activeCommand.icon
+      ));
 
       // 프리뷰 업데이트
       if (response.previewData) {
-        setPreview('command-result', {
-          title: response.previewData.title,
-          content: response.previewData.content,
-          createdAt: new Date().toISOString(),
+        updatePreviewStore(setPreview, {
+          ...response.previewData,
+          type: 'command-result',
         });
       }
 
       clearActiveCommand();
     } catch (error) {
-      const historyItem: HistoryItem = {
-        id: `history-${Date.now()}`,
-        command: activeCommand.title,
-        result: '명령 실행 중 오류가 발생했습니다.',
-        timestamp: new Date(),
-        icon: '❌',
-        status: 'error',
-      };
-      addHistory(historyItem);
+      addHistory(createErrorHistoryItem(activeCommand.title, '명령 실행 중 오류가 발생했습니다.'));
       console.error('Form submission error:', error);
       clearActiveCommand();
     }
