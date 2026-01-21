@@ -1,12 +1,12 @@
 import logging
 
-from app.infrastructure.graph.orchestration.state import GraphState
+from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
 
 
-def executor(state: GraphState):
+def executor(state: OrchestrationState):
     """실제 도구를 실행하는 노드"""
     logger.info("실행 단계 진입")
 
