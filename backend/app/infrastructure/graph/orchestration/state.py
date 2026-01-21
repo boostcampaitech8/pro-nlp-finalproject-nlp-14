@@ -1,35 +1,32 @@
 import datetime
 import operator
-from typing import Annotated, Any, Dict, List, TypedDict
+from typing import Annotated, List, TypedDict
 
+from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
 # State 정의
-class GraphState(TypedDict):
+class OrchestrationState(TypedDict):
     run_id: Annotated[str, "run_id"]
     executed_at: Annotated[datetime.datetime, "current_time"]
 
-    # 주의: add_messages는 리스트 타입에 사용하는 것이 일반적입니다.
-    query: Annotated[str, add_messages]
+    # 채팅 메시지
+    messages: Annotated[List[BaseMessage], add_messages]
     user_id: Annotated[str, "user_id"]
 
     # Planning 관련
     plan: Annotated[str, add_messages]
-    toolcalls: Annotated[str, "tool signal"]  # "TOOL_REQUIRED" or ""
-
-    # Analysis 관련
-    analysis: Annotated[str, add_messages]
-    has_more_tasks: Annotated[bool, "has more tasks"]
-    next_action: Annotated[str, add_messages]
+    need_tools: Annotated[bool, "tools needed"]  # 도구 필요 여부
 
     # Tool execution 관련
-    tool_to_execute: Annotated[Dict[str, Any], "tool to execute"]
-    executor_result: Annotated[str, operator.add]
-    executed_tools: Annotated[List[Dict[str, Any]], operator.add]
+    tool_results: Annotated[str, operator.add]  # mit-Tools 실행 결과
+    retry_count: Annotated[int, "retry count"]  # 재시도 횟수
 
-    # Routing 관련
-    next_node: Annotated[str, "next node to route"]
+    # Evaluation 관련
+    evaluation: Annotated[str, add_messages]  # 평가 내용
+    evaluation_status: Annotated[str, "evaluation status"]  # "retry", "success", "replanning"
+    evaluation_reason: Annotated[str, add_messages]  # 평가 이유
 
     # Response
     response: Annotated[str, operator.add]
