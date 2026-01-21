@@ -10,6 +10,23 @@
 
 ---
 
+## 목차
+
+- [1. 의미론적 네이밍 규칙](#1-의미론적-네이밍-규칙)
+- [2. 서브그래프/워크플로우 네이밍](#2-서브그래프워크플로우-네이밍)
+- [3. State 필드 네이밍](#3-state-필드-네이밍)
+- [4. 클래스/타입 네이밍](#4-클래스타입-네이밍)
+- [5. 파일명 규칙](#5-파일명-규칙)
+- [6. 네이밍 요약](#6-네이밍-요약)
+- [7. 노드 구현 규칙](#7-노드-구현-규칙)
+- [8. 노드 계약(Contract) 규칙](#8-노드-계약contract-규칙)
+- [9. 비동기 규칙](#9-비동기-규칙)
+- [10. 로깅 규칙](#10-로깅-규칙)
+- [11. 타입 힌트 규칙](#11-타입-힌트-규칙)
+- [12. import 규칙](#12-import-규칙)
+
+---
+
 ## 1. 의미론적 네이밍 규칙
 
 ### 1.1 노드 함수명 원칙
@@ -424,4 +441,33 @@ from langgraph.graph.state import CompiledStateGraph
 
 def get_graph(*, checkpointer=None) -> CompiledStateGraph:
     ...
+```
+
+---
+
+## 12. import 규칙
+
+### 12.1 기본 원칙
+
+- 내부 모듈은 `app` 패키지를 루트로 한 절대 경로 import를 사용한다.
+- 상대 경로 import는 지양한다.
+
+### 12.2 예시
+
+```python
+# 표준 라이브러리
+import logging
+from typing import Any
+
+# 서드파티
+from pydantic import BaseModel
+
+# 내부 모듈 (app 루트)
+from app.core.config import get_settings
+from app.services.auth_service import AuthService
+```
+
+```python
+# Bad - 상대 경로
+from ..services.auth_service import AuthService  # X
 ```
