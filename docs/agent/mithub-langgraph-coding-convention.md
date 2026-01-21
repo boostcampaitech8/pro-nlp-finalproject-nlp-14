@@ -19,6 +19,7 @@
 - [5. 파일명 규칙](#5-파일명-규칙)
 - [6. 네이밍 요약](#6-네이밍-요약)
 - [7. 노드 구현 규칙](#7-노드-구현-규칙)
+  - [7.2 라우팅 함수 규칙](#72-라우팅-함수-규칙)
 - [8. 노드 계약(Contract) 규칙](#8-노드-계약contract-규칙)
 - [9. 비동기 규칙](#9-비동기-규칙)
 - [10. 로깅 규칙](#10-로깅-규칙)
@@ -77,13 +78,15 @@
 - extract_action_items_from_transcript
 ```
 
-### 1.5 특수 노드 함수 네이밍
+### 1.5 특수 함수 네이밍
 
-| 노드 유형 | 네이밍 패턴 | 예시 |
+| 함수 유형 | 네이밍 패턴 | 예시 |
 |----------|-----------|-----|
-| **라우터 노드** | `route_*`, `decide_*` | `route_intent`, `decide_next_action` |
+| **라우팅 함수** | `route_*`, `decide_*` | `route_intent`, `decide_next_action` |
 | **검증 노드** | `validate_*`, `verify_*` | `validate_input`, `verify_permissions` |
 | **폴백 노드** | `fallback_*`, `handle_*_error` | `fallback_generate`, `handle_retrieval_error` |
+
+> **참고**: 라우팅 함수는 노드로 등록하지 않고 `conditional_edge`에 직접 연결한다. (7.2 참조)
 
 ---
 
@@ -112,6 +115,7 @@ workflows/
 ### 2.2 그래프 등록명 (add_node)
 
 > **원칙**: 행위자 노드는 역할 중심 명사로 등록하고, 시스템(서브그래프)은 디렉토리명(명사)을 그대로 사용
+> **원칙**: 라우팅 함수는 노드로 등록하지 않고 `conditional_edge`에 직접 연결한다. (7.2 참조)
 
 ```python
 # connect.py
@@ -122,13 +126,18 @@ builder.add_node("mit_search", mit_search_graph)
 builder.add_node("mit_summary", mit_summary_graph)
 
 # Good - 행위자(노드)는 역할 중심 명사
-builder.add_node("intent_router", route_intent)
 builder.add_node("planner", create_plan)
 builder.add_node("generator", generate_answer)
+
+# Good - 라우팅은 conditional_edge에 직접 연결
+builder.add_conditional_edges("planner", route_intent)
 
 # Bad - 시스템을 행위자처럼 등록
 builder.add_node("rager", rag_graph)  # X
 builder.add_node("mit_searcher", mit_search_graph)  # X
+
+# Bad - 라우팅을 노드로 등록
+builder.add_node("intent_router", route_intent)  # X
 ```
 
 ---
@@ -149,10 +158,13 @@ builder.add_node("mit_searcher", mit_search_graph)  # X
 
 ```python
 # OrchestrationState (루트) - prefix 없음
-class OrchestrationState(TypedDict):
-    messages: list           # 공통
-    routing: RoutingDecision # 공통
-    plan: PlanOutput         # 공통
+class OrchestrationState(state):
+    run_id: str
+    executed_at: timestamp
+    messages: Annotated[list, add_messages]
+    user_id: str         
+    toolcalls: ForToolcall[]
+    response: str
 
 # RagState (서브그래프) - rag_ prefix (디렉토리: rag/)
 class RagState(OrchestrationState):
@@ -198,7 +210,7 @@ class MitSearchState(OrchestrationState):
 class OrchestrationState(TypedDict, total=False):
     messages: list
     routing: RoutingDecision
-    plan: PlanOutput
+    plan: PlanningOutput
 
 class RagState(OrchestrationState, total=False):
     rag_query: str
@@ -211,7 +223,7 @@ class RagState(OrchestrationState, total=False):
 
 | 유형 | 패턴 | 예시 |
 |-----|------|-----|
-| **결정/결과** | `*Decision`, `*Result`, `*Output` | `RoutingDecision`, `PlanOutput` |
+| **결정/결과** | `*Decision`, `*Result`, `*Output` | `RoutingDecision`, `PlanningOutput` |
 | **데이터 객체** | 도메인 명사 | `Document`, `Utterance`, `EvidenceRef` |
 | **에러/기록** | `*Record`, `*Error` | `ErrorRecord`, `TraceRecord` |
 
@@ -222,7 +234,7 @@ class RoutingDecision(BaseModel):   # 라우팅 결정
     next: str
     reason: str
 
-class PlanOutput(BaseModel):        # 플래닝 출력
+class PlanningOutput(BaseModel):    # 플래닝 출력
     steps: list[str]
     requires_rag: bool
 
@@ -250,7 +262,7 @@ class ErrorRecord(BaseModel):       # 에러 기록
 ```
 workflows/<name>/nodes/
 ├── planning.py          # 플래닝 관련 노드들 (create_plan, refine_plan)
-├── routing.py           # 라우팅 관련 노드들 (route_intent, decide_fallback)
+├── routing.py           # 라우팅 함수들 (route_intent, decide_fallback) - conditional_edge용
 ├── answering.py         # 응답 생성 관련 노드들 (generate_answer)
 └── retrieval.py         # 검색 관련 노드들 (retrieve_documents)
     ├── indexing/         # 하위 모듈 (예: 인덱싱)
@@ -271,11 +283,12 @@ workflows/<name>/nodes/
 | 대상 | 패턴 | 예시 |
 |-----|------|-----|
 | 노드 함수 | `<동사>_<목적어>` | `retrieve_documents` |
-| 노드 등록명 | 역할 명사 | `planner`, `intent_router` |
+| 라우팅 함수 | `route_*`, `decide_*` | `route_intent`, `decide_next_action` |
+| 노드 등록명 | 역할 명사 | `planner`, `generator` |
 | 서브그래프 등록명 | 디렉토리명 | `rag`, `mit_search` |
 | State 클래스 | `<Name>State` | `OrchestrationState` |
 | State prefix | `<subgraph>_` | `rag_`, `mit_search_` |
-| 모델 클래스 | PascalCase | `RoutingDecision`, `PlanOutput` |
+| 모델 클래스 | PascalCase | `RoutingDecision`, `PlanningOutput` |
 
 ---
 
@@ -307,6 +320,42 @@ def route_intent(state: OrchestrationState) -> OrchestrationState:
 - 필드명 오타 시 IDE/타입 체커가 즉시 감지
 - 자동완성 지원
 - 어떤 State를 반환하는지 코드에서 명확히 표현
+
+### 7.2 라우팅 함수 규칙
+
+> **원칙**: 라우팅은 별도 노드로 등록하지 않고, `conditional_edge`에 직접 연결한다.
+
+```python
+# nodes/routing.py - 라우팅 함수 정의
+def route_intent(state: OrchestrationState) -> str:
+    """인텐트에 따라 다음 노드 결정
+
+    Contract:
+        reads: messages
+        returns: 다음 노드명 (str)
+    """
+    # 라우팅 로직
+    if needs_search(state):
+        return "rag"
+    return "generator"
+
+
+# connect.py - conditional_edge에 연결
+builder.add_conditional_edges(
+    "planner",           # 출발 노드
+    route_intent,        # 라우팅 함수
+    {
+        "rag": "rag",
+        "generator": "generator",
+    }
+)
+```
+
+**라우팅 함수 특징**:
+- 반환 타입: `str` (다음 노드명)
+- 위치: `nodes/routing.py`에 정의
+- 네이밍: `route_*`, `decide_*` 패턴 유지
+- State 변경 없음 (순수 분기 결정만 수행)
 
 ---
 
@@ -414,15 +463,15 @@ def retrieve_documents(state: RagState) -> dict:
     try:
         documents = _search(query)
         logger.info(f"검색 완료: {len(documents)}건")
-        return {"rag_documents": documents}
+        return RagState(rag_documents=documents)
 
     except ConnectionError as e:
         logger.warning(f"VectorStore 연결 실패, 빈 결과 반환: {e}")
-        return {"rag_documents": [], "errors": [...]}
+        return RagState(rag_documents=[])
 
     except Exception as e:
         logger.exception("예상치 못한 검색 오류")
-        return {"rag_documents": [], "errors": [...]}
+        return RagState(errors={"RETRIEVAL_FAILED": str(e)})
 ```
 
 ---

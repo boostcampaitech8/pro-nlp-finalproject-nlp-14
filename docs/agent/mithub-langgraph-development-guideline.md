@@ -60,7 +60,7 @@ backend/app/infrastructure/graph/
 
 | 디렉토리 | 역할 | 예시 |
 |---------|------|------|
-| `schema/` | 전역 Pydantic 모델 정의 | `PlanOutput`, `RoutingDecision` |
+| `schema/` | 전역 Pydantic 모델 정의 | `PlanningOutput`, `RoutingDecision` |
 | `utils/` | LLM, API 클라이언트 등 공통 유틸 | `get_*_llm()`, `get_embeddings()` |
 | `tools/` | 단순 함수형 도구 (그래프 아님) | `calculate()`, `format_date()` |
 | `workflows/orchestration/` | 메인 그래프 | 라우팅, 최종 응답 생성 |
@@ -96,15 +96,15 @@ Contract는 docstring 형식으로 고정한다. 상세 형식은 [MitHub LangGr
 - 외부 부작용(DB/외부 API/스토리지/웹소켓 등)과 실패 정책(재시도/폴백/라우팅 변경/에러 기록)을 함께 적는다.
 
 ```python
-# workflows/<name>/nodes/routing.py
-def route_intent(state: OrchestrationState) -> OrchestrationState:
-    """라우팅 결정
+# workflows/<name>/nodes/retrieval.py
+def retrieve_documents(state: RagState) -> RagState:
+    """관련 문서를 벡터스토어에서 검색
 
     Contract:
-        reads: messages, plan
-        writes: routing
-        side-effects: none
-        failures: -> routing.next = "fallback"
+        reads: rag_query, messages
+        writes: rag_documents
+        side-effects: VectorStore 조회
+        failures: RETRIEVAL_FAILED -> errors 기록
     """
 ```
 
@@ -133,24 +133,22 @@ def route_intent(state: OrchestrationState) -> OrchestrationState:
 **예시: State 타입 반환 + state 읽기/쓰기 최소화**
 
 ```python
-def route_intent(state: OrchestrationState) -> OrchestrationState:
-    """라우팅 결정
+def generate_answer(state: OrchestrationState) -> OrchestrationState:
+    """최종 응답 생성
 
     Contract:
-        reads: messages
-        writes: routing
-        side-effects: none
-        failures: -> routing.next = "fallback"
+        reads: messages, rag_context
+        writes: messages
+        side-effects: LLM API 호출
+        failures: GENERATION_FAILED -> errors 기록
     """
+    context = state.get("rag_context", "")
     messages = state["messages"]
-    last_msg = messages[-1].content if messages else ""
 
-    if "검색" in last_msg or "찾아" in last_msg:
-        next_node, reason = "rag", "검색 키워드 감지"
-    else:
-        next_node, reason = "generator", "일반 대화"
+    llm = get_generator_llm()
+    response = llm.invoke(build_prompt(messages, context))
 
-    return OrchestrationState(routing=RoutingDecision(next=next_node, reason=reason))
+    return OrchestrationState(messages=[response])
 ```
 
 ### 3.4 서브그래프 통합 방식 선택
@@ -167,14 +165,15 @@ def route_intent(state: OrchestrationState) -> OrchestrationState:
 ### 3.5 connect.py에 연결 추가
 
 - connect.py에는 노드 연결(엣지)만 추가한다.
-- 라우팅/판단 로직은 가능하면 노드(예: `nodes/routing.py`)로 두고, 연결부는 최대한 단순하게 유지한다.
+- 라우팅 함수는 `nodes/routing.py`에 정의하고, `conditional_edge`에 직접 연결한다. (노드로 등록하지 않음)
 
 **예시: 노드 등록 + 조건부 엣지**
 
 ```python
 # connect.py
+from .nodes.routing import route_intent
+
 builder.add_node("planner", create_plan)
-builder.add_node("intent_router", route_intent)
 builder.add_node("generator", generate_answer)
 
 # 서브그래프 등록
@@ -182,10 +181,12 @@ builder.add_node("rag", rag_graph)
 builder.add_node("mit_search", mit_search_graph)
 
 builder.add_edge(START, "planner")
-builder.add_edge("planner", "intent_router")
-builder.add_conditional_edges("intent_router",
-    lambda s: s["routing"].next,
-    {"rag": "rag", "mit_search": "mit_search", "answering": "generator"},
+
+# 라우팅 함수를 conditional_edge에 직접 연결
+builder.add_conditional_edges(
+    "planner",
+    route_intent,  # 라우팅 함수 (노드 아님)
+    {"rag": "rag", "mit_search": "mit_search", "generator": "generator"},
 )
 ```
 
@@ -281,6 +282,6 @@ def get_planner_llm() -> BaseChatModel:
 - [ ] **디렉토리명**: 명사/명사구인가?
 - [ ] **State 클래스**: `<Name>State` 형태, OrchestrationState 상속
 - [ ] **State 필드 prefix**: 서브그래프명 prefix 사용
-- [ ] **add_node 등록명**: 행위자는 역할 명사, 서브그래프는 디렉토리명인가?
+- [ ] **add_node 등록명**: 행위자는 역할 명사, 서브그래프는 디렉토리명인가? (라우팅 함수는 노드로 등록하지 않음)
 - [ ] **graph.py**: 체크포인터 없이 컴파일
 - [ ] **orchestration connect.py**: `add_node("name", graph)` 등록
