@@ -5,17 +5,17 @@ from langchain_core.messages import HumanMessage
 from app.infrastructure.graph.orchestration import app
 
 # # 그래프를 PNG 이미지 데이터로 변환
-# try:
-#     graph_image = app.get_graph().draw_mermaid_png()
+try:
+    graph_image = app.get_graph().draw_mermaid_png()
 
-#     # 파일로 저장
-#     with open("graph.png", "wb") as f:
-#         f.write(graph_image)
-#     print("성공: 'graph.png' 파일로 저장되었습니다.")
+    # 파일로 저장
+    with open("graph.png", "wb") as f:
+        f.write(graph_image)
+    print("성공: 'graph.png' 파일로 저장되었습니다.")
 
-# except Exception as e:
-#     print(f"오류 발생: {e}")
-#     print("Graphviz 등 시각화 의존성이 설치되어 있는지 확인해주세요.")
+except Exception as e:
+    print(f"오류 발생: {e}")
+    print("Graphviz 등 시각화 의존성이 설치되어 있는지 확인해주세요.")
 
 if __name__ == "__main__":
     import uuid

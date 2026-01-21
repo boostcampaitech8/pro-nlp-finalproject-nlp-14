@@ -16,7 +16,15 @@ class PlanningOutput(BaseModel):
     reasoning: str = Field(description="도구 필요 여부 판단 근거")
 
 # Planning node
-def planning(state: OrchestrationState):
+def create_plan(state: OrchestrationState):
+    """계획 수립 노드
+    
+    Contract:
+        reads: messages, retry_count, evaluation, evaluation_reason
+        writes: plan, need_tools
+        side-effects: LLM API 호출
+        failures: PLANNING_FAILED -> errors 기록
+    """
     logger.info("Planning 단계 진입")
     messages = state.get('messages', [])
     query = messages[-1].content if messages else ""

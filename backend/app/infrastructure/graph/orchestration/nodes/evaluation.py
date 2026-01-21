@@ -18,9 +18,16 @@ class EvaluationOutput(BaseModel):
     reason: str = Field(description="해당 status를 선택한 이유")
 
 
-def evaluator(state: OrchestrationState):
+def evaluate_result(state: OrchestrationState):
     """
     MIT-Tools 실행 결과를 평가하는 노드
+    
+    Contract:
+        reads: messages, plan, tool_results, retry_count
+        writes: evaluation, evaluation_status, evaluation_reason, retry_count
+        side-effects: LLM API 호출
+        failures: EVALUATION_FAILED -> errors 기록
+    
     평가 기준:
     - 원래 계획과 일치하는가?
     - 도구 실행 결과가 충분한가?

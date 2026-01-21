@@ -6,9 +6,16 @@ logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
 
 
-def mit_tools(state: OrchestrationState):
+def execute_mit_tools(state: OrchestrationState):
     """
-    MIT-Tools 노드
+    MIT-Tools 실행 노드
+    
+    Contract:
+        reads: messages, plan, retry_count
+        writes: tool_results
+        side-effects: 서브그래프 실행 (search, summary 등)
+        failures: TOOL_EXECUTION_FAILED -> errors 기록
+    
     나중에 summary, search 등 다양한 서브그래프로 구성될 예정
     현재는 pass로 구현하여 아무것도 반환하지 않음
     """

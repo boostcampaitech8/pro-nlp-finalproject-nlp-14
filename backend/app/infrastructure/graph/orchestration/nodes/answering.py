@@ -9,15 +9,22 @@ logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
 
 
-def generate_response(state: OrchestrationState):
-    """LLM으로 최종 응답을 생성하는 노드."""
+def generate_answer(state: OrchestrationState):
+    """최종 응답을 생성하는 노드
+    
+    Contract:
+        reads: messages, plan, tool_results
+        writes: response
+        side-effects: LLM API 호출
+        failures: GENERATION_FAILED -> errors 기록
+    """
     logger.info("최종 응답 생성 단계 진입")
 
     messages = state.get('messages', [])
     query = messages[-1].content if messages else ""
     plan = state.get("plan", "")
     tool_results = state.get("tool_results", "")
-
+    
     # tool_results가 있으면 추가 context로 활용
     if tool_results:
         logger.info("도구 실행 결과를 포함하여 응답 생성")
