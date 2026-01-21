@@ -338,7 +338,7 @@ def retrieve_documents(state: RagState) -> dict:
 
 ```python
 # 비동기 노드 (LLM 호출)
-async def generate_answer(state: OrchestrationState) -> dict:
+async def generate_answer(state: OrchestrationState) -> OrchestrationState:
     """응답 생성 (비동기)
 
     Contract:
@@ -348,11 +348,11 @@ async def generate_answer(state: OrchestrationState) -> dict:
     """
     llm = get_generator_llm()
     response = await llm.ainvoke(...)  # 비동기 호출
-    return {"messages": [response]}
+    return OrchestrationState(messages=[response])
 
 
 # 동기 노드 (순수 계산)
-def route_intent(state: OrchestrationState) -> dict:
+def route_intent(state: OrchestrationState) -> OrchestrationState:
     """라우팅 결정 (동기)
 
     Contract:

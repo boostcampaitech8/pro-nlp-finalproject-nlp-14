@@ -47,8 +47,8 @@
 
 - **Agent Framework:** LangGraph 채택 (상세: [mithub-langgraph-architecture.md](./mithub-langgraph-architecture.md))
 - **그래프 구조:** Orchestration(메인 그래프) + 기능별 서브그래프 방식 채택
-- **서브그래프 통합:** `add_node("name", compiled_graph)` Native Subgraph 방식 사용
-- **State 관리:** OrchestrationState를 루트 State로, 서브그래프는 이를 상속/호환
+- **서브그래프 통합:** Native Subgraph 방식 사용 (구체 구현은 Development Guideline 문서 참고)
+- **State 관리:** OrchestrationState를 루트 State로, 서브그래프는 이를 상속/호환 (구체 스키마는 Development Guideline 문서 참고)
 - **문서 관리:** 자체적으로 회의록 생산 및 관리
 
 ## 5. 미결정 사항
