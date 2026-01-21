@@ -412,23 +412,7 @@ def retrieve_documents(state: RagState) -> dict:
 
 ## 11. 타입 힌트 규칙
 
-### 11.1 TYPE_CHECKING 패턴
-
-> 순환 참조 방지를 위해 State 타입은 `TYPE_CHECKING` 블록에서 import
-
-```python
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ..state import OrchestrationState
-
-
-def create_plan(state: "OrchestrationState") -> dict:
-    """문자열 타입 힌트로 순환 참조 방지"""
-    ...
-```
-
-### 11.2 반환 타입
+### 11.1 반환 타입
 
 ```python
 # 노드 함수는 State 타입을 명시적으로 반환
