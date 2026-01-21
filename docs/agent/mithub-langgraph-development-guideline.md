@@ -27,7 +27,7 @@ Contract는 docstring 형식으로 고정한다. 상세 형식은 [MitHub LangGr
 
 ```python
 # workflows/<name>/nodes/routing.py
-def route_intent(state: "OrchestrationState") -> dict:
+def route_intent(state: OrchestrationState) -> OrchestrationState:
     """라우팅 결정
 
     Contract:
@@ -47,16 +47,16 @@ def route_intent(state: "OrchestrationState") -> dict:
 
 ### 2.3 노드 구현 (workflows/<name>/nodes/)
 
-- 노드는 가능한 한 patch(dict) 반환으로 통일한다. (state 전체 mutation 지양)
+- 노드는 명시적으로 State 타입을 사용하여 반환한다. (`<StateType>(field=value)` 형태)
 - 노드 코드는 `nodes/` 디렉토리에만 둔다. 필요 시 `nodes/<submodule>/`로 세분화한다.
   - 예: `nodes/indexing/`, `nodes/pre_retrieval/`, `nodes/retrieval/`
 - 외부 연동/초기화 로직은 `utils/`, 단순 계산/가공은 `tools/`로 분리한다.
 - 노드 네이밍/로깅/비동기/타입 규칙은 코딩 컨벤션을 따른다.
 
-**예시: patch 반환 + state 읽기/쓰기 최소화**
+**예시: State 타입 반환 + state 읽기/쓰기 최소화**
 
 ```python
-def route_intent(state: "OrchestrationState") -> dict:
+def route_intent(state: OrchestrationState) -> OrchestrationState:
     """라우팅 결정
 
     Contract:
@@ -73,7 +73,7 @@ def route_intent(state: "OrchestrationState") -> dict:
     else:
         next_node, reason = "generator", "일반 대화"
 
-    return {"routing": RoutingDecision(next=next_node, reason=reason)}
+    return OrchestrationState(routing=RoutingDecision(next=next_node, reason=reason))
 ```
 
 ### 2.4 서브그래프 통합 방식 선택
@@ -193,7 +193,7 @@ def get_planner_llm() -> BaseChatModel:
 - [ ] **동사 적절성**: 카테고리에 맞는 동사인가?
 - [ ] **Contract docstring**: reads/writes/side-effects/failures 명시
 - [ ] **에러 코드**: `UPPER_SNAKE_CASE`, `행위_결과` 형태
-- [ ] **반환**: `dict` 패치 형태
+- [ ] **반환**: `<StateType>(field=value)` 형태
 - [ ] **LLM**: `get_*_llm()` 사용
 - [ ] **환경변수**: `config.py` 경유
 

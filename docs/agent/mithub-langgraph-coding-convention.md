@@ -174,14 +174,21 @@ class MitSearchState(OrchestrationState):
 
 ### 4.1 State 클래스
 
-```
-<워크플로우명>State
+> **원칙**: State 클래스는 `total=False`로 정의하여 부분 반환(패치)을 타입 안전하게 지원한다.
 
-예시:
-- OrchestrationState
-- RagState
-- MitSearchState
+```python
+# State 정의 - total=False로 부분 반환 허용
+class OrchestrationState(TypedDict, total=False):
+    messages: list
+    routing: RoutingDecision
+    plan: PlanOutput
+
+class RagState(OrchestrationState, total=False):
+    rag_query: str
+    rag_documents: list
 ```
+
+**네이밍**: `<워크플로우명>State` (예: `OrchestrationState`, `RagState`, `MitSearchState`)
 
 ### 4.2 Pydantic 모델 (schema/models.py)
 
@@ -259,11 +266,30 @@ workflows/<name>/nodes/
 
 | 규칙 | O | X |
 |-----|---|---|
-| 반환 타입 | `dict` (패치) | 전체 state |
-| 함수 형태 | `def node(state) -> dict` | 클래스 |
+| 반환 타입 | `<StateType>(field=value)` | `{"field": value}` dict 리터럴 |
+| 함수 형태 | `def node(state) -> <StateType>` | 클래스 |
 | LLM 초기화 | `get_*_llm()` | 직접 생성 |
 | 환경변수 | `config.py` 경유 | `os.getenv()` |
 | 에러 처리 | `errors` 필드 기록 | raise |
+
+### 7.1 State 반환 규칙
+
+> **원칙**: 노드는 명시적으로 State 타입을 사용하여 반환한다. dict 리터럴 대신 `<StateType>(field=value)` 형태를 사용한다.
+
+```python
+# Good - 명시적 State 타입 사용
+def route_intent(state: OrchestrationState) -> OrchestrationState:
+    return OrchestrationState(routing=RoutingDecision(next="rag", reason="검색 필요"))
+
+# Bad - dict 리터럴 (타입 안전성 미활용)
+def route_intent(state: OrchestrationState) -> OrchestrationState:
+    return {"routing" : RoutingDecision(next="rag", reason="검색 필요")}
+```
+
+**이점**:
+- 필드명 오타 시 IDE/타입 체커가 즉시 감지
+- 자동완성 지원
+- 어떤 State를 반환하는지 코드에서 명확히 표현
 
 ---
 
@@ -272,7 +298,7 @@ workflows/<name>/nodes/
 ### 8.1 필수 주석 형식
 
 ```python
-def retrieve_documents(state: "RagState") -> dict:
+def retrieve_documents(state: RagState) -> dict:
     """관련 문서를 벡터스토어에서 검색
 
     Contract:
@@ -280,12 +306,6 @@ def retrieve_documents(state: "RagState") -> dict:
         writes: rag_documents
         side-effects: VectorStore 조회
         failures: RETRIEVAL_FAILED -> errors 기록
-
-    Args:
-        state: RAG 그래프 상태
-
-    Returns:
-        {"rag_documents": [...]} 형태의 패치
     """
 ```
 
@@ -318,7 +338,7 @@ def retrieve_documents(state: "RagState") -> dict:
 
 ```python
 # 비동기 노드 (LLM 호출)
-async def generate_answer(state: "OrchestrationState") -> dict:
+async def generate_answer(state: OrchestrationState) -> dict:
     """응답 생성 (비동기)
 
     Contract:
@@ -332,7 +352,7 @@ async def generate_answer(state: "OrchestrationState") -> dict:
 
 
 # 동기 노드 (순수 계산)
-def route_intent(state: "OrchestrationState") -> dict:
+def route_intent(state: OrchestrationState) -> dict:
     """라우팅 결정 (동기)
 
     Contract:
@@ -341,7 +361,7 @@ def route_intent(state: "OrchestrationState") -> dict:
         side-effects: none
     """
     # 단순 조건 분기, LLM 미사용
-    return {"routing": RoutingDecision(...)}
+    return OrchestrationState(routing=RoutingDecision(...))
 ```
 
 ---
@@ -370,7 +390,7 @@ logger = logging.getLogger(__name__)
 ### 10.3 예시
 
 ```python
-def retrieve_documents(state: "RagState") -> dict:
+def retrieve_documents(state: RagState) -> dict:
     query = state.get("rag_query")
     logger.info(f"문서 검색 시작: query={query[:50]}...")
 
@@ -411,9 +431,9 @@ def create_plan(state: "OrchestrationState") -> dict:
 ### 11.2 반환 타입
 
 ```python
-# 노드 함수는 항상 dict 반환
-def node_name(state: "StateType") -> dict:
-    return {"field": value}
+# 노드 함수는 State 타입을 명시적으로 반환
+def node_name(state: StateType) -> StateType:
+    return StateType(field=value)
 
 # graph.py의 get_graph는 CompiledGraph 반환
 from langgraph.graph.state import CompiledStateGraph
