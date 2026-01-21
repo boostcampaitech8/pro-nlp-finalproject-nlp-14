@@ -1,23 +1,18 @@
 from langgraph.graph import END, StateGraph
 
-from .nodes.analyzer import analyzer
-from .nodes.executor import executor
+from .nodes.evaluator import evaluator
 from .nodes.generate_response import generate_response
+from .nodes.mit_tools import mit_tools
 from .nodes.planner import planning
-from .nodes.routers import check_more_tasks, should_use_tools
-from .nodes.toolcall_generator import toolcall_generator
-from .state import GraphState
+from .state import OrchestrationState
 
 # 워크플로우 생성
-workflow = StateGraph(GraphState)
+workflow = StateGraph(OrchestrationState)
 
 # ===== 노드 등록 =====
 workflow.add_node("planning", planning)
-workflow.add_node("tool_router", should_use_tools)
-workflow.add_node("analyzer", analyzer)
-workflow.add_node("task_router", check_more_tasks)
-workflow.add_node("toolcall_generator", toolcall_generator)
-workflow.add_node("executor", executor)
+workflow.add_node("mit_tools", mit_tools)
+workflow.add_node("evaluator", evaluator)
 workflow.add_node("generate_response", generate_response)
 
 # ===== 엣지 연결 =====
@@ -25,47 +20,56 @@ workflow.add_node("generate_response", generate_response)
 # 1. 시작점: Planning
 workflow.set_entry_point("planning")
 
-# 2. Planning -> Tool Router
-workflow.add_edge("planning", "tool_router")
+# 2. Planning -> Tool Call? 라우팅 (조건부 엣지)
+#    - 도구 필요 -> mit_tools
+#    - 도구 불필요 -> generate_response
+def tool_call_router(state: OrchestrationState) -> str:
+    """도구 호출 필요 여부를 판단하는 라우터"""
+    need_tools = state.get('need_tools', False)
+    return "mit_tools" if need_tools else "generate_response"
 
-# 3. Tool Router -> 도구 필요? 분기
-#    - 도구 필요 YES -> Analyzer
-#    - 도구 필요 NO -> Generate Response
 workflow.add_conditional_edges(
-    "tool_router",
-    lambda s: s["next_node"],
+    "planning",
+    tool_call_router,
     {
-        "analyzer": "analyzer",
+        "mit_tools": "mit_tools",
         "generate_response": "generate_response"
     }
 )
 
-# 4. Analyzer -> Task Router
-workflow.add_edge("analyzer", "task_router")
+# 3. MIT-Tools -> Evaluator
+#    도구 실행 후 평가
+workflow.add_edge("mit_tools", "evaluator")
 
-# 5. Task Router -> 다음 작업 가능? 분기
-#    - 추가 작업 있음 -> Toolcall Generator
-#    - 추가 작업 없음 -> Generate Response (최종 응답)
+# 4. Evaluator -> 평가 라우팅 (조건부 엣지)
+#    - success: 최종 응답 생성
+#    - retry: 같은 도구 재실행
+#    - replanning: 계획 재수립
+def evaluation_router(state: OrchestrationState) -> str:
+    """평가 결과에 따라 다음 단계를 결정하는 라우터"""
+    status = state.get('evaluation_status', 'success')
+
+    if status == "retry":
+        return "mit_tools"
+    elif status == "replanning":
+        return "planning"
+    else:  # success
+        return "generate_response"
+
 workflow.add_conditional_edges(
-    "task_router",
-    lambda s: s["next_node"],
+    "evaluator",
+    evaluation_router,
     {
-        "toolcall_generator": "toolcall_generator",
+        "mit_tools": "mit_tools",
+        "planning": "planning",
         "generate_response": "generate_response"
     }
 )
 
-# 6. Toolcall Generator -> Executor
-#    파라미터 적절 생성 후 실행
-workflow.add_edge("toolcall_generator", "executor")
-
-# 7. Executor -> Analyzer
-#    실행 후 다시 분석으로 돌아가 추가 작업 확인
-workflow.add_edge("executor", "analyzer")
-
-# 8. Generate Response -> END
+# 5. Generate Response -> END
 #    최종 응답 생성 후 종료
 workflow.add_edge("generate_response", END)
 
 # 워크플로우 컴파일
 app = workflow.compile()
+
