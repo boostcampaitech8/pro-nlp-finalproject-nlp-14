@@ -46,11 +46,14 @@
 └──────┬──────┘     │ 1. Recording 파일 저장           │
        │            │ 2. Transcript 생성 (정제 STT)     │
        │            │ 3. Minutes 초안 생성 (Agent)      │
+       │            │ 4. Agenda 추출 (semantic matching)│
+       │            │ 5. 각 Agenda에 Decision 생성      │
        │            └──────────────────────────────────┘
        │                        │
        │                        ▼
        │              ┌──────────────────────────────────┐
        │              │ Agent가 PR 자동 오픈             │
+       │              │ - DecisionReview 생성 (각 Decision)│
        │              │ - 리뷰어 자동 지정 [BR-009]      │
        │              │ - 팀원 알림                       │
        │              └──────────────────────────────────┘
@@ -58,20 +61,22 @@
        │ PR 생성 완료
        ▼
 ┌─────────────┐     ┌──────────────────────────────────┐
-│  in_review  │────▶│ 리뷰 프로세스                     │
+│  in_review  │────▶│ Decision별 리뷰 프로세스          │
 └──────┬──────┘     │ - Comment/Suggestion 추가        │
+       │            │ - Decision별 approve/reject      │
+       │            │ - approved -> 즉시 GT 반영        │
        │            │ - Agent가 GT 대조 지원            │
-       │            │ - Discussion                     │
        │            └──────────────────────────────────┘
        │
-       │ merge() [UC-008]
-       │ (approval 조건 충족 시)
+       │ 모든 Decision 처리 완료
+       │ (approved 또는 rejected)
        ▼
 ┌─────────────┐     ┌──────────────────────────────────┐
-│  confirmed  │────▶│ GT(main) 업데이트                 │
-└─────────────┘     │ - Decision 상태 파생 갱신         │
-                    │ - 변경 이력 영구 보존             │
-                    │ - Branch 상태: merged             │
+│  confirmed  │────▶│ PR 자동 close                     │
+└─────────────┘     │ - approved Decision -> latest    │
+                    │ - rejected Decision -> rejected  │
+                    │ - GT: Knowledge graph 업데이트   │
+                    │ - Branch 상태: closed             │
                     │ - 팀원 알림                       │
                     └──────────────────────────────────┘
 ```
@@ -84,72 +89,112 @@
 | scheduled | cancelMeeting | cancelled | Host | - |
 | ongoing | endMeeting | completed | Host | - |
 | ongoing | cancelMeeting | cancelled | Host | - |
-| completed | PR 생성 | in_review | System(Agent) | Transcript 생성 완료 |
-| in_review | merge | confirmed | User/Agent | Approval 조건 충족 |
-| in_review | closePR | completed | Host/Admin | - |
+| completed | PR 생성 | in_review | System(Agent) | Transcript, Agenda 추출 완료 |
+| in_review | 모든 Decision 처리 | confirmed | System | 모든 DecisionReview가 approved 또는 rejected |
+| in_review | closePR (수동) | completed | Host/Admin | 예외 상황 |
 
 ---
 
-## WF-002: PR 리뷰 플로우
+## WF-002: PR 및 Decision 리뷰 플로우
 
-### 상태 다이어그램
+### PR 상태 다이어그램
 
 ```
                     ┌─────────────────────────┐
                     │         open            │
                     │    (PR 생성 직후)        │
+                    │  DecisionReview 생성됨  │
                     └───────────┬─────────────┘
                                 │
-                    ┌───────────┼───────────┐
-                    │           │           │
-                    ▼           ▼           ▼
-              ┌──────────┐ ┌──────────┐ ┌──────────┐
-              │ comment  │ │ approve  │ │  close   │
-              │ 추가     │ │ 추가     │ │ (취소)   │
-              └────┬─────┘ └────┬─────┘ └────┬─────┘
-                   │            │            │
-                   │            ▼            │
-                   │      ┌──────────┐       │
-                   │      │필수 승인 │       │
-                   │      │충족 여부 │       │
-                   │      └────┬─────┘       │
-                   │           │             │
-                   │     ┌─────┴─────┐       │
-                   │     │           │       │
-                   │   Yes          No       │
-                   │     │           │       │
-                   │     ▼           │       │
-                   │ ┌──────────┐    │       │
-                   │ │ approved │    │       │
-                   │ │(merge 가능)│  │       │
-                   │ └────┬─────┘    │       │
-                   │      │          │       │
-                   │      ▼          │       │
-                   │ ┌──────────┐    │       │
-                   └▶│ in_review│◀───┘       │
-                     │(리뷰 진행중)│           │
-                     └────┬─────┘            │
-                          │                  │
-                    ┌─────┴─────┐            │
-                    │           │            │
-                  merge       close          │
-                    │           │            │
-                    ▼           ▼            ▼
-              ┌──────────┐ ┌──────────────────────┐
-              │  merged  │ │       closed         │
-              │  (확정)  │ │   (취소/거부)         │
-              └──────────┘ └──────────────────────┘
+                                ▼
+                    ┌─────────────────────────┐
+                    │       in_review         │
+                    │  (Decision별 리뷰 진행)  │
+                    └───────────┬─────────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                 │
+              ▼                 ▼                 ▼
+        ┌──────────┐      ┌──────────┐      ┌──────────┐
+        │Decision A│      │Decision B│      │Decision C│
+        │ approved │      │ rejected │      │ pending  │
+        │ -> GT    │      │          │      │          │
+        └──────────┘      └──────────┘      └──────────┘
+              │                 │                 │
+              └─────────────────┼─────────────────┘
+                                │
+                                ▼
+                    ┌─────────────────────────┐
+                    │ 모든 Decision 처리 완료? │
+                    └───────────┬─────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │                       │
+                   Yes                     No
+                    │                       │
+                    ▼                       │
+              ┌──────────┐                  │
+              │  closed  │                  │
+              │ (자동)   │◀─────────────────┘
+              └──────────┘        (계속 리뷰 진행)
+```
+
+### Decision 리뷰 상태 다이어그램
+
+```
+              ┌──────────┐
+              │ pending  │ (DecisionReview 생성 직후)
+              └────┬─────┘
+                   │
+         ┌─────────┼─────────┐
+         │         │         │
+         ▼         ▼         ▼
+   ┌──────────┐ ┌──────────┐
+   │ comment  │ │ approve  │
+   │ 추가     │ │ 요청     │
+   └────┬─────┘ └────┬─────┘
+        │            │
+        │            ▼
+        │      ┌──────────┐
+        │      │필수 승인 │
+        │      │충족 여부 │
+        │      └────┬─────┘
+        │           │
+        │     ┌─────┴─────┐
+        │     │           │
+        │   Yes          No
+        │     │           │
+        │     ▼           │
+        │ ┌──────────┐    │
+        │ │ approved │    │
+        │ │-> GT 반영│    │
+        │ │ (즉시)   │    │
+        │ └──────────┘    │
+        │                 │
+        └────────┬────────┘
+                 │
+                 ▼
+           ┌──────────┐
+           │ rejected │ (reject 요청 시)
+           │          │
+           └──────────┘
 ```
 
 ### PR 상태 정의
 
 | 상태 | 설명 | 가능한 액션 |
 |------|------|------------|
-| open | PR 생성 직후 | comment, approve, close |
-| in_review | 리뷰 진행 중 | comment, approve, close, merge(조건부) |
-| approved | 필수 승인 충족 | merge, close |
-| merged | GT 반영 완료 | - (최종 상태) |
-| closed | 취소/거부 | - (최종 상태) |
+| open | PR 생성 직후 | Decision 리뷰 시작 |
+| in_review | Decision별 리뷰 진행 중 | comment, Decision approve/reject |
+| closed | 모든 Decision 처리 완료 | - (최종 상태) |
+
+### DecisionReview 상태 정의
+
+| 상태 | 설명 | 효과 |
+|------|------|------|
+| pending | 리뷰 대기 중 | Decision 상태: draft |
+| approved | 승인됨 | Decision 상태: latest, 즉시 GT 반영 |
+| rejected | 거부됨 | Decision 상태: rejected |
 
 ---
 
@@ -173,18 +218,23 @@
     ┌────────┼────────┐                           │
     │        │        │                           │
     ▼        ▼        ▼                           ▼
-[Minutes  [Decision [PR 생성]                 [Meeting
- 수정]     추가]     │                         취소]
+[Minutes  [Agenda   [PR 생성]                 [Meeting
+ 수정]    /Decision  │                         취소]
+          추출]      │                           │
     │        │       │                           │
     └────────┴───────┘                           │
              │                                    │
              ▼                                    │
-        PR merge                                  │
+     Decision별 approve/reject                    │
+     (부분 GT 반영)                                │
+             │                                    │
+             ▼                                    │
+     모든 Decision 처리 완료                        │
              │                                    │
              ▼                                    ▼
         ┌──────────┐                        ┌──────────┐
-        │  merged  │                        │  closed  │
-        │ (병합됨) │                        │ (폐기)   │
+        │  closed  │                        │  closed  │
+        │ (완료)   │                        │ (폐기)   │
         └──────────┘                        └──────────┘
              │                                    │
              │                                    │
@@ -213,30 +263,31 @@ Decision 조회 요청
         │
         ▼
 ┌───────────────────────────────────────┐
-│ 해당 Decision이 포함된 PR 조회         │
+│ 해당 Decision의 DecisionReview 조회    │
 └─────────────────┬─────────────────────┘
                   │
         ┌─────────┴─────────┐
         │                   │
         ▼                   ▼
-   PR 없음            PR 있음
+  DecisionReview      DecisionReview
+     없음                 있음
         │                   │
         ▼                   ▼
     [draft]        ┌────────────────────┐
-                   │   PR.status 확인   │
+                   │DecisionReview.status│
+                   │ 확인               │
                    └─────────┬──────────┘
                              │
         ┌────────────────────┼────────────────────┐
         │                    │                    │
         ▼                    ▼                    ▼
-   open/in_review        merged               closed
+     pending             approved              rejected
         │                    │                    │
         ▼                    │                    ▼
-    [draft]                  │               [outdated]
-                             │               (폐기된 제안)
+    [draft]                  │               [rejected]
                              ▼
                    ┌──────────────────────┐
-                   │ 같은 topic의 다른    │
+                   │ 같은 Agenda의 다른   │
                    │ Decision 존재 확인   │
                    └─────────┬────────────┘
                              │
@@ -253,27 +304,37 @@ Decision 조회 요청
 
 ```python
 def derive_decision_status(decision):
-    pr = get_pr_for_decision(decision)
+    decision_review = get_decision_review_for_decision(decision)
 
-    if pr is None:
+    if decision_review is None:
         return 'draft'
 
-    if pr.status in ['open', 'in_review', 'approved']:
+    if decision_review.status == 'pending':
         return 'draft'
 
-    if pr.status == 'closed':
-        return 'outdated'
+    if decision_review.status == 'rejected':
+        return 'rejected'
 
-    if pr.status == 'merged':
-        # 같은 topic의 더 최신 decision이 있는지 확인
-        newer_decisions = get_decisions_for_topic(
-            decision.topic,
-            merged_after=pr.merged_at
+    if decision_review.status == 'approved':
+        # 같은 Agenda의 더 최신 decision이 있는지 확인
+        newer_decisions = get_decisions_for_agenda(
+            decision.agenda_id,
+            approved_after=decision_review.approved_at
         )
         if newer_decisions:
             return 'outdated'
         return 'latest'
 ```
+
+### 상태 전이 규칙
+
+| 현재 상태 | 이벤트 | 다음 상태 |
+|-----------|--------|-----------|
+| draft | Decision approve | latest |
+| draft | Decision reject | rejected |
+| latest | 새 Decision approved (같은 Agenda) | outdated |
+| rejected | - | - (최종 상태, 재제안 시 새 Decision 생성) |
+| outdated | - | - (최종 상태) |
 
 ---
 
@@ -332,15 +393,86 @@ def derive_decision_status(decision):
 
 ---
 
+## WF-006: Agenda 식별 플로우
+
+### Agenda 추출 및 식별 로직
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Agenda 식별 플로우                             │
+└─────────────────────────────────────────────────────────────────┘
+
+회의 종료 -> Minutes 생성
+        │
+        ▼
+┌───────────────────────────────────────┐
+│ Agent가 Minutes에서 안건 추출          │
+│ - 논의된 주제 식별                      │
+│ - 각 주제에 대한 결정 내용 추출          │
+└─────────────────┬─────────────────────┘
+                  │
+                  ▼ (각 추출된 안건에 대해)
+┌───────────────────────────────────────┐
+│ 기존 Agenda와 semantic matching        │
+│ - 팀의 모든 Agenda 임베딩 검색          │
+│ - 유사도 계산                          │
+└─────────────────┬─────────────────────┘
+                  │
+        ┌─────────┴─────────┐
+        │                   │
+        ▼                   ▼
+  유사 Agenda         유사 Agenda
+    발견                 없음
+        │                   │
+        ▼                   ▼
+┌──────────────────┐ ┌──────────────────┐
+│ 사용자 확인 요청  │ │ 새 Agenda 생성   │
+│ "기존 안건과     │ │ - topic 저장     │
+│  연결할까요?"    │ │ - embedding 생성 │
+└────────┬─────────┘ └────────┬─────────┘
+         │                    │
+    ┌────┴────┐               │
+    │         │               │
+   예        아니오            │
+    │         │               │
+    ▼         ▼               │
+[기존      [새 Agenda         │
+ Agenda     생성]             │
+ 연결]        │               │
+    │         └───────────────┤
+    │                         │
+    └─────────────┬───────────┘
+                  │
+                  ▼
+┌───────────────────────────────────────┐
+│ Decision 생성                          │
+│ - agenda_id 연결                       │
+│ - content, context 저장               │
+│ - transcript_refs 연결                │
+└───────────────────────────────────────┘
+```
+
+### Semantic Matching 규칙
+
+| 유사도 | 처리 |
+|--------|------|
+| >= threshold (TBD) | 기존 Agenda 후보로 표시, 사용자 확인 |
+| < threshold | 새 Agenda 생성 |
+
+---
+
 ## 프로세스 규칙 요약
 
 | 규칙 | 설명 | 참조 |
 |------|------|------|
-| 회의 중 merge 금지 | 회의 진행 중 PR merge 권장하지 않음 | BR-001 |
+| 회의 중 Decision approve 금지 | 회의 진행 중 Decision approve 권장하지 않음 | BR-001 |
 | Branch 자동 생성 | 회의 시작 시 Branch 자동 생성 | UC-003 |
-| PR 자동 생성 | 회의 종료 후 Agent가 PR 자동 생성 | UC-004 |
-| 상태 파생 | Decision 상태는 PR 상태에서 파생 | INV-002 |
-| GT 불변성 | GT는 PR merge로만 변경 | INV-003 |
+| PR 자동 생성 | 회의 종료 후 Agent가 PR 자동 생성 (Agenda/Decision 추출 포함) | UC-004 |
+| 상태 파생 | Decision 상태는 DecisionReview 상태에서 파생 | INV-002 |
+| GT 불변성 | GT는 Decision approve로만 변경 | INV-003 |
+| 부분 merge | PR 내 Decision별 독립적 approve/reject 가능 | BR-016 |
+| 자동 close | 모든 Decision 처리 시 PR 자동 close | BR-017 |
+| Agenda 식별 | AI semantic matching으로 동일 Agenda 식별 | BR-015 |
 
 ---
 

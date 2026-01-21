@@ -12,8 +12,17 @@
 
 - **정의**: 팀이 현재 합의한 최신 결정의 집합
 - **비유**: Git의 main 브랜치
-- **특성**: 유기적 관계(지식 그래프)로 구축, 단순 나열 아님
-- **관계**: PR merge를 통해서만 업데이트됨
+- **구조**: Knowledge graph로 구성, Decision의 latest 상태만 포함
+- **단위**: Agenda + Decision(latest)
+- **관계**: Agenda approve를 통해서만 업데이트됨
+
+### Ground
+
+- **정의**: 팀이 현재 합의한 결정의 집합
+- **비유**: Git의 repository
+- **구조**: Knowledge graph로 구성, Decision 이력 포함
+- **단위**: Agenda + Decision
+- **차이**: GT의 이력
 
 ### 회의 (Meeting)
 
@@ -23,10 +32,10 @@
 
 ### 회의록 (Minutes)
 
-- **정의**: 한 회의에서 합의된 결과와 결정 과정을 요약한 문서
+- **정의**: 한 회의에서 논의된 안건과 결정 과정을 요약한 문서
 - **생성 시점**: 회의 종료 후 Agent가 초안 생성
-- **관계**: 1 Meeting : 1 Minutes
-- **용도**: GT 업데이트의 단위
+- **관계**: 1 Meeting : 1 Minutes, 1 Minutes : N Agenda
+- **용도**: Agenda와 Decision 추출의 원천
 
 ### Transcript (발화 기록)
 
@@ -34,13 +43,25 @@
 - **용도**: 회의록과 결정의 근거 자료
 - **특성**: wall-clock timestamp 기반 정렬
 
+### 안건 (Agenda)
+
+- **정의**: 팀 전체에서 공유되는 논의 주제/안건
+- **특성**: 여러 회의에 걸쳐 동일 Agenda가 재논의될 수 있음
+- **식별**: AI semantic matching으로 기존 Agenda와 동일 여부 판단
+- **상태**: 
+- **생성 시점**: 회의 종료 후 Agent가 Minutes에서 추출
+- **관계**: 1 Agenda -> N Decision (여러 회의에 걸쳐 축적)
+- **예시**: "프로젝트 X 예산", "출시 일정", "기술 스택 선정"
+
 ### 결정사항 (Decision)
 
-- **정의**: 합의된 사실 또는 선택
-- **상태 파생**: 엔티티 자체가 저장하지 않음, 회의록 merge 상태로 파생
-  - **latest**: main(GT)에 반영된 결정
-  - **draft**: Branch/PR에 존재하는 결정
-  - **outdated**: 이후 결정에 의해 대체된 과거 결정
+- **정의**: 특정 회의에서 해당 Agenda에 대해 내린 결정
+- **관계**: Agenda에 종속, 1 Agenda : N Decision
+- **상태 파생**: 엔티티 자체가 저장하지 않음, Agenda approve 상태로 파생
+  - **latest**: Agenda가 approved되어 GT에 반영된 결정
+  - **draft**: PR에 존재하지만 아직 approved되지 않은 결정
+  - **rejected**: 리뷰에서 거부된 결정 (합의 실패)
+  - **outdated**: 이후 결정에 의해 대체된 과거 결정 (합의 성공 후 갱신)
 
 ### Branch (브랜치)
 
@@ -52,7 +73,9 @@
 
 - **정의**: Branch의 회의록을 GT로 병합하기 위한 리뷰/합의 절차
 - **생성 시점**: 회의 종료 후 Agent가 자동 생성
-- **활동**: Comment, Suggestion, Review -> Approval -> Merge
+- **활동**: Comment, Suggestion, Review -> Agenda별 Approve/Reject
+- **특성**: Agenda별 부분 approve/merge 가능
+- **종료 조건**: 모든 Agenda가 처리(approved 또는 rejected)되면 자동 close
 
 ### Draft
 
@@ -62,7 +85,17 @@
 ### Outdated
 
 - **정의**: 이후의 결정에 의해 대체된 과거 결정 상태
-- **특성**: 히스토리로 보존, GT에서는 최신 결정만 표시
+- **특성**: Knowledge graph에 히스토리로 보존, GT에서는 latest Decision만 표시
+
+### Rejected
+
+- **정의**: 리뷰에서 거부된 결정 상태
+- **특성**: 합의 실패, 새 회의에서 재제안 가능 (새로운 Decision으로 생성)
+
+### Suggestion
+
+- **정의**: PR 중 Agenda에 대한 새로운 decision을 제안
+- **특성**: 제안을 수락 시 기존 decision의 상태가 draft에서 reject로 변환, 새로운 decision이 draft로 생성
 
 ---
 
@@ -106,25 +139,30 @@ Mit Agent가 MCP(Model Context Protocol)를 통해 호출하는 외부 도구:
 
 ### Comment
 
-- **정의**: PR에서 특정 부분에 대한 의견이나 질문
+- **정의**: PR, Agenda, Decision에 대한 의견이나 질문
+- **대상**: PR 전체, 특정 Agenda, 특정 Decision 모두 가능
 - **주체**: 팀원 또는 Agent
 
-### Suggestion
+### Reviewer (리뷰어)
 
-- **정의**: PR에서 특정 내용에 대한 수정 제안
-- **특성**: 수락 시 회의록에 반영
+- **정의**: 특정 Decision의 승인 권한을 가진 팀원
+- **지정 시점**: PR open 시 Agent가 각 Decision별로 자동 지정
+- **추가 지정**: Host가 추가 리뷰어 지정 가능
+- **조건**: Decision이 approved 되려면 지정된 리뷰어 전원의 approval 필요
 
-### Review
+### Decision Approval
 
-- **정의**: PR 전체에 대한 검토 의견
-- **상태**: Approve, Request Changes, Comment
+- **정의**: 특정 Decision을 GT에 반영해도 좋다는 승인
+- **조건**: 지정된 리뷰어 전원의 approval 필요
+- **효과**: approved 시 Decision 상태가 draft -> latest로 전이, 즉시 GT 반영
 
-### Approval
+### Decision Reject
 
-- **정의**: PR을 GT에 merge해도 좋다는 승인
-- **조건**: 지정된 리뷰어의 approval 필요
+- **정의**: 특정 Decision을 거부
+- **조건**: 리뷰어 1명이라도 reject하면 해당 Decision은 rejected
+- **효과**: rejected 시 Decision 상태가 draft -> rejected로 전이
 
----
+--- 
 
 ## 컨텍스트 관련
 

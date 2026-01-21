@@ -29,9 +29,11 @@
 | 회의 참여 | O | O | O |
 | PR 생성 | O | O | O |
 | PR 리뷰 | O | O | O |
-| PR merge | O | O | O* |
+| Decision Approve | O | O | O* |
+| Decision Reject | O | O | O |
 
-*member의 PR merge는 필수 approval 조건 충족 시에만 가능
+*member의 Decision approve는 필수 approval 조건 충족 시에만 가능
+*본인이 작성한 Decision은 approve 불가
 
 ---
 
@@ -100,24 +102,45 @@
 ### PR 리뷰
 
 - **권한**: Team member 이상
-- **조건**: PR 작성자 본인도 리뷰 가능 (approval은 불가)
+- **조건**: PR 작성자 본인도 리뷰 가능 (Decision approval은 불가)
 
-### PR Approval
+---
+
+## Decision 권한 (Decision Permissions)
+
+### Reviewer 지정
+
+- **자동 지정**: PR open 시 Agent가 각 Decision별로 리뷰어 자동 지정
+- **추가 지정 권한**: Host만 가능
+- **지정 대상**: Decision 작성자 제외한 Team member
+
+### Decision Approve
+
+- **권한**: 해당 Decision의 지정된 리뷰어만 가능
+- **조건**:
+  - Decision 작성자 본인은 해당 Decision approve 불가
+  - 지정된 리뷰어 전원이 approve해야 Decision이 approved
+- **효과**: 전원 approve 시 Decision 상태가 latest로 변경, 즉시 GT 반영
+
+### Decision Reject
+
+- **권한**: 해당 Decision의 지정된 리뷰어만 가능
+- **조건**: 리뷰어 1명이라도 reject하면 즉시 rejected
+- **효과**: Decision 상태가 rejected로 변경, 다른 리뷰어의 approve 무효화
+
+### Comment/Suggestion
 
 - **권한**: Team member 이상
-- **조건**: PR 작성자 본인은 approval 불가
-- **필요 수**: 팀 설정에 따름 (기본값: 1)
+- **대상**: PR 전체, 특정 Agenda, 특정 Decision 모두 가능
+- **조건**: Decision 작성자 본인도 comment/suggestion 가능
+- **Suggestion 수락 시**: 새로운 Decision이 생성, 기존 Decision은 rejected 상태로 변경
 
-### PR Merge
+---
 
-- **권한**:
-  1. 필수 approval 조건 충족 시: Team member 이상
-  2. 또는: host / admin / owner
-- **조건**: CON-001 (PR 승인 조건) 충족
+## PR Close (자동 처리)
 
-### PR Close
-
-- **권한**: PR 작성자 / host / admin / owner
+- **조건**: 모든 Decision이 처리(approved 또는 rejected)되면 자동 close
+- **수동 close**: host / admin / owner만 가능 (예외 상황)
 
 ---
 
@@ -126,7 +149,8 @@
 ### GT (Ground Truth)
 
 - **조회**: Team member 이상
-- **수정**: PR merge를 통해서만 (INV-003)
+- **수정**: Decision approve를 통해서만 (INV-003)
+- **단위**: Decision별 부분 업데이트 가능
 
 ### Transcript
 

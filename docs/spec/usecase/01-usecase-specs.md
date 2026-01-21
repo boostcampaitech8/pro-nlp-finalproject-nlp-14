@@ -133,7 +133,9 @@
 4. 녹음 종료
 5. Agent가 Transcript 생성 트리거
 6. Agent가 Minutes 초안 생성
-7. Agent가 PR 자동 생성
+7. Agent가 Agenda 추출 (semantic matching으로 기존 Agenda 식별)
+8. Agent가 각 Agenda에 대한 Decision 생성
+9. Agent가 PR 자동 생성 (DecisionReview 포함)
 
 **입력**
 | 필드 | 타입 | 필수 | 설명 |
@@ -143,6 +145,7 @@
 **출력**
 - 업데이트된 Meeting 객체
 - 생성된 PR 정보
+- 추출된 Agenda 및 Decision 목록
 
 **예외**
 | 코드 | 조건 |
@@ -156,7 +159,9 @@
 - [ ] 녹음 파일 저장
 - [ ] Transcript 생성 (비동기)
 - [ ] Minutes 초안 생성 (비동기)
-- [ ] PR 자동 생성
+- [ ] Agenda 추출 및 식별 (semantic matching)
+- [ ] 각 Agenda에 대한 Decision 생성
+- [ ] PR 자동 생성 (DecisionReview 포함)
 
 ---
 
@@ -260,39 +265,43 @@
 
 ---
 
-### UC-008: Mit Merge 실행
+### UC-008: Mit Merge 실행 (Decision Approve)
 
 **개요**
 - Actor: Team Member (approval 조건 충족 시)
-- 목적: 합의된 내용을 GT로 확정
+- 목적: 특정 Decision을 GT로 확정
 
 **Flow**
-1. 사용자가 Agent에게 merge 요청 ("이 내용으로 확정해줘")
+1. 사용자가 Agent에게 merge 요청 ("이 결정 확정해줘")
 2. Agent가 의도 분석 -> mit_merge 도구 선택
-3. PR 승인 상태 확인
-4. GT 업데이트
-5. Branch 상태 변경 (merged)
-6. 팀원에게 알림
+3. 해당 Decision의 DecisionReview 승인 상태 확인
+4. Decision approve -> Decision 상태 latest로 변경
+5. GT 업데이트 (해당 Decision만)
+6. 모든 Decision 처리 시 PR 자동 close
+7. 팀원에게 알림
 
 **입력**
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|:----:|------|
+| decisionId | UUID | O | Decision ID |
 | prId | UUID | O | PR ID |
 
 **출력**
-- 업데이트된 GT 정보
-- 변경 이력
+- 업데이트된 GT 정보 (해당 Decision)
+- Decision 상태 변경 이력
 
 **예외**
 | 코드 | 조건 |
 |------|------|
 | 409 | 승인 조건 미충족 |
-| 403 | 권한 없음 |
+| 403 | 권한 없음 (본인 Decision approve 불가) |
 
 **Acceptance Criteria**
 - [ ] 승인 조건 검증
-- [ ] GT 업데이트
-- [ ] 변경 이력 기록
+- [ ] 본인 Decision approve 불가 검증
+- [ ] Decision 상태 -> latest
+- [ ] GT 업데이트 (Decision 단위)
+- [ ] 모든 Decision 처리 시 PR 자동 close
 - [ ] 팀원 알림
 
 ---
@@ -357,6 +366,120 @@
 - [ ] 작성자 본인 승인 불가
 - [ ] Approval 기록
 - [ ] 필수 조건 달성 시 알림
+
+---
+
+## Decision 관련
+
+### UC-011: Decision Approve
+
+**개요**
+- Actor: 지정된 리뷰어 (Decision 작성자 제외)
+- 목적: 특정 Decision을 GT에 반영
+
+**Flow**
+1. 지정된 리뷰어가 Decision approve 요청
+2. 시스템이 권한 확인 (지정된 리뷰어 여부, Decision 작성자 != 리뷰어)
+3. DecisionReview에 해당 리뷰어의 approval 기록
+4. 지정된 리뷰어 전원 approve 여부 확인
+5. 전원 approve 시 Decision 상태를 latest로 변경
+6. GT 업데이트 (해당 Decision만)
+7. 모든 Decision 처리 시 PR 자동 close
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| prId | UUID | O | PR ID |
+| decisionId | UUID | O | Decision ID |
+
+**출력**
+- 업데이트된 DecisionReview 객체
+- Decision 상태 변경 (전원 approve 시)
+
+**예외**
+| 코드 | 조건 |
+|------|------|
+| 403 | 지정된 리뷰어가 아님 |
+| 403 | 본인 Decision approve 불가 |
+
+**Acceptance Criteria**
+- [ ] 지정된 리뷰어만 approve 가능
+- [ ] Decision 작성자 본인 approve 불가
+- [ ] DecisionReview에 리뷰어별 approval 기록
+- [ ] 전원 approve 시 Decision -> latest
+- [ ] GT 업데이트 (Decision 단위)
+- [ ] 모든 Decision 처리 시 PR 자동 close
+
+---
+
+### UC-012: Decision Reject
+
+**개요**
+- Actor: 지정된 리뷰어
+- 목적: 특정 Decision을 거부
+
+**Flow**
+1. 지정된 리뷰어가 Decision reject 요청
+2. 시스템이 권한 확인 (지정된 리뷰어 여부)
+3. DecisionReview 상태를 즉시 rejected로 변경
+4. Decision 상태를 rejected로 변경
+5. 다른 리뷰어의 approve 무효화
+6. 모든 Decision 처리 시 PR 자동 close
+7. 팀원에게 알림 (거부 사유 포함)
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| prId | UUID | O | PR ID |
+| decisionId | UUID | O | Decision ID |
+| reason | string | X | 거부 사유 |
+
+**출력**
+- 업데이트된 DecisionReview 객체
+- Decision 상태 변경 (rejected)
+
+**예외**
+| 코드 | 조건 |
+|------|------|
+| 403 | 지정된 리뷰어가 아님 |
+
+**Acceptance Criteria**
+- [ ] 지정된 리뷰어만 reject 가능
+- [ ] 1명이라도 reject하면 즉시 Decision rejected
+- [ ] Decision 상태 -> rejected
+- [ ] 다른 리뷰어의 approve 무효화
+- [ ] 모든 Decision 처리 시 PR 자동 close
+- [ ] 거부 알림 발송 (사유 포함)
+
+---
+
+### UC-013: Suggestion 수락
+
+**개요**
+- Actor: Decision 작성자 또는 Host
+- 목적: Suggestion을 수락하여 Decision 수정
+
+**Flow**
+1. Decision 작성자 또는 Host가 Suggestion 수락 요청
+2. 새로운 Decision 생성 (기존 Decision의 수정본)
+3. 기존 Decision 상태를 rejected로 변경
+4. 새로운 Decision에 대한 DecisionReview 생성
+5. 리뷰어에게 재검토 알림
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| suggestionId | UUID | O | Suggestion ID |
+
+**출력**
+- 새로 생성된 Decision 객체
+- 새로 생성된 DecisionReview 객체
+
+**Acceptance Criteria**
+- [ ] 새로운 Decision 생성
+- [ ] 기존 Decision 상태 -> rejected
+- [ ] 새로운 DecisionReview 생성
+- [ ] 재검토 알림 발송
 
 ---
 
