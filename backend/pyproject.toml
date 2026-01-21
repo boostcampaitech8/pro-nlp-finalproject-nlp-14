@@ -22,10 +22,10 @@ dependencies = [
     "email-validator>=2.2.0",
     # Misc
     "python-multipart>=0.0.20",
-    # WebRTC
-    "aiortc>=1.9.0",
     # Object Storage
     "minio>=7.2.0",
+    # LiveKit (SFU)
+    "livekit-api>=0.7.0",
     # STT (Speech-to-Text)
     "openai>=1.0.0",
     "arq>=0.26.0",

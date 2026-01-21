@@ -1,6 +1,6 @@
 # Troubleshooting - Backend
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-01-20
 
 ---
 
@@ -58,6 +58,15 @@ def get_recording_size(self, file_path: str) -> int:
 ```
 
 **파일**: `backend/app/core/storage.py`
+
+---
+
+### 1.3 LiveKit Issues
+
+> **LiveKit 관련 트러블슈팅은 `CLAUDE-troubleshooting.md` (루트)를 참조하세요.**
+> - 웹훅 녹음 레코드 미생성 (MessageToDict camelCase)
+> - WebhookReceiver 초기화 오류 (TokenVerifier 패턴)
+> - Egress 상태 동기화 오류 (Redis 캐시)
 
 ---
 

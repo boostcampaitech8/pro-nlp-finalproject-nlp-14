@@ -82,6 +82,48 @@ async def require_meeting_participant(
     return meeting
 
 
+# ===== Service Error Handling =====
+
+# 서비스 레이어에서 발생하는 에러 코드와 HTTP 응답 매핑
+# (status_code, error_code, message)
+SERVICE_ERROR_MAPPING: dict[str, tuple[int, str, str]] = {
+    # 공통
+    "MEETING_NOT_FOUND": (404, "NOT_FOUND", "Meeting not found"),
+    "PARTICIPANT_NOT_FOUND": (404, "NOT_FOUND", "Participant not found"),
+    "NOT_TEAM_MEMBER": (403, "FORBIDDEN", "Not a team member"),
+    "PERMISSION_DENIED": (403, "FORBIDDEN", "Permission denied"),
+    # 참여자 관련
+    "USER_NOT_TEAM_MEMBER": (400, "BAD_REQUEST", "User is not a team member"),
+    "ALREADY_PARTICIPANT": (409, "CONFLICT", "User is already a participant"),
+    "INVALID_ROLE": (400, "BAD_REQUEST", "Invalid role"),
+}
+
+
+def handle_service_error(error: ValueError, default_message: str = "Validation error") -> None:
+    """서비스 레이어 에러를 HTTPException으로 변환
+
+    Args:
+        error: 서비스에서 발생한 ValueError (에러 코드가 str로 전달됨)
+        default_message: 매핑되지 않은 에러의 기본 메시지
+
+    Raises:
+        HTTPException: 매핑된 HTTP 에러 응답
+    """
+    error_code = str(error)
+
+    if error_code in SERVICE_ERROR_MAPPING:
+        status_code, code, message = SERVICE_ERROR_MAPPING[error_code]
+        raise HTTPException(
+            status_code=status_code,
+            detail={"error": code, "message": message},
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"error": "VALIDATION_ERROR", "message": default_message},
+    )
+
+
 # ===== ARQ Dependencies =====
 
 

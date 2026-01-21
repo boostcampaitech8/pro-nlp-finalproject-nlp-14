@@ -1,6 +1,6 @@
 # Architecture Decisions - Backend
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-01-19
 
 ---
 
@@ -29,7 +29,7 @@
 ## ADR-002: Strategy Pattern for WebSocket Handlers
 
 **Date**: 2026-01-08
-**Status**: Accepted
+**Status**: Accepted (Pattern applicable to LiveKit webhooks)
 
 ### Context
 `webrtc.py`의 `handle_websocket_messages()` 함수가 11개 분기의 if-elif 체인으로 구성되어 있었음. 새 메시지 타입 추가 시 함수 수정 필요 (Open/Closed Principle 위반).
@@ -53,39 +53,6 @@ Strategy Pattern 적용:
 ### Alternatives Considered
 1. **Command Pattern**: 더 무거움, 현재 요구사항에 과함
 2. **Dictionary Dispatch**: 타입 안전성 부족
-
----
-
-## ADR-003: RecordingSession Decomposition
-
-**Date**: 2026-01-08
-**Status**: Accepted
-
-### Context
-`RecordingSession` 클래스가 7가지 책임을 가진 God Class였음:
-1. WebRTC 연결 관리
-2. ICE candidate 파싱
-3. 미디어 녹음
-4. 임시 파일 관리
-5. MinIO 업로드
-6. DB 저장
-7. 리소스 정리
-
-### Decision
-Composition Pattern으로 분해:
-- `WebRTCRecordingConnection`: 연결 관리 (1, 2, 3, 7)
-- `RecordingPersistence`: 저장 관리 (4, 5, 6)
-- `RecordingSession`: 코디네이터
-
-### Consequences
-**Positive**:
-- 각 클래스가 단일 책임 원칙 준수
-- 240줄 → 82줄로 RecordingSession 단순화
-- 각 컴포넌트 독립적 테스트 가능
-
-**Negative**:
-- 파일 수 증가 (1개 → 3개)
-- 간접 호출로 디버깅 시 추적 필요
 
 ---
 
@@ -164,31 +131,6 @@ Composition Pattern으로 분해:
 
 **Negative**:
 - 새 import 필요
-
----
-
-## ADR-007: Singleton Pattern 유지 (Phase 3.3 보류)
-
-**Date**: 2026-01-08
-**Status**: Deferred
-
-### Context
-계획에는 singleton 서비스들을 DI로 전환하는 Phase 3.3이 있었음:
-- `storage_service`
-- `connection_manager`
-- `sfu_service`
-
-### Decision
-현 단계에서는 유지. 후속 작업으로 검토.
-
-### Rationale
-- 현재 구조도 충분히 기능적
-- Mock으로 테스트 가능
-- DI 전환은 큰 변경이 필요
-- 우선순위: 테스트 커버리지 향상이 더 시급
-
-### Future Consideration
-테스트 커버리지 80% 달성 후 재검토.
 
 ---
 
@@ -279,26 +221,6 @@ VAD (Voice Activity Detection) 전처리:
 - Dockerfile에 FFmpeg 설치 필수
 - pydub로 오디오 포맷 변환
 - 16kHz mono PCM으로 변환 후 VAD 적용
-
----
-
-## ADR-011: Merge Task Timing Decision
-
-**Date**: 2026-01-11
-**Status**: Superseded by ADR-012
-
-### Context
-초기 구현에서 회의 종료 시 `merge_utterances_task`를 5초 후 실행하도록 큐잉. 그러나 STT가 완료되지 않은 상태에서 merge가 실행되어 `NO_TRANSCRIBED_RECORDINGS` 에러 발생.
-
-### Decision
-회의 종료 시 merge 태스크 큐잉 제거. 대신:
-- `/transcribe` 호출 시 `transcribe_meeting_task` 실행
-- `transcribe_meeting_task` 내에서 모든 녹음 STT 완료 후 자동으로 `merge_utterances` 호출
-
-### Problem
-이 결정은 수동 `/transcribe` 호출에만 적용됨. 녹음 업로드 시 자동으로 실행되는 `transcribe_recording_task`는 merge를 호출하지 않아 meeting_transcripts가 생성되지 않는 문제 발생.
-
--> ADR-012에서 해결
 
 ---
 
