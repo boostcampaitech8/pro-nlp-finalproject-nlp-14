@@ -15,6 +15,77 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 * After completing a task that involves tool use, provide a quick summary of what you've done.
 * When you update or modify core context files, also update markdown documentation and memory bank.
 
+## Sisyphus Integration (oh-my-claude-sisyphus)
+
+이 프로젝트는 oh-my-claude-sisyphus 플러그인을 사용하며, 아래 규칙은 기존 AI Guidance와 조화롭게 적용된다.
+
+### Agent Delegation (위임 규칙)
+
+전문 에이전트 활용을 권장하되, **명시적 지시가 있을 때만** 위임한다:
+
+| 작업 유형 | 에이전트 | 조건 |
+|----------|---------|------|
+| 단순 조회/읽기 | 직접 처리 | 항상 |
+| 단일 파일 수정 | sisyphus-junior-low | 명시적 요청 시 |
+| 다중 파일 수정 | sisyphus-junior | 명시적 요청 시 |
+| 복잡한 아키텍처 | sisyphus-junior-high | 명시적 요청 시 |
+| 코드베이스 탐색 | explore, explore-medium | 탐색 필요 시 |
+| UI/UX 작업 | frontend-engineer 계열 | 명시적 요청 시 |
+| 문서 작성 | document-writer | **명시적 요청 시에만** |
+
+### Human-in-the-Loop 원칙
+
+<sisyphus_human_in_the_loop>
+다음 상황에서는 **반드시 AskUserQuestion을 사용**하여 사용자 확인을 받는다:
+
+1. **모호한 작업 범위**: "개선해줘", "리팩토링해줘", "고쳐줘" 등 구체적 대상 없는 요청
+   - 질문: "어떤 부분을 [개선/리팩토링/수정]할까요?" + 감지된 후보 제시
+
+2. **작업 확장 필요 시**: 요청된 작업 완료 후 추가 작업이 필요해 보일 때
+   - 질문: "[완료된 작업] 외에 [발견된 추가 작업]도 진행할까요?"
+
+3. **에이전트 선택 불확실**: 작업 복잡도 판단이 어려울 때
+   - 질문: "이 작업을 [간단/표준/복잡] 수준으로 처리할까요?"
+
+4. **자동 활성화 대상**: ralph, ultrawork 등 자동 모드 감지 시
+   - 질문: "[모드명] 모드를 활성화할까요?" (명시적 키워드 사용 시 제외)
+
+**금지 사항**: 사용자 확인 없이 상상력으로 작업 범위를 확장하지 않는다.
+</sisyphus_human_in_the_loop>
+
+### Smart Model Routing
+
+복잡도에 따른 모델 자동 선택 (에이전트 위임 시 적용):
+
+| 복잡도 | 모델 | 사용 사례 |
+|--------|------|----------|
+| Low | Haiku | 단순 조회, 정의 검색, 간단한 수정 |
+| Medium | Sonnet | 표준 기능 구현, 일반적인 버그 수정 |
+| High | Opus | 복잡한 아키텍처, 다중 시스템 연동 |
+
+### Available Skills (주요 스킬)
+
+명시적으로 호출 가능한 스킬 목록:
+
+| 스킬 | 설명 | 호출 방법 |
+|------|------|----------|
+| `/plan` | 구조화된 계획 수립 | 명시적 호출 |
+| `/analyze` | 깊은 분석 및 조사 | 명시적 호출 |
+| `/deepsearch` | 코드베이스 전체 검색 | 명시적 호출 |
+| `/review` | Momus를 통한 계획 검토 | 명시적 호출 |
+| `/git-master` | Git 작업 (커밋, 리베이스) | 커밋 요청 시 |
+| `/frontend-ui-ux` | UI/UX 전문 작업 | UI 작업 요청 시 |
+
+### Magic Keywords (선택적 활성화)
+
+다음 키워드는 **사용자가 명시적으로 사용할 때만** 해당 모드를 활성화:
+
+- `ralph` 또는 `don't stop`: 작업 완료까지 지속 모드
+- `ulw` 또는 `ultrawork`: 최대 병렬 실행 모드
+- `plan`: 계획 인터뷰 시작
+
+**주의**: 키워드 없이 자동 감지된 경우 AskUserQuestion으로 확인 필요.
+
 <investigate_before_answering>
 Never speculate about code you have not opened. If the user references a specific file, you MUST read the file before answering. Make sure to investigate and read relevant files BEFORE answering questions about the codebase. Never make any claims about code before investigating unless you are certain of the correct answer - give grounded and hallucination-free answers.
 </investigate_before_answering>
