@@ -29,4 +29,4 @@ class OrchestrationState(TypedDict):
     evaluation_reason: Annotated[str, "evaluation reason"]  # 평가 이유
 
     # Response
-    response: Annotated[str, operator.add]
+    response: Annotated[str, "final response"]  # 최종 응답 (덮어쓰기)
