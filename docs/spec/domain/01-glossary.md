@@ -49,7 +49,7 @@
 - **정의**: 팀 전체에서 공유되는 논의 주제/안건
 - **특성**: 여러 회의에 걸쳐 동일 Agenda가 재논의될 수 있음
 - **식별**: AI semantic matching으로 기존 Agenda와 동일 여부 판단
-- **상태**: `open` (논의 중) / `resolved` (latest Decision 존재)
+- **상태**: 없음
 - **제약**: Agenda당 최대 1개의 latest Decision만 유지
 - **생성 시점**: 회의 종료 후 Agent가 Minutes에서 추출
 - **관계**: 1 Agenda -> N Decision (여러 회의에 걸쳐 축적)
