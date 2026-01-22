@@ -14,15 +14,16 @@
 - **비유**: Git의 main 브랜치
 - **구조**: Knowledge graph로 구성, Decision의 latest 상태만 포함
 - **단위**: Agenda + Decision(latest)
-- **관계**: Agenda approve를 통해서만 업데이트됨
+- **관계**: Decision approve를 통해서만 업데이트됨 (Agenda당 최대 1개의 latest Decision 유지)
+- **참고**: Ground의 현재 시점 스냅샷
 
 ### Ground
 
-- **정의**: 팀이 현재 합의한 결정의 집합
-- **비유**: Git의 repository
-- **구조**: Knowledge graph로 구성, Decision 이력 포함
-- **단위**: Agenda + Decision
-- **차이**: GT의 이력
+- **정의**: 팀의 모든 합의된 결정과 그 이력을 포함하는 지식 저장소
+- **비유**: Git의 repository (전체 히스토리 포함)
+- **구조**: Knowledge graph로 구성, 모든 Decision 이력 포함
+- **용도**: 과거 Decision 검색 (mit_blame, mit_search)
+- **관계**: GT는 Ground의 현재 시점 스냅샷
 
 ### 회의 (Meeting)
 
@@ -48,7 +49,8 @@
 - **정의**: 팀 전체에서 공유되는 논의 주제/안건
 - **특성**: 여러 회의에 걸쳐 동일 Agenda가 재논의될 수 있음
 - **식별**: AI semantic matching으로 기존 Agenda와 동일 여부 판단
-- **상태**: 
+- **상태**: `open` (논의 중) / `resolved` (latest Decision 존재)
+- **제약**: Agenda당 최대 1개의 latest Decision만 유지
 - **생성 시점**: 회의 종료 후 Agent가 Minutes에서 추출
 - **관계**: 1 Agenda -> N Decision (여러 회의에 걸쳐 축적)
 - **예시**: "프로젝트 X 예산", "출시 일정", "기술 스택 선정"
@@ -57,7 +59,7 @@
 
 - **정의**: 특정 회의에서 해당 Agenda에 대해 내린 결정
 - **관계**: Agenda에 종속, 1 Agenda : N Decision
-- **상태 파생**: 엔티티 자체가 저장하지 않음, Agenda approve 상태로 파생
+- **상태 파생**: 엔티티 자체가 저장하지 않음, DecisionReview 상태로 파생
   - **latest**: Agenda가 approved되어 GT에 반영된 결정
   - **draft**: PR에 존재하지만 아직 approved되지 않은 결정
   - **rejected**: 리뷰에서 거부된 결정 (합의 실패)
@@ -180,6 +182,9 @@ Mit Agent가 MCP(Model Context Protocol)를 통해 호출하는 외부 도구:
 
 - **정의**: AI와의 연속적인 대화 컨텍스트
 - **특성**: 이전 메시지가 기억되는 단위
+- **종류**:
+  - 회의 중 Mit Agent와의 대화 세션
+  - 개인 AI Assistant와의 대화 세션
 
 ---
 

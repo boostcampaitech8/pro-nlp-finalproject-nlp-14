@@ -347,3 +347,17 @@ ELSE:  # DecisionReview.status == 'pending'
 | Branch - PR | 1:1 | 브랜치당 하나의 PR |
 | PR - DecisionReview | 1:N | PR은 여러 결정 리뷰를 포함 |
 | DecisionReview - ReviewerApproval | 1:N | 결정 리뷰는 여러 리뷰어 승인을 포함 |
+
+---
+
+## 연결 엔티티와 행위 매핑
+
+다음 엔티티들은 핵심 엔티티 간의 관계를 관리하고 특정 행위를 지원한다.
+
+| 엔티티 | 연결 대상 | 지원하는 행위 |
+|--------|-----------|---------------|
+| MinutesAgenda | Minutes <-> Agenda | 회의록에서 안건 추출, 안건별 회의록 조회 |
+| DecisionReview | PR <-> Decision | Decision별 승인/거부 프로세스 관리 |
+| ReviewerApproval | DecisionReview <-> User | 리뷰어별 개별 승인 상태 추적 |
+| MeetingParticipant | Meeting <-> User | 회의 참여자 역할 및 참여 시간 관리 |
+| TeamMember | Team <-> User | 팀 멤버십 및 역할 권한 관리 |
