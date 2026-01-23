@@ -22,7 +22,7 @@ class TranscriptSegmentRequest:
     end_ms: int
     text: str
     confidence: float
-    min_confidence: float | None = None
+    min_confidence: float = 0.0
     agent_call: bool = False
     agent_call_confidence: float | None = None
 
@@ -88,17 +88,19 @@ class BackendAPIClient:
             raise RuntimeError("HTTP 클라이언트가 초기화되지 않음")
 
         try:
+            # meeting_id에서 "meeting-" 접두사 제거 (순수 UUID만 사용)
+            pure_meeting_id = segment.meeting_id.replace("meeting-", "")
+            pure_user_id = segment.user_id.replace("user-", "")
+
             payload = {
-                "meetingId": segment.meeting_id,
-                "userId": segment.user_id,
+                "meetingId": pure_meeting_id,
+                "userId": pure_user_id,
                 "startMs": segment.start_ms,
                 "endMs": segment.end_ms,
                 "text": segment.text,
                 "confidence": segment.confidence,
+                "minConfidence": segment.min_confidence,
             }
-
-            if segment.min_confidence is not None:
-                payload["minConfidence"] = segment.min_confidence
 
             if segment.agent_call:
                 payload["agentCall"] = segment.agent_call
@@ -107,7 +109,7 @@ class BackendAPIClient:
                 payload["agentCallConfidence"] = segment.agent_call_confidence
 
             response = await self._client.post(
-                f"/api/v1/meetings/{segment.meeting_id}/transcripts",
+                f"/api/v1/meetings/{pure_meeting_id}/transcripts",
                 json=payload,
             )
 
