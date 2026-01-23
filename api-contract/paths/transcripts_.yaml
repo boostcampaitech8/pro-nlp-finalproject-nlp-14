@@ -106,7 +106,7 @@ paths:
       summary: 회의 전체 전사 조회 (Client → Backend)
       description: |
         회의 ID를 기준으로 모든 전사 segment를 조회하고,
-        시간 순서대로 정렬된 전체 전사 텍스트를 반환합니다.
+        createdAt 기준 시간 순서대로 정렬된 전체 전사 텍스트를 반환합니다.
         fullText는 서버에서 조립하며 DB에 저장되지 않습니다.
       operationId: getMeetingTranscripts
       parameters:

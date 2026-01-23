@@ -93,12 +93,12 @@ class TranscriptService:
         if not meeting:
             raise ValueError("MEETING_NOT_FOUND")
 
-        # 2. transcripts 조회 (start_ms ASC 정렬)
+        # 2. transcripts 조회 (created_at ASC 정렬)
         result = await self.db.execute(
             select(Transcript, User)
             .join(User, Transcript.user_id == User.id, isouter=True)
             .where(Transcript.meeting_id == meeting_id)
-            .order_by(Transcript.start_ms.asc())
+            .order_by(Transcript.created_at.asc(), Transcript.id.asc())
         )
         rows = result.all()
 
