@@ -381,6 +381,9 @@ export function useLiveKit(meetingId: string) {
    */
   const handleParticipantDisconnected = useCallback((participant: RemoteParticipant) => {
     logger.log('[useLiveKit] Participant disconnected:', participant.identity);
+
+    // LiveKit SDK가 자동으로 트랙을 정리하므로 우리는 스토어 상태만 정리
+    // detach()나 stop()을 호출하면 SDK 내부 상태가 꼬여서 재접속 시 문제 발생
     removeParticipant(participant.identity);
     removeRemoteStream(participant.identity);
     removeRemoteScreenStream(participant.identity);

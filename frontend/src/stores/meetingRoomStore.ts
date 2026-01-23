@@ -223,7 +223,8 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
     const remoteStreams = new Map(get().remoteStreams);
     const stream = remoteStreams.get(userId);
     if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
+      // track.stop()을 호출하지 않음 - LiveKit SDK가 관리
+      // stop()을 호출하면 SDK 내부에서 참조하는 track이 ended 상태가 되어 재접속 시 문제 발생
       remoteStreams.delete(userId);
       set({ remoteStreams });
     }
@@ -282,7 +283,8 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
     const remoteScreenStreams = new Map(get().remoteScreenStreams);
     const stream = remoteScreenStreams.get(userId);
     if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
+      // track.stop()을 호출하지 않음 - LiveKit SDK가 관리
+      // stop()을 호출하면 SDK 내부에서 참조하는 track이 ended 상태가 되어 재접속 시 문제 발생
       remoteScreenStreams.delete(userId);
       set({ remoteScreenStreams });
     }
@@ -335,10 +337,8 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
     // 모든 리소스 정리
     const {
       localStream,
-      remoteStreams,
       peerConnections,
       screenStream,
-      remoteScreenStreams,
       screenPeerConnections,
       // 캐시된 설정 유지
       audioInputDeviceId,
@@ -355,13 +355,8 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
       screenStream.getTracks().forEach((track) => track.stop());
     }
 
-    remoteStreams.forEach((stream) => {
-      stream.getTracks().forEach((track) => track.stop());
-    });
-
-    remoteScreenStreams.forEach((stream) => {
-      stream.getTracks().forEach((track) => track.stop());
-    });
+    // remoteStreams와 remoteScreenStreams는 stop()하지 않음
+    // LiveKit SDK가 관리하며, stop()을 호출하면 SDK 내부에서 참조하는 track이 ended 상태가 되어 재접속 시 문제 발생
 
     peerConnections.forEach((pc) => {
       pc.close();
