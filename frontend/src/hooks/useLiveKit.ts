@@ -18,6 +18,7 @@ import {
   RemoteParticipant,
   RemoteTrack,
   RemoteTrackPublication,
+  TrackPublication,
   LocalTrack,
   createLocalTracks,
   LocalAudioTrack,
@@ -527,6 +528,27 @@ export function useLiveKit(meetingId: string) {
       room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
       room.on(RoomEvent.DataReceived, handleDataReceived);
+
+      // 트랙 발행 (초기 mute 상태 동기화 - 재접속 시 기존 참여자의 mute 상태 반영)
+      room.on(RoomEvent.TrackPublished, (publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+        logger.log('[useLiveKit] Track published:', publication.kind, 'from:', participant.identity);
+        if (publication.kind === Track.Kind.Audio) {
+          updateParticipantMute(participant.identity, publication.isMuted);
+        }
+      });
+
+      // 음소거 상태 변경 이벤트 (실시간 mute/unmute 반영)
+      room.on(RoomEvent.TrackMuted, (publication: TrackPublication, participant: Participant) => {
+        if (publication.kind === Track.Kind.Audio) {
+          updateParticipantMute(participant.identity, true);
+        }
+      });
+
+      room.on(RoomEvent.TrackUnmuted, (publication: TrackPublication, participant: Participant) => {
+        if (publication.kind === Track.Kind.Audio) {
+          updateParticipantMute(participant.identity, false);
+        }
+      });
 
       room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
         logger.log('[useLiveKit] Disconnected:', reason);
