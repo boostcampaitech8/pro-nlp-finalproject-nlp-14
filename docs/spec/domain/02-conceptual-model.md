@@ -230,9 +230,9 @@
 
 **책임**: 특정 Agenda에 대해 합의된 사실/선택을 저장하고 GT의 구성 요소로 작동한다.
 
-**상태 (파생)**: Decision 상태는 자체 저장하지 않고 Agenda approve 상태로 파생
+**상태 (파생)**: Decision 상태는 자체 저장하지 않고 DecisionReview 상태로 파생
 - `draft`: PR에 존재하지만 아직 approved되지 않음
-- `latest`: Agenda가 approved되어 GT에 반영됨
+- `latest`: Decision이 approved되어 GT에 반영됨
 - `rejected`: 리뷰에서 거부됨 (합의 실패)
 - `outdated`: 이후 Decision에 의해 대체됨
 

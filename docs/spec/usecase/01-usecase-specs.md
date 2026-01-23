@@ -483,8 +483,472 @@
 
 ---
 
+### UC-014: Mit Summary (회의 요약)
+
+**개요**
+- Actor: Team Member
+- 목적: 현재까지 회의 내용 실시간 요약
+
+**Flow**
+1. 사용자가 Agent에게 요약 요청 ("지금까지 뭐 얘기했어?")
+2. Agent가 의도 분석 -> mit_summary 도구 선택
+3. 현재 세션의 transcript 분석
+4. 논의된 주제, 잠정 결정, 미결 이슈 정리
+5. 자연어 응답 생성
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| sessionId | UUID | O | 현재 회의 세션 ID |
+| scope | string | X | 요약 범위 (all/recent, 기본: all) |
+
+**출력**
+- 논의 주제 목록
+- 잠정 결정 사항
+- 미결 이슈/논쟁점
+- 참여자별 주요 발언 요약
+
+**Acceptance Criteria**
+- [ ] 현재 세션 transcript 기반 요약
+- [ ] 주제별 그룹핑
+- [ ] 시간순 정렬 옵션
+- [ ] 자연어 응답
+
+---
+
+### UC-015: Mit Action (Action Item 관리)
+
+**개요**
+- Actor: Team Member
+- 목적: 회의 중 Action Item 추출 및 정리
+
+**Flow**
+1. 사용자가 Agent에게 Action Item 요청 ("할 일 목록 정리해줘")
+2. Agent가 의도 분석 -> mit_action 도구 선택
+3. transcript에서 Action Item 패턴 추출
+4. 담당자, 기한, 내용 구조화
+5. 목록 반환
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| sessionId | UUID | O | 현재 회의 세션 ID |
+| assignee | string | X | 특정 담당자 필터 |
+
+**출력**
+- Action Item 목록
+- 각 Item: 내용, 담당자, 기한, 우선순위
+- transcript 참조 링크
+
+**예외**
+| 코드 | 조건 |
+|------|------|
+| 404 | Action Item 없음 |
+
+**Acceptance Criteria**
+- [ ] transcript에서 Action Item 자동 추출
+- [ ] 담당자 자동 식별 (발화자 기반)
+- [ ] 기한 표현 파싱 ("다음 주까지", "금요일까지")
+- [ ] 담당자별 필터링
+
+---
+
+## MCP Tools 관련
+
+### UC-016: MCP Jira 연동
+
+**개요**
+- Actor: Team Member
+- 목적: 회의 중 Jira 이슈 생성/조회/수정
+
+**Flow**
+1. 사용자가 Jira 관련 요청 ("이 버그 Jira에 등록해줘")
+2. Agent가 의도 분석 -> mcp_jira 도구 선택
+3. 필요한 정보 추출 (제목, 설명, 담당자 등)
+4. Jira API 호출
+5. 결과 응답
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| action | string | O | create/read/update |
+| issueKey | string | X | 이슈 키 (read/update 시) |
+| summary | string | X | 이슈 제목 (create 시) |
+| description | string | X | 이슈 설명 |
+| assignee | string | X | 담당자 |
+| projectKey | string | X | 프로젝트 키 |
+
+**출력**
+- 생성된 이슈 키 및 링크
+- 이슈 상세 정보
+- 수정 결과
+
+**Acceptance Criteria**
+- [ ] Jira 이슈 생성
+- [ ] 이슈 조회 (키 또는 검색)
+- [ ] 이슈 상태/담당자 수정
+- [ ] 링크 반환
+
+---
+
+### UC-017: MCP Notion 연동
+
+**개요**
+- Actor: Team Member
+- 목적: Notion 페이지 생성/수정
+
+**Flow**
+1. 사용자가 Notion 관련 요청 ("이 내용 Notion에 기록해줘")
+2. Agent가 내용 정리 -> mcp_notion 도구 선택
+3. 대상 페이지/데이터베이스 식별
+4. Notion API 호출
+5. 결과 응답
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| action | string | O | create/update/append |
+| pageId | string | X | 페이지 ID (update/append 시) |
+| parentId | string | X | 부모 페이지 ID (create 시) |
+| title | string | X | 페이지 제목 |
+| content | string | X | 내용 (Markdown) |
+
+**출력**
+- 생성/수정된 페이지 링크
+- 페이지 ID
+
+**Acceptance Criteria**
+- [ ] 페이지 생성
+- [ ] 기존 페이지에 내용 추가
+- [ ] Markdown -> Notion 블록 변환
+- [ ] 링크 반환
+
+---
+
+### UC-018: MCP Slack 연동
+
+**개요**
+- Actor: Team Member
+- 목적: Slack 메시지 전송
+
+**Flow**
+1. 사용자가 Slack 전송 요청 ("이 결정 #general에 공유해")
+2. Agent가 메시지 작성 -> mcp_slack 도구 선택
+3. 대상 채널/사용자 식별
+4. Slack API 호출
+5. 전송 확인
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| channel | string | O | 채널명 또는 사용자 ID |
+| message | string | O | 메시지 내용 |
+| threadTs | string | X | 스레드 타임스탬프 (답글 시) |
+
+**출력**
+- 전송 완료 확인
+- 메시지 링크
+
+**Acceptance Criteria**
+- [ ] 채널 메시지 전송
+- [ ] DM 전송
+- [ ] 스레드 답글
+- [ ] 메시지 포맷팅 (Markdown)
+
+---
+
+### UC-019: MCP Calendar 연동
+
+**개요**
+- Actor: Team Member
+- 목적: 일정 조회/생성
+
+**Flow**
+1. 사용자가 캘린더 요청 ("다음 주 팀 일정 뭐 있어?")
+2. Agent가 mcp_calendar 도구 선택
+3. 날짜 범위/조건 파싱
+4. Calendar API 호출
+5. 결과 응답
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| action | string | O | list/create |
+| startDate | datetime | X | 시작 날짜 |
+| endDate | datetime | X | 종료 날짜 |
+| title | string | X | 일정 제목 (create 시) |
+| attendees | array | X | 참석자 목록 |
+
+**출력**
+- 일정 목록
+- 생성된 일정 정보 및 링크
+
+**Acceptance Criteria**
+- [ ] 기간별 일정 조회
+- [ ] 일정 생성 (참석자 포함)
+- [ ] 자연어 날짜 파싱 ("다음 화요일")
+
+---
+
+### UC-020: MCP Drive 연동
+
+**개요**
+- Actor: Team Member
+- 목적: 문서 저장/검색
+
+**Flow**
+1. 사용자가 Drive 요청 ("회의록 Drive에 저장해")
+2. Agent가 mcp_drive 도구 선택
+3. 대상 폴더/파일 식별
+4. Drive API 호출
+5. 결과 응답
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| action | string | O | upload/search/share |
+| folderId | string | X | 대상 폴더 ID |
+| fileName | string | X | 파일명 |
+| content | string | X | 파일 내용 |
+| query | string | X | 검색 쿼리 (search 시) |
+
+**출력**
+- 저장된 파일 링크
+- 검색 결과 목록
+
+**Acceptance Criteria**
+- [ ] 파일 업로드
+- [ ] 파일 검색
+- [ ] 공유 링크 생성
+
+---
+
+## 복합 유즈케이스
+
+### UC-C01: 회의 Agenda -> Jira 티켓 생성
+
+**개요**
+- Actor: Team Member
+- 목적: 과거 회의의 특정 Agenda를 Jira 이슈로 생성
+
+**Flow**
+1. 사용자 요청 ("어제 회의에서 나온 결제 버그 아젠다 Jira 티켓으로 만들어줘")
+2. Agent가 mit_search로 "어제 회의", "결제 버그" 관련 Agenda/Decision 검색
+3. 해당 Agenda의 context, Decision 내용 추출
+4. mcp_jira로 이슈 생성 (title, description, assignee 자동 매핑)
+5. 생성된 티켓 링크 응답
+
+**도구 조합**: mit_search -> mcp_jira
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| query | string | O | 자연어 요청 |
+
+**출력**
+- 검색된 Agenda 정보
+- 생성된 Jira 이슈 키 및 링크
+
+**Acceptance Criteria**
+- [ ] 자연어에서 검색 조건 추출
+- [ ] Agenda/Decision 내용을 Jira 필드에 매핑
+- [ ] 담당자 자동 지정 (Decision 작성자 기반)
+
+---
+
+### UC-C02: Action Item -> Jira 일괄 등록
+
+**개요**
+- Actor: Team Member
+- 목적: 회의에서 추출된 Action Item을 Jira 이슈로 일괄 생성
+
+**Flow**
+1. 사용자 요청 ("오늘 회의에서 나온 할 일 전부 Jira 티켓으로 등록해")
+2. Agent가 mit_action으로 현재 회의의 Action Item 추출
+3. 각 Item의 담당자, 내용, 기한 파악
+4. mcp_jira로 각각 이슈 생성 (담당자 자동 지정)
+5. 생성된 티켓 목록 응답
+
+**도구 조합**: mit_action -> mcp_jira (batch)
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| sessionId | UUID | O | 회의 세션 ID |
+| projectKey | string | X | Jira 프로젝트 키 |
+
+**출력**
+- 추출된 Action Item 목록
+- 생성된 Jira 이슈 목록 (키, 링크)
+
+**Acceptance Criteria**
+- [ ] Action Item 자동 추출
+- [ ] 일괄 이슈 생성
+- [ ] 담당자/기한 자동 매핑
+- [ ] 실패 시 부분 성공 결과 반환
+
+---
+
+### UC-C03: 과거 Decision -> Slack 공유
+
+**개요**
+- Actor: Team Member
+- 목적: 과거 결정 사항을 Slack 채널에 공유
+
+**Flow**
+1. 사용자 요청 ("지난주 예산 결정 내용 #finance 채널에 공유해줘")
+2. Agent가 mit_search로 "예산" 관련 최근 Decision 검색
+3. 해당 Decision의 내용, 맥락, 승인 이력 추출
+4. mcp_slack으로 채널에 포맷팅된 메시지 전송
+
+**도구 조합**: mit_search -> mcp_slack
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| query | string | O | 자연어 요청 |
+
+**출력**
+- 검색된 Decision 정보
+- Slack 메시지 전송 확인
+
+**Acceptance Criteria**
+- [ ] Decision 검색 및 추출
+- [ ] 포맷팅된 메시지 생성 (제목, 내용, 승인자, 날짜)
+- [ ] 채널/DM 전송
+
+---
+
+### UC-C04: 회의 요약 -> Notion 기록
+
+**개요**
+- Actor: Team Member
+- 목적: 현재 회의 요약을 Notion 페이지에 기록
+
+**Flow**
+1. 사용자 요청 ("오늘 회의 내용 프로젝트 X Notion 페이지에 정리해줘")
+2. Agent가 mit_summary로 현재 회의 요약 생성
+3. 논의 주제, 결정 사항, Action Item 구조화
+4. mcp_notion으로 해당 페이지에 추가
+
+**도구 조합**: mit_summary -> mcp_notion
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| sessionId | UUID | O | 회의 세션 ID |
+| pageId | string | O | Notion 페이지 ID 또는 이름 |
+
+**출력**
+- 생성된 요약 내용
+- Notion 페이지 링크
+
+**Acceptance Criteria**
+- [ ] 회의 요약 자동 생성
+- [ ] Notion 블록 구조로 변환
+- [ ] 기존 페이지에 append 또는 새 페이지 생성
+
+---
+
+### UC-C05: Follow-up 미팅 생성 + 알림
+
+**개요**
+- Actor: Team Member
+- 목적: 특정 Agenda에 대한 후속 미팅 생성 및 참석자 알림
+
+**Flow**
+1. 사용자 요청 ("이 아젠다 follow-up 미팅 다음주 화요일에 잡고 관련자들한테 알려줘")
+2. Agent가 현재 Agenda의 참여자/이해관계자 파악
+3. mcp_calendar로 미팅 일정 생성
+4. mcp_slack으로 참석자들에게 알림
+
+**도구 조합**: context -> mcp_calendar -> mcp_slack
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| agendaId | UUID | O | Agenda ID |
+| dateExpression | string | O | 날짜 표현 ("다음주 화요일") |
+
+**출력**
+- 생성된 일정 정보
+- 알림 전송 확인
+
+**Acceptance Criteria**
+- [ ] Agenda에서 관련자 추출
+- [ ] 자연어 날짜 파싱
+- [ ] 일정 생성 (참석자 자동 추가)
+- [ ] Slack 알림 전송
+
+---
+
+### UC-C06: Decision 변경 이력 -> 문서화
+
+**개요**
+- Actor: Team Member
+- 목적: 특정 Decision의 변경 히스토리를 문서로 저장
+
+**Flow**
+1. 사용자 요청 ("예산 결정 변경 히스토리 Drive에 문서로 저장해줘")
+2. Agent가 mit_blame으로 해당 Decision의 전체 변경 이력 조회
+3. 각 변경의 맥락, 사유, 참여자 정리
+4. mcp_drive로 문서 생성 및 저장
+
+**도구 조합**: mit_blame -> mcp_drive
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| query | string | O | 자연어 요청 |
+| folderId | string | X | 저장 폴더 ID |
+
+**출력**
+- 변경 이력 문서 내용
+- Drive 파일 링크
+
+**Acceptance Criteria**
+- [ ] 전체 변경 이력 조회
+- [ ] 구조화된 문서 생성
+- [ ] Drive 업로드
+
+---
+
+### UC-C07: 회의록 저장 + 팀 공유
+
+**개요**
+- Actor: Team Member
+- 목적: 회의록을 Drive에 저장하고 팀 Slack에 공유
+
+**Flow**
+1. 사용자 요청 ("오늘 회의록 Drive에 저장하고 팀 Slack에 공유해")
+2. Agent가 Minutes 내용 추출
+3. mcp_drive로 문서 저장
+4. mcp_slack으로 팀 채널에 링크 공유
+
+**도구 조합**: internal -> mcp_drive -> mcp_slack
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| meetingId | UUID | O | 회의 ID |
+| channel | string | O | Slack 채널명 |
+| folderId | string | X | Drive 폴더 ID |
+
+**출력**
+- 저장된 파일 링크
+- Slack 메시지 전송 확인
+
+**Acceptance Criteria**
+- [ ] Minutes 문서 생성
+- [ ] Drive 업로드
+- [ ] Slack 채널에 링크 공유
+- [ ] 에러 시 부분 성공 처리
+
+---
+
 ## 참조
 
 - 워크플로우: [usecase/02-workflow-spec.md](02-workflow-spec.md)
 - 도메인 규칙: [domain/03-domain-rules.md](../domain/03-domain-rules.md)
 - 비즈니스 규칙: [policy/01-business-rules.md](../policy/01-business-rules.md)
+- 도구 커버리지: [usecase/03-tools-coverage.md](03-tools-coverage.md)

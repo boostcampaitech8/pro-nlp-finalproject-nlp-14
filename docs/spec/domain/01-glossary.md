@@ -60,7 +60,7 @@
 - **정의**: 특정 회의에서 해당 Agenda에 대해 내린 결정
 - **관계**: Agenda에 종속, 1 Agenda : N Decision
 - **상태 파생**: 엔티티 자체가 저장하지 않음, DecisionReview 상태로 파생
-  - **latest**: Agenda가 approved되어 GT에 반영된 결정
+  - **latest**: Decision이 approved되어 GT에 반영된 결정
   - **draft**: PR에 존재하지만 아직 approved되지 않은 결정
   - **rejected**: 리뷰에서 거부된 결정 (합의 실패)
   - **outdated**: 이후 결정에 의해 대체된 과거 결정 (합의 성공 후 갱신)
@@ -69,15 +69,15 @@
 
 - **정의**: 회의록을 작성/수정하기 위한 작업 공간
 - **특성**: GT에서 파생, 회의당 1개 생성
-- **생명주기**: 회의 시작 시 생성, PR merge 또는 취소 시 종료
+- **생명주기**: 회의 시작 시 생성, PR 처리 완료 또는 취소 시 종료
 
 ### PR (Pull Request)
 
 - **정의**: Branch의 회의록을 GT로 병합하기 위한 리뷰/합의 절차
 - **생성 시점**: 회의 종료 후 Agent가 자동 생성
-- **활동**: Comment, Suggestion, Review -> Agenda별 Approve/Reject
-- **특성**: Agenda별 부분 approve/merge 가능
-- **종료 조건**: 모든 Agenda가 처리(approved 또는 rejected)되면 자동 close
+- **활동**: Comment, Suggestion, Review -> Decision별 Approve/Reject
+- **특성**: Decision별 부분 approve/reject 가능
+- **종료 조건**: 모든 Decision이 처리(approved 또는 rejected)되면 자동 close
 
 ### Draft
 
