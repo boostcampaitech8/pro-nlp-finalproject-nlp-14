@@ -29,7 +29,7 @@
 
 - **정의**: 팀원들이 참여하여 안건을 논의하는 세션
 - **상태**: `scheduled` -> `ongoing` -> `completed` -> `in_review` -> `confirmed` / `cancelled`
-- **관계**: 1 Meeting -> 1 Minutes, 1 Meeting -> 1 Branch
+- **관계**: 1 Meeting -> 1 Minutes, 1 Meeting -> 1 PR
 
 ### 회의록 (Minutes)
 
@@ -65,15 +65,9 @@
   - **rejected**: 리뷰에서 거부된 결정 (합의 실패)
   - **outdated**: 이후 결정에 의해 대체된 과거 결정 (합의 성공 후 갱신)
 
-### Branch (브랜치)
-
-- **정의**: 회의록을 작성/수정하기 위한 작업 공간
-- **특성**: GT에서 파생, 회의당 1개 생성
-- **생명주기**: 회의 시작 시 생성, PR 처리 완료 또는 취소 시 종료
-
 ### PR (Pull Request)
 
-- **정의**: Branch의 회의록을 GT로 병합하기 위한 리뷰/합의 절차
+- **정의**: 회의의 Decision들을 GT로 병합하기 위한 리뷰/합의 절차
 - **생성 시점**: 회의 종료 후 Agent가 자동 생성
 - **활동**: Comment, Suggestion, Review -> Decision별 Approve/Reject
 - **특성**: Decision별 부분 approve/reject 가능
@@ -81,7 +75,7 @@
 
 ### Draft
 
-- **정의**: merge 전 Branch/PR에 존재하는 회의록 또는 결정 상태
+- **정의**: merge 전 PR에 존재하는 결정 상태
 - **특성**: 아직 GT에 반영되지 않은 임시 상태
 
 ### Outdated
@@ -118,7 +112,6 @@ Mit Agent가 호출하는 내부 도구:
 |------|------|-----------|
 | `mit_blame` | 특정 결정의 히스토리와 맥락 조회 | "예산이 왜 5천만원이야?" |
 | `mit_search` | GT DB에서 관련 정보 검색 | "프로젝트 X 관련 결정사항 찾아줘" |
-| `mit_branch` | 기존 GT에 이의 제기, 새 브랜치 생성 | "예산 변경 제안할게" |
 | `mit_merge` | 합의된 내용을 GT로 확정 | "이 내용으로 확정해줘" |
 | `mit_summary` | 현재까지 회의 내용 요약 | "지금까지 뭐 얘기했어?" |
 | `mit_action` | Action Item 추출 및 정리 | "할 일 목록 정리해줘" |

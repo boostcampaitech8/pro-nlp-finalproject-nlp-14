@@ -27,22 +27,15 @@
           │            │         │         │            │ 1:N
           │            ▼         ▼         ▼            │
           │      ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-          │      │Recording │ │Transcript│ │  Branch  │ │
+          │      │Recording │ │Transcript│ │ Minutes  │ │
           │      │  - id    │ │  - id    │ │  - id    │ │
-          │      │  - path  │ │  - text  │ │  - base  │ │
+          │      │  - path  │ │  - text  │ │ - summary│ │
           │      └──────────┘ └──────────┘ └────┬─────┘ │
           │                                     │       │
           └─────────────────────────────────────┤       │
-                                                │ 1:1   │
+                                                │ M:N   │
+                                                │(via MinutesAgenda)
                                                 ▼       │
-                                          ┌──────────┐  │
-                                          │ Minutes  │  │
-                                          │  - id    │  │
-                                          │  - summary│ │
-                                          └────┬─────┘  │
-                                               │ M:N    │
-                                               │ (via MinutesAgenda)
-                                               ▼        │
                                           ┌──────────┐  │
                                           │  Agenda  │◀─┘
                                           │ (참조)   │
@@ -190,24 +183,11 @@
 
 **책임**: 발화 기록(STT 결과)을 저장하고 회의록의 근거 자료로 제공한다.
 
-### Branch
-
-| 속성 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | 고유 식별자 |
-| meeting_id | UUID (FK) | 회의 ID |
-| base_gt_version | UUID | 파생 시점의 GT 버전 |
-| status | enum | active / merged / closed |
-| created_at | datetime | 생성 시각 |
-
-**책임**: 회의별 작업 공간을 제공하고 GT로부터의 파생을 추적한다.
-
 ### Minutes (회의록)
 
 | 속성 | 타입 | 설명 |
 |------|------|------|
 | id | UUID | 고유 식별자 |
-| branch_id | UUID (FK) | 브랜치 ID |
 | meeting_id | UUID (FK) | 회의 ID |
 | summary | text | 회의 요약 |
 | created_by | UUID (FK) | 작성자 (Agent 또는 User) |
@@ -241,7 +221,7 @@
 | 속성 | 타입 | 설명 |
 |------|------|------|
 | id | UUID | 고유 식별자 |
-| branch_id | UUID (FK) | 브랜치 ID |
+| meeting_id | UUID (FK) | 회의 ID |
 | title | string | PR 제목 |
 | description | text | PR 설명 |
 | status | enum | open / in_review / closed |
@@ -249,7 +229,7 @@
 | created_at | datetime | 생성 시각 |
 | closed_at | datetime | 종료 시각 |
 
-**책임**: 브랜치의 회의록을 GT로 병합하는 리뷰/합의 절차를 관리한다. Decision별 부분 approve/merge를 지원한다.
+**책임**: 회의의 Decision들을 GT로 병합하는 리뷰/합의 절차를 관리한다. Decision별 부분 approve/merge를 지원한다.
 
 **종료 조건**: 모든 Decision이 처리(approved 또는 rejected)되면 자동 close
 
@@ -340,11 +320,10 @@ ELSE:  # DecisionReview.status == 'pending'
 | Meeting - Participant | 1:N | 회의는 여러 참여자를 가짐 |
 | Meeting - Recording | 1:N | 회의는 여러 녹음을 가질 수 있음 |
 | Meeting - Transcript | 1:1 | 회의당 하나의 최종 transcript |
-| Meeting - Branch | 1:1 | 회의당 하나의 브랜치 |
-| Branch - Minutes | 1:1 | 브랜치당 하나의 회의록 |
+| Meeting - Minutes | 1:1 | 회의당 하나의 회의록 |
+| Meeting - PR | 1:1 | 회의당 하나의 PR |
 | Minutes - Agenda | M:N (via MinutesAgenda) | 회의록은 여러 안건을 포함, 안건은 여러 회의에서 논의 |
 | Agenda - Decision | 1:N | 안건은 여러 결정을 가짐 (회의별로 축적) |
-| Branch - PR | 1:1 | 브랜치당 하나의 PR |
 | PR - DecisionReview | 1:N | PR은 여러 결정 리뷰를 포함 |
 | DecisionReview - ReviewerApproval | 1:N | 결정 리뷰는 여러 리뷰어 승인을 포함 |
 

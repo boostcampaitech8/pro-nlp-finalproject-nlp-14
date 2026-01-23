@@ -95,8 +95,7 @@
 1. Host가 회의 시작 요청
 2. 시스템이 권한 확인 (host 여부)
 3. Meeting 상태를 ongoing으로 변경
-4. Branch 자동 생성 (GT 기준)
-5. 녹음 시작
+4. 녹음 시작
 
 **입력**
 | 필드 | 타입 | 필수 | 설명 |
@@ -115,7 +114,6 @@
 **Acceptance Criteria**
 - [ ] host만 시작 가능
 - [ ] status: scheduled -> ongoing
-- [ ] Branch 자동 생성
 - [ ] 참여자에게 시작 알림
 
 ---
@@ -234,38 +232,7 @@
 
 ---
 
-### UC-007: Mit Branch 생성
-
-**개요**
-- Actor: Team Member
-- 목적: 기존 GT에 이의 제기, 새 브랜치 생성
-
-**Flow**
-1. 사용자가 Agent에게 변경 제안 ("예산 6천만원으로 변경 제안")
-2. Agent가 의도 분석 -> mit_branch 도구 선택
-3. 새 Branch 생성 (base: 현재 GT)
-4. 제안 내용 저장
-5. 팀원에게 리뷰 요청 알림
-
-**입력**
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|:----:|------|
-| target | string | O | 변경 대상 |
-| proposed | string | O | 제안 내용 |
-| context | string | X | 변경 사유 |
-
-**출력**
-- 생성된 Branch 정보
-- 현재 GT 값 vs 제안 값 비교
-
-**Acceptance Criteria**
-- [ ] Branch 생성
-- [ ] 제안 내용 저장
-- [ ] 팀원 알림 발송
-
----
-
-### UC-008: Mit Merge 실행 (Decision Approve)
+### UC-007: Mit Merge 실행 (Decision Approve)
 
 **개요**
 - Actor: Team Member (approval 조건 충족 시)
@@ -308,7 +275,7 @@
 
 ## PR 관련
 
-### UC-009: PR 코멘트 작성
+### UC-008: PR 코멘트 작성
 
 **개요**
 - Actor: Team Member
@@ -336,7 +303,7 @@
 
 ---
 
-### UC-010: PR Approval
+### UC-009: PR Approval
 
 **개요**
 - Actor: Team Member (작성자 제외)
@@ -371,7 +338,7 @@
 
 ## Decision 관련
 
-### UC-011: Decision Approve
+### UC-010: Decision Approve
 
 **개요**
 - Actor: 지정된 리뷰어 (Decision 작성자 제외)
@@ -412,7 +379,7 @@
 
 ---
 
-### UC-012: Decision Reject
+### UC-011: Decision Reject
 
 **개요**
 - Actor: 지정된 리뷰어
@@ -453,7 +420,7 @@
 
 ---
 
-### UC-013: Suggestion 수락
+### UC-012: Suggestion 수락
 
 **개요**
 - Actor: Decision 작성자 또는 Host
@@ -483,7 +450,7 @@
 
 ---
 
-### UC-014: Mit Summary (회의 요약)
+### UC-013: Mit Summary (회의 요약)
 
 **개요**
 - Actor: Team Member
@@ -516,7 +483,7 @@
 
 ---
 
-### UC-015: Mit Action (Action Item 관리)
+### UC-014: Mit Action (Action Item 관리)
 
 **개요**
 - Actor: Team Member
@@ -555,7 +522,7 @@
 
 ## MCP Tools 관련
 
-### UC-016: MCP Jira 연동
+### UC-015: MCP Jira 연동
 
 **개요**
 - Actor: Team Member
@@ -591,7 +558,7 @@
 
 ---
 
-### UC-017: MCP Notion 연동
+### UC-016: MCP Notion 연동
 
 **개요**
 - Actor: Team Member
@@ -625,7 +592,7 @@
 
 ---
 
-### UC-018: MCP Slack 연동
+### UC-017: MCP Slack 연동
 
 **개요**
 - Actor: Team Member
@@ -657,7 +624,7 @@
 
 ---
 
-### UC-019: MCP Calendar 연동
+### UC-018: MCP Calendar 연동
 
 **개요**
 - Actor: Team Member
@@ -690,7 +657,7 @@
 
 ---
 
-### UC-020: MCP Drive 연동
+### UC-019: MCP Drive 연동
 
 **개요**
 - Actor: Team Member

@@ -24,12 +24,10 @@
        │ startMeeting()
        │ [UC-003]
        ▼
-┌─────────────┐     ┌──────────────────────────────────┐
-│   ongoing   │────▶│ Branch 생성 (GT 기준 파생)        │
-└──────┬──────┘     │ - base_gt_version 기록           │
-       │            └──────────────────────────────────┘
-       │                        │
-       │                        ▼
+┌─────────────┐
+│   ongoing   │
+└──────┬──────┘
+       │
        │              ┌──────────────────────────────────┐
        │              │ 실시간 처리                       │
        │              │ - VAD: 발화 감지                  │
@@ -54,7 +52,7 @@
        │              ┌──────────────────────────────────┐
        │              │ Agent가 PR 자동 오픈             │
        │              │ - DecisionReview 생성 (각 Decision)│
-       │              │ - 리뷰어 자동 지정 [BR-009]      │
+       │              │ - 리뷰어 자동 지정 [BR-008]      │
        │              │ - 팀원 알림                       │
        │              └──────────────────────────────────┘
        │
@@ -76,7 +74,6 @@
 └─────────────┘     │ - approved Decision -> latest    │
                     │ - rejected Decision -> rejected  │
                     │ - GT: Knowledge graph 업데이트   │
-                    │ - Branch 상태: closed             │
                     │ - 팀원 알림                       │
                     └──────────────────────────────────┘
 ```
@@ -198,59 +195,7 @@
 
 ---
 
-## WF-003: Branch 생명주기
-
-### 상태 다이어그램
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Branch 생명주기                             │
-└─────────────────────────────────────────────────────────────────┘
-
-     회의 시작 / 수동 생성
-              │
-              ▼
-        ┌──────────┐
-        │  active  │───────────────────────────────┐
-        │ (활성)   │                               │
-        └────┬─────┘                               │
-             │                                     │
-    ┌────────┼────────┐                           │
-    │        │        │                           │
-    ▼        ▼        ▼                           ▼
-[Minutes  [Agenda   [PR 생성]                 [Meeting
- 수정]    /Decision  │                         취소]
-          추출]      │                           │
-    │        │       │                           │
-    └────────┴───────┘                           │
-             │                                    │
-             ▼                                    │
-     Decision별 approve/reject                    │
-     (부분 GT 반영)                                │
-             │                                    │
-             ▼                                    │
-     모든 Decision 처리 완료                        │
-             │                                    │
-             ▼                                    ▼
-        ┌──────────┐                        ┌──────────┐
-        │  closed  │                        │  closed  │
-        │ (완료)   │                        │ (폐기)   │
-        └──────────┘                        └──────────┘
-             │                                    │
-             │                                    │
-             └────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌──────────────────┐
-                    │  데이터 보존        │
-                    │  (soft delete)   │
-                    │  [BR-003]        │
-                    └──────────────────┘
-```
-
----
-
-## WF-004: Decision 상태 파생 플로우
+## WF-003: Decision 상태 파생 플로우
 
 ### 상태 파생 로직
 
@@ -338,7 +283,7 @@ def derive_decision_status(decision):
 
 ---
 
-## WF-005: Agent 요청 처리 플로우
+## WF-004: Agent 요청 처리 플로우
 
 ### 처리 흐름
 
@@ -393,7 +338,7 @@ def derive_decision_status(decision):
 
 ---
 
-## WF-006: Agenda 식별 플로우
+## WF-005: Agenda 식별 플로우
 
 ### Agenda 추출 및 식별 로직
 
@@ -466,13 +411,12 @@ def derive_decision_status(decision):
 | 규칙 | 설명 | 참조 |
 |------|------|------|
 | 회의 중 Decision approve 금지 | 회의 진행 중 Decision approve 권장하지 않음 | BR-001 |
-| Branch 자동 생성 | 회의 시작 시 Branch 자동 생성 | UC-003 |
 | PR 자동 생성 | 회의 종료 후 Agent가 PR 자동 생성 (Agenda/Decision 추출 포함) | UC-004 |
 | 상태 파생 | Decision 상태는 DecisionReview 상태에서 파생 | INV-002 |
 | GT 불변성 | GT는 Decision approve로만 변경 | INV-003 |
-| 부분 merge | PR 내 Decision별 독립적 approve/reject 가능 | BR-016 |
-| 자동 close | 모든 Decision 처리 시 PR 자동 close | BR-017 |
-| Agenda 식별 | AI semantic matching으로 동일 Agenda 식별 | BR-015 |
+| 부분 merge | PR 내 Decision별 독립적 approve/reject 가능 | BR-015 |
+| 자동 close | 모든 Decision 처리 시 PR 자동 close | BR-016 |
+| Agenda 식별 | AI semantic matching으로 동일 Agenda 식별 | BR-014 |
 
 ---
 

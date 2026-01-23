@@ -6,7 +6,7 @@ Git은 우리 팀의 코드의 Ground Truth이듯, Mit은 우리 팀의 Meeting 
 
 Mit은 회의록을 단순한 기록이 아닌 **팀이 합의한 검증된 사실(Ground Truth)의 저장소**로 만드는 시스템이다. Git의 PR Review처럼 팀원들이 회의 내용에 대해 Comment를 달고, Suggestion을 제안하며, **Decision별로 approve/reject**를 진행한다. 최종적으로 approved된 Decision만이 조직의 GT(Ground Truth)가 된다.
 
-**Mit Agent**가 회의에 직접 참여하여 모든 작업의 중심이 된다. 사용자는 음성 또는 텍스트로 에이전트에게 요청하면, 에이전트가 적절한 도구(blame, branch, merge, MCP 등)를 호출하여 처리한다. 이 과정이 반복되면서 팀의 지식 DB가 지속적으로 확장되고 정제된다.
+**Mit Agent**가 회의에 직접 참여하여 모든 작업의 중심이 된다. 사용자는 음성 또는 텍스트로 에이전트에게 요청하면, 에이전트가 적절한 도구(blame, merge, MCP 등)를 호출하여 처리한다. 이 과정이 반복되면서 팀의 지식 DB가 지속적으로 확장되고 정제된다.
 
 ## 슬로건
 
@@ -57,15 +57,9 @@ Mit은 회의록을 단순한 기록이 아닌 **팀이 합의한 검증된 사�
 - **관계**: 1 Meeting : 1 Minutes, 1 Minutes : N Agenda
 - **용도**: Agenda와 Decision 추출의 원천
 
-### Branch (브랜치)
-
-- **정의**: 회의록을 작성/수정하기 위한 작업 공간
-- **특성**: GT에서 파생, 회의당 1개 생성
-- **생명주기**: 회의 시작 시 생성, PR 처리 완료 또는 취소 시 종료
-
 ### PR (Pull Request)
 
-- **정의**: Branch의 회의록을 GT로 병합하기 위한 리뷰/합의 절차
+- **정의**: 회의의 Decision들을 GT로 병합하기 위한 리뷰/합의 절차
 - **생성 시점**: 회의 종료 후 Agent가 자동 생성
 - **활동**: Comment, Suggestion, Review -> **Decision별 Approve/Reject**
 - **특성**: Decision별 부분 approve/reject 가능
@@ -118,13 +112,13 @@ Mit의 모든 기능은 **Mit Agent**를 통해 실행된다. 사용자는 에�
    |              의도 분석 & 도구 선택                          |
    +----------------------------------------------------------+
         |
-        +----------+----------+----------+----------+---------
-        v          v          v          v          v
-   +--------+ +--------+ +--------+ +--------+ +--------+
-   | blame  | | branch | | merge  | | search |   MCP   |
-   +--------+ +--------+ +--------+ +--------+ +--------+
-        |          |          |          |          |
-        +----------+----------+----------+----------+
+        +----------+----------+----------+---------
+        v          v          v          v
+   +--------+ +--------+ +--------+ +--------+
+   | blame  | | merge  | | search |   MCP   |
+   +--------+ +--------+ +--------+ +--------+
+        |          |          |          |
+        +----------+----------+----------+
                               |
                               v
                     +-------------------+
@@ -141,7 +135,6 @@ Mit의 모든 기능은 **Mit Agent**를 통해 실행된다. 사용자는 에�
 |------|------|----------|
 | `mit_blame` | 특정 결정의 히스토리와 맥락 조회 | "예산이 왜 5천만원이야?" |
 | `mit_search` | Ground에서 관련 정보 검색 | "프로젝트 X 관련 결정사항 찾아줘" |
-| `mit_branch` | 기존 GT에 이의 제기, 새 브랜치 생성 | "예산 변경 제안할게" |
 | `mit_merge` | 특정 Decision을 GT로 확정 (Decision approve 트리거) | "이 결정 확정해줘" |
 | `mit_summary` | 현재까지 회의 내용 요약 | "지금까지 뭐 얘기했어?" |
 | `mit_action` | Action Item 추출 및 정리 | "할 일 목록 정리해줘" |
@@ -187,19 +180,9 @@ Mit Agent: "3개의 Jira 티켓을 생성했습니다.
            - MIT-125: 예산 승인 요청 (담당: 박OO, 기한: 1/18)"
 ```
 
-**예시 3: branch & merge 흐름**
+**예시 3: merge 흐름**
 ```
-사용자: "예산을 6천만원으로 올리자고 제안할게"
-
-Mit Agent 내부 처리:
-  1. 도구 선택: mit_branch
-  2. 파라미터: { target: "프로젝트 X 예산", proposed: "6,000만원" }
-
-Mit Agent: "브랜치를 생성했습니다.
-           - 현재 GT: 5,000만원
-           - 제안: 6,000만원
-           - 팀원들에게 리뷰 요청을 보낼까요?"
-
+[회의 종료 후 PR 리뷰 진행]
 [팀원 리뷰 - Decision별 approve/reject 진행]
 
 사용자: "전원 동의했으니 확정해줘"
@@ -313,22 +296,20 @@ Mit Agent: mit_blame 도구 호출 -> Ground에서 히스토리 조회 -> 응답
 
 ---
 
-### 5. mit branch & merge (Tool: `mit_branch`, `mit_merge`)
+### 5. mit merge (Tool: `mit_merge`)
 
 **해결하는 Pain Point**: 검증의 개인화
 
-Mit Agent를 통해 기존 GT에 이의를 제기하고 새로운 제안을 할 수 있다.
+PR 리뷰를 통해 Decision을 GT에 반영한다.
 
 **작동방식**
 ```
-1. 사용자: "예산 변경 제안할게" -> Mit Agent가 mit_branch 호출
-2. 새로운 근거/증거 첨부
-3. Agent가 PR 생성, DecisionReview 생성
-4. 팀원들이 Discussion으로 검토 (Decision별로 approve/reject)
-5. 합의 도달 시: "확정해줘" -> Mit Agent가 mit_merge 호출
+1. 회의 종료 후 Agent가 PR 생성, DecisionReview 생성
+2. 팀원들이 Discussion으로 검토 (Decision별로 approve/reject)
+3. 합의 도달 시: "확정해줘" -> Mit Agent가 mit_merge 호출
    - DecisionReview 승인 조건 확인
    - Decision approve -> GT 업데이트
-6. 합의 실패 시: Decision rejected
+4. 합의 실패 시: Decision rejected
    - 새 회의에서 재제안 가능 (새로운 Decision으로 생성)
 ```
 
@@ -454,8 +435,8 @@ Mit Agent: "팀 채널에 회의 요약과 Action Item을 공유했습니다."
   |  | Mit Tools  |  | MCP Tools  |  | Util Tools |            |
   |  | - blame    |  | - jira     |  | - summary  |            |
   |  | - search   |  | - notion   |  | - action   |            |
-  |  | - branch   |  | - slack    |  | - ...      |            |
-  |  | - merge    |  | - calendar |  |            |            |
+  |  | - merge    |  | - slack    |  | - ...      |            |
+  |  |            |  | - calendar |  |            |            |
   |  +------------+  +------------+  +------------+            |
   |                                                              |
   +------------------------------------------------------------+
@@ -476,7 +457,7 @@ Mit Agent: "팀 채널에 회의 요약과 Action Item을 공유했습니다."
 
 | 분류 | Tools | 역할 |
 |------|-------|------|
-| **Mit Tools** | blame, search, branch, merge | Ground/GT 조회 및 관리 |
+| **Mit Tools** | blame, search, merge | Ground/GT 조회 및 관리 |
 | **MCP Tools** | jira, notion, slack, calendar, drive | 외부 서비스 연동 |
 | **Util Tools** | summary, action | 회의 진행 보조 |
 
@@ -545,7 +526,7 @@ AI가 조직의 Ground Truth를 기반으로 자율적으로 의사결정을 지
 > Mit은 조직 회의의 Single Source of Truth를 만든다.
 >
 > Mit Agent에게 말하면 된다.
-> 과거 결정이 궁금하면 blame을, 변경이 필요하면 branch를,
+> 과거 결정이 궁금하면 blame을, 확정이 필요하면 merge를,
 > Jira 등록이 필요하면 그냥 말하면 된다.
 >
 > 모든 요청은 Mit Agent를 통해.
