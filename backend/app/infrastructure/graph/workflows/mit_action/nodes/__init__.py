@@ -6,7 +6,6 @@ from app.infrastructure.graph.workflows.mit_action.nodes.evaluation import (
 from app.infrastructure.graph.workflows.mit_action.nodes.extraction import (
     extract_actions,
 )
-from app.infrastructure.graph.workflows.mit_action.nodes.mcp import execute_mcp
 from app.infrastructure.graph.workflows.mit_action.nodes.persistence import (
     save_actions,
 )
@@ -17,5 +16,4 @@ __all__ = [
     "evaluate_actions",
     "route_eval",
     "save_actions",
-    "execute_mcp",
 ]

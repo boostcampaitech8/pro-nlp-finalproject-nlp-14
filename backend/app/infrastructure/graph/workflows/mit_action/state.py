@@ -26,4 +26,3 @@ class MitActionState(TypedDict, total=False):
 
     # 출력 필드
     mit_action_actions: Annotated[list[ActionItemData], "저장된 Action Items"]
-    mit_action_mcp_result: Annotated[dict | None, "MCP 실행 결과"]
