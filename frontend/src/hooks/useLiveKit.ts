@@ -114,7 +114,9 @@ export function useLiveKit(meetingId: string) {
   const addRemoteStream = useMeetingRoomStore((s) => s.addRemoteStream);
   const removeRemoteStream = useMeetingRoomStore((s) => s.removeRemoteStream);
   const setRemoteVolume = useMeetingRoomStore((s) => s.setRemoteVolume);
-  const updateParticipantScreenSharing = useMeetingRoomStore((s) => s.updateParticipantScreenSharing);
+  const updateParticipantScreenSharing = useMeetingRoomStore(
+    (s) => s.updateParticipantScreenSharing
+  );
   const setScreenSharing = useMeetingRoomStore((s) => s.setScreenSharing);
   const setScreenStream = useMeetingRoomStore((s) => s.setScreenStream);
   const addRemoteScreenStream = useMeetingRoomStore((s) => s.addRemoteScreenStream);
@@ -173,19 +175,22 @@ export function useLiveKit(meetingId: string) {
   /**
    * LiveKit Participant를 RoomParticipant로 변환
    */
-  const mapParticipant = useCallback((participant: Participant, _isLocal = false): RoomParticipant => {
-    // identity format: "userId:userName:role"
-    const identity = participant.identity;
-    const metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
+  const mapParticipant = useCallback(
+    (participant: Participant, _isLocal = false): RoomParticipant => {
+      // identity format: "userId:userName:role"
+      const identity = participant.identity;
+      const metadata = participant.metadata ? JSON.parse(participant.metadata) : {};
 
-    return {
-      userId: identity,
-      userName: participant.name || identity,
-      role: metadata.role || 'participant',
-      audioMuted: !participant.isMicrophoneEnabled,
-      isScreenSharing: participant.isScreenShareEnabled,
-    };
-  }, []);
+      return {
+        userId: identity,
+        userName: participant.name || identity,
+        role: metadata.role || 'participant',
+        audioMuted: !participant.isMicrophoneEnabled,
+        isScreenSharing: participant.isScreenShareEnabled,
+      };
+    },
+    []
+  );
 
   /**
    * DataPacket 전송
@@ -200,195 +205,203 @@ export function useLiveKit(meetingId: string) {
     const encoder = new TextEncoder();
     const data = encoder.encode(JSON.stringify(message));
 
-    room.localParticipant.publishData(
-      data,
-      { reliable }
-    );
+    room.localParticipant.publishData(data, { reliable });
   }, []);
 
   /**
    * VAD 이벤트 서버 전송
    */
-  const sendVADEvent = useCallback((eventType: 'speech_start' | 'speech_end', segment?: VADSegment) => {
-    const payload: VADEventPayload = {
-      eventType,
-      timestamp: new Date().toISOString(),
-    };
+  const sendVADEvent = useCallback(
+    (eventType: 'speech_start' | 'speech_end', segment?: VADSegment) => {
+      const payload: VADEventPayload = {
+        eventType,
+        timestamp: new Date().toISOString(),
+      };
 
-    if (segment) {
-      payload.segmentStartMs = segment.startMs;
-      payload.segmentEndMs = segment.endMs;
-    } else if (eventType === 'speech_start' && vadStartTimeRef.current) {
-      const now = Date.now();
-      speechStartTimeRef.current = now;
-      payload.segmentStartMs = now - vadStartTimeRef.current;
-    }
+      if (segment) {
+        payload.segmentStartMs = segment.startMs;
+        payload.segmentEndMs = segment.endMs;
+      } else if (eventType === 'speech_start' && vadStartTimeRef.current) {
+        const now = Date.now();
+        speechStartTimeRef.current = now;
+        payload.segmentStartMs = now - vadStartTimeRef.current;
+      }
 
-    sendDataPacket({
-      type: 'vad_event',
-      payload,
-    });
-  }, [sendDataPacket]);
+      sendDataPacket({
+        type: 'vad_event',
+        payload,
+      });
+    },
+    [sendDataPacket]
+  );
 
   /**
    * 마이크 게인 처리된 스트림 생성
    */
-  const createProcessedStream = useCallback(async (
-    originalStream: MediaStream,
-    gain: number
-  ): Promise<MediaStream> => {
-    // 기존 노드 정리
-    if (sourceNodeRef.current) {
-      sourceNodeRef.current.disconnect();
-    }
-    if (gainNodeRef.current) {
-      gainNodeRef.current.disconnect();
-    }
+  const createProcessedStream = useCallback(
+    async (originalStream: MediaStream, gain: number): Promise<MediaStream> => {
+      // 기존 노드 정리
+      if (sourceNodeRef.current) {
+        sourceNodeRef.current.disconnect();
+      }
+      if (gainNodeRef.current) {
+        gainNodeRef.current.disconnect();
+      }
 
-    // AudioContext 생성 또는 재사용
-    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-      audioContextRef.current = new AudioContext();
-    }
+      // AudioContext 생성 또는 재사용
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new AudioContext();
+      }
 
-    const audioContext = audioContextRef.current;
+      const audioContext = audioContextRef.current;
 
-    // 노드 생성
-    sourceNodeRef.current = audioContext.createMediaStreamSource(originalStream);
-    gainNodeRef.current = audioContext.createGain();
-    destinationRef.current = audioContext.createMediaStreamDestination();
+      // 노드 생성
+      sourceNodeRef.current = audioContext.createMediaStreamSource(originalStream);
+      gainNodeRef.current = audioContext.createGain();
+      destinationRef.current = audioContext.createMediaStreamDestination();
 
-    // 게인 설정
-    gainNodeRef.current.gain.value = gain;
+      // 게인 설정
+      gainNodeRef.current.gain.value = gain;
 
-    // 연결
-    sourceNodeRef.current.connect(gainNodeRef.current);
-    gainNodeRef.current.connect(destinationRef.current);
+      // 연결
+      sourceNodeRef.current.connect(gainNodeRef.current);
+      gainNodeRef.current.connect(destinationRef.current);
 
-    return destinationRef.current.stream;
-  }, []);
+      return destinationRef.current.stream;
+    },
+    []
+  );
 
   /**
    * DataPacket 수신 핸들러
    */
-  const handleDataReceived = useCallback((
-    payload: Uint8Array,
-    participant?: RemoteParticipant
-  ) => {
-    try {
-      const decoder = new TextDecoder();
-      const message: DataMessage = JSON.parse(decoder.decode(payload));
+  const handleDataReceived = useCallback(
+    (payload: Uint8Array, participant?: RemoteParticipant) => {
+      try {
+        const decoder = new TextDecoder();
+        const message: DataMessage = JSON.parse(decoder.decode(payload));
 
-      switch (message.type) {
-        case 'chat_message': {
-          const chatPayload = message.payload as ChatMessagePayload;
-          if (participant) {
-            addChatMessage({
-              id: chatPayload.id,
-              userId: participant.identity,
-              userName: chatPayload.userName || participant.name || participant.identity,
-              content: chatPayload.content,
-              createdAt: chatPayload.createdAt,
-            });
-          }
-          break;
-        }
-
-        case 'force_mute': {
-          const forcePayload = message.payload as ForceMutePayload;
-          if (forcePayload.targetUserId === currentUserIdRef.current) {
-            // 자신이 강제 음소거됨
-            logger.log('[useLiveKit] Force muted:', forcePayload.muted);
-            setAudioMuted(forcePayload.muted);
-
-            const room = roomRef.current;
-            if (room) {
-              room.localParticipant.setMicrophoneEnabled(!forcePayload.muted);
+        switch (message.type) {
+          case 'chat_message': {
+            const chatPayload = message.payload as ChatMessagePayload;
+            if (participant) {
+              addChatMessage({
+                id: chatPayload.id,
+                userId: participant.identity,
+                userName: chatPayload.userName || participant.name || participant.identity,
+                content: chatPayload.content,
+                createdAt: chatPayload.createdAt,
+              });
             }
+            break;
           }
-          break;
-        }
 
-        case 'mute_state': {
-          const mutePayload = message.payload as MuteStatePayload;
-          if (participant) {
-            updateParticipantMute(participant.identity, mutePayload.muted);
+          case 'force_mute': {
+            const forcePayload = message.payload as ForceMutePayload;
+            if (forcePayload.targetUserId === currentUserIdRef.current) {
+              // 자신이 강제 음소거됨
+              logger.log('[useLiveKit] Force muted:', forcePayload.muted);
+              setAudioMuted(forcePayload.muted);
+
+              const room = roomRef.current;
+              if (room) {
+                room.localParticipant.setMicrophoneEnabled(!forcePayload.muted);
+              }
+            }
+            break;
           }
-          break;
-        }
 
-        case 'vad_event': {
-          // VAD 이벤트는 서버에서 처리 (로깅만)
-          logger.debug('[useLiveKit] VAD event from:', participant?.identity);
-          break;
+          case 'mute_state': {
+            const mutePayload = message.payload as MuteStatePayload;
+            if (participant) {
+              updateParticipantMute(participant.identity, mutePayload.muted);
+            }
+            break;
+          }
+
+          case 'vad_event': {
+            // VAD 이벤트는 서버에서 처리 (로깅만)
+            logger.debug('[useLiveKit] VAD event from:', participant?.identity);
+            break;
+          }
         }
+      } catch (err) {
+        logger.error('[useLiveKit] Failed to parse data packet:', err);
       }
-    } catch (err) {
-      logger.error('[useLiveKit] Failed to parse data packet:', err);
-    }
-  }, [addChatMessage, setAudioMuted, updateParticipantMute]);
+    },
+    [addChatMessage, setAudioMuted, updateParticipantMute]
+  );
 
   /**
    * 원격 트랙 구독 핸들러
    */
-  const handleTrackSubscribed = useCallback((
-    track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
-  ) => {
-    logger.log('[useLiveKit] Track subscribed:', track.kind, 'from:', participant.identity);
+  const handleTrackSubscribed = useCallback(
+    (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+      logger.log('[useLiveKit] Track subscribed:', track.kind, 'from:', participant.identity);
 
-    if (track.kind === Track.Kind.Audio) {
-      // 오디오 트랙 - MediaStream으로 변환하여 저장
-      const mediaStream = new MediaStream([track.mediaStreamTrack]);
-      addRemoteStream(participant.identity, mediaStream);
-    } else if (track.kind === Track.Kind.Video) {
-      // 비디오 트랙 (화면공유)
-      if (publication.source === Track.Source.ScreenShare) {
-        const screenMediaStream = new MediaStream([track.mediaStreamTrack]);
-        addRemoteScreenStream(participant.identity, screenMediaStream);
-        updateParticipantScreenSharing(participant.identity, true);
+      if (track.kind === Track.Kind.Audio) {
+        // 오디오 트랙 - MediaStream으로 변환하여 저장
+        const mediaStream = new MediaStream([track.mediaStreamTrack]);
+        addRemoteStream(participant.identity, mediaStream);
+      } else if (track.kind === Track.Kind.Video) {
+        // 비디오 트랙 (화면공유)
+        if (publication.source === Track.Source.ScreenShare) {
+          const screenMediaStream = new MediaStream([track.mediaStreamTrack]);
+          addRemoteScreenStream(participant.identity, screenMediaStream);
+          updateParticipantScreenSharing(participant.identity, true);
+        }
       }
-    }
-  }, [addRemoteStream, addRemoteScreenStream, updateParticipantScreenSharing]);
+    },
+    [addRemoteStream, addRemoteScreenStream, updateParticipantScreenSharing]
+  );
 
   /**
    * 원격 트랙 구독 해제 핸들러
    */
-  const handleTrackUnsubscribed = useCallback((
-    track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
-  ) => {
-    logger.log('[useLiveKit] Track unsubscribed:', track.kind, 'from:', participant.identity);
+  const handleTrackUnsubscribed = useCallback(
+    (track: RemoteTrack, publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+      logger.log('[useLiveKit] Track unsubscribed:', track.kind, 'from:', participant.identity);
 
-    if (track.kind === Track.Kind.Audio) {
-      removeRemoteStream(participant.identity);
-    } else if (track.kind === Track.Kind.Video && publication.source === Track.Source.ScreenShare) {
-      removeRemoteScreenStream(participant.identity);
-      updateParticipantScreenSharing(participant.identity, false);
-    }
-  }, [removeRemoteStream, removeRemoteScreenStream, updateParticipantScreenSharing]);
+      if (track.kind === Track.Kind.Audio) {
+        removeRemoteStream(participant.identity);
+      } else if (
+        track.kind === Track.Kind.Video &&
+        publication.source === Track.Source.ScreenShare
+      ) {
+        removeRemoteScreenStream(participant.identity);
+        updateParticipantScreenSharing(participant.identity, false);
+      }
+    },
+    [removeRemoteStream, removeRemoteScreenStream, updateParticipantScreenSharing]
+  );
 
   /**
    * 참여자 입장 핸들러
    */
-  const handleParticipantConnected = useCallback((participant: RemoteParticipant) => {
-    logger.log('[useLiveKit] Participant connected:', participant.identity);
-    addParticipant(mapParticipant(participant));
-  }, [addParticipant, mapParticipant]);
+  const handleParticipantConnected = useCallback(
+    (participant: RemoteParticipant) => {
+      logger.log('[useLiveKit] Participant connected:', participant.identity);
+      addParticipant(mapParticipant(participant));
+      // LiveKit SDK의 자동 구독 메커니즘에 의존 (수동 구독 제거)
+    },
+    [addParticipant, mapParticipant]
+  );
 
   /**
    * 참여자 퇴장 핸들러
    */
-  const handleParticipantDisconnected = useCallback((participant: RemoteParticipant) => {
-    logger.log('[useLiveKit] Participant disconnected:', participant.identity);
+  const handleParticipantDisconnected = useCallback(
+    (participant: RemoteParticipant) => {
+      logger.log('[useLiveKit] Participant disconnected:', participant.identity);
 
-    // LiveKit SDK가 자동으로 트랙을 정리하므로 우리는 스토어 상태만 정리
-    // detach()나 stop()을 호출하면 SDK 내부 상태가 꼬여서 재접속 시 문제 발생
-    removeParticipant(participant.identity);
-    removeRemoteStream(participant.identity);
-    removeRemoteScreenStream(participant.identity);
-  }, [removeParticipant, removeRemoteStream, removeRemoteScreenStream]);
+      // LiveKit SDK가 자동으로 트랙을 정리하므로 우리는 스토어 상태만 정리
+      // detach()나 stop()을 호출하면 SDK 내부 상태가 꼬여서 재접속 시 문제 발생
+      removeParticipant(participant.identity);
+      removeRemoteStream(participant.identity);
+      removeRemoteScreenStream(participant.identity);
+    },
+    [removeParticipant, removeRemoteStream, removeRemoteScreenStream]
+  );
 
   /**
    * 채팅 히스토리 조회
@@ -433,7 +446,9 @@ export function useLiveKit(meetingId: string) {
    */
   const startRecording = useCallback(async () => {
     try {
-      const response = await api.post<StartRecordingResponse>(`/meetings/${meetingId}/start-recording`);
+      const response = await api.post<StartRecordingResponse>(
+        `/meetings/${meetingId}/start-recording`
+      );
       egressIdRef.current = response.data.egressId;
       setIsRecording(true);
       setRecordingError(null);
@@ -462,82 +477,54 @@ export function useLiveKit(meetingId: string) {
   }, [meetingId, isRecording]);
 
   /**
-   * 회의 참여
+   * Room 이벤트 핸들러 등록
    */
-  const joinRoom = useCallback(async (userId: string) => {
-    // 이미 연결됨이면 skip
-    if (roomRef.current) {
-      logger.log('[useLiveKit] joinRoom: already connected, skipping');
-      return;
-    }
-
-    // 이전 연결 시도 취소 (Strict Mode 대응)
-    abortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    currentUserIdRef.current = userId;
-    setConnectionState('connecting');
-
-    try {
-      // 1. 채팅 히스토리 로드 및 토큰 획득 병렬 처리
-      const [tokenResponse] = await Promise.all([
-        getJoinToken(),
-        fetchChatHistory(),
-      ]);
-
-      // abort 체크: 토큰 획득 후
-      if (abortController.signal.aborted) {
-        logger.log('[useLiveKit] joinRoom aborted after token fetch');
-        setConnectionState('disconnected');
-        return;
-      }
-
-      logger.log('[useLiveKit] Token received, connecting to:', tokenResponse.wsUrl);
-
-      // 2. LiveKit Room 생성
-      const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-      });
-      // roomRef는 연결 완료 후에 설정 (abort 체크를 위해)
-
-      // ICE 연결 디버깅 (dev 모드에서만)
+  const setupRoomEventListeners = useCallback(
+    (room: Room) => {
+      // 디버깅 이벤트 (dev 모드에서만)
       if (isDevMode) {
         room.on(RoomEvent.SignalConnected, () => {
           logger.log('[useLiveKit] Signal connected (WebSocket OK)');
         });
-
         room.on(RoomEvent.MediaDevicesError, (error: Error) => {
           logger.error('[useLiveKit] Media devices error:', error);
         });
-
         room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
           logger.debug('[useLiveKit] Connection quality:', participant.identity, quality);
         });
       }
 
-      // 3. 이벤트 리스너 등록
+      // 연결 상태 변경
       room.on(RoomEvent.ConnectionStateChanged, (state: LiveKitConnectionState) => {
         logger.log('[useLiveKit] Connection state:', state);
         setConnectionState(mapConnectionState(state));
       });
 
+      // 참여자 이벤트
       room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
       room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+
+      // 트랙 이벤트
       room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-      room.on(RoomEvent.DataReceived, handleDataReceived);
 
-      // 트랙 발행 (초기 mute 상태 동기화 - 재접속 시 기존 참여자의 mute 상태 반영)
-      room.on(RoomEvent.TrackPublished, (publication: RemoteTrackPublication, participant: RemoteParticipant) => {
-        logger.log('[useLiveKit] Track published:', publication.kind, 'from:', participant.identity);
-        if (publication.kind === Track.Kind.Audio) {
-          updateParticipantMute(participant.identity, publication.isMuted);
+      // 트랙 발행 (초기 mute 상태 동기화)
+      room.on(
+        RoomEvent.TrackPublished,
+        (publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+          logger.log(
+            '[useLiveKit] Track published:',
+            publication.kind,
+            'from:',
+            participant.identity
+          );
+          if (publication.kind === Track.Kind.Audio) {
+            updateParticipantMute(participant.identity, publication.isMuted);
+          }
         }
-      });
+      );
 
-      // 음소거 상태 변경 이벤트 (실시간 mute/unmute 반영)
+      // 음소거 상태 변경
       room.on(RoomEvent.TrackMuted, (publication: TrackPublication, participant: Participant) => {
         if (publication.kind === Track.Kind.Audio) {
           updateParticipantMute(participant.identity, true);
@@ -550,6 +537,7 @@ export function useLiveKit(meetingId: string) {
         }
       });
 
+      // 재연결 이벤트
       room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
         logger.log('[useLiveKit] Disconnected:', reason);
         setConnectionState('disconnected');
@@ -565,129 +553,180 @@ export function useLiveKit(meetingId: string) {
         setConnectionState('connected');
       });
 
-      // ActiveSpeakersChanged 이벤트로 발화 상태 추적
-      room.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
-        // 발화 중인 사용자 업데이트 (UI 표시용)
-        logger.debug('[useLiveKit] Active speakers:', speakers.map((s: Participant) => s.identity));
-      });
+      // 데이터 수신
+      room.on(RoomEvent.DataReceived, handleDataReceived);
+    },
+    [
+      mapConnectionState,
+      handleParticipantConnected,
+      handleParticipantDisconnected,
+      handleTrackSubscribed,
+      handleTrackUnsubscribed,
+      handleDataReceived,
+      updateParticipantMute,
+      setConnectionState,
+    ]
+  );
 
-      // 4. 룸 연결
-      await room.connect(tokenResponse.wsUrl, tokenResponse.token, {
-        // WebRTC 연결 옵션
-        rtcConfig: {
-          // ICE 서버 설정 (STUN + 선택적 TURN)
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-          ],
-          // 릴레이 모드 강제 (TURN 필요시 'relay'로 변경)
-          iceTransportPolicy: 'all',
-        },
-      });
-
-      // abort 체크: 연결 완료 후 (Strict Mode에서 unmount된 경우)
-      if (abortController.signal.aborted) {
-        logger.log('[useLiveKit] joinRoom aborted after connect, disconnecting');
-        room.disconnect();
-        setConnectionState('disconnected');
-        return;
-      }
-
-      // 연결 성공 후에 roomRef 설정
-      roomRef.current = room;
-      logger.log('[useLiveKit] Connected to room:', tokenResponse.roomName);
-
-      // 5. 회의 정보 설정
-      setMeetingInfo(meetingId, 'in_progress', [], 20);
-
-      // 6. 기존 참여자 목록 업데이트
-      const existingParticipants: RoomParticipant[] = [];
-      room.remoteParticipants.forEach((participant) => {
-        existingParticipants.push(mapParticipant(participant));
-      });
-      // 자신도 추가
-      existingParticipants.push(mapParticipant(room.localParticipant, true));
-      setParticipants(existingParticipants);
-
-      // 7. 로컬 오디오 트랙 생성 및 게시
+  /**
+   * 로컬 오디오 트랙 생성 및 게시
+   */
+  const setupLocalAudioTrack = useCallback(
+    async (room: Room) => {
       const currentMicGain = useMeetingRoomStore.getState().micGain;
       const currentDeviceId = useMeetingRoomStore.getState().audioInputDeviceId;
 
+      // 기존 Web Audio 리소스 정리 (재접속 시 중요)
+      if (sourceNodeRef.current) {
+        sourceNodeRef.current.disconnect();
+        sourceNodeRef.current = null;
+      }
+      if (gainNodeRef.current) {
+        gainNodeRef.current.disconnect();
+        gainNodeRef.current = null;
+      }
+      if (destinationRef.current) {
+        destinationRef.current = null;
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        await audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+
+      // 트랙 생성
       const tracks = await createLocalTracks({
         audio: currentDeviceId ? { deviceId: currentDeviceId } : true,
         video: false,
       });
 
-      const audioTrack = tracks.find((t: LocalTrack) => t.kind === Track.Kind.Audio) as LocalAudioTrack | undefined;
-      if (audioTrack) {
-        // 마이크 게인 처리된 스트림 생성
-        const originalStream = new MediaStream([audioTrack.mediaStreamTrack]);
-        const processedStream = await createProcessedStream(originalStream, currentMicGain);
-        setLocalStream(processedStream);
-
-        // VAD 시작
-        vadStartTimeRef.current = Date.now();
-        await vad.startVAD(processedStream);
-
-        // 트랙 게시
-        await room.localParticipant.publishTrack(audioTrack);
-        logger.log('[useLiveKit] Audio track published');
+      const audioTrack = tracks.find((t: LocalTrack) => t.kind === Track.Kind.Audio) as
+        | LocalAudioTrack
+        | undefined;
+      if (!audioTrack) {
+        throw new Error('Failed to create audio track');
       }
 
-      // 8. 연결 완료 시 자동 녹음 시작
-      setTimeout(() => {
-        startRecording();
-      }, 500);
+      // 트랙 상태 확인
+      if (audioTrack.mediaStreamTrack.readyState === 'ended') {
+        throw new Error('Created audio track is already ended');
+      }
 
-    } catch (err) {
-      // abort된 경우 에러 무시 (Strict Mode 정상 동작)
-      if (abortController.signal.aborted) {
-        logger.log('[useLiveKit] joinRoom aborted, ignoring error');
+      // 마이크 게인 처리된 스트림 생성
+      const originalStream = new MediaStream([audioTrack.mediaStreamTrack]);
+      const processedStream = await createProcessedStream(originalStream, currentMicGain);
+      setLocalStream(processedStream);
+
+      // VAD 시작
+      vadStartTimeRef.current = Date.now();
+      await vad.startVAD(processedStream);
+
+      // 트랙 게시
+      await room.localParticipant.publishTrack(audioTrack);
+      logger.log('[useLiveKit] Audio track published');
+    },
+    [createProcessedStream, setLocalStream, vad]
+  );
+
+  /**
+   * 회의 참여
+   */
+  const joinRoom = useCallback(
+    async (userId: string) => {
+      // 이미 연결됨이면 skip
+      if (roomRef.current) {
+        logger.log('[useLiveKit] joinRoom: already connected, skipping');
         return;
       }
 
-      logger.error('[useLiveKit] Failed to join room:', err);
+      // 이전 연결 시도 취소 (Strict Mode 대응)
+      abortControllerRef.current?.abort();
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
 
-      // 상세 에러 분석 (dev 모드에서)
-      if (isDevMode && err instanceof Error) {
-        logger.error('[useLiveKit] Error name:', err.name);
-        logger.error('[useLiveKit] Error message:', err.message);
-        logger.error('[useLiveKit] Error stack:', err.stack);
+      currentUserIdRef.current = userId;
+      setConnectionState('connecting');
 
-        // ICE 연결 실패 분석
-        if (err.message.includes('pc connection') || err.message.includes('ICE')) {
-          logger.error('[useLiveKit] ICE Connection Failed - Possible causes:');
-          logger.error('  1. LiveKit RTC ports (7881, 50000-50100) not accessible from client');
-          logger.error('  2. NAT/Firewall blocking UDP traffic');
-          logger.error('  3. TURN server not configured (required for restrictive networks)');
-          logger.error('  4. LiveKit server external IP not properly configured');
+      try {
+        // 1. 채팅 히스토리 로드 및 토큰 획득 병렬 처리
+        const [tokenResponse] = await Promise.all([getJoinToken(), fetchChatHistory()]);
+
+        // abort 체크: 토큰 획득 후
+        if (abortController.signal.aborted) {
+          logger.log('[useLiveKit] joinRoom aborted after token fetch');
+          setConnectionState('disconnected');
+          return;
         }
-      }
 
-      setConnectionState('failed');
-      setError(err instanceof Error ? err.message : '회의 참여에 실패했습니다.');
-      throw err;
-    }
-  }, [
-    getJoinToken,
-    fetchChatHistory,
-    mapConnectionState,
-    handleParticipantConnected,
-    handleParticipantDisconnected,
-    handleTrackSubscribed,
-    handleTrackUnsubscribed,
-    handleDataReceived,
-    setMeetingInfo,
-    setParticipants,
-    mapParticipant,
-    createProcessedStream,
-    setLocalStream,
-    setConnectionState,
-    setError,
-    startRecording,
-    meetingId,
-    vad,
-  ]);
+        logger.log('[useLiveKit] Token received, connecting to:', tokenResponse.wsUrl);
+
+        // 2. LiveKit Room 생성 및 이벤트 리스너 등록
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+          stopLocalTrackOnUnpublish: true,
+        });
+
+        setupRoomEventListeners(room);
+
+        // 3. 룸 연결
+        await room.connect(tokenResponse.wsUrl, tokenResponse.token);
+
+        // abort 체크: 연결 완료 후
+        if (abortController.signal.aborted) {
+          logger.log('[useLiveKit] joinRoom aborted after connect, disconnecting');
+          room.disconnect();
+          setConnectionState('disconnected');
+          return;
+        }
+
+        roomRef.current = room;
+        logger.log('[useLiveKit] Connected to room:', tokenResponse.roomName);
+
+        // 4. 회의 정보 설정
+        setMeetingInfo(meetingId, 'in_progress');
+
+        // 5. 기존 참여자 목록 업데이트
+        const existingParticipants: RoomParticipant[] = [];
+        room.remoteParticipants.forEach((participant) => {
+          existingParticipants.push(mapParticipant(participant));
+        });
+        existingParticipants.push(mapParticipant(room.localParticipant, true));
+        setParticipants(existingParticipants);
+
+        // 6. 로컬 오디오 트랙 생성 및 게시
+        await setupLocalAudioTrack(room);
+
+        // 7. 자동 녹음 시작
+        setTimeout(() => {
+          startRecording();
+        }, 500);
+      } catch (err) {
+        // abort된 경우 에러 무시
+        if (abortController.signal.aborted) {
+          logger.log('[useLiveKit] joinRoom aborted, ignoring error');
+          return;
+        }
+
+        logger.error('[useLiveKit] Failed to join room:', err);
+        setConnectionState('failed');
+        setError(err instanceof Error ? err.message : '회의 참여에 실패했습니다.');
+        throw err;
+      }
+    },
+    [
+      getJoinToken,
+      fetchChatHistory,
+      setupRoomEventListeners,
+      setMeetingInfo,
+      setParticipants,
+      mapParticipant,
+      setupLocalAudioTrack,
+      setConnectionState,
+      setError,
+      startRecording,
+      meetingId,
+    ]
+  );
 
   /**
    * 회의 퇴장
@@ -748,97 +787,114 @@ export function useLiveKit(meetingId: string) {
   /**
    * 강제 음소거 (Host 전용)
    */
-  const forceMute = useCallback((targetUserId: string, muted: boolean) => {
-    sendDataPacket({
-      type: 'force_mute',
-      payload: { targetUserId, muted } as ForceMutePayload,
-    });
-  }, [sendDataPacket]);
+  const forceMute = useCallback(
+    (targetUserId: string, muted: boolean) => {
+      sendDataPacket({
+        type: 'force_mute',
+        payload: { targetUserId, muted } as ForceMutePayload,
+      });
+    },
+    [sendDataPacket]
+  );
 
   /**
    * 마이크 입력 장치 변경
    */
-  const changeAudioInputDevice = useCallback(async (deviceId: string) => {
-    try {
-      logger.log('[useLiveKit] Changing audio input device to:', deviceId);
+  const changeAudioInputDevice = useCallback(
+    async (deviceId: string) => {
+      try {
+        logger.log('[useLiveKit] Changing audio input device to:', deviceId);
 
-      const room = roomRef.current;
-      if (!room) return;
+        const room = roomRef.current;
+        if (!room) return;
 
-      // 새로운 트랙 생성
-      const tracks = await createLocalTracks({
-        audio: { deviceId },
-        video: false,
-      });
+        // 새로운 트랙 생성
+        const tracks = await createLocalTracks({
+          audio: { deviceId },
+          video: false,
+        });
 
-      const newAudioTrack = tracks.find((t: LocalTrack) => t.kind === Track.Kind.Audio) as LocalAudioTrack | undefined;
-      if (!newAudioTrack) {
-        throw new Error('Failed to create audio track');
+        const newAudioTrack = tracks.find((t: LocalTrack) => t.kind === Track.Kind.Audio) as
+          | LocalAudioTrack
+          | undefined;
+        if (!newAudioTrack) {
+          throw new Error('Failed to create audio track');
+        }
+
+        // 마이크 게인 처리된 스트림 생성
+        const currentMicGain = useMeetingRoomStore.getState().micGain;
+        const originalStream = new MediaStream([newAudioTrack.mediaStreamTrack]);
+        const processedStream = await createProcessedStream(originalStream, currentMicGain);
+
+        // 현재 음소거 상태 유지
+        const currentMuted = useMeetingRoomStore.getState().isAudioMuted;
+        if (currentMuted) {
+          newAudioTrack.mute();
+        }
+
+        // 기존 트랙 교체
+        const existingPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+        if (existingPub?.track) {
+          await room.localParticipant.unpublishTrack(existingPub.track as LocalTrack);
+        }
+        await room.localParticipant.publishTrack(newAudioTrack);
+
+        // VAD 재시작
+        vad.stopVAD();
+        vadStartTimeRef.current = Date.now();
+        await vad.startVAD(processedStream);
+
+        setLocalStream(processedStream);
+        setAudioInputDeviceId(deviceId);
+
+        logger.log('[useLiveKit] Audio input device changed successfully');
+      } catch (err) {
+        logger.error('[useLiveKit] Failed to change audio input device:', err);
+        throw err;
       }
-
-      // 마이크 게인 처리된 스트림 생성
-      const currentMicGain = useMeetingRoomStore.getState().micGain;
-      const originalStream = new MediaStream([newAudioTrack.mediaStreamTrack]);
-      const processedStream = await createProcessedStream(originalStream, currentMicGain);
-
-      // 현재 음소거 상태 유지
-      const currentMuted = useMeetingRoomStore.getState().isAudioMuted;
-      if (currentMuted) {
-        newAudioTrack.mute();
-      }
-
-      // 기존 트랙 교체
-      const existingPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
-      if (existingPub?.track) {
-        await room.localParticipant.unpublishTrack(existingPub.track as LocalTrack);
-      }
-      await room.localParticipant.publishTrack(newAudioTrack);
-
-      // VAD 재시작
-      vad.stopVAD();
-      vadStartTimeRef.current = Date.now();
-      await vad.startVAD(processedStream);
-
-      setLocalStream(processedStream);
-      setAudioInputDeviceId(deviceId);
-
-      logger.log('[useLiveKit] Audio input device changed successfully');
-    } catch (err) {
-      logger.error('[useLiveKit] Failed to change audio input device:', err);
-      throw err;
-    }
-  }, [createProcessedStream, setLocalStream, setAudioInputDeviceId, vad]);
+    },
+    [createProcessedStream, setLocalStream, setAudioInputDeviceId, vad]
+  );
 
   /**
    * 스피커 출력 장치 변경
    */
-  const changeAudioOutputDevice = useCallback((deviceId: string) => {
-    setAudioOutputDeviceId(deviceId);
-    logger.log('[useLiveKit] Audio output device changed to:', deviceId);
-  }, [setAudioOutputDeviceId]);
+  const changeAudioOutputDevice = useCallback(
+    (deviceId: string) => {
+      setAudioOutputDeviceId(deviceId);
+      logger.log('[useLiveKit] Audio output device changed to:', deviceId);
+    },
+    [setAudioOutputDeviceId]
+  );
 
   /**
    * 마이크 gain 변경
    */
-  const changeMicGain = useCallback((gain: number) => {
-    const clampedGain = Math.max(0, Math.min(2, gain));
+  const changeMicGain = useCallback(
+    (gain: number) => {
+      const clampedGain = Math.max(0, Math.min(2, gain));
 
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = clampedGain;
-    }
+      if (gainNodeRef.current) {
+        gainNodeRef.current.gain.value = clampedGain;
+      }
 
-    setMicGain(clampedGain);
-    logger.log('[useLiveKit] Mic gain changed to:', clampedGain);
-  }, [setMicGain]);
+      setMicGain(clampedGain);
+      logger.log('[useLiveKit] Mic gain changed to:', clampedGain);
+    },
+    [setMicGain]
+  );
 
   /**
    * 원격 참여자 볼륨 변경
    */
-  const changeRemoteVolume = useCallback((userId: string, volume: number) => {
-    const clampedVolume = Math.max(0, Math.min(2, volume));
-    setRemoteVolume(userId, clampedVolume);
-    logger.log(`[useLiveKit] Remote volume for ${userId} changed to:`, clampedVolume);
-  }, [setRemoteVolume]);
+  const changeRemoteVolume = useCallback(
+    (userId: string, volume: number) => {
+      const clampedVolume = Math.max(0, Math.min(2, volume));
+      setRemoteVolume(userId, clampedVolume);
+      logger.log(`[useLiveKit] Remote volume for ${userId} changed to:`, clampedVolume);
+    },
+    [setRemoteVolume]
+  );
 
   /**
    * 화면공유 시작
@@ -878,34 +934,37 @@ export function useLiveKit(meetingId: string) {
   /**
    * 채팅 메시지 전송
    */
-  const sendChatMessage = useCallback((content: string) => {
-    const room = roomRef.current;
-    if (!room) return;
+  const sendChatMessage = useCallback(
+    (content: string) => {
+      const room = roomRef.current;
+      if (!room) return;
 
-    const messageId = crypto.randomUUID();
-    const userName = room.localParticipant.name || room.localParticipant.identity;
-    const createdAt = new Date().toISOString();
+      const messageId = crypto.randomUUID();
+      const userName = room.localParticipant.name || room.localParticipant.identity;
+      const createdAt = new Date().toISOString();
 
-    // DataPacket으로 전송
-    sendDataPacket({
-      type: 'chat_message',
-      payload: {
+      // DataPacket으로 전송
+      sendDataPacket({
+        type: 'chat_message',
+        payload: {
+          id: messageId,
+          content,
+          userName,
+          createdAt,
+        } as ChatMessagePayload,
+      });
+
+      // 로컬에도 추가
+      addChatMessage({
         id: messageId,
-        content,
+        userId: currentUserIdRef.current,
         userName,
+        content,
         createdAt,
-      } as ChatMessagePayload,
-    });
-
-    // 로컬에도 추가
-    addChatMessage({
-      id: messageId,
-      userId: currentUserIdRef.current,
-      userName,
-      content,
-      createdAt,
-    });
-  }, [sendDataPacket, addChatMessage]);
+      });
+    },
+    [sendDataPacket, addChatMessage]
+  );
 
   /**
    * VAD 이벤트 처리 (발화 시작/끝 감지)
@@ -918,9 +977,10 @@ export function useLiveKit(meetingId: string) {
     } else if (!vad.isSpeaking && speechStartTimeRef.current) {
       // 발화 종료
       const endMs = vadStartTimeRef.current ? Date.now() - vadStartTimeRef.current : 0;
-      const startMs = vadStartTimeRef.current && speechStartTimeRef.current
-        ? speechStartTimeRef.current - vadStartTimeRef.current
-        : 0;
+      const startMs =
+        vadStartTimeRef.current && speechStartTimeRef.current
+          ? speechStartTimeRef.current - vadStartTimeRef.current
+          : 0;
 
       sendVADEvent('speech_end', { startMs, endMs });
       speechStartTimeRef.current = null;
@@ -974,7 +1034,7 @@ export function useLiveKit(meetingId: string) {
 
       reset();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
