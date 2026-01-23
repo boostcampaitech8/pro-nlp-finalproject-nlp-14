@@ -9,8 +9,8 @@ import logger from '@/utils/logger';
 
 // VAD 세그먼트 타입
 export interface VADSegment {
-  startMs: number;  // 시작 시간 (밀리초)
-  endMs: number;    // 종료 시간 (밀리초)
+  startMs: number; // 시작 시간 (밀리초)
+  endMs: number; // 종료 시간 (밀리초)
 }
 
 // VAD 메타데이터 타입
@@ -28,11 +28,11 @@ export interface VADMetadata {
 
 interface UseVADOptions {
   // VAD 감도 설정
-  positiveSpeechThreshold?: number;  // 발화 시작 임계값 (기본: 0.5)
-  negativeSpeechThreshold?: number;  // 발화 종료 임계값 (기본: 0.35)
-  minSpeechMs?: number;              // 최소 발화 길이 ms (기본: 250)
-  preSpeechPadMs?: number;           // 발화 전 패딩 ms (기본: 300)
-  redemptionMs?: number;             // 발화 종료 유예 ms (기본: 500)
+  positiveSpeechThreshold?: number; // 발화 시작 임계값 (기본: 0.5)
+  negativeSpeechThreshold?: number; // 발화 종료 임계값 (기본: 0.35)
+  minSpeechMs?: number; // 최소 발화 길이 ms (기본: 50)
+  preSpeechPadMs?: number; // 발화 전 패딩 ms (기본: 30)
+  redemptionMs?: number; // 발화 종료 유예 ms (기본: 500)
 }
 
 interface UseVADReturn {
@@ -52,13 +52,14 @@ interface UseVADReturn {
   resetVAD: () => void;
 }
 
-// 기본 설정
+// 기본 설정 (최소 권장값 - 빠른 응답 최적화)
+// 참고: https://github.com/ricky0123/vad, https://docs.livekit.io/agents/logic/turns/vad/
 const DEFAULT_OPTIONS: Required<UseVADOptions> = {
-  positiveSpeechThreshold: 0.5,
-  negativeSpeechThreshold: 0.35,
-  minSpeechMs: 250,
-  preSpeechPadMs: 300,
-  redemptionMs: 500,
+  positiveSpeechThreshold: 0.5, // Silero 공식 권장값
+  negativeSpeechThreshold: 0.35, // positiveSpeechThreshold - 0.15
+  minSpeechMs: 50, // LiveKit 최소값 (0.05s)
+  preSpeechPadMs: 30, // @ricky0123/vad 최소 권장값
+  redemptionMs: 500, // 빠른 응답용 최소값
 };
 
 export function useVAD(options: UseVADOptions = {}): UseVADReturn {
@@ -78,83 +79,91 @@ export function useVAD(options: UseVADOptions = {}): UseVADReturn {
   /**
    * VAD 시작
    */
-  const startVAD = useCallback(async (stream: MediaStream) => {
-    if (vadRef.current) {
-      logger.log('[useVAD] VAD already active');
-      return;
-    }
+  const startVAD = useCallback(
+    async (stream: MediaStream) => {
+      if (vadRef.current) {
+        logger.log('[useVAD] VAD already active');
+        return;
+      }
 
-    try {
-      setVadError(null);
-      logger.log('[useVAD] Starting VAD...');
+      try {
+        setVadError(null);
+        logger.log('[useVAD] Starting VAD...');
 
-      // 시작 시간 기록
-      startTimeRef.current = Date.now();
-      segmentsRef.current = [];
-      setCurrentSegments([]);
+        // 시작 시간 기록
+        startTimeRef.current = Date.now();
+        segmentsRef.current = [];
+        setCurrentSegments([]);
 
-      const vadOptions: Partial<RealTimeVADOptions> = {
-        positiveSpeechThreshold: settings.positiveSpeechThreshold,
-        negativeSpeechThreshold: settings.negativeSpeechThreshold,
-        minSpeechMs: settings.minSpeechMs,
-        preSpeechPadMs: settings.preSpeechPadMs,
-        redemptionMs: settings.redemptionMs,
+        const vadOptions: Partial<RealTimeVADOptions> = {
+          positiveSpeechThreshold: settings.positiveSpeechThreshold,
+          negativeSpeechThreshold: settings.negativeSpeechThreshold,
+          minSpeechMs: settings.minSpeechMs,
+          preSpeechPadMs: settings.preSpeechPadMs,
+          redemptionMs: settings.redemptionMs,
 
-        // VAD 에셋 경로 설정 (public/vad 디렉토리)
-        baseAssetPath: '/vad/',
-        onnxWASMBasePath: '/vad/',
+          // VAD 에셋 경로 설정 (public/vad 디렉토리)
+          baseAssetPath: '/vad/',
+          onnxWASMBasePath: '/vad/',
 
-        // stream을 getStream 함수로 전달
-        getStream: async () => stream,
+          // stream을 getStream 함수로 전달
+          getStream: async () => stream,
 
-        // 콜백
-        onSpeechStart: () => {
-          const now = Date.now();
-          speechStartRef.current = now;
-          setIsSpeaking(true);
-          logger.log('[useVAD] Speech started at', now - (startTimeRef.current || 0), 'ms');
-        },
+          // 콜백
+          onSpeechStart: () => {
+            const now = Date.now();
+            speechStartRef.current = now;
+            setIsSpeaking(true);
+            logger.log('[useVAD] Speech started at', now - (startTimeRef.current || 0), 'ms');
+          },
 
-        onSpeechEnd: (_audio: Float32Array) => {
-          const now = Date.now();
-          if (speechStartRef.current && startTimeRef.current) {
-            const segment: VADSegment = {
-              startMs: speechStartRef.current - startTimeRef.current,
-              endMs: now - startTimeRef.current,
-            };
-            segmentsRef.current.push(segment);
-            setCurrentSegments([...segmentsRef.current]);
-            logger.log('[useVAD] Speech ended:', segment, 'duration:', segment.endMs - segment.startMs, 'ms');
-          }
-          speechStartRef.current = null;
-          setIsSpeaking(false);
-        },
+          onSpeechEnd: (_audio: Float32Array) => {
+            const now = Date.now();
+            if (speechStartRef.current && startTimeRef.current) {
+              const segment: VADSegment = {
+                startMs: speechStartRef.current - startTimeRef.current,
+                endMs: now - startTimeRef.current,
+              };
+              segmentsRef.current.push(segment);
+              setCurrentSegments([...segmentsRef.current]);
+              logger.log(
+                '[useVAD] Speech ended:',
+                segment,
+                'duration:',
+                segment.endMs - segment.startMs,
+                'ms'
+              );
+            }
+            speechStartRef.current = null;
+            setIsSpeaking(false);
+          },
 
-        onVADMisfire: () => {
-          // 짧은 발화로 감지되지 않음
-          speechStartRef.current = null;
-          setIsSpeaking(false);
-        },
-      };
+          onVADMisfire: () => {
+            // 짧은 발화로 감지되지 않음
+            speechStartRef.current = null;
+            setIsSpeaking(false);
+          },
+        };
 
-      // stream에서 VAD 생성
-      const vad = await MicVAD.new(vadOptions);
+        // stream에서 VAD 생성
+        const vad = await MicVAD.new(vadOptions);
 
-      vadRef.current = vad;
-      setIsVADReady(true);
-      setIsVADActive(true);
+        vadRef.current = vad;
+        setIsVADReady(true);
+        setIsVADActive(true);
 
-      // VAD 시작
-      vad.start();
-      logger.log('[useVAD] VAD started successfully');
-
-    } catch (err) {
-      logger.error('[useVAD] Failed to start VAD:', err);
-      setVadError('VAD 초기화에 실패했습니다.');
-      setIsVADReady(false);
-      setIsVADActive(false);
-    }
-  }, [settings]);
+        // VAD 시작
+        vad.start();
+        logger.log('[useVAD] VAD started successfully');
+      } catch (err) {
+        logger.error('[useVAD] Failed to start VAD:', err);
+        setVadError('VAD 초기화에 실패했습니다.');
+        setIsVADReady(false);
+        setIsVADActive(false);
+      }
+    },
+    [settings]
+  );
 
   /**
    * VAD 중지 및 메타데이터 반환

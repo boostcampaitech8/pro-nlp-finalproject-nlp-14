@@ -38,9 +38,7 @@ const TOKEN_REFRESH_INTERVAL = 15 * 60 * 1000;
 const isDevMode = import.meta.env.VITE_DEV_MODE === 'true';
 
 // LiveKit SDK 로그 레벨 설정
-if (isDevMode) {
-  setLogLevel(LogLevel.debug);
-}
+setLogLevel(isDevMode ? LogLevel.debug : LogLevel.warn);
 
 // DataPacket 메시지 타입
 interface DataMessage {
@@ -137,7 +135,7 @@ export function useLiveKit(meetingId: string) {
   // Refs
   const roomRef = useRef<Room | null>(null);
   const currentUserIdRef = useRef<string>('');
-  const hasCleanedUpRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const egressIdRef = useRef<string | null>(null);
   const speechStartTimeRef = useRef<number | null>(null);
   const vadStartTimeRef = useRef<number | null>(null);
@@ -463,8 +461,18 @@ export function useLiveKit(meetingId: string) {
    * 회의 참여
    */
   const joinRoom = useCallback(async (userId: string) => {
+    // 이미 연결됨이면 skip
+    if (roomRef.current) {
+      logger.log('[useLiveKit] joinRoom: already connected, skipping');
+      return;
+    }
+
+    // 이전 연결 시도 취소 (Strict Mode 대응)
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     currentUserIdRef.current = userId;
-    hasCleanedUpRef.current = false;
     setConnectionState('connecting');
 
     try {
@@ -474,6 +482,13 @@ export function useLiveKit(meetingId: string) {
         fetchChatHistory(),
       ]);
 
+      // abort 체크: 토큰 획득 후
+      if (abortController.signal.aborted) {
+        logger.log('[useLiveKit] joinRoom aborted after token fetch');
+        setConnectionState('disconnected');
+        return;
+      }
+
       logger.log('[useLiveKit] Token received, connecting to:', tokenResponse.wsUrl);
 
       // 2. LiveKit Room 생성
@@ -481,7 +496,7 @@ export function useLiveKit(meetingId: string) {
         adaptiveStream: true,
         dynacast: true,
       });
-      roomRef.current = room;
+      // roomRef는 연결 완료 후에 설정 (abort 체크를 위해)
 
       // ICE 연결 디버깅 (dev 모드에서만)
       if (isDevMode) {
@@ -544,6 +559,17 @@ export function useLiveKit(meetingId: string) {
           iceTransportPolicy: 'all',
         },
       });
+
+      // abort 체크: 연결 완료 후 (Strict Mode에서 unmount된 경우)
+      if (abortController.signal.aborted) {
+        logger.log('[useLiveKit] joinRoom aborted after connect, disconnecting');
+        room.disconnect();
+        setConnectionState('disconnected');
+        return;
+      }
+
+      // 연결 성공 후에 roomRef 설정
+      roomRef.current = room;
       logger.log('[useLiveKit] Connected to room:', tokenResponse.roomName);
 
       // 5. 회의 정보 설정
@@ -589,6 +615,12 @@ export function useLiveKit(meetingId: string) {
       }, 500);
 
     } catch (err) {
+      // abort된 경우 에러 무시 (Strict Mode 정상 동작)
+      if (abortController.signal.aborted) {
+        logger.log('[useLiveKit] joinRoom aborted, ignoring error');
+        return;
+      }
+
       logger.error('[useLiveKit] Failed to join room:', err);
 
       // 상세 에러 분석 (dev 모드에서)
@@ -636,8 +668,9 @@ export function useLiveKit(meetingId: string) {
    * 회의 퇴장
    */
   const leaveRoom = useCallback(async () => {
-    if (hasCleanedUpRef.current) return;
-    hasCleanedUpRef.current = true;
+    const room = roomRef.current;
+    // room이 없으면 이미 정리됨
+    if (!room) return;
 
     // VAD 중지
     vad.stopVAD();
@@ -646,11 +679,8 @@ export function useLiveKit(meetingId: string) {
     await stopRecording();
 
     // 룸 연결 해제
-    const room = roomRef.current;
-    if (room) {
-      room.disconnect();
-      roomRef.current = null;
-    }
+    room.disconnect();
+    roomRef.current = null;
 
     // Web Audio 정리
     if (sourceNodeRef.current) {
@@ -895,25 +925,29 @@ export function useLiveKit(meetingId: string) {
   }, [connectionState]);
 
   /**
-   * cleanup - 컴포넌트 언마운트 시에만 실행
+   * cleanup - 컴포넌트 언마운트 시 실행
+   * Strict Mode: 진행 중인 연결을 abort하여 2차 마운트에서 정상 연결
+   * 실제 페이지 이탈: 연결된 경우 disconnect
    */
   useEffect(() => {
     return () => {
-      if (!hasCleanedUpRef.current) {
-        hasCleanedUpRef.current = true;
-        vad.stopVAD();
+      // 진행 중인 연결 시도 취소 (Strict Mode 대응)
+      abortControllerRef.current?.abort();
 
-        const room = roomRef.current;
-        if (room) {
-          room.disconnect();
-        }
+      const room = roomRef.current;
+      // room이 없으면 연결 전이거나 이미 정리됨
+      if (!room) return;
 
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-          audioContextRef.current.close();
-        }
+      // 실제 페이지 이탈: 연결된 경우 정리
+      vad.stopVAD();
+      room.disconnect();
+      roomRef.current = null;
 
-        reset();
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
       }
+
+      reset();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

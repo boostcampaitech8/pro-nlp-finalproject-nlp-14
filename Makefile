@@ -1,8 +1,9 @@
 .PHONY: help install dev dev-fe dev-be build clean test-fe
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
 .PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
-.PHONY: infra-up infra-down backend-up backend-down backend-rebuild backend-logs
+.PHONY: infra-up infra-down livekit-up livekit-down backend-up backend-down backend-rebuild backend-logs
 .PHONY: frontend-up frontend-down frontend-rebuild frontend-logs
+.PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
 
 # 기본 변수
@@ -33,6 +34,8 @@ help:
 	@echo "Docker (Selective):"
 	@echo "  make infra-up         - Start infra only (DB, Redis, MinIO)"
 	@echo "  make infra-down       - Stop infra only"
+	@echo "  make livekit-up       - Start LiveKit stack (DB, Redis, MinIO, LiveKit)"
+	@echo "  make livekit-down     - Stop LiveKit stack"
 	@echo "  make backend-up       - Start backend container"
 	@echo "  make backend-down     - Stop backend container"
 	@echo "  make backend-rebuild  - Rebuild and restart backend"
@@ -41,6 +44,12 @@ help:
 	@echo "  make frontend-down    - Stop frontend container"
 	@echo "  make frontend-rebuild - Rebuild and restart frontend"
 	@echo "  make frontend-logs    - View frontend logs"
+	@echo ""
+	@echo "Docker (Worker):"
+	@echo "  make worker-build     - Build realtime-worker image"
+	@echo "  make worker-rebuild   - Rebuild worker (no cache)"
+	@echo "  make worker-list      - List all worker containers"
+	@echo "  make worker-clean     - Remove all worker containers"
 	@echo ""
 	@echo "Database:"
 	@echo "  make db-migrate m=MSG - Create new migration"
@@ -70,6 +79,7 @@ install:
 	pnpm install
 	pnpm --filter @mit/shared-types build
 	cd backend && uv sync
+	cd backend/worker && uv sync
 
 dev:
 	pnpm run dev
@@ -80,6 +90,9 @@ dev-fe:
 dev-be:
 	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
+dev-worker:
+	pnpm run dev:worker
+
 # ===================
 # Test
 # ===================
@@ -89,7 +102,7 @@ test-fe:
 # ===================
 # Docker - All Services
 # ===================
-docker-up:
+docker-up: worker-build
 	$(DOCKER_COMPOSE) up -d
 
 docker-down:
@@ -113,6 +126,13 @@ infra-up:
 
 infra-down:
 	$(DOCKER_COMPOSE) stop postgres redis minio
+
+livekit-up: worker-build
+	$(DOCKER_COMPOSE) up -d postgres redis minio livekit 
+
+livekit-down:
+	$(DOCKER_COMPOSE) stop postgres redis minio livekit
+
 
 # ===================
 # Docker - Backend Only
@@ -145,6 +165,21 @@ frontend-rebuild:
 
 frontend-logs:
 	$(DOCKER_COMPOSE) logs -f frontend
+
+# ===================
+# Docker - Worker
+# ===================
+worker-build:
+	$(DOCKER_COMPOSE) --profile worker build realtime-worker
+
+worker-rebuild:
+	$(DOCKER_COMPOSE) --profile worker build --no-cache realtime-worker
+
+worker-list:
+	@docker ps -a --filter "name=realtime-worker" --format "table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}"
+
+worker-clean:
+	@docker ps -a --filter "name=realtime-worker" -q | xargs -r docker rm -f
 
 # ===================
 # Database Migrations

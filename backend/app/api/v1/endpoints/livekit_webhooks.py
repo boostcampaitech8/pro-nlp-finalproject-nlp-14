@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.infrastructure.worker_manager import get_worker_manager
 from app.models.recording import MeetingRecording, RecordingStatus
 from app.services.livekit_service import livekit_service
 from app.services.vad_event_service import vad_event_service
@@ -112,6 +113,8 @@ async def livekit_webhook(
         await handle_participant_joined(body)
     elif event_type == "participant_left":
         await handle_participant_left(body)
+    elif event_type == "room_started":
+        await handle_room_started(body)
     elif event_type == "room_finished":
         await handle_room_finished(body, db)
     else:
@@ -218,6 +221,28 @@ async def handle_egress_ended(body: dict, db: AsyncSession) -> None:
         logger.warning(f"[LiveKit] Egress aborted: room={room_name}, egress={egress_id}, error={error}")
 
 
+async def handle_room_started(body: dict) -> None:
+    """룸 시작 이벤트 처리
+
+    첫 번째 참여자가 입장하면 발생합니다.
+    Realtime 워커를 시작합니다 (S2S 파이프라인: STT -> LLM -> TTS).
+    """
+    room = body.get("room", {})
+    room_name = room.get("name", "")
+
+    logger.info(f"[LiveKit] Room started: {room_name}")
+
+    # 회의 ID 추출 (room_name: "meeting-{uuid}")
+    if room_name.startswith("meeting-"):
+        meeting_id = room_name  # meeting-{uuid} 전체를 사용
+        try:
+            worker_manager = get_worker_manager()
+            worker_id = await worker_manager.start_worker(meeting_id)
+            logger.info(f"[LiveKit] Realtime worker started: {worker_id}")
+        except Exception as e:
+            logger.error(f"[LiveKit] Failed to start realtime worker: {e}")
+
+
 async def handle_participant_joined(body: dict) -> None:
     """참여자 입장 이벤트 처리"""
     participant = body.get("participant", {})
@@ -247,8 +272,8 @@ async def handle_participant_left(body: dict) -> None:
 async def handle_room_finished(body: dict, db: AsyncSession) -> None:
     """룸 종료 이벤트 처리
 
-    마지막 참여자가 퇴장하면 발생합니다.
-    VAD 메타데이터를 저장합니다.
+    마지막 참여자 퇴장 후 empty_timeout(30초) 경과 시 발생합니다.
+    Realtime 워커를 종료하고 VAD 메타데이터를 저장합니다.
     """
     room = body.get("room", {})
     room_name = room.get("name", "")
@@ -257,17 +282,28 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
 
     # 회의 ID 추출
     if room_name.startswith("meeting-"):
+        meeting_id = room_name  # meeting-{uuid} 전체를 사용
         meeting_id_str = room_name[8:]
-        try:
-            meeting_id = UUID(meeting_id_str)
 
-            # VAD 메타데이터 저장
-            vad_metadata = await vad_event_service.store_meeting_vad_metadata(meeting_id)
+        # Realtime 워커 종료
+        try:
+            worker_manager = get_worker_manager()
+            # 컨테이너 이름은 realtime-worker-meeting-{uuid}
+            worker_id = f"realtime-worker-{meeting_id}"
+            stopped = await worker_manager.stop_worker(worker_id)
+            if stopped:
+                logger.info(f"[LiveKit] Realtime worker stopped: {worker_id}")
+        except Exception as e:
+            logger.error(f"[LiveKit] Failed to stop realtime worker: {e}")
+
+        # VAD 메타데이터 저장
+        try:
+            meeting_uuid = UUID(meeting_id_str)
+            vad_metadata = await vad_event_service.store_meeting_vad_metadata(meeting_uuid)
             if vad_metadata:
                 logger.info(
-                    f"[LiveKit] VAD metadata saved: meeting={meeting_id}, "
+                    f"[LiveKit] VAD metadata saved: meeting={meeting_uuid}, "
                     f"users={len(vad_metadata)}"
                 )
-
         except ValueError:
             logger.error(f"[LiveKit] Invalid meeting ID in room name: {room_name}")

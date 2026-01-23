@@ -67,9 +67,9 @@ services:
       - "5349:5349"       # TURN TLS (nginx 443 충돌 회피)
       - "30000-30050:30000-30050/udp"  # TURN relay 포트 범위
     volumes:
-      # TURN TLS 인증서 (Let's Encrypt)
-      # 심볼릭 링크 유지를 위해 전체 디렉토리 마운트
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # TURN TLS 인증서 (프로덕션용)
+      # 로컬은 빈 디렉토리 마운트로 충분
+      - ${LIVEKIT_CERTS_PATH:-./certs}:/etc/letsencrypt:ro
     environment:
       # LIVEKIT_CONFIG: 전체 설정을 환경변수로 전달 (livekit.yaml 대체)
       # docker-compose가 .env의 ${} 변수를 치환함
@@ -81,15 +81,12 @@ services:
           tcp_port: 7881
           port_range_start: 50000
           port_range_end: 50100
-          # 프로덕션: 외부에서 접근 가능한 IP (Linux 서버에서 사용)
-          use_external_ip: true
+          # 외부 접근 IP (로컬/프로덕션 모두 env로 제어)
+          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
           node_ip: ${LIVEKIT_NODE_IP:-}
-          # Docker Desktop for Mac 로컬 테스트용 (외부 클라이언트 연결 불가):
-          # use_external_ip: false
-          # node_ip: 172.28.0.10
         # 내장 TURN 서버 (NAT/방화벽 환경 대응)
         turn:
-          enabled: true
+          enabled: ${LIVEKIT_TURN_ENABLED:-false}
           domain: ${LIVEKIT_TURN_DOMAIN:-}
           # 5349 포트 사용 (nginx 443 충돌 회피)
           tls_port: 5349
@@ -97,16 +94,16 @@ services:
           # relay 포트 범위 - Docker 포트 매핑과 일치해야 함
           relay_range_start: 30000
           relay_range_end: 30050
-          # SAN 인증서 사용 (www.mit-hub.com + turn.mit-hub.com 포함)
-          cert_file: /etc/letsencrypt/live/www.mit-hub.com/fullchain.pem
-          key_file: /etc/letsencrypt/live/www.mit-hub.com/privkey.pem
+          # TURN TLS 인증서 (필요 시 env로 지정)
+          cert_file: ${LIVEKIT_TURN_CERT_FILE:-}
+          key_file: ${LIVEKIT_TURN_KEY_FILE:-}
         redis:
           address: redis:6379
         logging:
           level: ${LIVEKIT_LOG_LEVEL:-info}
           json: false
         room:
-          empty_timeout: 300
+          empty_timeout: 30
           max_participants: 20
         webhook:
           api_key: ${LIVEKIT_API_KEY}
@@ -179,6 +176,12 @@ services:
     # 내부 네트워크에서만 접근 (frontend nginx가 프록시)
     expose:
       - "8000"
+    volumes:
+      # Docker socket 마운트 (realtime-worker 시작용)
+      - /var/run/docker.sock:/var/run/docker.sock
+      # docker-compose.yml 마운트 (worker 시작 시 필요)
+      - ./docker-compose.yml:/docker/docker-compose.yml:ro
+      - ./.env:/docker/.env:ro
     environment:
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-false}
@@ -261,6 +264,38 @@ services:
       minio:
         condition: service_healthy
     restart: unless-stopped
+
+  # Realtime Worker (S2S 파이프라인: STT -> LLM -> TTS)
+  # Backend에서 LiveKit room_started 웹훅 시 자동 시작
+  # 직접 실행: docker compose run -d -e MEETING_ID=xxx realtime-worker
+  realtime-worker:
+    build:
+      context: ../backend/worker
+      dockerfile: Dockerfile
+    # container_name 없음 - 동적으로 여러 인스턴스 생성 가능
+    profiles:
+      - worker  # 기본 실행에서 제외, 명시적 호출 시에만 실행
+    environment:
+      # MEETING_ID는 런타임에 주입
+      MEETING_ID: ${MEETING_ID:-}
+      # LiveKit 설정
+      LIVEKIT_WS_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      # Clova Speech STT 설정
+      CLOVA_STT_ENDPOINT: ${CLOVA_STT_ENDPOINT:-clovaspeech-gw.ncloud.com:50051}
+      CLOVA_STT_SECRET: ${CLOVA_STT_SECRET:-}
+      # Backend API 설정
+      BACKEND_API_URL: http://backend:8000
+      BACKEND_API_KEY: ${BACKEND_API_KEY:-}
+      # Worker 설정
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      livekit:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: "no"  # 회의 종료 시 자연스럽게 종료
 
 volumes:
   postgres_data:

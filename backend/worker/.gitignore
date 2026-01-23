@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*.egg-info/
+
+# Protobuf 빌드 결과
+build/
+
+# UV
+uv.lock
+
+# 환경변수
+.env
