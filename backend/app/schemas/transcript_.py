@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-# ===== POST /meetings/{id}/transcripts =====
+# ===== POST /meetings/{meeting_id}/transcripts =====
 
 class CreateTranscriptRequest(BaseModel):
     """발화 segment 생성 요청 (Worker → Backend)"""

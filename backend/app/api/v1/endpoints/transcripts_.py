@@ -12,7 +12,7 @@ from app.schemas.transcript_ import (
     CreateTranscriptResponse,
     GetMeetingTranscriptsResponse,
 )
-from app.services.transcriptservice_ import TranscriptService
+from app.services.transcript_service_ import TranscriptService
 
 router = APIRouter(prefix="/meetings", tags=["Transcripts_"])
 
@@ -23,7 +23,7 @@ def get_transcript_service(db: Annotated[AsyncSession, Depends(get_db)]) -> Tran
 
 
 @router.post(
-    "/{id}/transcripts",
+    "/{meeting_id}/transcripts",
     response_model=CreateTranscriptResponse,
     response_model_by_alias=True,
     status_code=status.HTTP_201_CREATED,
@@ -33,7 +33,7 @@ def get_transcript_service(db: Annotated[AsyncSession, Depends(get_db)]) -> Tran
     },
 )
 async def create_transcript(
-    id: UUID,
+    meeting_id: UUID,
     request: CreateTranscriptRequest,
     transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
 ) -> CreateTranscriptResponse:
@@ -42,7 +42,7 @@ async def create_transcript(
     Worker가 전송한 전사 segment를 DB에 저장합니다.
 
     Args:
-        id: 회의 ID (path parameter)
+        meeting_id: 회의 ID (path parameter)
         request: 발화 segment 데이터
         transcript_service: TranscriptService 의존성
 
@@ -51,11 +51,11 @@ async def create_transcript(
 
     Raises:
         HTTPException:
-            - 400: path id와 body meetingId 불일치, startMs/endMs 유효하지 않음
+            - 400: path meeting_id와 body meetingId 불일치, startMs/endMs 유효하지 않음
             - 404: meeting 존재하지 않음
     """
     try:
-        return await transcript_service.create_transcript(id, request)
+        return await transcript_service.create_transcript(meeting_id, request)
     except ValueError as e:
         error_code = str(e)
         if error_code == "MEETING_ID_MISMATCH":

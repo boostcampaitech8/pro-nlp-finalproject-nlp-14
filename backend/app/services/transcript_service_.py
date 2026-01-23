@@ -40,7 +40,7 @@ class TranscriptService:
         Raises:
             ValueError: validation 실패 시
         """
-        # 1. path id와 body meetingId 일치 확인
+        # 1. path meeting_id와 body meetingId 일치 확인
         if meeting_id != request.meeting_id:
             raise ValueError("MEETING_ID_MISMATCH")
 
