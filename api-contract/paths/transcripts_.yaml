@@ -1,0 +1,183 @@
+paths:
+  /api/v1/meetings/{meeting_id}/transcripts:
+    post:
+      tags:
+        - Transcripts_
+      summary: 발화 segment 저장 (Worker → Backend)
+      description: |
+        Worker가 전송한 발화 segment를 DB에 저장합니다.
+        path의 meeting_id와 body의 meetingId가 일치해야 합니다.
+      operationId: createTranscriptSegment
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 회의 ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/transcript_.yaml#/components/schemas/CreateTranscriptRequest'
+            examples:
+              basic:
+                summary: 기본 발화
+                value:
+                  meetingId: "818d9dcd-4626-4195-a258-a5168e6606f7"
+                  userId: "7b1931bf-c925-4cbc-993e-2d842a3179fe"
+                  startMs: 0
+                  endMs: 1500
+                  text: "안녕하세요 홍길동입니다."
+                  confidence: 0.99
+                  minConfidence: 0.95
+                  agentCall: false
+              withAgentCall:
+                summary: 에이전트 호출 포함
+                value:
+                  meetingId: "818d9dcd-4626-4195-a258-a5168e6606f7"
+                  userId: "7b1931bf-c925-4cbc-993e-2d842a3179fe"
+                  startMs: 2000
+                  endMs: 4000
+                  text: "회의록을 작성해주세요."
+                  confidence: 0.98
+                  minConfidence: 0.92
+                  agentCall: true
+                  agentCallKeyword: "회의록"
+                  agentCallConfidence: 0.97
+      responses:
+        '201':
+          description: Segment 저장 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/transcript_.yaml#/components/schemas/CreateTranscriptResponse'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                createdAt: "2026-01-23T10:30:45.123456Z"
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+              examples:
+                meetingIdMismatch:
+                  summary: Path meeting_id와 Body meetingId 불일치
+                  value:
+                    error: "MEETING_ID_MISMATCH"
+                    message: "Path meeting_id와 body meetingId가 일치하지 않습니다."
+                invalidTimeRange:
+                  summary: 잘못된 시간 범위
+                  value:
+                    error: "INVALID_TIME_RANGE"
+                    message: "endMs는 startMs보다 커야 합니다."
+        '404':
+          description: Meeting을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+              example:
+                error: "MEETING_NOT_FOUND"
+                message: "회의를 찾을 수 없습니다."
+        '422':
+          description: Validation 오류
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: array
+                    items:
+                      type: object
+              example:
+                detail:
+                  - type: "string_too_short"
+                    loc: ["body", "text"]
+                    msg: "String should have at least 1 character"
+
+    get:
+      tags:
+        - Transcripts_
+      summary: 회의 전체 전사 조회 (Client → Backend)
+      description: |
+        회의 ID를 기준으로 모든 전사 segment를 조회하고,
+        createdAt 기준 시간 순서대로 정렬된 전체 전사 텍스트를 반환합니다.
+        fullText는 서버에서 조립하며 DB에 저장되지 않습니다.
+      operationId: getMeetingTranscripts
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 회의 ID
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/transcript_.yaml#/components/schemas/GetMeetingTranscriptsResponse'
+              examples:
+                withTranscripts:
+                  summary: Transcript 있는 경우
+                  value:
+                    meetingId: "818d9dcd-4626-4195-a258-a5168e6606f7"
+                    status: "completed"
+                    fullText: "홍길동: 안녕하세요 홍길동입니다.\n김철수: 반갑습니다 김철수입니다."
+                    utterances:
+                      - id: "550e8400-e29b-41d4-a716-446655440001"
+                        speakerId: "7b1931bf-c925-4cbc-993e-2d842a3179fe"
+                        speakerName: "홍길동"
+                        startMs: 0
+                        endMs: 1500
+                        text: "안녕하세요 홍길동입니다."
+                        timestamp: "2026-01-23T10:30:45.123456Z"
+                      - id: "550e8400-e29b-41d4-a716-446655440002"
+                        speakerId: "8c2042cf-d036-5dcd-a04f-3e953b4290af"
+                        speakerName: "김철수"
+                        startMs: 2000
+                        endMs: 4000
+                        text: "반갑습니다 김철수입니다."
+                        timestamp: "2026-01-23T10:31:00.654321Z"
+                    totalDurationMs: 4000
+                    speakerCount: 2
+                    meetingStart: null
+                    meetingEnd: null
+                    createdAt: "2026-01-23T10:30:45.123456Z"
+                empty:
+                  summary: Transcript 없는 경우
+                  value:
+                    meetingId: "818d9dcd-4626-4195-a258-a5168e6606f7"
+                    status: "completed"
+                    fullText: ""
+                    utterances: []
+                    totalDurationMs: 0
+                    speakerCount: 0
+                    meetingStart: null
+                    meetingEnd: null
+                    createdAt: "2026-01-23T10:30:00.000000Z"
+        '404':
+          description: Meeting을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+              example:
+                error: "MEETING_NOT_FOUND"
+                message: "회의를 찾을 수 없습니다."
+        '500':
+          description: 내부 서버 오류
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+              example:
+                error: "INTERNAL_ERROR"
+                message: "서버 오류가 발생했습니다."
