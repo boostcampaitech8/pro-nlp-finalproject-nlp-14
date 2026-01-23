@@ -33,6 +33,15 @@ dependencies = [
     "pydub>=0.25.1",
     # webrtcvad requires pkg_resources from setuptools
     "setuptools>=70.0.0",
+    "datetime>=6.0",
+    "langgraph>=1.0.6",
+    "typing>=3.10.0.0",
+    "logging>=0.4.9.6",
+    "langchain-core>=1.2.7",
+    "langchain>=1.2.6",
+    "dotenv>=0.9.9",
+    "langchain-community>=0.4.1",
+    "langchain-openai>=1.1.7",
 ]
 
 [dependency-groups]

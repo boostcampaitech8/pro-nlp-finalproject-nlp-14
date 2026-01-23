@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-fe dev-be build clean test-fe
+.PHONY: help install dev dev-fe dev-be build clean test-fe graph
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
 .PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
 .PHONY: infra-up infra-down livekit-up livekit-down backend-up backend-down backend-rebuild backend-logs
@@ -20,6 +20,9 @@ help:
 	@echo "  make dev            - Run dev servers (FE + BE locally)"
 	@echo "  make dev-fe         - Run frontend dev server (http://localhost:3000)"
 	@echo "  make dev-be         - Run backend dev server (http://localhost:8000)"
+	@echo ""
+	@echo "Graph:"
+	@echo "  make graph          - Run LangGraph orchestrator (interactive)"
 	@echo ""
 	@echo "Test:"
 	@echo "  make test-fe        - Run frontend tests"
@@ -92,6 +95,12 @@ dev-be:
 
 dev-worker:
 	pnpm run dev:worker
+
+# ===================
+# Graph
+# ===================
+graph:
+	cd backend && PYTHONPATH=$(shell pwd)/backend:$$PYTHONPATH uv run python app/infrastructure/graph/main.py
 
 # ===================
 # Test
