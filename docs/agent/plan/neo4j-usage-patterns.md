@@ -224,7 +224,7 @@ class UserGraphRepository(GraphRepository):
         MATCH (u:User {id: $user_id})
         OPTIONAL MATCH (u)-[:MEMBER_OF]->(t:Team)
         OPTIONAL MATCH (u)-[:PARTICIPATED_IN]->(m:Meeting)
-        OPTIONAL MATCH (u)-[:REVIEWED_BY]->(d:Decision)
+        OPTIONAL MATCH (u)-[:REVIEWED]->(d:Decision)
         OPTIONAL MATCH (u)-[:ASSIGNED_TO]->(ai:ActionItem)
         RETURN u.name AS name,
                count(DISTINCT t) AS team_count,
