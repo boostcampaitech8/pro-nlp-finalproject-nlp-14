@@ -23,24 +23,24 @@ def build_mit_action() -> StateGraph:
                     |___________________________|
                            (재시도: extractor)
     """
-    builder = StateGraph(MitActionState)
+    workflow = StateGraph(MitActionState)
 
     # 노드 등록 (역할 명사로 등록)
-    builder.add_node("extractor", extract_actions)
-    builder.add_node("evaluator", evaluate_actions)
-    builder.add_node("saver", save_actions)
+    workflow.add_node("extractor", extract_actions)
+    workflow.add_node("evaluator", evaluate_actions)
+    workflow.add_node("saver", save_actions)
 
     # 엣지 연결
-    builder.add_edge(START, "extractor")
-    builder.add_edge("extractor", "evaluator")
+    workflow.add_edge(START, "extractor")
+    workflow.add_edge("extractor", "evaluator")
 
     # 조건부 엣지 (순환형 - 평가 실패 시 재시도)
-    builder.add_conditional_edges(
+    workflow.add_conditional_edges(
         "evaluator",
         route_eval,
         {"extractor": "extractor", "saver": "saver"},
     )
 
-    builder.add_edge("saver", END)
+    workflow.add_edge("saver", END)
 
-    return builder
+    return workflow

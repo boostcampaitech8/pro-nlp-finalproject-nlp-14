@@ -10,8 +10,8 @@ def get_graph(*, checkpointer=None) -> CompiledStateGraph:
 
     서브그래프이므로 checkpointer 없이 컴파일 (부모와 공유)
     """
-    builder = build_mit_action()
-    return builder.compile(checkpointer=checkpointer)
+    workflow = build_mit_action()
+    return workflow.compile(checkpointer=checkpointer)
 
 
 # 서브그래프 인스턴스 (orchestration에서 import 시 사용)
