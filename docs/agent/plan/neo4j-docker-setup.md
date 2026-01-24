@@ -17,18 +17,13 @@ Neo4j 그래프 데이터베이스를 Docker Compose로 실행하는 방법
       NEO4J_server_memory_heap_initial__size: 256m
       NEO4J_server_memory_heap_max__size: 512m
       NEO4J_server_memory_pagecache_size: 128m
-      # APOC 플러그인 (고급 프로시저 - CSV import 등에 필요)
-      NEO4J_PLUGINS: '["apoc"]'
-      # APOC 설정 (파일 import 허용)
-      NEO4J_dbms_security_procedures_unrestricted: apoc.*
-      NEO4J_dbms_security_procedures_allowlist: apoc.*
     ports:
       - "7474:7474"   # Browser UI
       - "7687:7687"   # Bolt protocol (애플리케이션 연결)
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
-      # CSV import용 볼륨 (data/augment/*.csv 마운트)
+      # CSV import용 볼륨 (data/augment/nodes/, relationships/ 마운트)
       - ../data/augment:/var/lib/neo4j/import:ro
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
@@ -111,22 +106,17 @@ bolt://localhost:7687
 
 ## 7. 트러블슈팅
 
-### APOC 플러그인 로드 실패
-```bash
-# 컨테이너 재시작
-docker compose restart neo4j
-
-# 플러그인 확인
-docker exec mit-neo4j ls /var/lib/neo4j/plugins/
-```
-
 ### CSV Import 경로 오류
 CSV 파일은 `/var/lib/neo4j/import/` 경로에 마운트됨.
-Cypher에서는 `file:///파일명.csv` 형식으로 접근.
+Cypher에서는 `file:///경로/파일명.csv` 형식으로 접근.
 
 ```cypher
-// 테스트
-LOAD CSV WITH HEADERS FROM 'file:///000.csv' AS row
+// 테스트 (노드 CSV)
+LOAD CSV WITH HEADERS FROM 'file:///nodes/teams.csv' AS row
+RETURN row LIMIT 1;
+
+// 테스트 (관계 CSV)
+LOAD CSV WITH HEADERS FROM 'file:///relationships/member_of.csv' AS row
 RETURN row LIMIT 1;
 ```
 

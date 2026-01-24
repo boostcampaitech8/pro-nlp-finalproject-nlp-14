@@ -24,7 +24,7 @@ MIT 그래프 데이터베이스 스키마 정의 및 데이터 구축
 | PARTICIPATED_IN | User | Meeting | role | 회의 참여 |
 | CONTAINS | Meeting | Agenda | - | 회의에 안건 포함 |
 | HAS_DECISION | Agenda | Decision | - | 안건의 결정사항 |
-| REVIEWED_BY | User | Decision | status, responded_at | GT 승인 |
+| REVIEWED | User | Decision | status, responded_at | GT 승인 |
 | SUPERSEDES | Decision | Decision | - | 결정 대체 (버전 관리) |
 | TRIGGERS | Decision | ActionItem | - | 결정에서 액션아이템 파생 |
 | ASSIGNED_TO | User | ActionItem | assigned_at | 액션아이템 할당 |
@@ -81,49 +81,50 @@ docker exec -i mit-neo4j cypher-shell -u neo4j -p ${NEO4J_PASSWORD} < data/augme
 ```
 
 #### 방법 3: 단계별 실행
+
+CSV 파일은 노드/관계 타입별로 분리되어 있음 (`nodes/`, `relationships/` 폴더).
+
 ```cypher
 // 1. 노드 생성 (순서 중요)
-// Team 먼저
-LOAD CSV WITH HEADERS FROM 'file:///000.csv' AS row
-WITH row WHERE row.type = 'Team'
-WITH row, apoc.convert.fromJsonMap(row.data) AS data
-CREATE (t:Team {
-  id: data.id,
-  name: data.name,
-  description: data.description
+
+// Teams
+LOAD CSV WITH HEADERS FROM 'file:///nodes/teams.csv' AS row
+CREATE (t:Team {id: row.id, name: row.name, description: row.description});
+
+// Users
+LOAD CSV WITH HEADERS FROM 'file:///nodes/users.csv' AS row
+CREATE (u:User {id: row.id, email: row.email, name: row.name});
+
+// Meetings
+LOAD CSV WITH HEADERS FROM 'file:///nodes/meetings.csv' AS row
+CREATE (m:Meeting {
+  id: row.id,
+  title: row.title,
+  status: row.status,
+  description: row.description,
+  transcript: row.transcript,
+  summary: row.summary,
+  scheduled_at: CASE WHEN row.scheduled_at IS NOT NULL THEN datetime(row.scheduled_at) ELSE null END,
+  started_at: CASE WHEN row.started_at IS NOT NULL THEN datetime(row.started_at) ELSE null END,
+  ended_at: CASE WHEN row.ended_at IS NOT NULL THEN datetime(row.ended_at) ELSE null END,
+  created_at: datetime(row.created_at)
 });
 
-// User
-LOAD CSV WITH HEADERS FROM 'file:///000.csv' AS row
-WITH row WHERE row.type = 'User'
-WITH row, apoc.convert.fromJsonMap(row.data) AS data
-CREATE (u:User {
-  id: data.id,
-  email: data.email,
-  name: data.name
-});
-
-// Meeting, Agenda, Decision, ActionItem도 동일한 패턴
+// Agendas, Decisions, ActionItems도 동일한 패턴
 
 // 2. 관계 생성 (노드 생성 후)
-LOAD CSV WITH HEADERS FROM 'file:///000.csv' AS row
-WITH row WHERE row.type = 'MEMBER_OF'
-WITH row, apoc.convert.fromJsonMap(row.data) AS data
-MATCH (u:User {id: data.from}), (t:Team {id: data.to})
-CREATE (u)-[:MEMBER_OF {role: data.role}]->(t);
 
-// 나머지 관계도 동일한 패턴
-```
+// MEMBER_OF
+LOAD CSV WITH HEADERS FROM 'file:///relationships/member_of.csv' AS row
+MATCH (u:User {id: row.from_id}), (t:Team {id: row.to_id})
+CREATE (u)-[:MEMBER_OF {role: row.role}]->(t);
 
-### 여러 CSV 파일 Import
-```cypher
-// 모든 CSV 파일에서 Team 노드 생성
-UNWIND ['000', '001', '002', '003', '004'] AS fileNum
-LOAD CSV WITH HEADERS FROM 'file:///' + fileNum + '.csv' AS row
-WITH row WHERE row.type = 'Team'
-WITH row, apoc.convert.fromJsonMap(row.data) AS data
-MERGE (t:Team {id: data.id})
-SET t.name = data.name, t.description = data.description;
+// HOSTS
+LOAD CSV WITH HEADERS FROM 'file:///relationships/hosts.csv' AS row
+MATCH (t:Team {id: row.from_id}), (m:Meeting {id: row.to_id})
+CREATE (t)-[:HOSTS]->(m);
+
+// 나머지 관계도 동일한 패턴 (participated_in, contains, has_decision, triggers, assigned_to)
 ```
 
 ## 5. 데이터 확인
@@ -150,6 +151,7 @@ SHOW INDEXES;
 ```
 
 ## 6. 참조 파일
-- CSV 데이터: `data/augment/000.csv` ~ `018.csv`
+- 노드 CSV: `data/augment/nodes/` (teams.csv, users.csv, meetings.csv, ...)
+- 관계 CSV: `data/augment/relationships/` (member_of.csv, hosts.csv, ...)
 - Import 스크립트: `data/augment/import.cypher`
 - 조회 쿼리: `data/augment/view_cypher.md`
