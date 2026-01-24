@@ -5,6 +5,7 @@
 .PHONY: frontend-up frontend-down frontend-rebuild frontend-logs
 .PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
+.PHONY: neo4j-seed
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
@@ -62,6 +63,8 @@ help:
 	@echo "  make db-users       - Show all users"
 	@echo "  make db-tables      - Show all tables"
 	@echo "  make db-query q=SQL - Run custom SQL query"
+	@echo "  make neo4j-seed ARGS='옵션' - Seed Neo4j with test data"
+	@echo "    예: make neo4j-seed ARGS='--clean'  또는  ARGS='--records=1000 --csv'"
 	@echo ""
 	@echo "Build:"
 	@echo "  make build          - Build frontend for production"
@@ -213,6 +216,9 @@ db-tables:
 
 db-query:
 	@docker exec mit-postgres psql -U mit -d mit -c "$(q)"
+
+neo4j-seed:
+	cd backend && uv run python seeds/neo4j_seed.py $(ARGS)
 
 # ===================
 # Build & Clean
