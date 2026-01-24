@@ -1,21 +1,33 @@
-"""그래프 의존성 팩토리
+"""LangGraph 오케스트레이션 의존성 팩토리
 
-workflow 노드에서 그래프 저장소에 접근할 때 사용.
-USE_MOCK_GRAPH 설정에 따라 Mock/실제 구현체 전환.
+workflow 노드에서 사용하는 의존성 (LLM, Neo4j Repository).
+Neo4j Repository는 infrastructure/neo4j 모듈에서 가져옴.
 """
 
-from app.infrastructure.graph.config import USE_MOCK_GRAPH
 from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.neo4j.deps import Neo4jDeps
+from app.infrastructure.neo4j.interfaces import (
+    IDecisionRepository,
+    IMeetingRepository,
+    IUserRepository,
+)
 
 
 class GraphDeps:
-    """그래프 노드에서 사용할 의존성 팩토리
+    """LangGraph 노드에서 사용할 의존성 팩토리
 
     사용 예시:
         from app.infrastructure.graph.deps import GraphDeps
 
+        # LLM 사용
+        async def generate_response(state):
+            llm = GraphDeps.get_llm()
+            response = await llm.ainvoke(state["messages"])
+            return {"response": response}
+
+        # 도메인별 Repository 사용
         async def execute_mit_search(state):
-            repo = GraphDeps.get_graph_repo()
+            repo = GraphDeps.decision_repo()
             decisions = await repo.get_team_decisions(state["team_id"])
             return {"retrieved_docs": decisions}
     """
@@ -25,64 +37,38 @@ class GraphDeps:
         """LLM 인스턴스 반환"""
         return llm
 
+    # --- Neo4j Repository (neo4j 모듈에 위임) ---
+
     @staticmethod
-    def get_graph_repo():
-        """그래프 저장소 인스턴스 반환
+    def meeting_repo() -> IMeetingRepository:
+        """회의/안건 관련 Repository 반환"""
+        return Neo4jDeps.meeting_repo()
 
-        USE_MOCK_GRAPH=True면 Mock, False면 실제 Neo4j 연결.
-        """
-        if USE_MOCK_GRAPH:
-            from app.infrastructure.graph.mock.graph_repository import (
-                MockGraphRepository,
-            )
-            return MockGraphRepository()
+    @staticmethod
+    def decision_repo() -> IDecisionRepository:
+        """결정사항/액션아이템 관련 Repository 반환 (GT 시스템)"""
+        return Neo4jDeps.decision_repo()
 
-        # 실제 Neo4j 연결 (Phase 3에서 구현)
-        # from app.infrastructure.graph.integration.neo4j import Neo4jGraphRepository
-        # return Neo4jGraphRepository()
-        raise NotImplementedError(
-            "Neo4j not configured yet. Set USE_MOCK_GRAPH=true or implement Neo4jGraphRepository."
-        )
+    @staticmethod
+    def user_repo() -> IUserRepository:
+        """사용자 활동 관련 Repository 반환"""
+        return Neo4jDeps.user_repo()
+
+    # --- 헬퍼 메소드 (neo4j 모듈에 위임) ---
 
     @staticmethod
     async def get_team_context(team_id: str) -> list[dict]:
-        """팀의 GT/결정사항 컨텍스트 조회
-
-        Args:
-            team_id: 팀 ID
-
-        Returns:
-            결정사항 목록
-        """
-        repo = GraphDeps.get_graph_repo()
-        return await repo.get_team_decisions(team_id)
+        """팀의 GT/결정사항 컨텍스트 조회"""
+        return await Neo4jDeps.get_team_context(team_id)
 
     @staticmethod
     async def get_meeting_context(meeting_id: str) -> dict | None:
-        """회의 컨텍스트 조회
-
-        Args:
-            meeting_id: 회의 ID
-
-        Returns:
-            회의 관련 전체 컨텍스트
-        """
-        repo = GraphDeps.get_graph_repo()
-        return await repo.get_meeting_with_context(meeting_id)
+        """회의 컨텍스트 조회"""
+        return await Neo4jDeps.get_meeting_context(meeting_id)
 
     @staticmethod
     async def search_gt(
         query: str, team_id: str | None = None, limit: int = 10
     ) -> list[dict]:
-        """GT(결정사항) 검색
-
-        Args:
-            query: 검색어
-            team_id: 팀 ID (선택적)
-            limit: 최대 결과 수
-
-        Returns:
-            매칭된 결정사항 목록
-        """
-        repo = GraphDeps.get_graph_repo()
-        return await repo.search_decisions(query, team_id, limit)
+        """GT(결정사항) 검색"""
+        return await Neo4jDeps.search_gt(query, team_id, limit)
