@@ -222,3 +222,58 @@ class MockGraphRepository:
                 break
 
         return results
+
+    async def get_meeting_minutes(self, meeting_id: str) -> dict | None:
+        """회의록(Minutes) 조회 - Decision Extractor 결과물 Mock
+
+        Args:
+            meeting_id: 회의 ID
+
+        Returns:
+            회의록 (summary, decisions, action_items 포함)
+            회의록이 없으면 None
+        """
+        for minutes in self.data.get("minutes", {}).values():
+            if minutes.get("meeting_id") == meeting_id:
+                return {
+                    "id": minutes["id"],
+                    "meeting_id": minutes["meeting_id"],
+                    "summary": minutes["summary"],
+                    "decisions": minutes["decisions"],
+                    "action_items": minutes["action_items"],
+                    "created_at": minutes.get("created_at"),
+                }
+        return None
+
+    async def list_meeting_minutes(self, team_id: str | None = None) -> list[dict]:
+        """회의록 목록 조회
+
+        Args:
+            team_id: 팀 ID (선택적 필터)
+
+        Returns:
+            회의록 목록
+        """
+        results = []
+        for minutes in self.data.get("minutes", {}).values():
+            meeting = self.data["meetings"].get(minutes.get("meeting_id"))
+            if not meeting:
+                continue
+
+            # 팀 필터
+            if team_id and meeting.get("team_id") != team_id:
+                continue
+
+            results.append({
+                "id": minutes["id"],
+                "meeting_id": minutes["meeting_id"],
+                "meeting_title": meeting["title"],
+                "summary": minutes["summary"],
+                "decision_count": len(minutes.get("decisions", [])),
+                "action_item_count": len(minutes.get("action_items", [])),
+                "created_at": minutes.get("created_at"),
+            })
+
+        # 최신순 정렬
+        results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return results

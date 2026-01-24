@@ -124,6 +124,61 @@ MOCK_DATA = {
             "decision_id": "decision-2",
         },
     },
+    # 회의록 (Decision Extractor 결과물 Mock)
+    "minutes": {
+        "minutes-1": {
+            "id": "minutes-1",
+            "meeting_id": "meeting-1",
+            "summary": "스프린트 계획 및 API 설계 방향 논의. RESTful 원칙 준수와 1차 마일스톤 일정을 확정함.",
+            "decisions": [
+                {
+                    "id": "decision-1",
+                    "content": "RESTful API 설계 원칙 준수",
+                    "context": "API 일관성 유지 및 클라이언트 개발 편의성을 위해 REST 원칙을 준수하기로 결정",
+                    "agenda_topic": "API 설계 검토",
+                },
+                {
+                    "id": "decision-2",
+                    "content": "1차 마일스톤: 2월 15일",
+                    "context": "MVP 기능 완성 목표",
+                    "agenda_topic": "프로젝트 일정",
+                },
+            ],
+            "action_items": [
+                {
+                    "id": "action-1",
+                    "title": "API 문서 작성",
+                    "description": "OpenAPI 스펙 기반 API 문서화",
+                    "assignee": "김민준",
+                    "due_date": "2026-02-01",
+                },
+            ],
+            "created_at": "2026-01-20T11:00:00",
+        },
+        "minutes-2": {
+            "id": "minutes-2",
+            "meeting_id": "meeting-2",
+            "summary": "API 설계 리뷰 및 인증 방식 결정. JWT 기반 인증을 채택하기로 합의함.",
+            "decisions": [
+                {
+                    "id": "decision-3",
+                    "content": "JWT 기반 인증 채택",
+                    "context": "마이크로서비스 확장성과 stateless 특성 고려",
+                    "agenda_topic": "인증 방식 결정",
+                },
+            ],
+            "action_items": [
+                {
+                    "id": "action-2",
+                    "title": "JWT 라이브러리 선정",
+                    "description": "Python JWT 라이브러리 비교 및 선정",
+                    "assignee": "이서연",
+                    "due_date": "2026-01-28",
+                },
+            ],
+            "created_at": "2026-01-22T15:00:00",
+        },
+    },
     # 관계 데이터
     "member_of": [
         {"user_id": "user-1", "team_id": "team-1", "role": "leader"},
