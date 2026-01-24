@@ -99,12 +99,24 @@ class LiveKitBot:
         self._ctx.room.on("disconnected", self._on_disconnected)
         self._ctx.room.on("data_received", self._on_data_received)
 
+        # (추가) auto_subscribe=False 환경에서, 필요한 트랙(마이크 오디오)만 수동 구독
+        self._ctx.room.on("track_published", self._on_track_published)
+
         # 토큰 생성 및 연결
         token = await self._create_token()
-        await self._ctx.room.connect(self.config.livekit_ws_url, token)
+        await self._ctx.room.connect(
+            self.config.livekit_ws_url,
+            token,
+            rtc.RoomOptions(auto_subscribe=False),
+        )
 
         self._ctx.is_connected = True
         logger.info(f"LiveKit 회의 참여: {self.meeting_id}")
+
+        # (추가) 이미 참여 중인 참여자의 기존 트랙도 마이크 오디오만 구독
+        for participant in self._ctx.room.remote_participants.values():
+            for publication in participant.track_publications.values():
+                self._subscribe_publication_if_needed(publication)
 
         # 이미 참여 중인 참여자 처리
         for participant in self._ctx.room.remote_participants.values():
@@ -133,6 +145,10 @@ class LiveKitBot:
         """참여자 입장 이벤트"""
         asyncio.create_task(self._handle_participant_joined(participant))
 
+        # (추가) 참가자 입장 시 이미 publish된 트랙이 있으면 마이크 오디오만 구독
+        for publication in participant.track_publications.values():
+            self._subscribe_publication_if_needed(publication)
+
     def _on_participant_disconnected(self, participant: rtc.RemoteParticipant) -> None:
         """참여자 퇴장 이벤트"""
         asyncio.create_task(self._handle_participant_left(participant))
@@ -145,9 +161,7 @@ class LiveKitBot:
     ) -> None:
         """트랙 구독 이벤트"""
         if track.kind == rtc.TrackKind.KIND_AUDIO:
-            asyncio.create_task(
-                self._handle_audio_track_subscribed(track, participant)
-            )
+            asyncio.create_task(self._handle_audio_track_subscribed(track, participant))
 
     def _on_track_unsubscribed(
         self,
@@ -168,6 +182,7 @@ class LiveKitBot:
         """DataPacket 수신 이벤트 (VAD 이벤트 등)"""
         try:
             import json
+
             message = json.loads(data.data.decode("utf-8"))
 
             if message.get("type") == "vad_event":
@@ -197,6 +212,39 @@ class LiveKitBot:
         except Exception as e:
             logger.warning(f"DataPacket 파싱 오류: {e}")
 
+    # (추가) 트랙 publish 이벤트에서 마이크 오디오만 구독
+    def _on_track_published(
+        self,
+        publication: rtc.RemoteTrackPublication,
+        participant: rtc.RemoteParticipant,
+    ) -> None:
+        self._subscribe_publication_if_needed(publication)
+
+    # (추가) publication을 보고 구독 여부를 결정 (마이크 오디오만)
+    def _subscribe_publication_if_needed(self, publication) -> None:
+        try:
+            kind = getattr(publication, "kind", None)
+            if kind != rtc.TrackKind.KIND_AUDIO:
+                return
+
+            # source가 노출되는 SDK 버전이라면 "마이크"만 허용
+            source = getattr(publication, "source", None)
+            if source is not None:
+                # SDK 버전에 따라 TrackSource 상수명이 다를 수 있어 안전하게 비교
+                mic_source = getattr(rtc.TrackSource, "MICROPHONE", None)
+                if mic_source is not None and source != mic_source:
+                    return
+
+            # 이미 구독 중이면 스킵
+            is_subscribed = getattr(publication, "subscribed", None)
+            if is_subscribed is True:
+                return
+
+            publication.set_subscribed(True)
+
+        except Exception as e:
+            logger.debug(f"publication 구독 처리 실패: {e}")
+
     async def _handle_participant_joined(
         self,
         participant: rtc.RemoteParticipant,
@@ -207,6 +255,7 @@ class LiveKitBot:
         if participant.metadata:
             try:
                 import json
+
                 meta = json.loads(participant.metadata)
                 user_id = meta.get("userId", participant.identity)
             except Exception:
