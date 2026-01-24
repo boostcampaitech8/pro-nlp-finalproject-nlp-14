@@ -1,7 +1,10 @@
-"""MIT Merge Tool - Phase1 PR Workflow의 결정사항 병합 처리
+"""MIT Merge Tool - 결정사항 병합 처리
 
-Phase1에서는 모든 회의 참가자가 자동으로 approved 상태를 반환한다고 가정.
-승인된 결정사항을 latest로 변경하고, 동일 안건의 이전 latest를 outdated로 대체함.
+모든 참가자가 approved 상태인 결정사항을 latest로 승격하고,
+동일 안건의 이전 latest를 outdated로 대체(SUPERSEDES)함.
+
+Note: mit_merge는 참가자 전원 승인이 완료된 후 호출되어야 함.
+      승인 확인은 호출 전에 외부에서 처리.
 """
 
 import logging
@@ -27,10 +30,11 @@ class MergeResult:
 async def execute_mit_merge(decision_id: str) -> MergeResult:
     """결정사항 병합 실행
 
-    Phase1 PR Workflow:
-    1. 모든 참가자가 approved 상태인지 확인 (Phase1: 자동 승인)
-    2. Decision (draft) -> Decision (latest)로 상태 변경
-    3. 동일 안건의 이전 latest Decision -> outdated로 변경 (SUPERSEDES)
+    참가자 전원 승인이 완료된 결정사항에 대해:
+    1. Decision (draft) -> Decision (latest)로 상태 변경
+    2. 동일 안건의 이전 latest Decision -> outdated로 변경 (SUPERSEDES)
+
+    Note: 이 함수는 참가자 전원 승인이 완료된 후 호출되어야 함.
 
     Args:
         decision_id: 병합할 결정사항 ID
@@ -61,21 +65,7 @@ async def execute_mit_merge(decision_id: str) -> MergeResult:
             error=f"Decision is not in draft status: {decision.get('status')}",
         )
 
-    # 3. Phase1: 모든 참가자 자동 승인 시뮬레이션
-    #    실제 리뷰 프로세스 없이 바로 승인 처리
-    all_approved, pending_users = await repo.check_all_participants_approved(
-        decision_id
-    )
-
-    # Phase1에서는 미승인 참가자가 있어도 자동 승인 처리
-    if not all_approved and pending_users:
-        logger.info(
-            f"Phase1 자동 승인: 미승인 참가자 {len(pending_users)}명 자동 승인 처리"
-        )
-        for user_id in pending_users:
-            await repo.review_decision(decision_id, user_id, "approved")
-
-    # 4. draft -> latest 승격
+    # 3. draft -> latest 승격
     promoted = await repo.promote_decision_to_latest(decision_id)
     if not promoted:
         logger.error(f"결정사항 승격 실패: {decision_id}")
@@ -87,7 +77,7 @@ async def execute_mit_merge(decision_id: str) -> MergeResult:
 
     logger.info(f"결정사항 승격 완료: {decision_id} -> latest")
 
-    # 5. 동일 안건의 이전 latest -> outdated (SUPERSEDES)
+    # 4. 동일 안건의 이전 latest -> outdated (SUPERSEDES)
     agenda_id = decision.get("agenda_id")
     superseded = []
     if agenda_id:
@@ -122,9 +112,9 @@ async def execute_mit_merge_batch(decision_ids: list[str]) -> list[MergeResult]:
 
 
 async def auto_merge_meeting_decisions(meeting_id: str) -> list[MergeResult]:
-    """회의의 모든 draft 결정사항 자동 병합 (Phase1)
+    """회의의 모든 draft 결정사항 자동 병합
 
-    Phase1에서는 리뷰 과정 없이 회의 종료 시 모든 draft 결정사항을 자동 병합.
+    회의 종료 시 모든 draft 결정사항을 일괄 병합.
 
     Args:
         meeting_id: 회의 ID
