@@ -89,7 +89,7 @@ results = await tools_retriever.search(query)  # 빠름!
 | HAS_DECISION | Agenda → Decision |
 | SUPERSEDES | Decision → Decision (버전 관리) |
 | TRIGGERS | Decision → ActionItem |
-| APPROVED | User → Decision |
+| REVIEWED_BY | User → Decision |
 | ASSIGNED_TO | User → ActionItem |
 
 ## 4. 동기화 시점

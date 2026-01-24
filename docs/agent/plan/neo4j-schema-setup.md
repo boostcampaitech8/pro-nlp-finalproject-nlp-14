@@ -24,7 +24,7 @@ MIT 그래프 데이터베이스 스키마 정의 및 데이터 구축
 | PARTICIPATED_IN | User | Meeting | role | 회의 참여 |
 | CONTAINS | Meeting | Agenda | - | 회의에 안건 포함 |
 | HAS_DECISION | Agenda | Decision | - | 안건의 결정사항 |
-| APPROVED | User | Decision | status, responded_at | GT 승인 |
+| REVIEWED_BY | User | Decision | status, responded_at | GT 승인 |
 | SUPERSEDES | Decision | Decision | - | 결정 대체 (버전 관리) |
 | TRIGGERS | Decision | ActionItem | - | 결정에서 액션아이템 파생 |
 | ASSIGNED_TO | User | ActionItem | assigned_at | 액션아이템 할당 |
