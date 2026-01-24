@@ -1,13 +1,11 @@
 """LiveKit Bot - 회의 참여, 오디오 구독 및 AI 에이전트 기능"""
 
 import asyncio
-import audioop
 import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
 from livekit import api, rtc
-
 from src.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -260,12 +258,16 @@ class LiveKitBot:
         p_audio.track = track
 
         # 오디오 스트림 생성 및 처리 태스크 시작
-        audio_stream = rtc.AudioStream(track)
+        audio_stream = rtc.AudioStream(
+            track,
+            sample_rate=16000,
+            num_channels=1,
+            frame_size_ms=100,  # STT 버퍼(100ms)와 맞추기
+            capacity=10,  # 무한 큐 방지
+        )
         p_audio.audio_stream = audio_stream
 
-        task = asyncio.create_task(
-            self._process_audio_stream(participant.sid, audio_stream)
-        )
+        task = asyncio.create_task(self._process_audio_stream(participant.sid, audio_stream))
         self._audio_tasks[participant.sid] = task
 
         logger.debug(f"오디오 트랙 구독: {p_audio.participant_name}")
@@ -303,22 +305,8 @@ class LiveKitBot:
 
                 p_audio = self._ctx.participants[participant_sid]
 
-                # PCM 16-bit로 변환
-                # LiveKit AudioFrame은 samples_per_channel * num_channels 크기의 int16 배열
+                # PCM 16-bit로 변환 (AudioStream에서 이미 16kHz, mono로 리샘플링됨)
                 pcm_data = frame.data.tobytes()
-
-                # 48kHz -> 16kHz 리샘플링 (Clova Speech 요구사항)
-                src_rate = frame.sample_rate
-                dst_rate = 16000
-                if src_rate != dst_rate:
-                    pcm_data, _ = audioop.ratecv(
-                        pcm_data,
-                        2,  # 16-bit = 2 bytes
-                        frame.num_channels,
-                        src_rate,
-                        dst_rate,
-                        None,
-                    )
 
                 if self.on_audio_frame and pcm_data:
                     self.on_audio_frame(
@@ -331,3 +319,6 @@ class LiveKitBot:
             logger.debug(f"오디오 스트림 태스크 취소: {participant_sid}")
         except Exception as e:
             logger.exception(f"오디오 스트림 처리 오류: {e}")
+        finally:
+            # 중요: 네이티브 핸들 정리
+            await audio_stream.aclose()

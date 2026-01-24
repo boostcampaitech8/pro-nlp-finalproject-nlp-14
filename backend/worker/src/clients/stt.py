@@ -95,10 +95,6 @@ class ClovaSpeechSTTClient:
         self._confidence_sum = 0.0
         self._confidence_count = 0
 
-        # 오디오 버퍼링 (100ms = 3,200 bytes at 16kHz, 16-bit, mono)
-        self._audio_buffer = bytearray()
-        self._BUFFER_SIZE = 3200  # 100ms
-
     async def connect(self) -> None:
         """gRPC 채널 연결"""
         if self._channel is not None:
@@ -264,7 +260,6 @@ class ClovaSpeechSTTClient:
         self._is_running = True
         self._seq_id = 0
         self._reset_buffer()
-        self._audio_buffer.clear()
 
         # 인증 메타데이터
         metadata = (("authorization", f"Bearer {self.config.clova_stt_secret}"),)
@@ -290,45 +285,29 @@ class ClovaSpeechSTTClient:
         logger.debug("STT 스트리밍 종료")
 
     async def send_audio(self, audio_data: bytes) -> None:
-        """오디오 데이터 전송 (100ms 버퍼링 + 무음 필터링)
+        """오디오 데이터 전송 (무음 필터링)
 
         Args:
-            audio_data: PCM 오디오 데이터 (16kHz, mono, 16-bit)
+            audio_data: PCM 오디오 데이터 (16kHz, mono, 16-bit, 100ms 프레임)
         """
         if not self._is_running:
             logger.warning("STT 스트리밍이 시작되지 않음")
             return
 
-        # 버퍼에 추가
-        self._audio_buffer.extend(audio_data)
+        # 무음 필터링
+        if is_silence(audio_data, self.config.silence_threshold):
+            logger.debug(f"무음 감지, STT 전송 스킵 (RMS < {self.config.silence_threshold})")
+            return
 
-        # 버퍼가 100ms (3,200 bytes) 이상이면 전송
-        while len(self._audio_buffer) >= self._BUFFER_SIZE:
-            chunk = bytes(self._audio_buffer[: self._BUFFER_SIZE])
-            self._audio_buffer = self._audio_buffer[self._BUFFER_SIZE :]
-
-            # 무음 필터링: 100ms 청크 전체의 평균 RMS가 임계값 이하면 전송 안 함
-            if is_silence(chunk, self.config.silence_threshold):
-                logger.debug(
-                    f"무음 감지 (100ms 청크), STT 전송 스킵 (RMS < {self.config.silence_threshold})"
-                )
-                continue
-
-            await self._audio_queue.put((chunk, False))
+        await self._audio_queue.put((audio_data, False))
 
     async def mark_end_of_speech(self) -> None:
         """발화 종료 표시 (VAD speech_end 시 호출)
 
-        남은 버퍼를 전송하고 epFlag=true를 전송하여 Clova에 발화 종료를 알림
+        epFlag=true를 전송하여 Clova에 발화 종료를 알림
         """
         if not self._is_running:
             return
-
-        # 남은 버퍼가 있으면 먼저 전송
-        if self._audio_buffer:
-            remaining = bytes(self._audio_buffer)
-            self._audio_buffer.clear()
-            await self._audio_queue.put((remaining, False))
 
         # epFlag=true 전송
         await self._audio_queue.put((b"", True))
