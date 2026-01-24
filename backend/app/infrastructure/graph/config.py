@@ -1,10 +1,12 @@
+"""LangGraph 오케스트레이션 설정"""
+
 import os
 
 from dotenv import load_dotenv
 
-# .env 파일 로드
 load_dotenv()
 
+# LLM API 키
 NCP_CLOVASTUDIO_API_KEY = os.getenv("NCP_CLOVASTUDIO_API_KEY")
 
 # Orchestration 설정
