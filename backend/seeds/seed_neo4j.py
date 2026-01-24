@@ -19,6 +19,7 @@ import random
 import shutil
 import uuid
 import argparse
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -605,14 +606,21 @@ def save_flat_batch(data: dict, first_batch: bool = False):
 
 
 # ============================================
-# Neo4j Import 클래스
+# Neo4j Import 클래스 (Async + UNWIND 최적화)
 # ============================================
 class Neo4jImporter:
+    """
+    Neo4j 비동기 임포터
+    - AsyncGraphDatabase 사용
+    - UNWIND로 배치 쿼리 (노드/관계 타입별 1개 쿼리)
+    - asyncio.gather로 병렬 실행
+    """
+
     def __init__(self, uri: str, user: str, password: str, database: str = "neo4j"):
         try:
-            from neo4j import GraphDatabase
+            from neo4j import AsyncGraphDatabase
 
-            self.driver = GraphDatabase.driver(uri, auth=(user, password))
+            self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
             self.database = database
         except ImportError:
             print("[오류] neo4j 패키지가 설치되지 않았습니다.")
@@ -622,17 +630,17 @@ class Neo4jImporter:
             print(f"[오류] Neo4j 연결 실패: {e}")
             raise
 
-    def close(self):
-        self.driver.close()
+    async def close(self):
+        await self.driver.close()
         print("[Neo4j] 연결 종료")
 
-    def clear_database(self):
+    async def clear_database(self):
         """DB 전체 초기화 (주의!)"""
-        with self.driver.session(database=self.database) as session:
-            session.run("MATCH (n) DETACH DELETE n")
+        async with self.driver.session(database=self.database) as session:
+            await session.run("MATCH (n) DETACH DELETE n")
             print("[Neo4j] 데이터베이스 초기화 완료")
 
-    def create_constraints(self):
+    async def create_constraints(self):
         """제약조건 및 인덱스 생성"""
         constraints = [
             "CREATE CONSTRAINT team_id_unique IF NOT EXISTS FOR (t:Team) REQUIRE t.id IS UNIQUE",
@@ -651,151 +659,231 @@ class Neo4jImporter:
             "CREATE INDEX actionitem_status_idx IF NOT EXISTS FOR (ai:ActionItem) ON (ai.status)",
         ]
 
-        with self.driver.session(database=self.database) as session:
+        async with self.driver.session(database=self.database) as session:
             for c in constraints:
                 try:
-                    session.run(c)
+                    await session.run(c)
                 except Exception as e:
                     print(f"[경고] 제약조건 생성 실패: {e}")
 
             for i in indexes:
                 try:
-                    session.run(i)
+                    await session.run(i)
                 except Exception as e:
                     print(f"[경고] 인덱스 생성 실패: {e}")
 
         print("[Neo4j] 제약조건/인덱스 생성 완료")
 
-    def import_batch(self, generator: "DataGenerator"):
-        """배치 데이터를 Neo4j에 import"""
-        with self.driver.session(database=self.database) as session:
-            # 노드 생성
-            for team in generator.teams:
-                session.run(
-                    "CREATE (t:Team {id: $id, name: $name, description: $description})",
-                    **team
-                )
+    async def import_batch(self, generator: "DataGenerator"):
+        """배치 데이터를 Neo4j에 import (UNWIND + 병렬, 각 쿼리는 별도 세션)"""
+        # 1단계: 노드 생성 (병렬 - 각각 별도 세션 사용)
+        await asyncio.gather(
+            self._create_teams(generator.teams),
+            self._create_users(generator.users),
+            self._create_meetings(generator.meetings),
+            self._create_agendas(generator.agendas),
+            self._create_decisions(generator.decisions),
+            self._create_action_items(generator.action_items),
+        )
 
-            for user in generator.users:
-                session.run(
-                    "CREATE (u:User {id: $id, email: $email, name: $name})",
-                    **user
-                )
+        # 2단계: 관계 생성 (노드 생성 완료 후, 병렬)
+        await asyncio.gather(
+            self._create_member_of(generator.member_of),
+            self._create_hosts(generator.hosts),
+            self._create_participated_in(generator.participated_in),
+            self._create_contains(generator.contains),
+            self._create_has_decision(generator.has_decision),
+            self._create_reviewed(generator.reviewed),
+            self._create_supersedes(generator.supersedes),
+            self._create_triggers(generator.triggers),
+            self._create_assigned_to(generator.assigned_to),
+        )
 
-            for meeting in generator.meetings:
-                session.run("""
-                    CREATE (m:Meeting {
-                        id: $id, title: $title, status: $status, description: $description,
-                        transcript: $transcript, summary: $summary,
-                        scheduled_at: CASE WHEN $scheduled_at IS NOT NULL THEN datetime($scheduled_at) ELSE null END,
-                        started_at: CASE WHEN $started_at IS NOT NULL THEN datetime($started_at) ELSE null END,
-                        ended_at: CASE WHEN $ended_at IS NOT NULL THEN datetime($ended_at) ELSE null END,
-                        created_at: datetime($created_at)
-                    })
-                """, **meeting)
+    # ---- 노드 생성 (UNWIND, 각각 별도 세션) ----
+    async def _create_teams(self, teams: list):
+        if not teams:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS t
+                CREATE (:Team {id: t.id, name: t.name, description: t.description})
+            """, items=teams)
 
-            for agenda in generator.agendas:
-                session.run(
-                    "CREATE (a:Agenda {id: $id, topic: $topic, description: $description, created_at: datetime($created_at)})",
-                    **agenda
-                )
+    async def _create_users(self, users: list):
+        if not users:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS u
+                CREATE (:User {id: u.id, email: u.email, name: u.name})
+            """, items=users)
 
-            for decision in generator.decisions:
-                session.run(
-                    "CREATE (d:Decision {id: $id, content: $content, status: $status, context: $context, created_at: datetime($created_at)})",
-                    **decision
-                )
+    async def _create_meetings(self, meetings: list):
+        if not meetings:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS m
+                CREATE (:Meeting {
+                    id: m.id, title: m.title, status: m.status, description: m.description,
+                    transcript: m.transcript, summary: m.summary,
+                    scheduled_at: CASE WHEN m.scheduled_at IS NOT NULL THEN datetime(m.scheduled_at) ELSE null END,
+                    started_at: CASE WHEN m.started_at IS NOT NULL THEN datetime(m.started_at) ELSE null END,
+                    ended_at: CASE WHEN m.ended_at IS NOT NULL THEN datetime(m.ended_at) ELSE null END,
+                    created_at: datetime(m.created_at)
+                })
+            """, items=meetings)
 
-            for action_item in generator.action_items:
-                session.run("""
-                    CREATE (ai:ActionItem {
-                        id: $id, title: $title, description: $description,
-                        due_date: CASE WHEN $due_date IS NOT NULL THEN datetime($due_date) ELSE null END,
-                        status: $status, created_at: datetime($created_at)
-                    })
-                """, **action_item)
+    async def _create_agendas(self, agendas: list):
+        if not agendas:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS a
+                CREATE (:Agenda {id: a.id, topic: a.topic, description: a.description, created_at: datetime(a.created_at)})
+            """, items=agendas)
 
-            # 관계 생성
-            for rel in generator.member_of:
-                session.run(
-                    "MATCH (u:User {id: $from}), (t:Team {id: $to}) CREATE (u)-[:MEMBER_OF {role: $role}]->(t)",
-                    **rel
-                )
+    async def _create_decisions(self, decisions: list):
+        if not decisions:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS d
+                CREATE (:Decision {id: d.id, content: d.content, status: d.status, context: d.context, created_at: datetime(d.created_at)})
+            """, items=decisions)
 
-            for rel in generator.hosts:
-                session.run(
-                    "MATCH (t:Team {id: $from}), (m:Meeting {id: $to}) CREATE (t)-[:HOSTS]->(m)",
-                    **rel
-                )
+    async def _create_action_items(self, action_items: list):
+        if not action_items:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS ai
+                CREATE (:ActionItem {
+                    id: ai.id, title: ai.title, description: ai.description,
+                    due_date: CASE WHEN ai.due_date IS NOT NULL THEN datetime(ai.due_date) ELSE null END,
+                    status: ai.status, created_at: datetime(ai.created_at)
+                })
+            """, items=action_items)
 
-            for rel in generator.participated_in:
-                session.run(
-                    "MATCH (u:User {id: $from}), (m:Meeting {id: $to}) CREATE (u)-[:PARTICIPATED_IN {role: $role}]->(m)",
-                    **rel
-                )
+    # ---- 관계 생성 (UNWIND, 각각 별도 세션) ----
+    async def _create_member_of(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from}), (t:Team {id: r.to})
+                CREATE (u)-[:MEMBER_OF {role: r.role}]->(t)
+            """, items=rels)
 
-            for rel in generator.contains:
-                session.run(
-                    "MATCH (m:Meeting {id: $from}), (a:Agenda {id: $to}) CREATE (m)-[:CONTAINS]->(a)",
-                    **rel
-                )
+    async def _create_hosts(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (t:Team {id: r.from}), (m:Meeting {id: r.to})
+                CREATE (t)-[:HOSTS]->(m)
+            """, items=rels)
 
-            for rel in generator.has_decision:
-                session.run(
-                    "MATCH (a:Agenda {id: $from}), (d:Decision {id: $to}) CREATE (a)-[:HAS_DECISION]->(d)",
-                    **rel
-                )
+    async def _create_participated_in(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from}), (m:Meeting {id: r.to})
+                CREATE (u)-[:PARTICIPATED_IN {role: r.role}]->(m)
+            """, items=rels)
 
-            for rel in generator.reviewed:
-                session.run("""
-                    MATCH (u:User {id: $from}), (d:Decision {id: $to})
-                    CREATE (u)-[:REVIEWED {
-                        status: $status,
-                        responded_at: CASE WHEN $responded_at IS NOT NULL THEN datetime($responded_at) ELSE null END
-                    }]->(d)
-                """, **rel)
+    async def _create_contains(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (m:Meeting {id: r.from}), (a:Agenda {id: r.to})
+                CREATE (m)-[:CONTAINS]->(a)
+            """, items=rels)
 
-            for rel in generator.supersedes:
-                session.run(
-                    "MATCH (new_d:Decision {id: $from}), (old_d:Decision {id: $to}) CREATE (new_d)-[:SUPERSEDES]->(old_d)",
-                    **rel
-                )
+    async def _create_has_decision(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (a:Agenda {id: r.from}), (d:Decision {id: r.to})
+                CREATE (a)-[:HAS_DECISION]->(d)
+            """, items=rels)
 
-            for rel in generator.triggers:
-                session.run(
-                    "MATCH (d:Decision {id: $from}), (ai:ActionItem {id: $to}) CREATE (d)-[:TRIGGERS]->(ai)",
-                    **rel
-                )
+    async def _create_reviewed(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from}), (d:Decision {id: r.to})
+                CREATE (u)-[:REVIEWED {
+                    status: r.status,
+                    responded_at: CASE WHEN r.responded_at IS NOT NULL THEN datetime(r.responded_at) ELSE null END
+                }]->(d)
+            """, items=rels)
 
-            for rel in generator.assigned_to:
-                session.run(
-                    "MATCH (u:User {id: $from}), (ai:ActionItem {id: $to}) CREATE (u)-[:ASSIGNED_TO {assigned_at: datetime($assigned_at)}]->(ai)",
-                    **rel
-                )
+    async def _create_supersedes(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (new_d:Decision {id: r.from}), (old_d:Decision {id: r.to})
+                CREATE (new_d)-[:SUPERSEDES]->(old_d)
+            """, items=rels)
 
-    def get_stats(self) -> dict:
+    async def _create_triggers(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (d:Decision {id: r.from}), (ai:ActionItem {id: r.to})
+                CREATE (d)-[:TRIGGERS]->(ai)
+            """, items=rels)
+
+    async def _create_assigned_to(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from}), (ai:ActionItem {id: r.to})
+                CREATE (u)-[:ASSIGNED_TO {assigned_at: datetime(r.assigned_at)}]->(ai)
+            """, items=rels)
+
+    async def get_stats(self) -> dict:
         """DB 통계 조회"""
-        with self.driver.session(database=self.database) as session:
-            result = session.run("""
+        async with self.driver.session(database=self.database) as session:
+            result = await session.run("""
                 MATCH (n)
                 WITH labels(n) AS labels, count(*) AS cnt
                 UNWIND labels AS label
                 RETURN label, sum(cnt) AS count
                 ORDER BY label
             """)
-            nodes = {record["label"]: record["count"] for record in result}
+            records = await result.data()
+            nodes = {r["label"]: r["count"] for r in records}
 
-            result = session.run("""
+            result = await session.run("""
                 MATCH ()-[r]->()
                 RETURN type(r) AS type, count(*) AS count
                 ORDER BY type
             """)
-            rels = {record["type"]: record["count"] for record in result}
+            records = await result.data()
+            rels = {r["type"]: r["count"] for r in records}
 
         return {"nodes": nodes, "relationships": rels}
 
 
-def main():
+async def main():
     args = parse_args()
 
     # --clean 옵션: augment 폴더 정리 후 종료
@@ -819,7 +907,7 @@ def main():
         random.seed(args.seed)
 
     print("=" * 60)
-    print("MIT Neo4j 데이터 Augmentation")
+    print("MIT Neo4j 데이터 Augmentation (Async + UNWIND)")
     print("=" * 60)
     print(f"  배치 크기:     {batch_size}")
     print(f"  최대 레코드:   {max_records}")
@@ -845,11 +933,11 @@ def main():
             if clear_db:
                 confirm = input("\n[경고] DB를 초기화하시겠습니까? (yes/no): ")
                 if confirm.lower() == "yes":
-                    importer.clear_database()
+                    await importer.clear_database()
                 else:
                     print("DB 초기화를 건너뜁니다.")
 
-            importer.create_constraints()
+            await importer.create_constraints()
         except Exception as e:
             print(f"\n[오류] Neo4j 연결 실패: {e}")
             print("--no-import 모드로 전환합니다.\n")
@@ -869,9 +957,9 @@ def main():
                 data = generator.to_flat_data()
                 save_flat_batch(data, first_batch=(batch_num == 0))
 
-            # Neo4j Import
+            # Neo4j Import (async)
             if importer:
-                importer.import_batch(generator)
+                await importer.import_batch(generator)
 
             total_records += generator.record_count
             batch_num += 1
@@ -892,14 +980,14 @@ def main():
         # Neo4j 통계 출력
         if importer:
             print("\n[Neo4j 통계]")
-            stats = importer.get_stats()
+            stats = await importer.get_stats()
             print("  노드:")
             for label, count in stats["nodes"].items():
                 print(f"    {label}: {count}")
             print("  관계:")
             for rel_type, count in stats["relationships"].items():
                 print(f"    {rel_type}: {count}")
-            importer.close()
+            await importer.close()
 
     print("\n" + "=" * 60)
     print(f"완료! 총 {batch_num}개 배치, {total_records}개 레코드")
@@ -909,4 +997,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
