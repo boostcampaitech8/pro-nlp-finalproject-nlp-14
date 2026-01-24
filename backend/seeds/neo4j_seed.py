@@ -6,11 +6,11 @@ MIT Neo4j 데이터 Augmentation 스크립트
 - Neo4j driver로 직접 데이터 삽입
 
 실행:
-  make seed-neo4j                    # 기본 실행
-  make seed-neo4j -- --clean         # augment 폴더 정리
-  make seed-neo4j -- --records=1000  # 1000개 레코드 생성
-  make seed-neo4j -- --csv           # CSV 파일도 저장
-  make seed-neo4j -- --no-import     # Neo4j import 건너뛰기
+  make neo4j-seed                    # 기본 실행
+  make neo4j-seed -- --clean         # augment 폴더 정리
+  make neo4j-seed -- --records=1000  # 1000개 레코드 생성
+  make neo4j-seed -- --csv           # CSV 파일도 저장
+  make neo4j-seed -- --no-import     # Neo4j import 건너뛰기
 """
 import os
 import sys
@@ -38,11 +38,11 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 예시:
-  python seeds/seed_neo4j.py                  # 기본 실행 (10000 레코드)
-  python seeds/seed_neo4j.py --clean          # augment 폴더 정리
-  python seeds/seed_neo4j.py --records 1000   # 1000개만 생성
-  python seeds/seed_neo4j.py --csv            # CSV 파일도 저장
-  python seeds/seed_neo4j.py --no-import      # Neo4j import 건너뛰기
+  python seeds/neo4j_seed.py                  # 기본 실행 (10000 레코드)
+  python seeds/neo4j_seed.py --clean          # augment 폴더 정리
+  python seeds/neo4j_seed.py --records 1000   # 1000개만 생성
+  python seeds/neo4j_seed.py --csv            # CSV 파일도 저장
+  python seeds/neo4j_seed.py --no-import      # Neo4j import 건너뛰기
         """
     )
     parser.add_argument("--clean", action="store_true",
@@ -353,7 +353,7 @@ class DataGenerator:
         self.record_count += 1
 
         # HOSTS 관계
-        self.hosts.append({"from": team_id, "to": meeting_id})
+        self.hosts.append({"from_id": team_id, "to_id": meeting_id})
         self.record_count += 1
 
         return meeting
@@ -370,17 +370,26 @@ class DataGenerator:
         self.record_count += 1
 
         # CONTAINS 관계
-        self.contains.append({"from": meeting_id, "to": agenda_id})
+        self.contains.append({"from_id": meeting_id, "to_id": agenda_id})
         self.record_count += 1
 
         return agenda
 
-    def generate_decision(self, agenda_id: str) -> dict:
+    def generate_decision(self, agenda_id: str, status: str = None) -> dict:
+        """결정사항 생성
+
+        Args:
+            agenda_id: 안건 ID
+            status: 결정 상태 (None이면 weighted_choice로 선택)
+        """
         decision_id = f"decision-{generate_uuid()}"
+        if status is None:
+            status = weighted_choice(DECISION_STATUSES, DECISION_STATUS_WEIGHTS)
+
         decision = {
             "id": decision_id,
             "content": fill_template(random.choice(DECISION_TEMPLATES)),
-            "status": weighted_choice(DECISION_STATUSES, DECISION_STATUS_WEIGHTS),
+            "status": status,
             "context": f"{random.choice(TOPICS)} 기반 결정",
             "created_at": format_datetime(random_datetime()),
         }
@@ -388,7 +397,7 @@ class DataGenerator:
         self.record_count += 1
 
         # HAS_DECISION 관계
-        self.has_decision.append({"from": agenda_id, "to": decision_id})
+        self.has_decision.append({"from_id": agenda_id, "to_id": decision_id})
         self.record_count += 1
 
         return decision
@@ -408,54 +417,68 @@ class DataGenerator:
         self.record_count += 1
 
         # TRIGGERS 관계
-        self.triggers.append({"from": decision_id, "to": action_id})
+        self.triggers.append({"from_id": decision_id, "to_id": action_id})
         self.record_count += 1
 
         return action_item
 
     def add_member_of(self, user_id: str, team_id: str):
         self.member_of.append({
-            "from": user_id,
-            "to": team_id,
+            "from_id": user_id,
+            "to_id": team_id,
             "role": weighted_choice(MEMBER_ROLES, MEMBER_ROLE_WEIGHTS),
         })
         self.record_count += 1
 
     def add_participated_in(self, user_id: str, meeting_id: str):
         self.participated_in.append({
-            "from": user_id,
-            "to": meeting_id,
+            "from_id": user_id,
+            "to_id": meeting_id,
             "role": weighted_choice(PARTICIPANT_ROLES, PARTICIPANT_ROLE_WEIGHTS),
         })
         self.record_count += 1
 
     def add_reviewed(self, user_id: str, decision_id: str):
+        """리뷰 관계 추가
+
+        참고: 도메인 모델에서는 DecisionReview/ReviewerApproval로 관리하나,
+        시드 데이터에서는 단순화된 User -> Decision 관계로 표현
+        """
         status = weighted_choice(APPROVAL_STATUSES, APPROVAL_STATUS_WEIGHTS)
         self.reviewed.append({
-            "from": user_id,
-            "to": decision_id,
+            "from_id": user_id,
+            "to_id": decision_id,
             "status": status,
             "responded_at": format_datetime(random_datetime()) if status != "pending" else None,
         })
         self.record_count += 1
 
     def add_supersedes(self, new_decision_id: str, old_decision_id: str):
+        """SUPERSEDES 관계 추가 (new_decision이 old_decision을 대체)
+
+        도메인 규칙: SUPERSEDES 관계 생성 시 old_decision은 outdated 상태여야 함
+        """
         self.supersedes.append({
-            "from": new_decision_id,
-            "to": old_decision_id,
+            "from_id": new_decision_id,
+            "to_id": old_decision_id,
         })
         self.record_count += 1
 
     def add_assigned_to(self, user_id: str, action_id: str):
         self.assigned_to.append({
-            "from": user_id,
-            "to": action_id,
+            "from_id": user_id,
+            "to_id": action_id,
             "assigned_at": format_datetime(random_datetime()),
         })
         self.record_count += 1
 
     def generate_batch(self, target_count: int = 500):
-        """하나의 배치 데이터 생성"""
+        """하나의 배치 데이터 생성
+
+        도메인 규칙:
+        - Agenda당 최대 1개의 latest Decision만 유지
+        - SUPERSEDES 관계: latest -> outdated 전이 반영
+        """
         initial_count = self.record_count
 
         while self.record_count - initial_count < target_count:
@@ -479,14 +502,29 @@ class DataGenerator:
                     self.add_participated_in(user["id"], meeting["id"])
 
                 # 안건 1-4개 생성
-                meeting_decisions = []
                 for _ in range(random.randint(1, 4)):
                     agenda = self.generate_agenda(meeting["id"])
 
-                    # 결정사항 1-2개 생성
-                    for _ in range(random.randint(1, 2)):
-                        decision = self.generate_decision(agenda["id"])
-                        meeting_decisions.append(decision)
+                    # 결정사항 1-2개 생성 (Agenda당 최대 1개만 latest)
+                    num_decisions = random.randint(1, 2)
+                    agenda_decisions = []
+                    has_latest = False
+
+                    for i in range(num_decisions):
+                        # 첫 번째 결정만 latest 가능, 나머지는 draft/rejected/outdated
+                        if i == 0:
+                            status = weighted_choice(DECISION_STATUSES, DECISION_STATUS_WEIGHTS)
+                            if status == "latest":
+                                has_latest = True
+                        else:
+                            # 이미 latest가 있으면 outdated 가능, 없으면 draft/rejected만
+                            if has_latest:
+                                status = random.choice(["draft", "rejected", "outdated"])
+                            else:
+                                status = random.choice(["draft", "rejected"])
+
+                        decision = self.generate_decision(agenda["id"], status)
+                        agenda_decisions.append(decision)
 
                         # 승인 관계 추가
                         approvers = random.sample(participants, min(len(participants), random.randint(1, 3)))
@@ -501,13 +539,16 @@ class DataGenerator:
                             assignee = random.choice(team_users)
                             self.add_assigned_to(assignee["id"], action_item["id"])
 
-                # SUPERSEDES 관계 (같은 안건의 결정사항 간)
-                if len(meeting_decisions) >= 2 and random.random() > 0.7:
-                    # outdated 결정을 latest로 대체
-                    outdated = [d for d in meeting_decisions if d["status"] == "outdated"]
-                    latest = [d for d in meeting_decisions if d["status"] == "latest"]
-                    if outdated and latest:
-                        self.add_supersedes(random.choice(latest)["id"], random.choice(outdated)["id"])
+                    # SUPERSEDES 관계 (latest -> outdated 전이 반영)
+                    # latest Decision이 outdated Decision을 대체
+                    if len(agenda_decisions) >= 2:
+                        latest_decisions = [d for d in agenda_decisions if d["status"] == "latest"]
+                        outdated_decisions = [d for d in agenda_decisions if d["status"] == "outdated"]
+
+                        if latest_decisions and outdated_decisions:
+                            # latest가 outdated를 대체
+                            for old_d in outdated_decisions:
+                                self.add_supersedes(latest_decisions[0]["id"], old_d["id"])
 
     def to_flat_data(self) -> dict:
         """노드/관계별 평면화된 데이터 반환
@@ -620,7 +661,13 @@ class Neo4jImporter:
         try:
             from neo4j import AsyncGraphDatabase
 
-            self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+            self.driver = AsyncGraphDatabase.driver(
+                uri,
+                auth=(user, password),
+                max_connection_lifetime=3600,
+                max_connection_pool_size=50,
+                connection_acquisition_timeout=60,
+            )
             self.database = database
         except ImportError:
             print("[오류] neo4j 패키지가 설치되지 않았습니다.")
@@ -629,6 +676,11 @@ class Neo4jImporter:
         except Exception as e:
             print(f"[오류] Neo4j 연결 실패: {e}")
             raise
+
+    async def verify_connection(self):
+        """연결 검증"""
+        await self.driver.verify_connectivity()
+        print("[Neo4j] 연결 검증 완료")
 
     async def close(self):
         await self.driver.close()
@@ -655,8 +707,10 @@ class Neo4jImporter:
             "CREATE INDEX team_name_idx IF NOT EXISTS FOR (t:Team) ON (t.name)",
             "CREATE INDEX user_name_idx IF NOT EXISTS FOR (u:User) ON (u.name)",
             "CREATE INDEX meeting_status_idx IF NOT EXISTS FOR (m:Meeting) ON (m.status)",
+            "CREATE INDEX meeting_scheduled_idx IF NOT EXISTS FOR (m:Meeting) ON (m.scheduled_at)",
             "CREATE INDEX decision_status_idx IF NOT EXISTS FOR (d:Decision) ON (d.status)",
             "CREATE INDEX actionitem_status_idx IF NOT EXISTS FOR (ai:ActionItem) ON (ai.status)",
+            "CREATE INDEX actionitem_due_idx IF NOT EXISTS FOR (ai:ActionItem) ON (ai.due_date)",
         ]
 
         async with self.driver.session(database=self.database) as session:
@@ -772,7 +826,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (u:User {id: r.from}), (t:Team {id: r.to})
+                MATCH (u:User {id: r.from_id}), (t:Team {id: r.to_id})
                 CREATE (u)-[:MEMBER_OF {role: r.role}]->(t)
             """, items=rels)
 
@@ -782,7 +836,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (t:Team {id: r.from}), (m:Meeting {id: r.to})
+                MATCH (t:Team {id: r.from_id}), (m:Meeting {id: r.to_id})
                 CREATE (t)-[:HOSTS]->(m)
             """, items=rels)
 
@@ -792,7 +846,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (u:User {id: r.from}), (m:Meeting {id: r.to})
+                MATCH (u:User {id: r.from_id}), (m:Meeting {id: r.to_id})
                 CREATE (u)-[:PARTICIPATED_IN {role: r.role}]->(m)
             """, items=rels)
 
@@ -802,7 +856,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (m:Meeting {id: r.from}), (a:Agenda {id: r.to})
+                MATCH (m:Meeting {id: r.from_id}), (a:Agenda {id: r.to_id})
                 CREATE (m)-[:CONTAINS]->(a)
             """, items=rels)
 
@@ -812,7 +866,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (a:Agenda {id: r.from}), (d:Decision {id: r.to})
+                MATCH (a:Agenda {id: r.from_id}), (d:Decision {id: r.to_id})
                 CREATE (a)-[:HAS_DECISION]->(d)
             """, items=rels)
 
@@ -822,7 +876,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (u:User {id: r.from}), (d:Decision {id: r.to})
+                MATCH (u:User {id: r.from_id}), (d:Decision {id: r.to_id})
                 CREATE (u)-[:REVIEWED {
                     status: r.status,
                     responded_at: CASE WHEN r.responded_at IS NOT NULL THEN datetime(r.responded_at) ELSE null END
@@ -835,7 +889,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (new_d:Decision {id: r.from}), (old_d:Decision {id: r.to})
+                MATCH (new_d:Decision {id: r.from_id}), (old_d:Decision {id: r.to_id})
                 CREATE (new_d)-[:SUPERSEDES]->(old_d)
             """, items=rels)
 
@@ -845,7 +899,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (d:Decision {id: r.from}), (ai:ActionItem {id: r.to})
+                MATCH (d:Decision {id: r.from_id}), (ai:ActionItem {id: r.to_id})
                 CREATE (d)-[:TRIGGERS]->(ai)
             """, items=rels)
 
@@ -855,7 +909,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS r
-                MATCH (u:User {id: r.from}), (ai:ActionItem {id: r.to})
+                MATCH (u:User {id: r.from_id}), (ai:ActionItem {id: r.to_id})
                 CREATE (u)-[:ASSIGNED_TO {assigned_at: datetime(r.assigned_at)}]->(ai)
             """, items=rels)
 
@@ -929,6 +983,7 @@ async def main():
     if import_to_neo4j:
         try:
             importer = Neo4jImporter(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE)
+            await importer.verify_connection()
 
             if clear_db:
                 confirm = input("\n[경고] DB를 초기화하시겠습니까? (yes/no): ")

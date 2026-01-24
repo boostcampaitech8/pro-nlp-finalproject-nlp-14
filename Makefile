@@ -1,10 +1,11 @@
 .PHONY: help install dev dev-fe dev-be build clean test-fe graph
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
-.PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query seed-neo4j
+.PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
 .PHONY: infra-up infra-down livekit-up livekit-down backend-up backend-down backend-rebuild backend-logs
 .PHONY: frontend-up frontend-down frontend-rebuild frontend-logs
 .PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
+.PHONY: neo4j-seed
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
@@ -62,8 +63,8 @@ help:
 	@echo "  make db-users       - Show all users"
 	@echo "  make db-tables      - Show all tables"
 	@echo "  make db-query q=SQL - Run custom SQL query"
-	@echo "  make seed-neo4j ARGS='옵션' - Seed Neo4j with test data"
-	@echo "    예: make seed-neo4j ARGS='--clean'  또는  ARGS='--records=1000 --csv'"
+	@echo "  make neo4j-seed ARGS='옵션' - Seed Neo4j with test data"
+	@echo "    예: make neo4j-seed ARGS='--clean'  또는  ARGS='--records=1000 --csv'"
 	@echo ""
 	@echo "Build:"
 	@echo "  make build          - Build frontend for production"
@@ -216,8 +217,8 @@ db-tables:
 db-query:
 	@docker exec mit-postgres psql -U mit -d mit -c "$(q)"
 
-seed-neo4j:
-	cd backend && uv run python seeds/seed_neo4j.py $(ARGS)
+neo4j-seed:
+	cd backend && uv run python seeds/neo4j_seed.py $(ARGS)
 
 # ===================
 # Build & Clean
