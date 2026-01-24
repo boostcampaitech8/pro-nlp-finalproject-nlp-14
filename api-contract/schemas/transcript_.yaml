@@ -1,0 +1,147 @@
+components:
+  schemas:
+    CreateTranscriptRequest:
+      type: object
+      required:
+        - meetingId
+        - userId
+        - startMs
+        - endMs
+        - text
+        - confidence
+        - minConfidence
+      properties:
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 회의 ID (path parameter와 일치해야 함)
+        userId:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 발화자 ID
+        startMs:
+          type: integer
+          minimum: 0
+          description: 발화 시작 시간 (밀리초)
+        endMs:
+          type: integer
+          description: 발화 종료 시간 (밀리초, startMs보다 커야 함)
+        text:
+          type: string
+          minLength: 1
+          description: 전사된 텍스트
+        confidence:
+          type: number
+          format: float
+          description: 평균 신뢰도
+        minConfidence:
+          type: number
+          format: float
+          description: 최소 신뢰도
+        agentCall:
+          type: boolean
+          default: false
+          description: 에이전트 호출 여부
+        agentCallKeyword:
+          type: string
+          maxLength: 50
+          nullable: true
+          description: 에이전트 호출 키워드
+        agentCall_confidence:
+          type: number
+          format: float
+          nullable: true
+          description: 에이전트 호출 키워드 신뢰도
+
+    CreateTranscriptResponse:
+      type: object
+      required:
+        - id
+        - createdAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 생성된 transcript segment ID
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+          description: 생성 시간
+
+    UtteranceItem:
+      type: object
+      required:
+        - id
+        - speakerId
+        - speakerName
+        - startMs
+        - endMs
+        - text
+        - timestamp
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: Transcript segment ID
+        speakerId:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 발화자 ID
+        speakerName:
+          type: string
+          description: 발화자 이름 (user가 없으면 "Unknown")
+        startMs:
+          type: integer
+          description: 발화 시작 시간 (밀리초)
+        endMs:
+          type: integer
+          description: 발화 종료 시간 (밀리초)
+        text:
+          type: string
+          description: 발화 텍스트
+        timestamp:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+          description: segment 생성 시간
+
+    GetMeetingTranscriptsResponse:
+      type: object
+      required:
+        - meetingId
+        - status
+        - fullText
+        - utterances
+        - totalDurationMs
+        - speakerCount
+        - createdAt
+      properties:
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 회의 ID
+        status:
+          type: string
+          enum:
+            - completed
+          description: 트랜스크립트 상태 (현재는 항상 completed)
+        fullText:
+          type: string
+          description: |
+            전체 전사 텍스트 (서버에서 조립)
+            형식: "{speakerName}: {text}\n..."
+        utterances:
+          type: array
+          items:
+            $ref: '#/components/schemas/UtteranceItem'
+          description: 개별 발화 목록 (createdAt 기준 ASC 정렬)
+        totalDurationMs:
+          type: integer
+          description: 전체 길이 (가장 큰 endMs 값)
+        speakerCount:
+          type: integer
+          description: 고유 발화자 수
+        meetingStart:
+          type: string
+          format: date-time
+          nullable: true
+          description: 회의 시작 시간 (현재 null)
+        meetingEnd:
+          type: string
+          format: date-time
+          nullable: true
+          description: 회의 종료 시간 (현재 null)
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+          description: 첫 번째 transcript 생성 시간

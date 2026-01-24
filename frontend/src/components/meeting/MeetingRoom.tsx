@@ -22,7 +22,6 @@ interface MeetingRoomProps {
 
 export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: MeetingRoomProps) {
   const navigate = useNavigate();
-  const hasJoinedRef = useRef(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [showParticipants, setShowParticipants] = useState(true);
   const [showChat, setShowChat] = useState(true);
@@ -89,15 +88,13 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
   // 화면공유 활성화 여부 (로컬 또는 원격 화면공유가 있는지)
   const hasActiveScreenShare = screenStream !== null || remoteScreenStreams.size > 0;
 
-  // 회의 참여
+  // 회의 참여 (joinRoom 내부에서 중복 호출 방지)
   useEffect(() => {
-    if (!hasJoinedRef.current) {
-      hasJoinedRef.current = true;
-      joinRoom(userId).catch((err) => {
-        logger.error('Failed to join room:', err);
-      });
-    }
-  }, [joinRoom, userId]);
+    joinRoom(userId).catch((err) => {
+      logger.error('Failed to join room:', err);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // 녹음 시작 알림 (녹음이 false -> true로 변경될 때만)
   useEffect(() => {

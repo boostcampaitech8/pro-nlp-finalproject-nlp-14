@@ -42,7 +42,7 @@ export const transcriptService = {
    */
   async getTranscript(meetingId: string): Promise<MeetingTranscript> {
     const response = await api.get<MeetingTranscript>(
-      `/meetings/${meetingId}/transcript`
+      `/meetings/${meetingId}/transcripts`
     );
     return response.data;
   },

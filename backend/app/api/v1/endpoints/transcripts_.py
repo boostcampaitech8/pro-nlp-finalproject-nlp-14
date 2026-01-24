@@ -1,0 +1,142 @@
+"""새 Transcript API 엔드포인트 (임시)"""
+
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.schemas.transcript_ import (
+    CreateTranscriptRequest,
+    CreateTranscriptResponse,
+    GetMeetingTranscriptsResponse,
+)
+from app.services.transcript_service_ import TranscriptService
+
+router = APIRouter(prefix="/meetings", tags=["Transcripts_"])
+
+
+def get_transcript_service(db: Annotated[AsyncSession, Depends(get_db)]) -> TranscriptService:
+    """TranscriptService 의존성"""
+    return TranscriptService(db)
+
+
+@router.post(
+    "/{meeting_id}/transcripts",
+    response_model=CreateTranscriptResponse,
+    response_model_by_alias=True,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"description": "Invalid request"},
+        404: {"description": "Meeting not found"},
+    },
+)
+async def create_transcript(
+    meeting_id: UUID,
+    request: CreateTranscriptRequest,
+    transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
+) -> CreateTranscriptResponse:
+    """발화 segment 저장 (Worker → Backend)
+
+    Worker가 전송한 전사 segment를 DB에 저장합니다.
+
+    Args:
+        meeting_id: 회의 ID (path parameter)
+        request: 발화 segment 데이터
+        transcript_service: TranscriptService 의존성
+
+    Returns:
+        CreateTranscriptResponse: 생성된 segment ID와 생성 시간
+
+    Raises:
+        HTTPException:
+            - 400: path meeting_id와 body meetingId 불일치, startMs/endMs 유효하지 않음
+            - 404: meeting 존재하지 않음
+    """
+    try:
+        return await transcript_service.create_transcript(meeting_id, request)
+    except ValueError as e:
+        error_code = str(e)
+        if error_code == "MEETING_ID_MISMATCH":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MEETING_ID_MISMATCH",
+                    "message": "Path meeting_id와 body meetingId가 일치하지 않습니다.",
+                },
+            )
+        if error_code == "INVALID_TIME_RANGE":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "INVALID_TIME_RANGE",
+                    "message": "endMs는 startMs보다 커야 합니다.",
+                },
+            )
+        if error_code == "MEETING_NOT_FOUND":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "MEETING_NOT_FOUND",
+                    "message": "회의를 찾을 수 없습니다.",
+                },
+            )
+        # 예상치 못한 에러
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "VALIDATION_ERROR",
+                "message": str(e),
+            },
+        )
+
+
+@router.get(
+    "/{meeting_id}/transcripts",
+    response_model=GetMeetingTranscriptsResponse,
+    response_model_by_alias=True,
+    responses={
+        404: {"description": "Meeting not found"},
+    },
+)
+async def get_meeting_transcripts(
+    meeting_id: UUID,
+    transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
+) -> GetMeetingTranscriptsResponse:
+    """회의 전체 전사 조회 (Client → Backend)
+
+    회의 ID를 기준으로 모든 전사 segment를 조회하고,
+    시간 순서대로 정렬된 전체 전사 텍스트를 반환합니다.
+
+    Args:
+        meeting_id: 회의 ID (path parameter)
+        transcript_service: TranscriptService 의존성
+
+    Returns:
+        GetMeetingTranscriptsResponse: 회의 전체 전사 데이터
+
+    Raises:
+        HTTPException:
+            - 404: meeting 존재하지 않음
+    """
+    try:
+        return await transcript_service.get_meeting_transcripts(meeting_id)
+    except ValueError as e:
+        error_code = str(e)
+        if error_code == "MEETING_NOT_FOUND":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "MEETING_NOT_FOUND",
+                    "message": "회의를 찾을 수 없습니다.",
+                },
+            )
+        # 예상치 못한 에러
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": str(e),
+            },
+        )
