@@ -54,6 +54,12 @@ class GraphDeps:
         """사용자 활동 관련 Repository 반환"""
         return Neo4jDeps.user_repo()
 
+    @staticmethod
+    def get_graph_repo():
+        """Phase1 PR Workflow용 통합 Repository"""
+        from app.infrastructure.neo4j.mock.graph_repository import MockGraphRepository
+        return MockGraphRepository()
+
     # --- 헬퍼 메소드 (neo4j 모듈에 위임) ---
 
     @staticmethod

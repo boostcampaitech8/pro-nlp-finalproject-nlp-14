@@ -124,6 +124,51 @@ MOCK_DATA = {
             "decision_id": "decision-2",
         },
     },
+    "reviews": [
+        {
+            "user_id": "user-1",
+            "decision_id": "decision-1",
+            "status": "approved",
+            "responded_at": "2026-01-20T10:15:00",
+        },
+        {
+            "user_id": "user-2",
+            "decision_id": "decision-1",
+            "status": "approved",
+            "responded_at": "2026-01-20T10:20:00",
+        },
+        {
+            "user_id": "user-1",
+            "decision_id": "decision-2",
+            "status": "approved",
+            "responded_at": "2026-01-20T10:35:00",
+        },
+        {
+            "user_id": "user-2",
+            "decision_id": "decision-2",
+            "status": "approved",
+            "responded_at": "2026-01-20T10:40:00",
+        },
+        {
+            "user_id": "user-1",
+            "decision_id": "decision-3",
+            "status": "approved",
+            "responded_at": "2026-01-22T14:15:00",
+        },
+        {
+            "user_id": "user-2",
+            "decision_id": "decision-3",
+            "status": "approved",
+            "responded_at": "2026-01-22T14:20:00",
+        },
+        {
+            "user_id": "user-3",
+            "decision_id": "decision-3",
+            "status": "approved",
+            "responded_at": "2026-01-22T14:25:00",
+        },
+    ],
+    "supersedes": [],
     # 회의록 (Decision Extractor 결과물 Mock)
     "minutes": {
         "minutes-1": {
