@@ -14,8 +14,8 @@ export type Timestamp = components['schemas']['Timestamp'];
 // 인증 타입 별칭
 export type AuthProvider = components['schemas']['AuthProvider'];
 export type User = components['schemas']['User'];
-export type RegisterRequest = components['schemas']['RegisterRequest'];
-export type LoginRequest = components['schemas']['LoginRequest'];
+export type NaverLoginUrlResponse = components['schemas']['NaverLoginUrlResponse'];
+export type GoogleLoginUrlResponse = components['schemas']['GoogleLoginUrlResponse'];
 export type TokenResponse = components['schemas']['TokenResponse'];
 export type AuthResponse = components['schemas']['AuthResponse'];
 export type RefreshTokenRequest = components['schemas']['RefreshTokenRequest'];
