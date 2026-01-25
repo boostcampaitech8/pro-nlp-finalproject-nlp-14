@@ -51,10 +51,10 @@ components:
       $ref: './schemas/auth.yaml#/components/schemas/AuthProvider'
     User:
       $ref: './schemas/auth.yaml#/components/schemas/User'
-    RegisterRequest:
-      $ref: './schemas/auth.yaml#/components/schemas/RegisterRequest'
-    LoginRequest:
-      $ref: './schemas/auth.yaml#/components/schemas/LoginRequest'
+    NaverLoginUrlResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/NaverLoginUrlResponse'
+    GoogleLoginUrlResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/GoogleLoginUrlResponse'
     TokenResponse:
       $ref: './schemas/auth.yaml#/components/schemas/TokenResponse'
     AuthResponse:
@@ -152,10 +152,14 @@ components:
 
 # API 경로 참조
 paths:
-  /api/v1/auth/register:
-    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1register'
-  /api/v1/auth/login:
-    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1login'
+  /api/v1/auth/naver/login:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1naver~1login'
+  /api/v1/auth/naver/callback:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1naver~1callback'
+  /api/v1/auth/google/login:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1google~1login'
+  /api/v1/auth/google/callback:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1google~1callback'
   /api/v1/auth/refresh:
     $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1refresh'
   /api/v1/auth/logout:

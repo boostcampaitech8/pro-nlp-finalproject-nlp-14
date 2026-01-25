@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,65 +9,137 @@ from app.core.database import get_db
 from app.schemas import (
     AuthResponse,
     ErrorResponse,
-    LoginRequest,
+    GoogleLoginUrlResponse,
+    NaverLoginUrlResponse,
     RefreshTokenRequest,
-    RegisterRequest,
     TokenResponse,
     UserResponse,
 )
-from app.services.auth_service import AuthService
+from app.services.auth.auth_service import AuthService
+from app.services.auth.google_oauth_service import GoogleOAuthService
+from app.services.auth.naver_oauth_service import NaverOAuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 security = HTTPBearer()
 
+# 세션 기반 state 저장 (프로덕션에서는 Redis 사용 권장)
+# 간단한 구현을 위해 메모리 기반으로 처리
+_oauth_states: dict[str, bool] = {}
 
-@router.post(
-    "/register",
+
+def get_naver_oauth_service(db: AsyncSession = Depends(get_db)) -> NaverOAuthService:
+    """네이버 OAuth 서비스 의존성"""
+    return NaverOAuthService(db)
+
+
+def get_google_oauth_service(db: AsyncSession = Depends(get_db)) -> GoogleOAuthService:
+    """Google OAuth 서비스 의존성"""
+    return GoogleOAuthService(db)
+
+
+@router.get(
+    "/naver/login",
+    response_model=NaverLoginUrlResponse,
+)
+async def get_naver_login_url(
+    naver_service: Annotated[NaverOAuthService, Depends(get_naver_oauth_service)],
+) -> NaverLoginUrlResponse:
+    """네이버 OAuth 로그인 URL 반환"""
+    state = naver_service.generate_state()
+    _oauth_states[state] = True  # state 저장
+    url = naver_service.get_authorization_url(state)
+    return NaverLoginUrlResponse(url=url)
+
+
+@router.get(
+    "/naver/callback",
     response_model=AuthResponse,
     response_model_by_alias=True,
-    status_code=status.HTTP_201_CREATED,
     responses={
         400: {"model": ErrorResponse},
-        409: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
     },
 )
-async def register(
-    data: RegisterRequest,
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+async def naver_callback(
+    code: Annotated[str, Query(description="네이버 인증 코드")],
+    state: Annotated[str, Query(description="CSRF 방지용 상태 토큰")],
+    naver_service: Annotated[NaverOAuthService, Depends(get_naver_oauth_service)],
 ) -> AuthResponse:
-    """회원가입"""
-    try:
-        return await auth_service.register(data)
-    except ValueError as e:
-        error_code = str(e)
-        if error_code == "EMAIL_EXISTS":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"error": "EMAIL_EXISTS", "message": "Email already exists"},
-            )
+    """네이버 OAuth 콜백 처리"""
+    # state 검증
+    if state not in _oauth_states:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "VALIDATION_ERROR", "message": str(e)},
+            detail={"error": "INVALID_STATE", "message": "Invalid or expired state token"},
+        )
+
+    # 사용한 state 삭제
+    del _oauth_states[state]
+
+    try:
+        return await naver_service.authenticate(code, state)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "AUTH_FAILED", "message": str(e)},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "AUTH_FAILED", "message": f"Authentication failed: {str(e)}"},
         )
 
 
-@router.post(
-    "/login",
+@router.get(
+    "/google/login",
+    response_model=GoogleLoginUrlResponse,
+)
+async def get_google_login_url(
+    google_service: Annotated[GoogleOAuthService, Depends(get_google_oauth_service)],
+) -> GoogleLoginUrlResponse:
+    """Google OAuth 로그인 URL 반환"""
+    state = google_service.generate_state()
+    _oauth_states[state] = True  # state 저장
+    url = google_service.get_authorization_url(state)
+    return GoogleLoginUrlResponse(url=url)
+
+
+@router.get(
+    "/google/callback",
     response_model=AuthResponse,
     response_model_by_alias=True,
-    responses={401: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+    },
 )
-async def login(
-    data: LoginRequest,
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+async def google_callback(
+    code: Annotated[str, Query(description="Google 인증 코드")],
+    state: Annotated[str, Query(description="CSRF 방지용 상태 토큰")],
+    google_service: Annotated[GoogleOAuthService, Depends(get_google_oauth_service)],
 ) -> AuthResponse:
-    """로그인"""
+    """Google OAuth 콜백 처리"""
+    # state 검증
+    if state not in _oauth_states:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "INVALID_STATE", "message": "Invalid or expired state token"},
+        )
+
+    # 사용한 state 삭제
+    del _oauth_states[state]
+
     try:
-        return await auth_service.login(data)
-    except ValueError:
+        return await google_service.authenticate(code)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "INVALID_CREDENTIALS", "message": "Invalid email or password"},
+            detail={"error": "AUTH_FAILED", "message": str(e)},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "AUTH_FAILED", "message": f"Authentication failed: {str(e)}"},
         )
 
 

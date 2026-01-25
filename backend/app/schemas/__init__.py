@@ -1,8 +1,8 @@
 from app.schemas.auth import (
     AuthResponse,
-    LoginRequest,
+    GoogleLoginUrlResponse,
+    NaverLoginUrlResponse,
     RefreshTokenRequest,
-    RegisterRequest,
     TokenResponse,
     UserResponse,
 )
@@ -37,9 +37,9 @@ __all__ = [
     # Auth
     "AuthResponse",
     "ErrorResponse",
-    "LoginRequest",
+    "GoogleLoginUrlResponse",
+    "NaverLoginUrlResponse",
     "RefreshTokenRequest",
-    "RegisterRequest",
     "TokenResponse",
     "UserResponse",
     # Team

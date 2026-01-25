@@ -5,10 +5,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { MainLayout } from '@/app/layouts/MainLayout';
 import { MainPage } from '@/app/pages/MainPage';
 import { HomePage } from '@/dashboard/pages/HomePage';
+import { GoogleCallbackPage } from '@/pages/GoogleCallbackPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { NaverCallbackPage } from '@/pages/NaverCallbackPage';
 import { MeetingDetailPage } from '@/dashboard/pages/MeetingDetailPage';
 import MeetingRoomPage from '@/dashboard/pages/MeetingRoomPage';
-import { RegisterPage } from '@/pages/RegisterPage';
 import { TeamDetailPage } from '@/dashboard/pages/TeamDetailPage';
 import logger from '@/utils/logger';
 
@@ -32,7 +33,8 @@ function App() {
     <Routes>
       {/* 인증 페이지 */}
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/auth/naver/callback" element={<NaverCallbackPage />} />
+      <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
 
       {/* 새 서비스 페이지 (Spotlight UI) - MainLayout 사용 */}
       <Route

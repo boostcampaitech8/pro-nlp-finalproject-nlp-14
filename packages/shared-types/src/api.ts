@@ -4,40 +4,80 @@
  */
 
 export interface paths {
-    "/api/v1/auth/register": {
+    "/api/v1/auth/naver/login": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * 회원가입
-         * @description 이메일/비밀번호로 새 계정을 생성합니다.
+         * 네이버 OAuth 로그인 URL
+         * @description 네이버 OAuth 인증 페이지로 리다이렉트할 URL을 반환합니다.
          */
-        post: operations["register"];
+        get: operations["getNaverLoginUrl"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/login": {
+    "/api/v1/auth/naver/callback": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * 로그인
-         * @description 이메일/비밀번호로 로그인합니다.
+         * 네이버 OAuth 콜백
+         * @description 네이버 OAuth 인증 완료 후 콜백을 처리하고 JWT 토큰을 발급합니다.
          */
-        post: operations["login"];
+        get: operations["naverCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/google/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google OAuth 로그인 URL
+         * @description Google OAuth 인증 페이지로 리다이렉트할 URL을 반환합니다.
+         */
+        get: operations["getGoogleLoginUrl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google OAuth 콜백
+         * @description Google OAuth 인증 완료 후 콜백을 처리하고 JWT 토큰을 발급합니다.
+         */
+        get: operations["googleCallback"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -493,6 +533,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meetings/{meeting_id}/transcripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 회의 전체 전사 조회 (Client → Backend)
+         * @description 회의 ID를 기준으로 모든 전사 segment를 조회하고,
+         *     createdAt 기준 시간 순서대로 정렬된 전체 전사 텍스트를 반환합니다.
+         *     fullText는 서버에서 조립하며 DB에 저장되지 않습니다.
+         */
+        get: operations["getMeetingTranscripts"];
+        put?: never;
+        /**
+         * 발화 segment 저장 (Worker → Backend)
+         * @description Worker가 전송한 발화 segment를 DB에 저장합니다.
+         *     path의 meeting_id와 body의 meetingId가 일치해야 합니다.
+         */
+        post: operations["createTranscriptSegment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -534,11 +601,11 @@ export interface components {
          */
         Timestamp: string;
         /**
-         * @description 인증 제공자
-         * @default local
+         * @description 인증 제공자 (네이버/구글 OAuth)
+         * @default naver
          * @enum {string}
          */
-        AuthProvider: "local" | "google" | "github";
+        AuthProvider: "naver" | "google";
         User: {
             id: components["schemas"]["UUID"];
             /**
@@ -552,31 +619,19 @@ export interface components {
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];
         };
-        RegisterRequest: {
+        NaverLoginUrlResponse: {
             /**
-             * Format: email
-             * @example user@example.com
+             * Format: uri
+             * @description 네이버 OAuth 인증 URL
              */
-            email: string;
-            /**
-             * Format: password
-             * @example securePassword123
-             */
-            password: string;
-            /** @example John Doe */
-            name: string;
+            url: string;
         };
-        LoginRequest: {
+        GoogleLoginUrlResponse: {
             /**
-             * Format: email
-             * @example user@example.com
+             * Format: uri
+             * @description Google OAuth 인증 URL
              */
-            email: string;
-            /**
-             * Format: password
-             * @example securePassword123
-             */
-            password: string;
+            url: string;
         };
         TokenResponse: {
             /** @description JWT access token */
@@ -936,6 +991,94 @@ export interface components {
             /** @description 실패 시 에러 메시지 */
             error?: string | null;
         };
+        UtteranceItem: {
+            /** @description Transcript segment ID */
+            id: components["schemas"]["UUID"];
+            /** @description 발화자 ID */
+            speakerId: components["schemas"]["UUID"];
+            /** @description 발화자 이름 (user가 없으면 "Unknown") */
+            speakerName: string;
+            /** @description 발화 시작 시간 (밀리초) */
+            startMs: number;
+            /** @description 발화 종료 시간 (밀리초) */
+            endMs: number;
+            /** @description 발화 텍스트 */
+            text: string;
+            /** @description segment 생성 시간 */
+            timestamp: components["schemas"]["Timestamp"];
+        };
+        GetMeetingTranscriptsResponse: {
+            /** @description 회의 ID */
+            meetingId: components["schemas"]["UUID"];
+            /**
+             * @description 트랜스크립트 상태 (현재는 항상 completed)
+             * @enum {string}
+             */
+            status: "completed";
+            /**
+             * @description 전체 전사 텍스트 (서버에서 조립)
+             *     형식: "{speakerName}: {text}\n..."
+             */
+            fullText: string;
+            /** @description 개별 발화 목록 (createdAt 기준 ASC 정렬) */
+            utterances: components["schemas"]["UtteranceItem"][];
+            /** @description 전체 길이 (가장 큰 endMs 값) */
+            totalDurationMs: number;
+            /** @description 고유 발화자 수 */
+            speakerCount: number;
+            /**
+             * Format: date-time
+             * @description 회의 시작 시간 (현재 null)
+             */
+            meetingStart?: string | null;
+            /**
+             * Format: date-time
+             * @description 회의 종료 시간 (현재 null)
+             */
+            meetingEnd?: string | null;
+            /** @description 첫 번째 transcript 생성 시간 */
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        CreateTranscriptRequest: {
+            /** @description 회의 ID (path parameter와 일치해야 함) */
+            meetingId: components["schemas"]["UUID"];
+            /** @description 발화자 ID */
+            userId: components["schemas"]["UUID"];
+            /** @description 발화 시작 시간 (밀리초) */
+            startMs: number;
+            /** @description 발화 종료 시간 (밀리초, startMs보다 커야 함) */
+            endMs: number;
+            /** @description 전사된 텍스트 */
+            text: string;
+            /**
+             * Format: float
+             * @description 평균 신뢰도
+             */
+            confidence: number;
+            /**
+             * Format: float
+             * @description 최소 신뢰도
+             */
+            minConfidence: number;
+            /**
+             * @description 에이전트 호출 여부
+             * @default false
+             */
+            agentCall: boolean;
+            /** @description 에이전트 호출 키워드 */
+            agentCallKeyword?: string | null;
+            /**
+             * Format: float
+             * @description 에이전트 호출 키워드 신뢰도
+             */
+            agentCall_confidence?: number | null;
+        };
+        CreateTranscriptResponse: {
+            /** @description 생성된 transcript segment ID */
+            id: components["schemas"]["UUID"];
+            /** @description 생성 시간 */
+            createdAt: components["schemas"]["Timestamp"];
+        };
     };
     responses: never;
     parameters: never;
@@ -945,21 +1088,42 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    register: {
+    getNaverLoginUrl: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RegisterRequest"];
+        requestBody?: never;
+        responses: {
+            /** @description 네이버 OAuth URL 반환 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NaverLoginUrlResponse"];
+                };
             };
         };
+    };
+    naverCallback: {
+        parameters: {
+            query: {
+                /** @description 네이버에서 전달받은 인증 코드 */
+                code: string;
+                /** @description CSRF 방지용 상태 토큰 */
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
-            /** @description 회원가입 성공 */
-            201: {
+            /** @description 로그인 성공 */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -967,7 +1131,7 @@ export interface operations {
                     "application/json": components["schemas"]["AuthResponse"];
                 };
             };
-            /** @description 유효하지 않은 입력 */
+            /** @description 유효하지 않은 인증 코드 또는 상태 토큰 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -976,8 +1140,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description 이미 존재하는 이메일 */
-            409: {
+            /** @description 인증 실패 */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -987,18 +1151,39 @@ export interface operations {
             };
         };
     };
-    login: {
+    getGoogleLoginUrl: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginRequest"];
+        requestBody?: never;
+        responses: {
+            /** @description Google OAuth URL 반환 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleLoginUrlResponse"];
+                };
             };
         };
+    };
+    googleCallback: {
+        parameters: {
+            query: {
+                /** @description Google에서 전달받은 인증 코드 */
+                code: string;
+                /** @description CSRF 방지용 상태 토큰 */
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description 로그인 성공 */
             200: {
@@ -1007,6 +1192,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description 유효하지 않은 인증 코드 또는 상태 토큰 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description 인증 실패 */
@@ -2556,6 +2750,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMeetingTranscripts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 회의 ID */
+                meeting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 조회 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetMeetingTranscriptsResponse"];
+                };
+            };
+            /** @description Meeting을 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "MEETING_NOT_FOUND",
+                     *       "message": "회의를 찾을 수 없습니다."
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 내부 서버 오류 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "INTERNAL_ERROR",
+                     *       "message": "서버 오류가 발생했습니다."
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createTranscriptSegment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 회의 ID */
+                meeting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTranscriptRequest"];
+            };
+        };
+        responses: {
+            /** @description Segment 저장 성공 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "createdAt": "2026-01-23T10:30:45.123456Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CreateTranscriptResponse"];
+                };
+            };
+            /** @description 잘못된 요청 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Meeting을 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "MEETING_NOT_FOUND",
+                     *       "message": "회의를 찾을 수 없습니다."
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation 오류 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "detail": [
+                     *         {
+                     *           "type": "string_too_short",
+                     *           "loc": [
+                     *             "body",
+                     *             "text"
+                     *           ],
+                     *           "msg": "String should have at least 1 character"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        detail?: Record<string, never>[];
+                    };
                 };
             };
         };

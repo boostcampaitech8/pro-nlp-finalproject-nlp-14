@@ -1,22 +1,19 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
-class RegisterRequest(BaseModel):
-    """회원가입 요청"""
+class NaverLoginUrlResponse(BaseModel):
+    """네이버 OAuth 로그인 URL 응답"""
 
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=100)
-    name: str = Field(min_length=2, max_length=50)
+    url: str
 
 
-class LoginRequest(BaseModel):
-    """로그인 요청"""
+class GoogleLoginUrlResponse(BaseModel):
+    """Google OAuth 로그인 URL 응답"""
 
-    email: EmailStr
-    password: str
+    url: str
 
 
 class RefreshTokenRequest(BaseModel):

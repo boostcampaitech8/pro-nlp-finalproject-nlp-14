@@ -16,7 +16,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.meeting import Meeting, MeetingParticipant
 from app.models.user import User
-from app.services.auth_service import AuthService
+from app.services.auth.auth_service import AuthService
 
 security = HTTPBearer()
 
@@ -52,9 +52,7 @@ async def get_meeting_with_participants(
 ) -> Meeting:
     """회의와 참여자 정보를 함께 조회 (404 처리 포함)"""
     query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
+        select(Meeting).options(selectinload(Meeting.participants)).where(Meeting.id == meeting_id)
     )
     result = await db.execute(query)
     meeting = result.scalar_one_or_none()
