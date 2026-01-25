@@ -128,7 +128,7 @@ cd backend && uv sync && cd ..         # Python 의존성
 ### 5. 인프라 실행 (Docker)
 
 ```bash
-# PostgreSQL, Redis, MinIO 실행
+# PostgreSQL, Redis, MinIO, Neo4j 실행
 make infra-up
 
 # 실행 확인
@@ -140,6 +140,7 @@ docker ps
 | PostgreSQL | 5432 | 데이터베이스 |
 | Redis | 6379 | 캐시, 세션 |
 | MinIO | 9000, 9001 | 파일 스토리지 |
+| Neo4j | 7474, 7687 | 그래프 DB |
 
 ### 6. 데이터베이스 초기화
 
@@ -215,7 +216,7 @@ make docker-build      # 이미지 빌드
 make docker-rebuild    # 이미지 재빌드 (no cache)
 
 # Docker (선택적)
-make infra-up          # 인프라만 (DB, Redis, MinIO)
+make infra-up          # 인프라만 (DB, Redis, MinIO, Neo4j)
 make backend-up        # Backend만
 make backend-logs      # Backend 로그
 make frontend-up       # Frontend만
@@ -363,7 +364,11 @@ CORS_ORIGINS=["http://localhost:3000"]
 |--------|------|------|
 | PostgreSQL | 5432 | 데이터베이스 |
 | Redis | 6379 | 캐시, 세션 |
-| MinIO | 9000, 9001 | 파일 스토리지 |
+| MinIO | 9000, 9001 | 파일 스토리지 (API, Console) |
+| Neo4j | 7474, 7687 | 그래프 DB (Browser UI, Bolt) |
+| LiveKit | 7880, 7881, 7882/udp | WebRTC SFU 서버 |
+| LiveKit Egress | - (내부) | 서버 측 녹음 |
+| STT Worker | - (내부) | 비동기 STT 처리 |
 | Frontend | 3000 | nginx (정적 파일 + API 프록시) |
 | Backend | 8000 (내부) | API 서버 |
 
