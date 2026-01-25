@@ -483,6 +483,45 @@
 
 ---
 
+### UC-014: Mit Action - Action Item 추출 및 저장
+
+**개요**
+- Actor: System 또는 User (에이전트 통해)
+- 목적: 확정된 Decision에서 Action Item을 추출하고, 평가 후 DB에 저장
+
+**트리거 (듀얼 트리거)**
+1. **System 자동**: PR merge 완료 → Decision 확정 → mit_action 자동 실행
+2. **User 요청**: 사용자가 에이전트에게 "할 일 목록 정리해줘" → 에이전트가 mit_action 호출
+
+**Flow**
+1. 확정된 Decision을 입력으로 받음
+2. Decision 내용에서 Action Item 추출 (LLM)
+3. 추출된 Action Item 품질 평가 (LLM)
+4. 평가 실패 시 → 이유와 함께 추출 단계로 재시도 (최대 3회)
+5. 평가 성공 시 → DB에 Action Item 저장
+
+**입력**
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:----:|------|
+| decision | Decision | O | 확정된 결정사항 |
+| meeting_id | UUID | O | 회의 ID |
+
+**출력**
+- 저장된 Action Item 목록
+
+**예외**
+| 코드 | 조건 |
+|------|------|
+| 400 | Action Item 추출 불가 (재시도 한도 초과) |
+| 500 | DB 저장 실패 |
+
+**Acceptance Criteria**
+- [ ] Decision에서 Action Item 자동 추출
+- [ ] 추출 품질 평가 및 재시도 루프 (최대 3회)
+- [ ] Action Item DB 저장
+
+---
+
 ## 참조
 
 - 워크플로우: [usecase/02-workflow-spec.md](02-workflow-spec.md)
