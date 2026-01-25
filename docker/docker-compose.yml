@@ -203,6 +203,13 @@ services:
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
       LIVEKIT_WS_URL: ws://livekit:7880
       LIVEKIT_EXTERNAL_URL: ${LIVEKIT_EXTERNAL_URL:-wss://www.mit-hub.com/livekit}
+      # OAuth 설정
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
+      NAVER_REDIRECT_URI: ${NAVER_REDIRECT_URI}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
     depends_on:
       postgres:
         condition: service_healthy

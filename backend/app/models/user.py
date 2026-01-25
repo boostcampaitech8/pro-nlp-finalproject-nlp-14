@@ -12,7 +12,7 @@ from app.core.database import Base
 class AuthProvider(str, Enum):
     """인증 제공자"""
 
-    LOCAL = "local"
+    NAVER = "naver"
     GOOGLE = "google"
     GITHUB = "github"
 
@@ -37,13 +37,9 @@ class User(Base):
         String(50),
         nullable=False,
     )
-    hashed_password: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,  # 소셜 로그인 사용자는 비밀번호 없음
-    )
     auth_provider: Mapped[str] = mapped_column(
         String(20),
-        default=AuthProvider.LOCAL.value,
+        default=AuthProvider.NAVER.value,
         nullable=False,
     )
     provider_id: Mapped[str | None] = mapped_column(

@@ -1,3 +1,1 @@
-from app.services.auth_service import AuthService
-
-__all__ = ["AuthService"]
+"""서비스 모듈"""

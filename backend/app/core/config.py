@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     livekit_ws_url: str = "ws://localhost:7880"  # 내부 통신용
     livekit_external_url: str = "ws://localhost:7880"  # 클라이언트용
 
+    # 네이버 OAuth 설정
+    naver_client_id: str = ""
+    naver_client_secret: str = ""
+    naver_redirect_uri: str = "http://localhost:3000/auth/naver/callback"
+
+    # Google OAuth 설정
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:3000/auth/google/callback"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
