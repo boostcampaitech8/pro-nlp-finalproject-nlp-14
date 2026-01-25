@@ -1,15 +1,13 @@
 """Neo4j 설정"""
 
-import os
+from app.core.config import get_settings
 
-from dotenv import load_dotenv
-
-load_dotenv()
+_settings = get_settings()
 
 # Neo4j 연결 설정
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
+NEO4J_URI = _settings.neo4j_uri
+NEO4J_USER = _settings.neo4j_user
+NEO4J_PASSWORD = _settings.neo4j_password
 
 # Mock 설정 (기본값: 실제 Neo4j 사용, 테스트에서만 Mock)
-USE_MOCK_GRAPH = os.getenv("USE_MOCK_GRAPH", "false").lower() == "true"
+USE_MOCK_GRAPH = _settings.use_mock_graph

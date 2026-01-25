@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$K8S_DIR")"
 
 # 환경 선택 (기본: local)
 ENV="${1:-local}"
@@ -11,7 +12,7 @@ ENV="${1:-local}"
 echo "=== $ENV 환경 배포 ==="
 
 # .env 파일 로드
-ENV_FILE="$K8S_DIR/.env"
+ENV_FILE="$ROOT_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
     echo ">>> $ENV_FILE 로드"
     set -a
