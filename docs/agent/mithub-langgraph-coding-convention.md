@@ -140,6 +140,46 @@ builder.add_node("mit_searcher", mit_search_graph)  # X
 builder.add_node("intent_router", route_intent)  # X
 ```
 
+### 2.3 connect.py 빌더 함수 규칙
+
+> **원칙**: 각 워크플로우의 `connect.py`에는 `build_{workflow_name}()` 함수를 정의하여 StateGraph를 반환한다.
+
+| 항목 | 규칙 | 예시 |
+|------|------|------|
+| **함수명** | `build_{workflow_name}` | `build_mit_action`, `build_orchestration` |
+| **변수명** | `workflow` 통일 | `workflow = StateGraph(...)` |
+| **반환 타입** | `StateGraph` (컴파일 전) | `return workflow` |
+
+```python
+# workflows/mit_action/connect.py
+
+def build_mit_action() -> StateGraph:
+    """mit_action 워크플로우 빌더
+
+    그래프 구조:
+        START -> extractor -> evaluator -> [route_eval] -> saver -> END
+    """
+    workflow = StateGraph(MitActionState)
+
+    # 노드 등록
+    workflow.add_node("extractor", extract_actions)
+    workflow.add_node("evaluator", evaluate_actions)
+    workflow.add_node("saver", save_actions)
+
+    # 엣지 연결
+    workflow.add_edge(START, "extractor")
+    workflow.add_edge("extractor", "evaluator")
+    workflow.add_conditional_edges("evaluator", route_eval, {...})
+    workflow.add_edge("saver", END)
+
+    return workflow
+```
+
+**주의사항**:
+- `connect.py`에서는 **컴파일하지 않음** (`compile()` 호출 금지)
+- 컴파일은 `graph.py`에서 수행
+- 변수명은 반드시 `workflow` 사용 (`builder`, `graph` 등 금지)
+
 ---
 
 ## 3. State 필드 네이밍
