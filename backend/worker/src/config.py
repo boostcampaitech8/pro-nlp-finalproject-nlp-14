@@ -36,7 +36,7 @@ class RealtimeWorkerConfig(BaseSettings):
     chunk_duration_ms: int = 100  # 100ms 청크 단위
 
     # 무음 필터링 설정
-    silence_threshold: float = 500.0  # RMS 임계값 (0~32768, 낮을수록 민감)
+    silence_threshold: float = 300.0  # RMS 임계값 (0~32768, 낮을수록 민감)
 
 
 @lru_cache
