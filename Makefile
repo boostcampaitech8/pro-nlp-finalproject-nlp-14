@@ -1,10 +1,12 @@
-.PHONY: help install dev dev-fe dev-be build clean test-fe
+.PHONY: help install dev dev-fe dev-be build clean test-fe graph
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
 .PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
 .PHONY: infra-up infra-down livekit-up livekit-down backend-up backend-down backend-rebuild backend-logs
 .PHONY: frontend-up frontend-down frontend-rebuild frontend-logs
 .PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
+.PHONY: neo4j-init neo4j-seed 
+
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
@@ -21,6 +23,9 @@ help:
 	@echo "  make dev-fe         - Run frontend dev server (http://localhost:3000)"
 	@echo "  make dev-be         - Run backend dev server (http://localhost:8000)"
 	@echo ""
+	@echo "Graph:"
+	@echo "  make graph          - Run LangGraph orchestrator (interactive)"
+	@echo ""
 	@echo "Test:"
 	@echo "  make test-fe        - Run frontend tests"
 	@echo ""
@@ -32,7 +37,7 @@ help:
 	@echo "  make docker-rebuild - Rebuild all images (no cache)"
 	@echo ""
 	@echo "Docker (Selective):"
-	@echo "  make infra-up         - Start infra only (DB, Redis, MinIO)"
+	@echo "  make infra-up         - Start infra only (DB, Redis, MinIO, Neo4j)"
 	@echo "  make infra-down       - Stop infra only"
 	@echo "  make livekit-up       - Start LiveKit stack (DB, Redis, MinIO, LiveKit)"
 	@echo "  make livekit-down     - Stop LiveKit stack"
@@ -51,7 +56,7 @@ help:
 	@echo "  make worker-list      - List all worker containers"
 	@echo "  make worker-clean     - Remove all worker containers"
 	@echo ""
-	@echo "Database:"
+	@echo "Database (PostgreSQL):"
 	@echo "  make db-migrate m=MSG - Create new migration"
 	@echo "  make db-upgrade     - Apply migrations"
 	@echo "  make db-downgrade   - Rollback last migration"
@@ -59,6 +64,11 @@ help:
 	@echo "  make db-users       - Show all users"
 	@echo "  make db-tables      - Show all tables"
 	@echo "  make db-query q=SQL - Run custom SQL query"
+	@echo "  make neo4j-seed ARGS='옵션' - Seed Neo4j with test data"
+	@echo "    예: make neo4j-seed ARGS='--clean'  또는  ARGS='--records=1000 --csv'"
+	@echo ""
+	@echo "Database (Neo4j):"
+	@echo "  make neo4j-init     - Initialize Neo4j schema (constraints + indexes)"
 	@echo ""
 	@echo "Build:"
 	@echo "  make build          - Build frontend for production"
@@ -94,6 +104,12 @@ dev-worker:
 	pnpm run dev:worker
 
 # ===================
+# Graph
+# ===================
+graph:
+	cd backend && PYTHONPATH=$(shell pwd)/backend:$$PYTHONPATH uv run python app/infrastructure/graph/main.py
+
+# ===================
 # Test
 # ===================
 test-fe:
@@ -122,10 +138,13 @@ docker-rebuild:
 # Docker - Infra Only
 # ===================
 infra-up:
-	$(DOCKER_COMPOSE) up -d postgres redis minio
+	$(DOCKER_COMPOSE) up -d postgres redis minio neo4j
+	@echo "Neo4j 준비 대기 중..."
+	@until docker exec mit-neo4j wget -q --spider http://localhost:7474 2>/dev/null; do sleep 2; done
+	@$(MAKE) neo4j-init
 
 infra-down:
-	$(DOCKER_COMPOSE) stop postgres redis minio
+	$(DOCKER_COMPOSE) stop postgres redis minio neo4j
 
 livekit-up: worker-build
 	$(DOCKER_COMPOSE) up -d postgres redis minio livekit 
@@ -205,6 +224,16 @@ db-tables:
 db-query:
 	@docker exec mit-postgres psql -U mit -d mit -c "$(q)"
 
+neo4j-seed:
+	cd backend && uv run python seeds/neo4j_seed.py $(ARGS)
+
+# ===================
+# Neo4j
+# ===================
+neo4j-init:
+	@echo "Neo4j 스키마 초기화 중..."
+	@cd backend && uv run python neo4j/init_schema.py
+
 # ===================
 # Build & Clean
 # ===================
@@ -230,6 +259,7 @@ show-usage:
 	@docker system df -v 2>/dev/null | grep "docker_minio_data" | awk '{printf "%-35s %s\n", $$1, $$3}'
 	@docker system df -v 2>/dev/null | grep "docker_postgres_data" | awk '{printf "%-35s %s\n", $$1, $$3}'
 	@docker system df -v 2>/dev/null | grep "docker_redis_data" | awk '{printf "%-35s %s\n", $$1, $$3}'
+	@docker system df -v 2>/dev/null | grep "docker_neo4j_data" | awk '{printf "%-35s %s\n", $$1, $$3}'
 	@echo ""
 	@echo "=========================================="
 	@echo "        MinIO Bucket Usage"
