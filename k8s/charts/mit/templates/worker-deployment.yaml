@@ -1,0 +1,39 @@
+# 실시간 STT Worker (기본 비활성화)
+# 활성화: kubectl -n mit scale deployment realtime-worker --replicas=1
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime-worker
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: 0  # 기본 비활성화
+  selector:
+    matchLabels:
+      app: realtime-worker
+  template:
+    metadata:
+      labels:
+        app: realtime-worker
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: worker
+          image: {{ include "mit.image" (dict "Values" .Values "image" "mit-worker") }}
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: mit-config
+            - secretRef:
+                name: mit-secrets
+          # MEETING_ID는 런타임에 별도 주입
+          # kubectl set env deployment/realtime-worker MEETING_ID=xxx
+          resources:
+            requests:
+              memory: {{ .Values.resources.worker.requests.memory | quote }}
+              cpu: {{ .Values.resources.worker.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.resources.worker.limits.memory | quote }}
+              cpu: {{ .Values.resources.worker.limits.cpu | quote }}
+      restartPolicy: Always

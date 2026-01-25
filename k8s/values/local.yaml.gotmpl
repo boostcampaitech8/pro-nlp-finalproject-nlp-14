@@ -1,0 +1,119 @@
+# 로컬 환경 - 여러 곳에서 참조되는 값만 관리
+
+global:
+  namespace: mit
+  environment: development
+  registry: mit-registry:5000
+
+# Ingress (Traefik)
+ingress:
+  className: traefik
+  host: ""  # 로컬은 호스트 없이 (http://localhost로 접근)
+  tls: false
+
+# 앱 포트 - Deployment, Service에서 공유
+backend:
+  port: 8000
+
+frontend:
+  port: 80
+
+# Database - Secret, PostgreSQL차트, ConfigMap에서 공유
+database:
+  host: postgres-postgresql
+  port: 5432
+  name: mit
+  user: mit
+  password: mitpassword
+
+# Redis - ConfigMap, LiveKit차트에서 공유
+redis:
+  host: redis-master
+  port: 6379
+
+# MinIO - Secret, MinIO차트, ConfigMap에서 공유
+minio:
+  host: minio
+  port: 9000
+  rootUser: minioadmin
+  rootPassword: minioadmin
+  externalUrl: "http://localhost/storage"  # Ingress 경유
+
+# LiveKit - Secret, LiveKit차트, ConfigMap에서 공유
+# 서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지
+# 포트 80: Helm 차트가 서비스 80 → 컨테이너 7880 매핑
+livekit:
+  host: lk-server
+  port: 80
+  apiKey: mit-api-key
+  apiSecret: secret-change-in-production-min-32-chars
+  externalUrl: "ws://localhost/livekit"  # Ingress 경유
+  # RTC 설정 (로컬: 127.0.0.1로 ICE 후보 광고)
+  rtc:
+    nodeIp: "127.0.0.1"
+    useExternalIp: false
+    tcpPort: 7881
+    portRangeStart: 50000
+    portRangeEnd: 50020
+
+# JWT - Secret, ConfigMap에서 공유
+jwt:
+  secretKey: change-this-secret-key
+  accessTokenExpireMinutes: 30
+  refreshTokenExpireDays: 7
+
+# App - ConfigMap에서 사용
+app:
+  debug: true
+  logLevel: INFO
+  corsOrigins:
+    - "http://localhost"
+    - "http://127.0.0.1"
+
+# Worker - Secret, ConfigMap에서 공유
+worker:
+  clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
+  clovaSttSecret: {{ env "CLOVA_STT_SECRET" | default "" }}
+  backendApiKey: {{ env "BACKEND_API_KEY" | default "" }}
+
+# NCP Clova Studio
+ncp:
+  clovaStudioApiKey: {{ env "NCP_CLOVASTUDIO_API_KEY" | default "" }}
+
+# OAuth - 외부 환경변수에서 주입
+oauth:
+  google:
+    clientId: {{ env "GOOGLE_CLIENT_ID" | default "" }}
+    clientSecret: {{ env "GOOGLE_CLIENT_SECRET" | default "" }}
+    redirectUri: {{ env "GOOGLE_REDIRECT_URI" | default "" }}
+  naver:
+    clientId: {{ env "NAVER_CLIENT_ID" | default "" }}
+    clientSecret: {{ env "NAVER_CLIENT_SECRET" | default "" }}
+    redirectUri: {{ env "NAVER_REDIRECT_URI" | default "" }}
+
+# Resources - 각 차트에서 공유
+resources:
+  backend:
+    requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "256Mi", cpu: "500m" }
+  frontend:
+    requests: { memory: "48Mi", cpu: "50m" }
+    limits: { memory: "96Mi", cpu: "200m" }
+  worker:
+    requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "256Mi", cpu: "500m" }
+  postgres:
+    requests: { memory: "192Mi", cpu: "100m" }
+    limits: { memory: "384Mi", cpu: "500m" }
+    storage: 10Gi
+  redis:
+    requests: { memory: "48Mi", cpu: "50m" }
+    limits: { memory: "96Mi", cpu: "200m" }
+    storage: 1Gi
+  minio:
+    requests: { memory: "192Mi", cpu: "100m" }
+    limits: { memory: "384Mi", cpu: "500m" }
+    storage: 20Gi
+  livekit:
+    requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "256Mi", cpu: "500m" }

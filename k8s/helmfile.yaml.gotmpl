@@ -1,0 +1,175 @@
+# Helmfile - 선언적 Helm 배포
+# 사용: helmfile -e local apply / helmfile -e prod apply
+
+repositories:
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+  - name: minio
+    url: https://charts.min.io/
+  - name: livekit
+    url: https://helm.livekit.io
+
+environments:
+  local:
+    values:
+      - values/local.yaml.gotmpl
+  prod:
+    values:
+      - values/prod.yaml.gotmpl
+
+---
+releases:
+  # ===========================================
+  # MIT 앱 (ConfigMap, Secret, Deployments)
+  # ===========================================
+  - name: mit
+    chart: ./charts/mit
+    namespace: {{ .Values.global.namespace }}
+    createNamespace: true
+    values:
+      - global: {{ .Values.global | toYaml | nindent 10 }}
+        backend: {{ .Values.backend | toYaml | nindent 10 }}
+        frontend: {{ .Values.frontend | toYaml | nindent 10 }}
+        database: {{ .Values.database | toYaml | nindent 10 }}
+        redis: {{ .Values.redis | toYaml | nindent 10 }}
+        minio: {{ .Values.minio | toYaml | nindent 10 }}
+        livekit: {{ .Values.livekit | toYaml | nindent 10 }}
+        jwt: {{ .Values.jwt | toYaml | nindent 10 }}
+        app: {{ .Values.app | toYaml | nindent 10 }}
+        worker: {{ .Values.worker | toYaml | nindent 10 }}
+        ncp: {{ .Values.ncp | toYaml | nindent 10 }}
+        oauth: {{ .Values.oauth | toYaml | nindent 10 }}
+        ingress: {{ .Values.ingress | toYaml | nindent 10 }}
+        resources:
+          backend: {{ .Values.resources.backend | toYaml | nindent 12 }}
+          frontend: {{ .Values.resources.frontend | toYaml | nindent 12 }}
+          worker: {{ .Values.resources.worker | toYaml | nindent 12 }}
+
+  # ===========================================
+  # PostgreSQL
+  # ===========================================
+  - name: postgres
+    chart: bitnami/postgresql
+    namespace: {{ .Values.global.namespace }}
+    values:
+      # 한 곳에서만 쓰이는 값 - 하드코딩
+      - architecture: standalone
+        metrics:
+          enabled: false
+        # 공유 값 - values에서 참조
+        global:
+          postgresql:
+            auth:
+              password: {{ .Values.database.password }}
+              postgresPassword: {{ .Values.database.password }}
+        auth:
+          password: {{ .Values.database.password }}
+          postgresPassword: {{ .Values.database.password }}
+          database: {{ .Values.database.name }}
+          username: {{ .Values.database.user }}
+        primary:
+          persistence:
+            enabled: true
+            size: {{ .Values.resources.postgres.storage }}
+          resources:
+            requests: {{ .Values.resources.postgres.requests | toYaml | nindent 14 }}
+            limits: {{ .Values.resources.postgres.limits | toYaml | nindent 14 }}
+          service:
+            type: ClusterIP
+
+  # ===========================================
+  # Redis
+  # ===========================================
+  - name: redis
+    chart: bitnami/redis
+    namespace: {{ .Values.global.namespace }}
+    values:
+      # 한 곳에서만 쓰이는 값 - 하드코딩
+      - architecture: standalone
+        auth:
+          enabled: false
+        replica:
+          replicaCount: 0
+        # 공유 값 - values에서 참조
+        master:
+          persistence:
+            enabled: true
+            size: {{ .Values.resources.redis.storage }}
+          resources:
+            requests: {{ .Values.resources.redis.requests | toYaml | nindent 14 }}
+            limits: {{ .Values.resources.redis.limits | toYaml | nindent 14 }}
+          service:
+            type: ClusterIP
+
+  # ===========================================
+  # MinIO
+  # ===========================================
+  - name: minio
+    chart: minio/minio
+    namespace: {{ .Values.global.namespace }}
+    values:
+      # 한 곳에서만 쓰이는 값 - 하드코딩
+      - fullnameOverride: minio  # nginx.conf에서 'minio:9000'으로 참조
+        mode: standalone
+        buckets:
+          - name: recordings
+            policy: none
+          - name: transcripts
+            policy: none
+        service:
+          type: ClusterIP
+        consoleService:
+          type: ClusterIP
+        # 공유 값 - values에서 참조
+        rootUser: {{ .Values.minio.rootUser }}
+        rootPassword: {{ .Values.minio.rootPassword }}
+        persistence:
+          enabled: true
+          size: {{ .Values.resources.minio.storage }}
+        resources:
+          requests: {{ .Values.resources.minio.requests | toYaml | nindent 12 }}
+          limits: {{ .Values.resources.minio.limits | toYaml | nindent 12 }}
+
+  # ===========================================
+  # LiveKit
+  # ===========================================
+  - name: livekit
+    chart: livekit/livekit-server
+    namespace: {{ .Values.global.namespace }}
+    values:
+      # 한 곳에서만 쓰이는 값 - 하드코딩
+      - fullnameOverride: lk-server  # 'livekit'은 K8s 환경변수 LIVEKIT_PORT와 충돌
+        livekit:
+          key_file: keys.yaml
+          rtc:
+            tcp_port: {{ .Values.livekit.rtc.tcpPort }}
+            port_range_start: {{ .Values.livekit.rtc.portRangeStart }}
+            port_range_end: {{ .Values.livekit.rtc.portRangeEnd }}
+            use_external_ip: {{ .Values.livekit.rtc.useExternalIp }}
+            {{- if .Values.livekit.rtc.nodeIp }}
+            node_ip: {{ .Values.livekit.rtc.nodeIp }}
+            {{- end }}
+          logging:
+            level: info
+            json: false
+          room:
+            empty_timeout: 30
+            max_participants: 20
+          # 공유 값 - values에서 참조
+          redis:
+            address: "{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+          webhook:
+            api_key: {{ .Values.livekit.apiKey }}
+            urls:
+              - "http://backend:{{ .Values.backend.port }}/api/v1/livekit/webhook"
+        # Secret 참조 (mit-secrets의 keys.yaml 필드)
+        storeKeysInSecret:
+          enabled: true
+          existingSecret: mit-secrets
+        service:
+          type: ClusterIP
+        turn:
+          enabled: false
+        resources:
+          requests: {{ .Values.resources.livekit.requests | toYaml | nindent 12 }}
+          limits: {{ .Values.resources.livekit.limits | toYaml | nindent 12 }}
