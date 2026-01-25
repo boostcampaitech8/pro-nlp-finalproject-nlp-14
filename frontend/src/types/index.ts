@@ -6,9 +6,9 @@ export type {
   // Auth
   AuthProvider,
   AuthResponse,
-  LoginRequest,
+  GoogleLoginUrlResponse,
+  NaverLoginUrlResponse,
   RefreshTokenRequest,
-  RegisterRequest,
   TokenResponse,
   User,
   // Team
