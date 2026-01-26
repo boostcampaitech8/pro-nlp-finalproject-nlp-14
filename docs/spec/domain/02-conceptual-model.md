@@ -48,12 +48,14 @@
                                           │  - content│
                                           └────┬─────┘
                                                │
-                                               ▼
-                                          ┌──────────┐
-                                          │    GT    │
-                                          │(Knowledge│
-                                          │  Graph)  │
-                                          └──────────┘
+                                     ┌─────────┼─────────┐
+                                     │         │         │
+                                     ▼         ▼         ▼
+                               ┌──────────┐ ┌──────────┐ ┌──────────┐
+                               │ActionItem│ │    GT    │ │  Chat    │
+                               │  - id    │ │(Knowledge│ │ Message  │
+                               │  - title │ │  Graph)  │ │ - id     │
+                               └──────────┘ └──────────┘ └──────────┘
 ```
 
 ---
@@ -267,6 +269,56 @@
 
 **책임**: 각 리뷰어의 개별 승인/거부 상태를 관리한다.
 
+### ChatMessage (채팅 메시지)
+
+| 속성 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | 고유 식별자 |
+| meeting_id | UUID (FK) | 회의 ID |
+| user_id | UUID (FK) | 작성자 ID |
+| content | text | 메시지 내용 (Markdown 지원) |
+| created_at | datetime | 작성 시각 |
+
+**책임**: 회의 중 실시간 텍스트 커뮤니케이션을 저장하고, 회의 기록의 보조 자료로 제공한다.
+
+**특징**:
+- LiveKit DataPacket을 통한 실시간 전송
+- 서버 수신 후 DB에 영구 저장
+- REST API를 통한 히스토리 조회
+- Markdown 렌더링 지원
+
+---
+
+### ActionItem (할 일)
+
+| 속성 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | 고유 식별자 |
+| decision_id | UUID (FK) | 결정 ID |
+| meeting_id | UUID (FK) | 회의 ID |
+| title | string | 할 일 제목 |
+| description | text | 할 일 상세 설명 |
+| assignee_id | UUID (FK) | 담당자 ID |
+| due_date | datetime | 기한 |
+| status | enum | pending / in_progress / completed |
+| created_at | datetime | 생성 시각 |
+| updated_at | datetime | 수정 시각 |
+
+**책임**: 확정된 Decision에서 추출된 실행 가능한 작업 항목을 관리한다.
+
+**생성 과정**:
+1. Decision이 approved되면 `mit_action` 워크플로우 트리거
+2. LLM이 Decision 내용에서 Action Item 추출
+3. 품질 평가 후 Neo4j에 저장
+4. 외부 도구 연동 가능 (Jira, Notion 등)
+
+**상태 (ActionItemStatus)**:
+- `pending`: 아직 시작되지 않음
+- `in_progress`: 진행 중
+- `completed`: 완료됨
+
+---
+
 ### GT (Ground Truth)
 
 **구조**: Knowledge graph로 구성, Decision 이력 포함
@@ -326,6 +378,8 @@ ELSE:  # DecisionReview.status == 'pending'
 | Agenda - Decision | 1:N | 안건은 여러 결정을 가짐 (회의별로 축적) |
 | PR - DecisionReview | 1:N | PR은 여러 결정 리뷰를 포함 |
 | DecisionReview - ReviewerApproval | 1:N | 결정 리뷰는 여러 리뷰어 승인을 포함 |
+| Meeting - ChatMessage | 1:N | 회의는 여러 채팅 메시지를 가짐 |
+| Decision - ActionItem | 1:N | 결정은 여러 할 일 항목을 가짐 |
 
 ---
 
