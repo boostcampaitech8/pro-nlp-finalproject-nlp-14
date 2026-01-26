@@ -8,6 +8,7 @@ This index lists the docs under `docs/agent` with short summaries and when to re
 - Need graph structure and architecture choices: `./mithub-langgraph-architecture.md`
 - Need directory structure and step-by-step dev workflow: `./mithub-langgraph-development-guideline.md`
 - Need naming and coding rules: `./mithub-langgraph-coding-convention.md`
+- Need workflow details (generate_pr, mit_action): `./workflows/README.md`
 
 ## Documents
 
@@ -17,6 +18,7 @@ This index lists the docs under `docs/agent` with short summaries and when to re
 | `./mithub-langgraph-architecture.md` | Graph structure, subgraph strategy, and state sharing principles. | You are designing or reviewing architecture. | graph, subgraph, principles |
 | `./mithub-langgraph-development-guideline.md` | Directory layout, development workflow for adding nodes/subgraphs, and common edit locations. | You are implementing or modifying workflows. | layout, workflow, checklist, edit-guide |
 | `./mithub-langgraph-coding-convention.md` | Naming rules and implementation conventions for nodes and graph code. | You are coding and want rule-level guidance. | naming, rules, logging, types |
+| `./workflows/README.md` | Detailed documentation of LangGraph workflows (generate_pr, mit_action). | You need to understand workflow structure, State, nodes, and integrations. | workflows, generate_pr, mit_action, worker, neo4j |
 
 ## Plan Documents
 
