@@ -8,6 +8,7 @@ from typing import Literal
 
 from neo4j import AsyncDriver
 
+from app.api.dependencies import get_arq_pool
 from app.repositories.kg.repository import KGRepository
 from app.schemas.review import (
     DecisionListResponse,
@@ -47,6 +48,10 @@ class ReviewService:
                 f"merged={result['merged']}"
             )
 
+            # merged=True 시 mit-action 태스크 큐잉
+            if result["merged"]:
+                await self._enqueue_mit_action(decision_id)
+
             return DecisionReviewResponse(
                 decision_id=decision_id,
                 action="approve",
@@ -74,6 +79,21 @@ class ReviewService:
                 approvers_count=len(decision.approvers) if decision else 0,
                 participants_count=0,  # reject에서는 참여자 수 미계산
             )
+
+    async def _enqueue_mit_action(self, decision_id: str) -> None:
+        """mit-action 태스크 큐잉
+
+        머지된 Decision에서 Action Item을 추출하는 비동기 작업을 큐에 등록.
+        큐잉 실패해도 approve/merge는 성공으로 처리됨 (best-effort).
+        """
+        try:
+            pool = await get_arq_pool()
+            await pool.enqueue_job("mit_action_task", decision_id)
+            await pool.close()
+            logger.info(f"mit_action_task enqueued: decision={decision_id}")
+        except Exception as e:
+            # 큐잉 실패해도 approve/merge는 성공으로 처리
+            logger.error(f"Failed to enqueue mit_action_task: {e}")
 
     async def get_decision(self, decision_id: str) -> DecisionResponse:
         """결정 상세 조회"""

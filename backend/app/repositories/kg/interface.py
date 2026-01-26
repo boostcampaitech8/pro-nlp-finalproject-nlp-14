@@ -53,10 +53,6 @@ class IKGRepository(Protocol):
         """결정사항 조회"""
         ...
 
-    async def approve_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 승인"""
-        ...
-
     async def reject_decision(self, decision_id: str, user_id: str) -> bool:
         """결정 거절"""
         ...

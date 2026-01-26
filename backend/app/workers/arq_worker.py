@@ -11,6 +11,8 @@ from arq.connections import RedisSettings
 
 from app.core.config import get_settings
 from app.core.database import async_session_maker
+from app.core.neo4j import get_neo4j_driver
+from app.repositories.kg.repository import KGRepository
 from app.services.stt_service import STTService
 from app.services.transcript_service import TranscriptService
 
@@ -305,6 +307,66 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
             }
 
 
+async def mit_action_task(ctx: dict, decision_id: str) -> dict:
+    """Decision에서 Action Item 추출 태스크
+
+    머지된 Decision에서 MIT-action 워크플로우를 실행하여
+    Action Item을 추출하고 GraphDB에 저장합니다.
+
+    Args:
+        ctx: ARQ 컨텍스트
+        decision_id: 머지된 Decision ID
+
+    Returns:
+        dict: 작업 결과
+    """
+    logger.info(f"[mit_action_task] Starting: decision={decision_id}")
+
+    try:
+        # 1. Decision 데이터 조회
+        driver = get_neo4j_driver()
+        kg_repo = KGRepository(driver)
+        decision = await kg_repo.get_decision(decision_id)
+
+        if not decision:
+            logger.error(f"[mit_action_task] Decision not found: {decision_id}")
+            return {"status": "error", "message": "Decision not found"}
+
+        # 2. mit-action 워크플로우 실행
+        from app.infrastructure.graph.workflows.mit_action.graph import (
+            mit_action_graph,
+        )
+
+        result = await mit_action_graph.ainvoke({
+            "mit_action_decision": {
+                "id": decision.id,
+                "content": decision.content,
+                "context": decision.context,
+            },
+            "mit_action_meeting_id": "",  # Decision에서 meeting_id 필요시 별도 조회
+        })
+
+        action_count = len(result.get("mit_action_actions", []))
+        logger.info(
+            f"[mit_action_task] Completed: decision={decision_id}, "
+            f"actions={action_count}"
+        )
+
+        return {
+            "status": "success",
+            "decision_id": decision_id,
+            "action_count": action_count,
+        }
+
+    except Exception as e:
+        logger.exception(f"[mit_action_task] Failed: decision={decision_id}")
+        return {
+            "status": "failed",
+            "decision_id": decision_id,
+            "error": str(e),
+        }
+
+
 def _get_redis_settings() -> RedisSettings:
     """Redis 연결 설정 생성"""
     settings = get_settings()
@@ -327,6 +389,7 @@ class WorkerSettings:
         transcribe_meeting_task,
         merge_utterances_task,
         generate_pr_task,
+        mit_action_task,
     ]
 
     # Redis 연결 설정 (arq는 인스턴스를 기대)

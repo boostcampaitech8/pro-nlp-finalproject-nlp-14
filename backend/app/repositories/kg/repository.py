@@ -256,23 +256,6 @@ class KGRepository:
 
     # --- 상태 변경 (승인/거절/머지) ---
 
-    async def approve_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 승인 (APPROVED_BY 관계 생성)
-
-        Returns:
-            bool: 승인 성공 여부 (decision과 user가 존재하면 True)
-        """
-        query = """
-        MATCH (d:Decision {id: $decision_id})
-        MATCH (u:User {id: $user_id})
-        MERGE (u)-[:APPROVED_BY]->(d)
-        RETURN d.id as decision_id
-        """
-        records = await self._execute_write(
-            query, {"decision_id": decision_id, "user_id": user_id}
-        )
-        return len(records) > 0
-
     async def reject_decision(self, decision_id: str, user_id: str) -> bool:
         """결정 거절 (REJECTED_BY 관계 생성)
 

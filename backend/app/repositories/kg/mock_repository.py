@@ -360,22 +360,6 @@ class MockKGRepository:
 
     # --- 상태 변경 (승인/거절/머지) ---
 
-    async def approve_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 승인
-
-        Returns:
-            bool: 승인 성공 여부 (decision과 user가 존재하면 True)
-        """
-        if decision_id not in self.data["decisions"]:
-            return False
-        if user_id not in self.data["users"]:
-            return False
-
-        approval = (user_id, decision_id)
-        if approval not in self.data["approvals"]:
-            self.data["approvals"].append(approval)
-        return True
-
     async def reject_decision(self, decision_id: str, user_id: str) -> bool:
         """결정 거절
 
