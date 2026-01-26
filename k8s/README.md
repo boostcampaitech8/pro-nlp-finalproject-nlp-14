@@ -84,9 +84,10 @@ make k8s-push-worker    # Worker 빌드 & 재시작
 
 ```bash
 make k8s-status              # Pod 상태
-make k8s-logs svc=backend    # 로그 보기
-kubectl -n mit logs job/realtime-worker-meeting-<meetingid>
 make k8s-db-status           # 마이그레이션 상태
+make k8s-logs svc=backend    # 서비스 별 로그
+make k8s-logs svc=frontend
+kubectl -n mit logs job/realtime-worker-meeting-<meetingid> # 워커 로그
 ```
 
 ### 정리
