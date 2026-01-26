@@ -8,6 +8,8 @@ repositories:
     url: https://charts.min.io/
   - name: livekit
     url: https://helm.livekit.io
+  - name: neo4j
+    url: https://helm.neo4j.com/neo4j
 
 environments:
   local:
@@ -39,6 +41,7 @@ releases:
         jwt: {{ .Values.jwt | toYaml | nindent 10 }}
         app: {{ .Values.app | toYaml | nindent 10 }}
         worker: {{ .Values.worker | toYaml | nindent 10 }}
+        neo4j: {{ .Values.neo4j | toYaml | nindent 10 }}
         ncp: {{ .Values.ncp | toYaml | nindent 10 }}
         oauth: {{ .Values.oauth | toYaml | nindent 10 }}
         ingress: {{ .Values.ingress | toYaml | nindent 10 }}
@@ -183,3 +186,50 @@ releases:
         resources:
           requests: {{ .Values.resources.livekit.requests | toYaml | nindent 12 }}
           limits: {{ .Values.resources.livekit.limits | toYaml | nindent 12 }}
+
+  # ===========================================
+  # Neo4j (Graph DB)
+  # ===========================================
+  - name: neo4j
+    labels:
+      type: infra
+    chart: neo4j/neo4j
+    namespace: {{ .Values.global.namespace }}
+    values:
+      - fullnameOverride: neo4j  # 서비스 이름을 'neo4j'로 고정 (bolt://neo4j:7687)
+        neo4j:
+          name: "neo4j"
+          edition: "community"
+          password: {{ .Values.neo4j.password }}
+          resources:
+            cpu: {{ .Values.resources.neo4j.requests.cpu | quote }}
+            memory: {{ .Values.resources.neo4j.memory | quote }}
+        # Neo4j 메모리 설정 (docker-compose 동일)
+        config:
+          server.memory.heap.initial_size: "256m"
+          server.memory.heap.max_size: "1g"
+          server.memory.pagecache.size: "512m"
+        services:
+          neo4j:
+            enabled: true
+            spec:
+              type: ClusterIP
+            ports:
+              http:
+                enabled: true
+              https:
+                enabled: false
+              bolt:
+                enabled: true
+              backup:
+                enabled: false
+          admin:
+            enabled: true
+            spec:
+              type: ClusterIP
+        volumes:
+          data:
+            mode: "defaultStorageClass"
+            defaultStorageClass:
+              requests:
+                storage: {{ .Values.resources.neo4j.storage }}

@@ -42,6 +42,13 @@ MinIO 엔드포인트 생성
 {{- end -}}
 
 {{/*
+Neo4j Bolt URL 생성
+*/}}
+{{- define "mit.neo4jUri" -}}
+bolt://{{ .Values.neo4j.host }}:{{ .Values.neo4j.boltPort }}
+{{- end -}}
+
+{{/*
 Backend 내부 URL
 */}}
 {{- define "mit.backendUrl" -}}

@@ -8,7 +8,7 @@
 .PHONY: neo4j-init neo4j-seed
 .PHONY: k8s-setup k8s-deploy k8s-deploy-prod
 .PHONY: k8s-push k8s-push-be k8s-push-fe k8s-build-worker k8s-push-worker
-.PHONY: k8s-migrate k8s-db-status k8s-pf k8s-clean k8s-status k8s-logs 
+.PHONY: k8s-migrate k8s-db-status k8s-neo4j-update k8s-pf k8s-clean k8s-status k8s-logs
 
 
 # 기본 변수
@@ -447,16 +447,21 @@ k8s-migrate:
 k8s-db-status:
 	@kubectl exec -n mit deploy/backend -- /app/.venv/bin/alembic current
 
+k8s-neo4j-update:
+	@kubectl exec -n mit deploy/backend -- /app/.venv/bin/python /app/neo4j/init_schema.py
+
 k8s-pf:
 	@echo "포트 포워딩 시작 (백그라운드)..."
 	@nohup kubectl port-forward -n mit svc/postgres-postgresql 5432:5432 >/dev/null 2>&1 &
 	@nohup kubectl port-forward -n mit svc/redis-master 6379:6379 >/dev/null 2>&1 &
 	@nohup kubectl port-forward -n mit svc/minio 9000:9000 >/dev/null 2>&1 &
 	@nohup kubectl port-forward -n mit svc/lk-server 7880:80 >/dev/null 2>&1 &
+	@nohup kubectl port-forward -n mit svc/neo4j 7474:7474 7687:7687 >/dev/null 2>&1 &
 	@echo "  postgres: localhost:5432"
 	@echo "  redis:    localhost:6379"
 	@echo "  minio:    localhost:9000"
 	@echo "  livekit:  localhost:7880"
+	@echo "  neo4j:    localhost:7474 (browser), localhost:7687 (bolt)"
 
 k8s-clean:
 	@k3d cluster delete mit

@@ -42,6 +42,13 @@ minio:
   rootPassword: {{ requiredEnv "MINIO_PASSWORD" }}
   externalUrl: "https://www.mit-hub.com/storage"
 
+# Neo4j (Graph DB)
+neo4j:
+  host: neo4j
+  boltPort: 7687
+  user: neo4j
+  password: {{ requiredEnv "NEO4J_PASSWORD" }}
+
 # LiveKit (서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지)
 # 포트 80: Helm 차트가 서비스 80 → 컨테이너 7880 매핑
 livekit:
@@ -104,3 +111,7 @@ resources:
   livekit:
     requests: { memory: "256Mi", cpu: "200m" }
     limits: { memory: "1Gi", cpu: "1000m" }
+  neo4j:
+    requests: { cpu: "500m" }
+    memory: "2Gi"  # heap(1g) + pagecache(512m) + headroom
+    storage: 20Gi

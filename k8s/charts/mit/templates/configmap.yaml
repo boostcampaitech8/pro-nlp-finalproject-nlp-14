@@ -29,6 +29,9 @@ data:
   LIVEKIT_WS_URL: {{ include "mit.livekitWsUrl" . | quote }}
   LIVEKIT_EXTERNAL_URL: {{ .Values.livekit.externalUrl | quote }}
 
+  # Neo4j
+  NEO4J_URI: {{ include "mit.neo4jUri" . | quote }}
+
   # Worker
   CLOVA_STT_ENDPOINT: {{ .Values.worker.clovaSttEndpoint | quote }}
   BACKEND_API_URL: {{ include "mit.backendUrl" . | quote }}

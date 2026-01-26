@@ -39,6 +39,13 @@ minio:
   rootPassword: minioadmin
   externalUrl: "http://localhost/storage"  # Ingress 경유
 
+# Neo4j - Secret, Neo4j차트, ConfigMap에서 공유
+neo4j:
+  host: neo4j
+  boltPort: 7687
+  user: neo4j
+  password: neo4jpassword
+
 # LiveKit - Secret, LiveKit차트, ConfigMap에서 공유
 # 서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지
 # 포트 80: Helm 차트가 서비스 80 → 컨테이너 7880 매핑
@@ -117,3 +124,7 @@ resources:
   livekit:
     requests: { memory: "128Mi", cpu: "100m" }
     limits: { memory: "256Mi", cpu: "500m" }
+  neo4j:
+    requests: { cpu: "500m" }
+    memory: "2Gi"  # heap(1g) + pagecache(512m) + headroom
+    storage: 10Gi

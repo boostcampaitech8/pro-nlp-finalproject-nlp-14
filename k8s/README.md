@@ -58,10 +58,13 @@ make k8s-deploy
 # 3. 포트 포워딩
 make k8s-pf
 
-# 4. DB 마이그레이션
+# 4. Postgress 마이그레이션
 make k8s-migrate
 
-# 5. fe / be 로컬 실행
+# 5. Neo4j 스키마 업데이트 (제약조건 + 인덱스)
+make k8s-neo4j-update
+
+# 6. fe / be 로컬 실행
 make dev
 
 # localhost:3000 : 실시간 반영
@@ -117,6 +120,7 @@ make k8s-deploy-prod
 | `k8s-push-worker` | Worker 빌드 & 재시작 |
 | `k8s-migrate` | DB 마이그레이션 실행 |
 | `k8s-db-status` | DB 마이그레이션 상태 확인 |
+| `k8s-neo4j-update` | Neo4j 스키마 업데이트 (제약조건 + 인덱스) |
 | `k8s-pf` | 포트 포워딩 (백그라운드) |
 | `k8s-status` | Pod 상태 확인 |
 | `k8s-logs svc=X` | 로그 보기 |
@@ -131,6 +135,12 @@ make k8s-deploy-prod
                                                +--> /livekit/* --> lk-server:80
                                                +--> /storage/* --> minio:9000
                                                +--> /*         --> static files
+
+backend:8000 --> postgres-postgresql:5432  (PostgreSQL)
+               --> redis-master:6379        (Redis)
+               --> minio:9000               (MinIO)
+               --> lk-server:80             (LiveKit)
+               --> neo4j:7687               (Neo4j Bolt)
 ```
 
 ## 디렉토리 구조
@@ -160,3 +170,4 @@ k8s/
 | bitnami/redis | Redis 7 |
 | minio/minio | 오브젝트 스토리지 |
 | livekit/livekit-server | WebRTC SFU |
+| neo4j/neo4j | Graph DB (Community Edition) |

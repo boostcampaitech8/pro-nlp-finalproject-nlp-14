@@ -38,6 +38,12 @@ livekit:
   apiSecret: ""
   externalUrl: ""
 
+neo4j:
+  host: neo4j
+  boltPort: 7687
+  user: neo4j
+  password: ""
+
 jwt:
   secretKey: ""
   accessTokenExpireMinutes: 30
