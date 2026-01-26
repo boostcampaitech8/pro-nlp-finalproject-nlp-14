@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
 import type { MeetingStatus, ParticipantRole, TeamMember } from '@/types';
 import { teamService } from '@/services/teamService';
+import { prReviewService } from '@/services/prReviewService';
 import api from '@/services/api';
 
 export function MeetingDetailPage() {
@@ -38,6 +39,9 @@ export function MeetingDetailPage() {
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [hasDecisions, setHasDecisions] = useState(false);
+  const [checkingDecisions, setCheckingDecisions] = useState(false);
+  const [generatingPR, setGeneratingPR] = useState(false);
 
   useEffect(() => {
     if (meetingId) {
@@ -48,6 +52,16 @@ export function MeetingDetailPage() {
   useEffect(() => {
     if (currentMeeting) {
       teamService.listMembers(currentMeeting.teamId).then(setTeamMembers).catch(() => {});
+    }
+  }, [currentMeeting]);
+
+  // 결정사항 존재 여부 확인
+  useEffect(() => {
+    if (currentMeeting && currentMeeting.status !== 'scheduled') {
+      setCheckingDecisions(true);
+      prReviewService.hasDecisions(currentMeeting.id)
+        .then(setHasDecisions)
+        .finally(() => setCheckingDecisions(false));
     }
   }, [currentMeeting]);
 
@@ -133,6 +147,22 @@ export function MeetingDetailPage() {
     if (!meetingId) return;
     if (!confirm(`Are you sure you want to remove ${name}?`)) return;
     await removeParticipant(meetingId, userId);
+  };
+
+  // PR 생성 요청
+  const handleGeneratePR = async () => {
+    if (!meetingId) return;
+
+    setGeneratingPR(true);
+    try {
+      await prReviewService.generatePR(meetingId);
+      alert('PR 생성 작업이 시작되었습니다. 잠시 후 PR Review에서 확인하세요.');
+    } catch (error) {
+      console.error('Failed to generate PR:', error);
+      alert('PR 생성에 실패했습니다.');
+    } finally {
+      setGeneratingPR(false);
+    }
   };
 
   // 회의 생성자가 host
@@ -228,6 +258,44 @@ export function MeetingDetailPage() {
           />
         )}
 
+        {/* PR Review 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
+        {currentMeeting && currentMeeting.status !== 'scheduled' && (
+          <div className="mt-8 bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  Meeting Review
+                </h3>
+                <p className="text-gray-600">
+                  회의 트랜스크립트를 기반으로 결정사항을 생성하고 리뷰할 수 있습니다.
+                </p>
+              </div>
+              <div>
+                {checkingDecisions ? (
+                  <Button variant="outline" disabled>
+                    확인 중...
+                  </Button>
+                ) : hasDecisions ? (
+                  <Button
+                    variant="primary"
+                    onClick={() => navigate(`/dashboard/meetings/${meetingId}/review`)}
+                  >
+                    PR Review
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    onClick={handleGeneratePR}
+                    isLoading={generatingPR}
+                  >
+                    Generate PR
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 참여자 섹션 */}
         {currentMeeting && (
           <div className="mt-8">
@@ -266,16 +334,6 @@ export function MeetingDetailPage() {
           </div>
         )}
 
-        {/* Phase 2 안내 */}
-        <div className="mt-8 bg-blue-50 rounded-xl p-6 text-center">
-          <h4 className="text-lg font-semibold text-blue-900 mb-2">
-            Coming Soon: Meeting Review
-          </h4>
-          <p className="text-blue-700">
-            In Phase 2, you'll be able to review meeting transcripts, add comments,
-            and confirm Ground Truth for your organization.
-          </p>
-        </div>
       </main>
     </div>
   );
