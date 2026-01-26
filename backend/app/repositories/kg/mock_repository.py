@@ -233,13 +233,51 @@ class MockKGRepository:
         self,
         meeting_id: str,
         summary: str,
-        agenda_ids: list[str],
-        decision_ids: list[str],
+        agendas: list[dict],
     ) -> KGMinutes:
-        """회의록 생성"""
-        minutes_id = f"minutes-{uuid4().hex[:8]}"
+        """회의록 생성 (원홉 - Meeting-Agenda-Decision 한 번에 생성)
+
+        Args:
+            meeting_id: 회의 ID
+            summary: 회의 요약
+            agendas: [{topic, description, decisions: [{content, context}]}]
+        """
         now = datetime.now(timezone.utc)
 
+        # Meeting summary 업데이트
+        if meeting_id in self.data["meetings"]:
+            self.data["meetings"][meeting_id]["summary"] = summary
+
+        # Agenda + Decision 생성
+        agenda_ids = []
+        decision_ids = []
+
+        for idx, agenda_data in enumerate(agendas):
+            agenda_id = f"agenda-{uuid4().hex[:8]}"
+            self.data["agendas"][agenda_id] = {
+                "id": agenda_id,
+                "topic": agenda_data.get("topic", ""),
+                "description": agenda_data.get("description", ""),
+                "meeting_id": meeting_id,
+                "order": idx,
+            }
+            agenda_ids.append(agenda_id)
+
+            # Decision 생성
+            for decision_data in agenda_data.get("decisions", []):
+                decision_id = f"decision-{uuid4().hex[:8]}"
+                self.data["decisions"][decision_id] = {
+                    "id": decision_id,
+                    "content": decision_data.get("content", ""),
+                    "context": decision_data.get("context", ""),
+                    "status": "draft",
+                    "agenda_id": agenda_id,
+                    "created_at": now.isoformat(),
+                }
+                decision_ids.append(decision_id)
+
+        # Minutes 메타데이터 저장 (Projection용)
+        minutes_id = f"minutes-{meeting_id}"
         self.data["minutes"][minutes_id] = {
             "id": minutes_id,
             "meeting_id": meeting_id,

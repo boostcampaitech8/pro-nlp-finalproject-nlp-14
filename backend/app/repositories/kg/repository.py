@@ -129,54 +129,85 @@ class KGRepository:
         self,
         meeting_id: str,
         summary: str,
-        agenda_ids: list[str],
-        decision_ids: list[str],
+        agendas: list[dict],
     ) -> KGMinutes:
-        """회의록 생성"""
-        minutes_id = f"minutes-{uuid4().hex[:8]}"
+        """회의록 생성 (원홉 - Minutes 노드 없음)
+
+        Meeting-Agenda-Decision을 한 번에 생성:
+        - Meeting.summary 업데이트
+        - Meeting -[CONTAINS]-> Agenda 생성
+        - Agenda -[HAS_DECISION]-> Decision 생성
+
+        Args:
+            meeting_id: 회의 ID
+            summary: 회의 요약
+            agendas: [{topic, description, decisions: [{content, context}]}]
+
+        Returns:
+            KGMinutes (Projection - 생성된 데이터로 구성)
+        """
         now = datetime.now(timezone.utc).isoformat()
 
         query = """
         MATCH (m:Meeting {id: $meeting_id})
-        CREATE (min:Minutes {
-            id: $minutes_id,
-            summary: $summary,
+
+        // 1. Meeting summary 업데이트
+        SET m.summary = $summary
+
+        // 2. Agenda + Decision 생성 (UNWIND)
+        WITH m
+        UNWIND range(0, size($agendas) - 1) AS idx
+        WITH m, $agendas[idx] AS agenda_data, idx
+        CREATE (a:Agenda {
+            id: 'agenda-' + randomUUID(),
+            topic: agenda_data.topic,
+            description: coalesce(agenda_data.description, ''),
+            order: idx,
             created_at: datetime($created_at)
         })
-        CREATE (m)-[:HAS_MINUTES]->(min)
-        WITH min
-        UNWIND $agenda_ids AS agenda_id
-        MATCH (a:Agenda {id: agenda_id})
-        CREATE (min)-[:SUMMARIZES]->(a)
-        WITH min
-        UNWIND $decision_ids AS decision_id
-        MATCH (d:Decision {id: decision_id})
-        CREATE (min)-[:INCLUDES]->(d)
-        RETURN min
+        CREATE (m)-[:CONTAINS]->(a)
+
+        // 3. Decision 생성 (중첩 UNWIND)
+        WITH m, a, agenda_data
+        UNWIND agenda_data.decisions AS decision_data
+        CREATE (d:Decision {
+            id: 'decision-' + randomUUID(),
+            content: decision_data.content,
+            context: coalesce(decision_data.context, ''),
+            status: 'draft',
+            created_at: datetime($created_at)
+        })
+        CREATE (a)-[:HAS_DECISION]->(d)
+
+        RETURN m.id AS meeting_id,
+               collect(DISTINCT a.id) AS agenda_ids,
+               collect(DISTINCT d.id) AS decision_ids
         """
         await self._execute_write(
             query,
             {
                 "meeting_id": meeting_id,
-                "minutes_id": minutes_id,
                 "summary": summary,
                 "created_at": now,
-                "agenda_ids": agenda_ids,
-                "decision_ids": decision_ids,
+                "agendas": agendas,
             },
         )
 
+        # Projection으로 조회하여 반환
         return await self.get_minutes(meeting_id)  # type: ignore
 
     async def get_minutes(self, meeting_id: str) -> KGMinutes | None:
-        """회의록 조회"""
+        """회의록 조회 (Projection - Meeting + Agenda + Decision 조합)
+
+        Minutes는 별도 노드가 아닌, 세 노드의 관계를 조합한 뷰
+        """
         query = """
-        MATCH (m:Meeting {id: $meeting_id})-[:HAS_MINUTES]->(min:Minutes)
-        OPTIONAL MATCH (min)-[:INCLUDES]->(d:Decision)
-        OPTIONAL MATCH (d)<-[:HAS_DECISION]-(a:Agenda)
+        MATCH (m:Meeting {id: $meeting_id})
+        OPTIONAL MATCH (m)-[:CONTAINS]->(a:Agenda)
+        OPTIONAL MATCH (a)-[:HAS_DECISION]->(d:Decision)
         OPTIONAL MATCH (d)-[:TRIGGERS]->(ai:ActionItem)
         OPTIONAL MATCH (ai)<-[:ASSIGNED_TO]-(assignee:User)
-        RETURN min,
+        RETURN m,
                collect(DISTINCT {
                    id: d.id,
                    content: d.content,
@@ -196,7 +227,7 @@ class KGRepository:
             return None
 
         record = records[0]
-        min_data = dict(record["min"])
+        m = dict(record["m"])
 
         decisions = [
             KGMinutesDecision(**d)
@@ -209,11 +240,12 @@ class KGRepository:
             if ai.get("id") is not None
         ]
 
+        # Projection: Meeting + Agenda + Decision -> KGMinutes
         return KGMinutes(
-            id=min_data["id"],
+            id=f"minutes-{meeting_id}",  # 가상 ID (실제 노드 아님)
             meeting_id=meeting_id,
-            summary=min_data.get("summary", ""),
-            created_at=min_data.get("created_at", datetime.now(timezone.utc)),
+            summary=m.get("summary", ""),
+            created_at=m.get("created_at", datetime.now(timezone.utc)),
             decisions=decisions,
             action_items=action_items,
         )

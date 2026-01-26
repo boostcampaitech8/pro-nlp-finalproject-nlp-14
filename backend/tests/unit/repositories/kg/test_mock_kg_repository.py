@@ -189,22 +189,81 @@ class TestMinutesOperations:
 
     @pytest.mark.asyncio
     async def test_create_minutes(self, kg_repo):
-        """회의록 생성"""
+        """회의록 생성 (원홉)"""
         minutes = await kg_repo.create_minutes(
             meeting_id="meeting-2",
             summary="테스트 회의록 요약",
-            agenda_ids=["agenda-3"],
-            decision_ids=["decision-3"],
+            agendas=[
+                {
+                    "topic": "새 아젠다",
+                    "description": "테스트용 아젠다",
+                    "decisions": [
+                        {"content": "테스트 결정1", "context": "맥락1"},
+                        {"content": "테스트 결정2", "context": "맥락2"},
+                    ],
+                }
+            ],
         )
 
         assert minutes is not None
         assert minutes.meeting_id == "meeting-2"
         assert "테스트 회의록" in minutes.summary
+        assert len(minutes.decisions) == 2
 
         # 다시 조회해도 같은 결과
         retrieved = await kg_repo.get_minutes("meeting-2")
         assert retrieved is not None
         assert retrieved.meeting_id == "meeting-2"
+        assert len(retrieved.decisions) == 2
+
+    @pytest.mark.asyncio
+    async def test_create_minutes_multiple_agendas(self, kg_repo):
+        """여러 아젠다가 있는 회의록 생성"""
+        minutes = await kg_repo.create_minutes(
+            meeting_id="meeting-2",
+            summary="복수 아젠다 회의",
+            agendas=[
+                {
+                    "topic": "아젠다1",
+                    "description": "",
+                    "decisions": [{"content": "결정A", "context": ""}],
+                },
+                {
+                    "topic": "아젠다2",
+                    "description": "",
+                    "decisions": [
+                        {"content": "결정B", "context": ""},
+                        {"content": "결정C", "context": ""},
+                    ],
+                },
+            ],
+        )
+
+        assert minutes is not None
+        assert len(minutes.decisions) == 3  # 3개 결정
+
+    @pytest.mark.asyncio
+    async def test_create_minutes_empty_agendas(self, kg_repo):
+        """빈 아젠다 목록으로 회의록 생성"""
+        # 새 meeting 추가 (기존 decision과 연관 없음)
+        kg_repo.data["meetings"]["meeting-new"] = {
+            "id": "meeting-new",
+            "title": "새 회의",
+            "status": "completed",
+            "team_id": "team-1",
+            "participant_ids": ["user-1"],
+            "created_at": "2026-01-26T09:00:00+00:00",
+        }
+
+        minutes = await kg_repo.create_minutes(
+            meeting_id="meeting-new",
+            summary="아젠다 없는 회의",
+            agendas=[],
+        )
+
+        assert minutes is not None
+        assert minutes.summary == "아젠다 없는 회의"
+        assert len(minutes.decisions) == 0
 
 
 class TestDataIsolation:

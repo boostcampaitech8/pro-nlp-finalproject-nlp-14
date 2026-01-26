@@ -2,7 +2,7 @@
 
 import logging
 
-from app.infrastructure.graph.config import get_graph_settings
+from app.infrastructure.graph.config import MAX_RETRY
 from app.infrastructure.graph.workflows.mit_action.state import (
     MitActionState,
 )
@@ -19,7 +19,6 @@ def route_eval(state: MitActionState) -> str:
 
     NOTE: 라우팅 함수는 노드로 등록하지 않고 conditional_edge에 직접 연결
     """
-    settings = get_graph_settings()
     eval_result = state.get("mit_action_eval_result")
     retry_count = state.get("mit_action_retry_count", 0)
 
@@ -31,9 +30,9 @@ def route_eval(state: MitActionState) -> str:
         logger.info("평가 통과, 저장 진행")
         return "saver"
 
-    if retry_count >= settings.max_retry_count:
+    if retry_count >= MAX_RETRY:
         logger.warning(f"최대 재시도 횟수 초과 ({retry_count}), 저장 진행")
         return "saver"
 
-    logger.info(f"평가 실패, 재시도 ({retry_count + 1}/{settings.max_retry_count})")
+    logger.info(f"평가 실패, 재시도 ({retry_count + 1}/{MAX_RETRY})")
     return "extractor"

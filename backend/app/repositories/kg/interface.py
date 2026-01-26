@@ -31,10 +31,18 @@ class IKGRepository(Protocol):
         self,
         meeting_id: str,
         summary: str,
-        agenda_ids: list[str],
-        decision_ids: list[str],
+        agendas: list[dict],
     ) -> KGMinutes:
-        """회의록 생성"""
+        """회의록 생성 (원홉 - Meeting-Agenda-Decision 한 번에 생성)
+
+        Args:
+            meeting_id: 회의 ID
+            summary: 회의 요약
+            agendas: [{topic, description, decisions: [{content, context}]}]
+
+        Returns:
+            KGMinutes (Projection)
+        """
         ...
 
     async def get_minutes(self, meeting_id: str) -> KGMinutes | None:
