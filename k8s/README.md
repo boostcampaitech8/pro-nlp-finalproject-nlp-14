@@ -40,7 +40,7 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 rm -f kubectl
 
 # helm-diff (Helm 플러그인: helmfile diff 등에 사용)
-helm plugin install https://github.com/databus23/helm-diff --verify=false
+helm plugin install https://github.com/databus23/helm-diff
 
 ```
 
