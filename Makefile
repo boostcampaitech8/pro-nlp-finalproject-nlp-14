@@ -459,7 +459,7 @@ k8s-pf:
 	@echo "  livekit:  localhost:7880"
 
 k8s-clean:
-	@./$(K8S_DIR)/scripts/cleanup.sh
+	@k3d cluster delete mit
 
 k8s-status:
 	@kubectl -n mit get pods
