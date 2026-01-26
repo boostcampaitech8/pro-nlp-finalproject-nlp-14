@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-fe dev-be build clean test-fe graph
+.PHONY: help install dev dev-fe dev-be dev-worker build clean test-fe graph
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
 .PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
 .PHONY: infra-up infra-down livekit-up livekit-down backend-up backend-down backend-rebuild backend-logs
@@ -6,13 +6,16 @@
 .PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
 .PHONY: neo4j-init neo4j-seed
-.PHONY: k8s-setup k8s-deploy k8s-deploy-prod k8s-infra
+.PHONY: k8s-setup k8s-deploy k8s-deploy-prod
 .PHONY: k8s-push k8s-push-be k8s-push-fe k8s-build-worker k8s-push-worker
 .PHONY: k8s-migrate k8s-db-status k8s-pf k8s-clean k8s-status k8s-logs 
 
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
+DEV_OAUTH_ENV = \
+	NAVER_REDIRECT_URI=http://localhost:3000/auth/naver/callback \
+	GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
 
 # ===================
 # Help
@@ -89,7 +92,6 @@ help:
 	@echo "  make k8s-setup        - k3d 클러스터 생성"
 	@echo "  make k8s-deploy       - 로컬 배포"
 	@echo "  make k8s-deploy-prod  - 프로덕션 배포"
-	@echo "  make k8s-infra        - 인프라만 배포 (DB, Redis, MinIO, LiveKit)"
 	@echo "  make k8s-push         - 전체 빌드 & 재시작"
 	@echo "  make k8s-push-be      - Backend 빌드 & 재시작"
 	@echo "  make k8s-push-fe      - Frontend 빌드 & 재시작"
@@ -111,13 +113,13 @@ install:
 	cd backend/worker && uv sync
 
 dev:
-	pnpm run dev
+	$(DEV_OAUTH_ENV) pnpm run dev
 
 dev-fe:
 	pnpm run dev:fe
 
 dev-be:
-	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && $(DEV_OAUTH_ENV) uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-worker:
 	pnpm run dev:worker
@@ -412,16 +414,11 @@ k8s-setup:
 	@./$(K8S_DIR)/scripts/setup-k3d.sh
 
 k8s-deploy:
+	@./$(K8S_DIR)/scripts/build.sh local
 	@./$(K8S_DIR)/scripts/deploy.sh local
 
 k8s-deploy-prod:
 	@./$(K8S_DIR)/scripts/deploy.sh prod
-
-k8s-infra: k8s-build-worker
-	@./$(K8S_DIR)/scripts/deploy.sh local
-	@kubectl -n mit scale deployment/backend --replicas=0
-	@kubectl -n mit scale deployment/frontend --replicas=0
-	@kubectl -n mit scale deployment/realtime-worker --replicas=1
 
 k8s-push: 
 	@./$(K8S_DIR)/scripts/build.sh

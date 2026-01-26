@@ -44,16 +44,16 @@ helm plugin install https://github.com/databus23/helm-diff
 
 ```
 
-## 로컬 개발 (k3d + make dev)
+## 로컬 개발 (k3d)
 
-k8s 인프라만 사용하고 fe/be는 로컬에서 실행하는 방식.
+k8s 전체 배포 후, fe/be는 로컬에서도 실행하여 실시간 개발.
 
 ```bash
 # 1. 클러스터 생성 (최초 1회)
 make k8s-setup
 
-# 2. 인프라 배포
-make k8s-infra
+# 2. 전체 빌드 및 배포
+make k8s-deploy
 
 # 3. 포트 포워딩
 make k8s-pf
@@ -63,31 +63,18 @@ make k8s-migrate
 
 # 5. fe / be 로컬 실행
 make dev
-```
 
-## 로컬 전체 실행 (k3d)
-
-fe/be도 k8s 클러스터 내에서 실행하는 방식.
-
-```bash
-# 1. 클러스터 생성 (최초 1회)
-make k8s-setup
-
-# 2. 앱 이미지 빌드 & 배포 (이미지 반영 딜레이 존재)
-make k8s-deploy         # helmfile로 전체 배포
-make k8s-push           # 이미지 빌드 & 푸시 & 재시작
-
-# 3. DB 마이그레이션
-make k8s-migrate
+# localhost:3000 : 실시간 반영
+# localhost : 하단 재빌드를 통해 반영
 ```
 
 ### 개별 서비스 재빌드
 
 ```bash
+make k8s-push           # 전체 빌드 & 재시작
 make k8s-push-be        # Backend 빌드 & 재시작
 make k8s-push-fe        # Frontend 빌드 & 재시작
 make k8s-push-worker    # Worker 빌드 & 재시작
-make k8s-push           # 전체 빌드 & 재시작
 ```
 
 ### 상태 확인
@@ -122,9 +109,8 @@ make k8s-deploy-prod
 | 타겟 | 설명 |
 |------|------|
 | `k8s-setup` | k3d 클러스터 생성 |
-| `k8s-deploy` | 로컬 배포 |
+| `k8s-deploy` | 로컬 배포 (빌드 + 배포) |
 | `k8s-deploy-prod` | 프로덕션 배포 |
-| `k8s-infra` | 인프라만 배포 (DB, Redis, MinIO, LiveKit) |
 | `k8s-push` | 전체 빌드 & 재시작 |
 | `k8s-push-be` | Backend 빌드 & 재시작 |
 | `k8s-push-fe` | Frontend 빌드 & 재시작 |
