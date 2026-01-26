@@ -16,6 +16,7 @@ spec:
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: backend
       containers:
         - name: backend
           image: {{ include "mit.image" (dict "Values" .Values "image" "mit-backend") }}

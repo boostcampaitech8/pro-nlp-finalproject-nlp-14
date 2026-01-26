@@ -35,3 +35,5 @@ data:
   # Worker
   CLOVA_STT_ENDPOINT: {{ .Values.worker.clovaSttEndpoint | quote }}
   BACKEND_API_URL: {{ include "mit.backendUrl" . | quote }}
+  WORKER_IMAGE: {{ include "mit.image" (dict "Values" .Values "image" "mit-worker") | quote }}
+  KUBERNETES_NAMESPACE: {{ .Values.global.namespace | quote }}

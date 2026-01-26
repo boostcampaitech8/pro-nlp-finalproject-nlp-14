@@ -1,39 +1,13 @@
-# 실시간 STT Worker (기본 비활성화)
-# 활성화: kubectl -n mit scale deployment realtime-worker --replicas=1
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: realtime-worker
-  namespace: {{ .Values.global.namespace }}
-spec:
-  replicas: 0  # 기본 비활성화
-  selector:
-    matchLabels:
-      app: realtime-worker
-  template:
-    metadata:
-      labels:
-        app: realtime-worker
-      annotations:
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-    spec:
-      containers:
-        - name: worker
-          image: {{ include "mit.image" (dict "Values" .Values "image" "mit-worker") }}
-          imagePullPolicy: Always
-          envFrom:
-            - configMapRef:
-                name: mit-config
-            - secretRef:
-                name: mit-secrets
-          # MEETING_ID는 런타임에 별도 주입
-          # kubectl set env deployment/realtime-worker MEETING_ID=xxx
-          resources:
-            requests:
-              memory: {{ .Values.resources.worker.requests.memory | quote }}
-              cpu: {{ .Values.resources.worker.requests.cpu | quote }}
-            limits:
-              memory: {{ .Values.resources.worker.limits.memory | quote }}
-              cpu: {{ .Values.resources.worker.limits.cpu | quote }}
-      restartPolicy: Always
+# 실시간 STT Worker (K8s Job 기반 동적 관리)
+#
+# Backend의 K8sWorkerManager가 회의 시작/종료 시 Job을 자동 생성/삭제합니다.
+# - 회의 시작 (room_started 웹훅): Job 생성 (realtime-worker-meeting-{uuid})
+# - 회의 종료 (room_finished 웹훅): Job 삭제
+# - ttlSecondsAfterFinished: 300 (완료 후 5분 뒤 자동 정리)
+#
+# 수동 확인:
+#   kubectl -n mit get jobs -l app=realtime-worker
+#   kubectl -n mit logs job/realtime-worker-meeting-<uuid>
+#
+# 이 파일은 참조용이며, 실제 Job은 Backend에서 프로그래밍 방식으로 생성됩니다.
+# (backend/app/infrastructure/worker_manager/kubernetes.py)
