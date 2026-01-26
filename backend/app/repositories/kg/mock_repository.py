@@ -407,6 +407,67 @@ class MockKGRepository:
         ).isoformat()
         return True
 
+    async def approve_and_merge_if_complete(
+        self, decision_id: str, user_id: str
+    ) -> dict:
+        """결정 승인 + 전원 승인 시 자동 머지
+
+        Returns:
+            dict: 승인/머지 결과
+        """
+        if decision_id not in self.data["decisions"]:
+            return {"approved": False, "merged": False, "status": "not_found"}
+
+        if user_id not in self.data["users"]:
+            return {"approved": False, "merged": False, "status": "user_not_found"}
+
+        decision = self.data["decisions"][decision_id]
+
+        # 승인 관계 추가
+        approval = (user_id, decision_id)
+        if approval not in self.data["approvals"]:
+            self.data["approvals"].append(approval)
+
+        # 참여자 수 확인
+        agenda = self.data["agendas"].get(decision.get("agenda_id", ""))
+        if not agenda:
+            return {
+                "approved": True,
+                "merged": False,
+                "status": decision["status"],
+                "approvers_count": 1,
+                "participants_count": 0,
+            }
+
+        meeting = self.data["meetings"].get(agenda.get("meeting_id", ""))
+        if not meeting:
+            return {
+                "approved": True,
+                "merged": False,
+                "status": decision["status"],
+                "approvers_count": 1,
+                "participants_count": 0,
+            }
+
+        participants = set(meeting.get("participant_ids", []))
+        approvers = {
+            uid for uid, did in self.data["approvals"] if did == decision_id
+        }
+
+        # 전원 승인 시 머지
+        merged = participants == approvers and len(participants) > 0
+        if merged:
+            decision["status"] = "merged"
+            decision["merged_at"] = datetime.now(timezone.utc).isoformat()
+
+        return {
+            "approved": True,
+            "merged": merged,
+            "status": decision["status"],
+            "approvers_count": len(approvers),
+            "participants_count": len(participants),
+        }
+
     # --- 조회 ---
 
     async def get_decision(self, decision_id: str) -> KGDecision | None:

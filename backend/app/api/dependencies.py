@@ -94,6 +94,8 @@ SERVICE_ERROR_MAPPING: dict[str, tuple[int, str, str]] = {
     "USER_NOT_TEAM_MEMBER": (400, "BAD_REQUEST", "User is not a team member"),
     "ALREADY_PARTICIPANT": (409, "CONFLICT", "User is already a participant"),
     "INVALID_ROLE": (400, "BAD_REQUEST", "Invalid role"),
+    # Decision 관련
+    "DECISION_NOT_FOUND": (404, "NOT_FOUND", "Decision not found"),
 }
 
 

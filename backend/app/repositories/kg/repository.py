@@ -304,6 +304,74 @@ class KGRepository:
         records = await self._execute_write(query, {"decision_id": decision_id})
         return len(records) > 0
 
+    async def approve_and_merge_if_complete(
+        self, decision_id: str, user_id: str
+    ) -> dict:
+        """결정 승인 + 전원 승인 시 자동 머지 (원자적 트랜잭션)
+
+        단일 Cypher 쿼리로 승인 관계 생성, 전원 승인 확인, 머지를 처리.
+        Race condition 없이 원자적으로 처리됨.
+
+        Returns:
+            {
+                "approved": bool,       # 승인 성공 여부
+                "merged": bool,         # 머지 여부
+                "status": str,          # 최종 상태
+                "approvers_count": int,
+                "participants_count": int,
+            }
+        """
+        query = """
+        MATCH (d:Decision {id: $decision_id})
+        MATCH (u:User {id: $user_id})
+
+        // 1. 승인 관계 생성 (MERGE로 중복 방지)
+        MERGE (u)-[:APPROVED_BY]->(d)
+
+        // 2. 참여자 수와 승인자 수 계산
+        WITH d
+        MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
+        MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
+        WITH d, collect(DISTINCT participant.id) as participants
+
+        OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
+        WITH d, participants, collect(DISTINCT approver.id) as approvers
+
+        // 3. 전원 승인 시 자동 머지
+        WITH d, participants, approvers,
+             size(participants) as p_count,
+             size(approvers) as a_count
+        SET d.status = CASE
+            WHEN p_count = a_count THEN 'merged'
+            ELSE d.status
+        END,
+        d.merged_at = CASE
+            WHEN p_count = a_count THEN datetime()
+            ELSE d.merged_at
+        END
+
+        RETURN d.id as decision_id,
+               d.status as status,
+               p_count as participants_count,
+               a_count as approvers_count,
+               p_count = a_count as merged
+        """
+        records = await self._execute_write(
+            query, {"decision_id": decision_id, "user_id": user_id}
+        )
+
+        if not records:
+            return {"approved": False, "merged": False, "status": "not_found"}
+
+        record = records[0]
+        return {
+            "approved": True,
+            "merged": record["merged"],
+            "status": record["status"],
+            "approvers_count": record["approvers_count"],
+            "participants_count": record["participants_count"],
+        }
+
     # --- 조회 ---
 
     async def get_decision(self, decision_id: str) -> KGDecision | None:
