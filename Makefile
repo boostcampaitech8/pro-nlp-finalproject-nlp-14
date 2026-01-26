@@ -111,6 +111,7 @@ install:
 	pnpm --filter @mit/shared-types build
 	cd backend && uv sync
 	cd backend/worker && uv sync
+	cd backend/worker && mkdir -p ./build && uv run python -m grpc_tools.protoc -I=. --python_out=./build --grpc_python_out=./build nest.proto
 
 dev:
 	$(DEV_OAUTH_ENV) pnpm run dev
