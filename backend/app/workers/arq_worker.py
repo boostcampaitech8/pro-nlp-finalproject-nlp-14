@@ -66,11 +66,8 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
                     await transcript_service.merge_utterances(meeting_id)
                     logger.info(f"Utterances merged successfully: meeting={meeting_id}")
 
-                    # PR 생성 태스크 큐잉
-                    pool = ctx.get("redis")
-                    if pool:
-                        await pool.enqueue_job("generate_pr_task", str(meeting_id))
-                        logger.info(f"generate_pr_task enqueued: meeting={meeting_id}")
+                    # PR 생성은 수동 트리거로 변경 (POST /meetings/{meeting_id}/generate-pr)
+                    # 자동 트리거 시 race condition으로 중복 실행 가능성 있음
 
                 except Exception as merge_error:
                     logger.error(f"Failed to merge utterances: meeting={meeting_id}, error={merge_error}")
@@ -94,6 +91,7 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
                         logger.info(f"All recordings processed (with failures), attempting merge: meeting={meeting_id}")
                         await transcript_service.get_or_create_transcript(meeting_id)
                         await transcript_service.merge_utterances(meeting_id)
+                        # PR 생성은 수동 트리거로 변경 (POST /meetings/{meeting_id}/generate-pr)
                 except Exception as merge_error:
                     logger.error(f"Failed to merge utterances after failure: meeting={meeting_id}, error={merge_error}")
 
