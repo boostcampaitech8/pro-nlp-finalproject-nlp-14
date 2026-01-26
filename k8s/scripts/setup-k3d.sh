@@ -19,6 +19,3 @@ kubectl cluster-info
 echo ""
 echo "=== 완료 ==="
 echo ""
-echo "다음 단계:"
-echo "  1. 이미지 빌드: ./k8s/scripts/build.sh"
-echo "  2. 배포: cd k8s && helmfile -e local apply"

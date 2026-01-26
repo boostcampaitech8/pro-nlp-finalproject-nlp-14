@@ -39,4 +39,3 @@ fi
 
 echo ""
 echo "=== 빌드 완료 ==="
-echo "다음: ./k8s/scripts/deploy.sh"
