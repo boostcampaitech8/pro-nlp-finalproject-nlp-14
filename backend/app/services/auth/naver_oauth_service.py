@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.security import create_tokens
 from app.models.user import AuthProvider, User
 from app.schemas.auth import AuthResponse, TokenResponse, UserResponse
+from app.core.neo4j_sync import neo4j_sync
 
 
 class NaverOAuthService:
@@ -110,6 +111,8 @@ class NaverOAuthService:
                 user.email = profile["email"]
             await self.db.flush()
             await self.db.refresh(user)
+            # Neo4j 동기화
+            await neo4j_sync.sync_user_update(str(user.id), user.name, user.email)
             return user
 
         # 이메일로 기존 사용자 조회 (다른 방식으로 가입한 경우)
@@ -121,6 +124,10 @@ class NaverOAuthService:
             existing_user.name = name
             await self.db.flush()
             await self.db.refresh(existing_user)
+            # Neo4j 동기화
+            await neo4j_sync.sync_user_update(
+                str(existing_user.id), existing_user.name, existing_user.email
+            )
             return existing_user
 
         # 신규 사용자 생성
@@ -133,6 +140,8 @@ class NaverOAuthService:
         self.db.add(user)
         await self.db.flush()
         await self.db.refresh(user)
+        # Neo4j 동기화
+        await neo4j_sync.sync_user_create(str(user.id), user.name, user.email)
         return user
 
     async def authenticate(self, code: str, state: str) -> AuthResponse:

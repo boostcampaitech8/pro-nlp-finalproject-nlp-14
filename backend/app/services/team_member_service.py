@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.auth import UserResponse
 from app.schemas.team import TeamMemberResponse
 from app.schemas.team_member import InviteTeamMemberRequest, UpdateTeamMemberRequest
+from app.core.neo4j_sync import neo4j_sync
 
 
 class TeamMemberService:
@@ -55,6 +56,9 @@ class TeamMemberService:
         self.db.add(member)
         await self.db.flush()
         await self.db.refresh(member)
+
+        # Neo4j 동기화
+        await neo4j_sync.sync_member_of_create(str(user.id), str(team_id), role)
 
         return TeamMemberResponse(
             id=member.id,
@@ -131,6 +135,9 @@ class TeamMemberService:
         member.role = role
         await self.db.flush()
 
+        # Neo4j 동기화
+        await neo4j_sync.sync_member_of_update(str(user_id), str(team_id), role)
+
         # user 정보 로드
         user_query = select(User).where(User.id == user_id)
         user_result = await self.db.execute(user_query)
@@ -169,6 +176,8 @@ class TeamMemberService:
                 raise ValueError("OWNER_CANNOT_LEAVE")
             await self.db.delete(member)
             await self.db.flush()
+            # Neo4j 동기화
+            await neo4j_sync.sync_member_of_delete(str(user_id), str(team_id))
             return
 
         # 타인을 제거하는 경우 owner/admin만 가능
@@ -186,6 +195,9 @@ class TeamMemberService:
 
         await self.db.delete(member)
         await self.db.flush()
+
+        # Neo4j 동기화
+        await neo4j_sync.sync_member_of_delete(str(user_id), str(team_id))
 
     async def _get_team_member(
         self, team_id: UUID, user_id: UUID
