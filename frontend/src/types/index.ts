@@ -47,3 +47,16 @@ export type {
   TranscriptStatusResponse,
   Utterance,
 } from '@mit/shared-types';
+
+// PR Review types (local)
+export type {
+  DecisionStatus,
+  Decision,
+  DecisionListResponse,
+  DecisionReviewRequest,
+  DecisionReviewResponse,
+  PRAgenda,
+  PRParticipant,
+  PRMinutes,
+  PRStatus,
+} from './pr-review';

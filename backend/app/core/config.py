@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     stt_provider: str = "openai"  # openai, local, self_hosted
 
+    # LLM (Clova Studio) 설정
+    ncp_clovastudio_api_key: str = ""
+
     # ARQ Worker 설정
     arq_redis_url: str = "redis://localhost:6379/1"
 

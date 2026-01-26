@@ -44,19 +44,18 @@ PostgreSQL과 Neo4j 간 데이터 동기화 전략
 
 *동기화 대상
 
-## 2. 접근 방식 분리 (OGM vs Raw Driver)
+## 2. Raw Cypher 기반 동기화 패턴
 
 | 작업 유형 | 도구 | 이유 |
 |----------|------|------|
-| **CRUD/동기화** | neomodel OGM | 편의성, Django ORM 스타일, 약간의 레이턴시 허용 |
-| **조회/검색 (Agent)** | raw driver (neo4j_graphrag) | 실시간 응답, 최소 레이턴시, 음성 처리에 적합 |
+| **CRUD/동기화** | Raw Cypher (KGSyncRepository) | 일관성, 기존 패턴 준수, 명시적 제어 |
+| **조회/검색 (Agent)** | Raw Cypher (neo4j_graphrag) | 실시간 응답, 최소 레이턴시, 음성 처리에 적합 |
 
-**성능 순서**: raw driver > neomodel cypher_query > neomodel OGM
+**통일된 접근 방식**: 모든 Neo4j 조작은 Raw Cypher 기반
 
 ```python
-# CRUD (동기화) - neomodel OGM
-team = Team(id=str(team_id), name=name)
-await team.save()
+# CRUD (동기화) - KGSyncRepository
+await sync_repo.upsert_team(str(team_id), name, description)
 
 # 검색 (Agent) - neo4j_graphrag ToolsRetriever (raw driver)
 results = await tools_retriever.search(query)  # 빠름!
@@ -106,14 +105,15 @@ results = await tools_retriever.search(query)  # 빠름!
 
 ## 5. 구현 패턴
 
-### 서비스 레이어 동기화
+### 서비스 레이어 동기화 (neo4j_sync 헬퍼 사용)
 
 ```python
 # backend/app/services/team_service.py
+from app.services.neo4j_sync import neo4j_sync
+
 class TeamService:
-    def __init__(self, db: AsyncSession, neo4j_repo: Neo4jSyncRepository):
+    def __init__(self, db: AsyncSession):
         self.db = db
-        self.neo4j_repo = neo4j_repo
 
     async def create_team(self, data: CreateTeamRequest, user_id: UUID) -> TeamResponse:
         # 1. PostgreSQL 먼저 (SSOT)
@@ -121,61 +121,75 @@ class TeamService:
         self.db.add(team)
         await self.db.flush()
 
-        # 2. Neo4j 동기화 (실패해도 롤백 안함, 로깅 후 수동 복구)
-        try:
-            await self.neo4j_repo.create_team_node(
-                team_id=str(team.id),
-                name=team.name,
-                description=team.description
-            )
-        except Exception as e:
-            logger.error(f"Neo4j sync failed for team {team.id}: {e}")
-            # 추후 재시도 큐에 추가 가능
+        member = TeamMember(team_id=team.id, user_id=user_id, role=TeamRole.OWNER.value)
+        self.db.add(member)
+        await self.db.flush()
+        await self.db.refresh(team)
 
-        await self.db.commit()
+        # 2. Neo4j 동기화 (실패해도 PostgreSQL 롤백 안함)
+        await neo4j_sync.sync_team_create(str(team.id), team.name, team.description)
+        await neo4j_sync.sync_member_of_create(str(user_id), str(team.id), TeamRole.OWNER.value)
+
         return TeamResponse.model_validate(team)
 ```
 
-### Neo4j Sync Repository
+### Neo4j Sync Helper (싱글턴)
 
 ```python
-# backend/app/repositories/neo4j_sync_repository.py
-class Neo4jSyncRepository:
-    def __init__(self, driver):
+# backend/app/services/neo4j_sync.py
+class Neo4jSyncHelper:
+    """동기화 헬퍼 - 실패 시 로깅만 (PostgreSQL 롤백 안함)"""
+
+    async def _safe_sync(self, operation_name: str, sync_fn) -> bool:
+        if not self.repo:
+            return False
+        try:
+            await sync_fn()
+            logger.debug(f"[Neo4j Sync] {operation_name} 완료")
+            return True
+        except Exception as e:
+            logger.error(f"[Neo4j Sync] {operation_name} 실패: {e}")
+            return False
+
+    async def sync_team_create(self, team_id: str, name: str, description: str | None) -> bool:
+        return await self._safe_sync(
+            f"Team 생성 ({team_id})",
+            lambda: self.repo.upsert_team(team_id, name, description)
+        )
+
+# 싱글턴 인스턴스
+neo4j_sync = Neo4jSyncHelper()
+```
+
+### KGSyncRepository (Raw Cypher)
+
+```python
+# backend/app/repositories/kg/sync_repository.py
+class KGSyncRepository:
+    def __init__(self, driver: AsyncDriver):
         self.driver = driver
 
-    async def create_team_node(self, team_id: str, name: str, description: str | None):
+    async def upsert_team(self, team_id: str, name: str, description: str | None):
         query = '''
         MERGE (t:Team {id: $id})
-        SET t.name = $name, t.description = $description
+        SET t.name = $name, t.description = $description, t.updated_at = datetime()
         '''
-        async with self.driver.session() as session:
-            await session.run(query, {
-                "id": team_id,
-                "name": name,
-                "description": description
-            })
+        await self._execute_write(query, {"id": team_id, "name": name, "description": description})
 
-    async def create_member_of_relation(self, user_id: str, team_id: str, role: str):
+    async def upsert_member_of(self, user_id: str, team_id: str, role: str):
         query = '''
         MATCH (u:User {id: $user_id}), (t:Team {id: $team_id})
         MERGE (u)-[r:MEMBER_OF]->(t)
-        SET r.role = $role
+        SET r.role = $role, r.updated_at = datetime()
         '''
-        async with self.driver.session() as session:
-            await session.run(query, {
-                "user_id": user_id,
-                "team_id": team_id,
-                "role": role
-            })
+        await self._execute_write(query, {"user_id": user_id, "team_id": team_id, "role": role})
 
-    async def delete_team_node(self, team_id: str):
+    async def delete_team(self, team_id: str):
         query = '''
         MATCH (t:Team {id: $id})
         DETACH DELETE t
         '''
-        async with self.driver.session() as session:
-            await session.run(query, {"id": team_id})
+        await self._execute_write(query, {"id": team_id})
 ```
 
 ## 6. 오류 처리

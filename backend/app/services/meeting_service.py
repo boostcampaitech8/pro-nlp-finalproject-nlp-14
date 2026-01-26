@@ -17,6 +17,7 @@ from app.schemas.meeting import (
     UpdateMeetingRequest,
 )
 from app.schemas.team import PaginationMeta
+from app.core.neo4j_sync import neo4j_sync
 
 
 class MeetingService:
@@ -55,6 +56,14 @@ class MeetingService:
         self.db.add(participant)
         await self.db.flush()
         await self.db.refresh(meeting)
+
+        # Neo4j 동기화 (실패해도 PostgreSQL 유지)
+        await neo4j_sync.sync_meeting_create(
+            str(meeting.id), str(team_id), meeting.title, meeting.status, meeting.created_at
+        )
+        await neo4j_sync.sync_participated_in_create(
+            str(user_id), str(meeting.id), ParticipantRole.HOST.value
+        )
 
         return MeetingResponse.model_validate(meeting)
 
@@ -181,6 +190,11 @@ class MeetingService:
         await self.db.flush()
         await self.db.refresh(meeting)
 
+        # Neo4j 동기화
+        await neo4j_sync.sync_meeting_update(
+            str(meeting.id), str(meeting.team_id), meeting.title, meeting.status, meeting.created_at
+        )
+
         return MeetingResponse.model_validate(meeting)
 
     async def delete_meeting(self, meeting_id: UUID, user_id: UUID) -> None:
@@ -202,6 +216,9 @@ class MeetingService:
 
         await self.db.delete(meeting)
         await self.db.flush()
+
+        # Neo4j 동기화
+        await neo4j_sync.sync_meeting_delete(str(meeting_id))
 
     async def _get_team_member(
         self, team_id: UUID, user_id: UUID

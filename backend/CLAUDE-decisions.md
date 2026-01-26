@@ -1,6 +1,6 @@
 # Architecture Decisions - Backend
 
-**Last Updated**: 2026-01-19
+**Last Updated**: 2026-01-26
 
 ---
 
@@ -266,3 +266,71 @@ async def transcribe_recording_task(ctx, recording_id, language="ko"):
 ```
 
 **파일**: `backend/app/workers/arq_worker.py`
+
+---
+
+## ADR-013: Manual Trigger for generate_pr Workflow
+
+**Date**: 2026-01-26
+**Status**: Accepted (임시 - 자동화 조건 충족 시 제거)
+
+### Context
+STT 완료 후 자동으로 `generate_pr_task`를 트리거하는 로직에 다음 문제가 있음:
+
+1. **트랜스크립트 완료 시점 불명확**: 녹음 파일이 뒤늦게 추가될 수 있어, "모든 녹음이 완료되었다"의 기준이 불명확
+2. **Race Condition**: 여러 녹음의 STT가 동시에 완료되면 `generate_pr_task`가 중복 큐잉될 수 있음
+3. **이벤트 순서 불확실**: LiveKit의 `room_finished` 이벤트와 `egress_ended` 이벤트 순서가 보장되지 않음
+
+**문제 시나리오:**
+```
+1. 녹음 A 완료 → STT 완료 → check_all_recordings_processed() = True
+2. generate_pr 실행 → 녹음 A만으로 요약 생성
+3. 녹음 B가 뒤늦게 도착 → STT 완료
+4. 녹음 B의 내용은 요약에 포함되지 않음!
+```
+
+### Decision
+`generate_pr_task` 트리거를 자동에서 수동으로 변경:
+- 자동 트리거 코드 제거 (`arq_worker.py`)
+- 수동 트리거 API 추가 (`POST /meetings/{meeting_id}/generate-pr`)
+- ARQ `_job_id`로 중복 실행 방지
+
+### Consequences
+**Positive**:
+- Race condition 완전 제거
+- 사용자가 원하는 시점에 PR 생성 가능
+- 모든 녹음이 확실히 처리된 후 실행 보장
+
+**Negative**:
+- 사용자가 수동으로 API 호출 필요
+- UX 단계 추가
+
+### 자동화 복귀 조건 (이 ADR 제거 시점)
+다음 조건이 모두 구현되면 자동 트리거로 복귀하고 이 ADR을 제거:
+
+1. **회의 종료 상태 관리**: `room_finished` 이벤트에서 `Meeting.status`를 `COMPLETED`로 변경
+2. **조건부 트리거**: `egress_ended` → STT 완료 시점에:
+   - `Meeting.status == COMPLETED` (회의가 확실히 종료됨)
+   - `check_all_recordings_processed() == True` (모든 녹음 처리 완료)
+   - 두 조건 모두 만족 시에만 `generate_pr_task` 트리거
+3. **중복 방지**: ARQ `_job_id` 또는 Redis 분산 락 적용
+
+**관련 파일 수정 필요:**
+- `livekit_webhooks.py`: `handle_room_finished`에서 회의 상태 변경 추가
+- `arq_worker.py`: `transcribe_recording_task`에서 조건부 자동 트리거 복원
+
+### API
+```
+POST /api/v1/meetings/{meeting_id}/generate-pr
+Response: 202 Accepted
+{
+  "status": "queued",
+  "meeting_id": "...",
+  "job_id": "generate_pr:{meeting_id}",
+  "message": "PR 생성 작업이 시작되었습니다."
+}
+```
+
+**파일**:
+- `backend/app/workers/arq_worker.py` - 자동 트리거 제거
+- `backend/app/api/v1/endpoints/transcripts.py` - 수동 트리거 API 추가

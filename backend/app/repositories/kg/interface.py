@@ -31,10 +31,18 @@ class IKGRepository(Protocol):
         self,
         meeting_id: str,
         summary: str,
-        agenda_ids: list[str],
-        decision_ids: list[str],
+        agendas: list[dict],
     ) -> KGMinutes:
-        """회의록 생성"""
+        """회의록 생성 (원홉 - Meeting-Agenda-Decision 한 번에 생성)
+
+        Args:
+            meeting_id: 회의 ID
+            summary: 회의 요약
+            agendas: [{topic, description, decisions: [{content, context}]}]
+
+        Returns:
+            KGMinutes (Projection)
+        """
         ...
 
     async def get_minutes(self, meeting_id: str) -> KGMinutes | None:
@@ -43,10 +51,6 @@ class IKGRepository(Protocol):
 
     async def get_decision(self, decision_id: str) -> KGDecision | None:
         """결정사항 조회"""
-        ...
-
-    async def approve_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 승인"""
         ...
 
     async def reject_decision(self, decision_id: str, user_id: str) -> bool:
@@ -59,4 +63,20 @@ class IKGRepository(Protocol):
 
     async def merge_decision(self, decision_id: str) -> bool:
         """결정 머지"""
+        ...
+
+    async def approve_and_merge_if_complete(
+        self, decision_id: str, user_id: str
+    ) -> dict:
+        """결정 승인 + 전원 승인 시 자동 머지 (원자적 트랜잭션)
+
+        Returns:
+            {
+                "approved": bool,
+                "merged": bool,
+                "status": str,
+                "approvers_count": int,
+                "participants_count": int,
+            }
+        """
         ...

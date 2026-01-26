@@ -233,13 +233,51 @@ class MockKGRepository:
         self,
         meeting_id: str,
         summary: str,
-        agenda_ids: list[str],
-        decision_ids: list[str],
+        agendas: list[dict],
     ) -> KGMinutes:
-        """회의록 생성"""
-        minutes_id = f"minutes-{uuid4().hex[:8]}"
+        """회의록 생성 (원홉 - Meeting-Agenda-Decision 한 번에 생성)
+
+        Args:
+            meeting_id: 회의 ID
+            summary: 회의 요약
+            agendas: [{topic, description, decisions: [{content, context}]}]
+        """
         now = datetime.now(timezone.utc)
 
+        # Meeting summary 업데이트
+        if meeting_id in self.data["meetings"]:
+            self.data["meetings"][meeting_id]["summary"] = summary
+
+        # Agenda + Decision 생성
+        agenda_ids = []
+        decision_ids = []
+
+        for idx, agenda_data in enumerate(agendas):
+            agenda_id = f"agenda-{uuid4().hex[:8]}"
+            self.data["agendas"][agenda_id] = {
+                "id": agenda_id,
+                "topic": agenda_data.get("topic", ""),
+                "description": agenda_data.get("description", ""),
+                "meeting_id": meeting_id,
+                "order": idx,
+            }
+            agenda_ids.append(agenda_id)
+
+            # Decision 생성
+            for decision_data in agenda_data.get("decisions", []):
+                decision_id = f"decision-{uuid4().hex[:8]}"
+                self.data["decisions"][decision_id] = {
+                    "id": decision_id,
+                    "content": decision_data.get("content", ""),
+                    "context": decision_data.get("context", ""),
+                    "status": "draft",
+                    "agenda_id": agenda_id,
+                    "created_at": now.isoformat(),
+                }
+                decision_ids.append(decision_id)
+
+        # Minutes 메타데이터 저장 (Projection용)
+        minutes_id = f"minutes-{meeting_id}"
         self.data["minutes"][minutes_id] = {
             "id": minutes_id,
             "meeting_id": meeting_id,
@@ -322,22 +360,6 @@ class MockKGRepository:
 
     # --- 상태 변경 (승인/거절/머지) ---
 
-    async def approve_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 승인
-
-        Returns:
-            bool: 승인 성공 여부 (decision과 user가 존재하면 True)
-        """
-        if decision_id not in self.data["decisions"]:
-            return False
-        if user_id not in self.data["users"]:
-            return False
-
-        approval = (user_id, decision_id)
-        if approval not in self.data["approvals"]:
-            self.data["approvals"].append(approval)
-        return True
-
     async def reject_decision(self, decision_id: str, user_id: str) -> bool:
         """결정 거절
 
@@ -368,6 +390,67 @@ class MockKGRepository:
             timezone.utc
         ).isoformat()
         return True
+
+    async def approve_and_merge_if_complete(
+        self, decision_id: str, user_id: str
+    ) -> dict:
+        """결정 승인 + 전원 승인 시 자동 머지
+
+        Returns:
+            dict: 승인/머지 결과
+        """
+        if decision_id not in self.data["decisions"]:
+            return {"approved": False, "merged": False, "status": "not_found"}
+
+        if user_id not in self.data["users"]:
+            return {"approved": False, "merged": False, "status": "user_not_found"}
+
+        decision = self.data["decisions"][decision_id]
+
+        # 승인 관계 추가
+        approval = (user_id, decision_id)
+        if approval not in self.data["approvals"]:
+            self.data["approvals"].append(approval)
+
+        # 참여자 수 확인
+        agenda = self.data["agendas"].get(decision.get("agenda_id", ""))
+        if not agenda:
+            return {
+                "approved": True,
+                "merged": False,
+                "status": decision["status"],
+                "approvers_count": 1,
+                "participants_count": 0,
+            }
+
+        meeting = self.data["meetings"].get(agenda.get("meeting_id", ""))
+        if not meeting:
+            return {
+                "approved": True,
+                "merged": False,
+                "status": decision["status"],
+                "approvers_count": 1,
+                "participants_count": 0,
+            }
+
+        participants = set(meeting.get("participant_ids", []))
+        approvers = {
+            uid for uid, did in self.data["approvals"] if did == decision_id
+        }
+
+        # 전원 승인 시 머지
+        merged = participants == approvers and len(participants) > 0
+        if merged:
+            decision["status"] = "merged"
+            decision["merged_at"] = datetime.now(timezone.utc).isoformat()
+
+        return {
+            "approved": True,
+            "merged": merged,
+            "status": decision["status"],
+            "approvers_count": len(approvers),
+            "participants_count": len(participants),
+        }
 
     # --- 조회 ---
 

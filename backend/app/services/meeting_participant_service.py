@@ -13,6 +13,7 @@ from app.schemas.meeting_participant import (
     AddMeetingParticipantRequest,
     UpdateMeetingParticipantRequest,
 )
+from app.core.neo4j_sync import neo4j_sync
 
 
 class MeetingParticipantService:
@@ -64,6 +65,11 @@ class MeetingParticipantService:
         self.db.add(participant)
         await self.db.flush()
         await self.db.refresh(participant)
+
+        # Neo4j 동기화
+        await neo4j_sync.sync_participated_in_create(
+            str(data.user_id), str(meeting_id), role
+        )
 
         # user 정보 로드
         user = await self._get_user(data.user_id)
@@ -149,6 +155,9 @@ class MeetingParticipantService:
         participant.role = role
         await self.db.flush()
 
+        # Neo4j 동기화
+        await neo4j_sync.sync_participated_in_update(str(user_id), str(meeting_id), role)
+
         # user 정보 로드
         user = await self._get_user(user_id)
 
@@ -182,6 +191,8 @@ class MeetingParticipantService:
         if user_id == current_user_id:
             await self.db.delete(participant)
             await self.db.flush()
+            # Neo4j 동기화
+            await neo4j_sync.sync_participated_in_delete(str(user_id), str(meeting_id))
             return
 
         # 타인을 제거하는 경우 권한 확인
@@ -193,6 +204,9 @@ class MeetingParticipantService:
 
         await self.db.delete(participant)
         await self.db.flush()
+
+        # Neo4j 동기화
+        await neo4j_sync.sync_participated_in_delete(str(user_id), str(meeting_id))
 
     async def _get_meeting(self, meeting_id: UUID) -> Meeting | None:
         """회의 조회"""
