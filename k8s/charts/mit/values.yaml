@@ -24,13 +24,6 @@ redis:
   host: redis-master
   port: 6379
 
-minio:
-  host: minio
-  port: 9000
-  rootUser: ""
-  rootPassword: ""
-  externalUrl: ""
-
 livekit:
   host: livekit
   port: 7880

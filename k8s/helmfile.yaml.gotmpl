@@ -4,8 +4,6 @@
 repositories:
   - name: bitnami
     url: https://charts.bitnami.com/bitnami
-  - name: minio
-    url: https://charts.min.io/
   - name: livekit
     url: https://helm.livekit.io
   - name: neo4j
@@ -27,6 +25,7 @@ releases:
   - name: mit
     labels:
       type: app
+      svc: mit
     chart: ./charts/mit
     namespace: {{ .Values.global.namespace }}
     createNamespace: true
@@ -36,7 +35,6 @@ releases:
         frontend: {{ .Values.frontend | toYaml | nindent 10 }}
         database: {{ .Values.database | toYaml | nindent 10 }}
         redis: {{ .Values.redis | toYaml | nindent 10 }}
-        minio: {{ .Values.minio | toYaml | nindent 10 }}
         livekit: {{ .Values.livekit | toYaml | nindent 10 }}
         jwt: {{ .Values.jwt | toYaml | nindent 10 }}
         app: {{ .Values.app | toYaml | nindent 10 }}
@@ -55,7 +53,8 @@ releases:
   # ===========================================
   - name: postgres
     labels:
-      type: infra
+      type: db
+      svc: postgres
     chart: bitnami/postgresql
     namespace: {{ .Values.global.namespace }}
     values:
@@ -90,6 +89,7 @@ releases:
   - name: redis
     labels:
       type: infra
+      svc: redis
     chart: bitnami/redis
     namespace: {{ .Values.global.namespace }}
     values:
@@ -111,42 +111,12 @@ releases:
             type: ClusterIP
 
   # ===========================================
-  # MinIO
-  # ===========================================
-  - name: minio
-    labels:
-      type: infra
-    chart: minio/minio
-    namespace: {{ .Values.global.namespace }}
-    values:
-      # 한 곳에서만 쓰이는 값 - 하드코딩
-      - fullnameOverride: minio  # nginx.conf에서 'minio:9000'으로 참조
-        mode: standalone
-        buckets:
-          - name: recordings
-            policy: none
-          - name: transcripts
-            policy: none
-        service:
-          type: ClusterIP
-        consoleService:
-          type: ClusterIP
-        # 공유 값 - values에서 참조
-        rootUser: {{ .Values.minio.rootUser }}
-        rootPassword: {{ .Values.minio.rootPassword }}
-        persistence:
-          enabled: true
-          size: {{ .Values.resources.minio.storage }}
-        resources:
-          requests: {{ .Values.resources.minio.requests | toYaml | nindent 12 }}
-          limits: {{ .Values.resources.minio.limits | toYaml | nindent 12 }}
-
-  # ===========================================
   # LiveKit
   # ===========================================
   - name: livekit
     labels:
       type: infra
+      svc: livekit
     chart: livekit/livekit-server
     namespace: {{ .Values.global.namespace }}
     values:
@@ -192,7 +162,8 @@ releases:
   # ===========================================
   - name: neo4j
     labels:
-      type: infra
+      type: db
+      svc: neo4j
     chart: neo4j/neo4j
     namespace: {{ .Values.global.namespace }}
     values:

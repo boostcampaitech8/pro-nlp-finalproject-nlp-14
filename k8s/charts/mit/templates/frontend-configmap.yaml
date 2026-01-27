@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: frontend-nginx-config
-  namespace: {{ .Values.global.namespace }}
+  namespace: { { .Values.global.namespace } }
 data:
   nginx.conf: |
     worker_processes auto;
@@ -50,32 +50,6 @@ data:
             server_name _;
             root /usr/share/nginx/html;
             index index.html;
-
-            # MinIO 스토리지 프록시 (Presigned URL 업로드용)
-            location /storage/ {
-                # /storage/ 제거하고 MinIO로 전달
-                rewrite ^/storage/(.*)$ /$1 break;
-                proxy_pass http://{{ .Values.minio.host }}:{{ .Values.minio.port }};
-
-                # 대용량 파일 업로드 허용 (500MB)
-                client_max_body_size 500M;
-
-                # 프록시 설정
-                proxy_http_version 1.1;
-                proxy_set_header Host {{ .Values.minio.host }}:{{ .Values.minio.port }};
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-
-                # 타임아웃 (대용량 업로드용)
-                proxy_connect_timeout 300s;
-                proxy_send_timeout 300s;
-                proxy_read_timeout 300s;
-
-                # 버퍼링 비활성화 (스트리밍 업로드)
-                proxy_request_buffering off;
-                proxy_buffering off;
-            }
 
             # LiveKit WebSocket 프록시
             # 포트: Helm 차트가 서비스 {{ .Values.livekit.port }} → 컨테이너 7880 매핑

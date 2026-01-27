@@ -35,13 +35,6 @@ ws://{{ .Values.livekit.host }}:{{ .Values.livekit.port }}
 {{- end -}}
 
 {{/*
-MinIO 엔드포인트 생성
-*/}}
-{{- define "mit.minioEndpoint" -}}
-{{ .Values.minio.host }}:{{ .Values.minio.port }}
-{{- end -}}
-
-{{/*
 Neo4j Bolt URL 생성
 */}}
 {{- define "mit.neo4jUri" -}}
