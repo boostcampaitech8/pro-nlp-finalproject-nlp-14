@@ -76,6 +76,34 @@ backend/app/infrastructure/graph/
 | `state.py` | 해당 워크플로우 전용 State | 내부용 |
 | `connect.py` | 노드 연결, 라우팅 로직 (Edge) | 내부용 |
 
+### 그래프 인스턴스 export 규칙
+
+> **원칙**: `workflows/__init__.py`에서 모든 서브그래프의 컴파일된 인스턴스를 export한다.
+
+```python
+# workflows/__init__.py
+from .mit_action.graph import mit_action_graph
+from .rag.graph import rag_graph
+
+__all__ = ["mit_action_graph", "rag_graph"]
+```
+
+**사용 예시**:
+
+```python
+# 일반 사용 (권장) - workflows에서 직접 import
+from app.infrastructure.graph.workflows import mit_action_graph
+
+# 테스트/커스터마이징 (직접 경로) - checkpointer 주입 등
+from app.infrastructure.graph.workflows.mit_action.graph import get_graph
+graph = get_graph(checkpointer=my_checkpointer)
+```
+
+**규칙**:
+- 각 워크플로우의 `graph.py`에서 `{workflow_name}_graph` 인스턴스를 정의
+- `workflows/__init__.py`에서 모든 그래프 인스턴스를 re-export
+- `get_graph()` 함수는 테스트용으로만 사용 (public API 아님)
+
 ---
 
 ## 2. 목적

@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # 데이터베이스
     database_url: str = "postgresql+asyncpg://mit:mitpassword@localhost:5432/mit"
 
+    # Neo4j 데이터베이스
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = ""
+    neo4j_database: str = "neo4j"
+    use_mock_graph: bool = False  # 테스트 시 Mock KG Repository 사용
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
@@ -50,6 +57,9 @@ class Settings(BaseSettings):
     # STT (Speech-to-Text) 설정
     openai_api_key: str = ""
     stt_provider: str = "openai"  # openai, local, self_hosted
+
+    # LLM (Clova Studio) 설정
+    ncp_clovastudio_api_key: str = ""
 
     # ARQ Worker 설정
     arq_redis_url: str = "redis://localhost:6379/1"

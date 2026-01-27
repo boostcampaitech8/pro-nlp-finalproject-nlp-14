@@ -1,4 +1,7 @@
-"""ARQ Worker 설정 및 태스크 정의"""
+"""ARQ Worker 설정 및 태스크 정의
+
+# TODO: 태스크가 늘어나면 도메인별로 분리 (stt_tasks.py, pr_tasks.py)
+"""
 
 import logging
 from urllib.parse import urlparse
@@ -8,6 +11,8 @@ from arq.connections import RedisSettings
 
 from app.core.config import get_settings
 from app.core.database import async_session_maker
+from app.core.neo4j import get_neo4j_driver
+from app.repositories.kg.repository import KGRepository
 from app.services.stt_service import STTService
 from app.services.transcript_service import TranscriptService
 
@@ -60,6 +65,10 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
                     transcript = await transcript_service.get_or_create_transcript(meeting_id)
                     await transcript_service.merge_utterances(meeting_id)
                     logger.info(f"Utterances merged successfully: meeting={meeting_id}")
+
+                    # PR 생성은 수동 트리거로 변경 (POST /meetings/{meeting_id}/generate-pr)
+                    # 자동 트리거 시 race condition으로 중복 실행 가능성 있음
+
                 except Exception as merge_error:
                     logger.error(f"Failed to merge utterances: meeting={meeting_id}, error={merge_error}")
 
@@ -82,6 +91,7 @@ async def transcribe_recording_task(ctx: dict, recording_id: str, language: str 
                         logger.info(f"All recordings processed (with failures), attempting merge: meeting={meeting_id}")
                         await transcript_service.get_or_create_transcript(meeting_id)
                         await transcript_service.merge_utterances(meeting_id)
+                        # PR 생성은 수동 트리거로 변경 (POST /meetings/{meeting_id}/generate-pr)
                 except Exception as merge_error:
                     logger.error(f"Failed to merge utterances after failure: meeting={meeting_id}, error={merge_error}")
 
@@ -234,6 +244,127 @@ async def merge_utterances_task(ctx: dict, meeting_id: str) -> dict:
             }
 
 
+async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
+    """PR 생성 태스크
+
+    STT 완료 후 호출되어 Agenda + Decision을 생성합니다.
+
+    Args:
+        ctx: ARQ 컨텍스트
+        meeting_id: 회의 ID
+
+    Returns:
+        dict: 작업 결과
+    """
+    meeting_uuid = UUID(meeting_id)
+
+    async with async_session_maker() as db:
+        transcript_service = TranscriptService(db)
+
+        try:
+            # 1. 트랜스크립트 조회
+            transcript = await transcript_service.get_transcript(meeting_uuid)
+
+            if not transcript:
+                logger.error(f"Transcript not found: meeting={meeting_id}")
+                return {"status": "failed", "error": "TRANSCRIPT_NOT_FOUND"}
+
+            # 2. generate_pr 워크플로우 실행
+            from app.infrastructure.graph.workflows.generate_pr.graph import (
+                generate_pr_graph,
+            )
+
+            logger.info(f"Starting generate_pr workflow: meeting={meeting_id}")
+
+            result = await generate_pr_graph.ainvoke({
+                "generate_pr_meeting_id": meeting_id,
+                "generate_pr_transcript_text": transcript.full_text or "",
+            })
+
+            agenda_count = len(result.get("generate_pr_agenda_ids", []))
+            decision_count = len(result.get("generate_pr_decision_ids", []))
+
+            logger.info(
+                f"generate_pr completed: meeting={meeting_id}, "
+                f"agendas={agenda_count}, decisions={decision_count}"
+            )
+
+            return {
+                "status": "success",
+                "meeting_id": meeting_id,
+                "agenda_count": agenda_count,
+                "decision_count": decision_count,
+            }
+
+        except Exception as e:
+            logger.exception(f"generate_pr task failed: meeting={meeting_id}")
+            return {
+                "status": "failed",
+                "meeting_id": meeting_id,
+                "error": str(e),
+            }
+
+
+async def mit_action_task(ctx: dict, decision_id: str) -> dict:
+    """Decision에서 Action Item 추출 태스크
+
+    머지된 Decision에서 MIT-action 워크플로우를 실행하여
+    Action Item을 추출하고 GraphDB에 저장합니다.
+
+    Args:
+        ctx: ARQ 컨텍스트
+        decision_id: 머지된 Decision ID
+
+    Returns:
+        dict: 작업 결과
+    """
+    logger.info(f"[mit_action_task] Starting: decision={decision_id}")
+
+    try:
+        # 1. Decision 데이터 조회
+        driver = get_neo4j_driver()
+        kg_repo = KGRepository(driver)
+        decision = await kg_repo.get_decision(decision_id)
+
+        if not decision:
+            logger.error(f"[mit_action_task] Decision not found: {decision_id}")
+            return {"status": "error", "message": "Decision not found"}
+
+        # 2. mit-action 워크플로우 실행
+        from app.infrastructure.graph.workflows.mit_action.graph import (
+            mit_action_graph,
+        )
+
+        result = await mit_action_graph.ainvoke({
+            "mit_action_decision": {
+                "id": decision.id,
+                "content": decision.content,
+                "context": decision.context,
+            },
+            "mit_action_meeting_id": "",  # Decision에서 meeting_id 필요시 별도 조회
+        })
+
+        action_count = len(result.get("mit_action_actions", []))
+        logger.info(
+            f"[mit_action_task] Completed: decision={decision_id}, "
+            f"actions={action_count}"
+        )
+
+        return {
+            "status": "success",
+            "decision_id": decision_id,
+            "action_count": action_count,
+        }
+
+    except Exception as e:
+        logger.exception(f"[mit_action_task] Failed: decision={decision_id}")
+        return {
+            "status": "failed",
+            "decision_id": decision_id,
+            "error": str(e),
+        }
+
+
 def _get_redis_settings() -> RedisSettings:
     """Redis 연결 설정 생성"""
     settings = get_settings()
@@ -255,6 +386,8 @@ class WorkerSettings:
         transcribe_recording_task,
         transcribe_meeting_task,
         merge_utterances_task,
+        generate_pr_task,
+        mit_action_task,
     ]
 
     # Redis 연결 설정 (arq는 인스턴스를 기대)

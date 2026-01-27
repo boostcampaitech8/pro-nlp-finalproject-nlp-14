@@ -525,6 +525,14 @@ API 명세: `api-contract/openapi.yaml`
 | POST | /api/v1/meetings/{id}/recordings/{recordingId}/confirm | 업로드 완료 확인 |
 | GET | /api/v1/meetings/{id}/recordings/{recordingId}/download | 녹음 다운로드 URL |
 
+### Decision API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/decisions/{id} | Decision 상세 조회 |
+| POST | /api/v1/decisions/{id}/reviews | 리뷰 생성 (approve/reject) |
+| GET | /api/v1/meetings/{id}/decisions | 회의의 Decision 목록 |
+
 ### 타입 생성
 
 ```bash

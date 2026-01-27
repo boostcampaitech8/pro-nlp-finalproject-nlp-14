@@ -10,6 +10,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { NaverCallbackPage } from '@/pages/NaverCallbackPage';
 import { MeetingDetailPage } from '@/dashboard/pages/MeetingDetailPage';
 import MeetingRoomPage from '@/dashboard/pages/MeetingRoomPage';
+import { PRReviewPage } from '@/dashboard/pages/PRReviewPage';
 import { TeamDetailPage } from '@/dashboard/pages/TeamDetailPage';
 import logger from '@/utils/logger';
 
@@ -78,6 +79,14 @@ function App() {
         element={
           <PrivateRoute>
             <MeetingRoomPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/dashboard/meetings/:meetingId/review"
+        element={
+          <PrivateRoute>
+            <PRReviewPage />
           </PrivateRoute>
         }
       />

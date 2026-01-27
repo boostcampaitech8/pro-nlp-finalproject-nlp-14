@@ -17,6 +17,7 @@ from app.schemas.team import (
     TeamWithMembersResponse,
     UpdateTeamRequest,
 )
+from app.core.neo4j_sync import neo4j_sync
 
 
 class TeamService:
@@ -45,6 +46,12 @@ class TeamService:
         self.db.add(member)
         await self.db.flush()
         await self.db.refresh(team)
+
+        # Neo4j 동기화 (실패해도 PostgreSQL 유지)
+        await neo4j_sync.sync_team_create(str(team.id), team.name, team.description)
+        await neo4j_sync.sync_member_of_create(
+            str(user_id), str(team.id), TeamRole.OWNER.value
+        )
 
         return TeamResponse.model_validate(team)
 
@@ -155,6 +162,9 @@ class TeamService:
         await self.db.flush()
         await self.db.refresh(team)
 
+        # Neo4j 동기화
+        await neo4j_sync.sync_team_update(str(team.id), team.name, team.description)
+
         return TeamResponse.model_validate(team)
 
     async def delete_team(self, team_id: UUID, user_id: UUID) -> None:
@@ -176,6 +186,9 @@ class TeamService:
 
         await self.db.delete(team)
         await self.db.flush()
+
+        # Neo4j 동기화
+        await neo4j_sync.sync_team_delete(str(team_id))
 
     async def _get_team_member(
         self, team_id: UUID, user_id: UUID

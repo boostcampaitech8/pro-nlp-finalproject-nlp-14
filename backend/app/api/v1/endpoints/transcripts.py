@@ -247,3 +247,60 @@ async def get_transcript_download_url(
             status_code=500,
             detail={"error": "INTERNAL_ERROR", "message": f"다운로드 URL 생성에 실패했습니다: {str(e)}"},
         )
+
+
+@router.post(
+    "/{meeting_id}/generate-pr",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_pr(
+    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
+    transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
+):
+    """회의록 PR 생성 시작
+
+    회의 트랜스크립트를 기반으로 Agenda와 Decision을 추출합니다.
+    STT 변환이 완료된 후에 호출해야 합니다.
+
+    동일 회의에 대해 중복 호출 시 기존 작업이 있으면 무시됩니다.
+    """
+    try:
+        # 트랜스크립트 존재 확인
+        transcript = await transcript_service.get_transcript(meeting.id)
+
+        if not transcript:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다. 먼저 STT 변환을 완료해주세요."},
+            )
+
+        if not transcript.full_text:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "BAD_REQUEST", "message": "트랜스크립트 텍스트가 비어있습니다."},
+            )
+
+        # ARQ 작업 큐잉 (job_id로 중복 방지)
+        pool = await get_arq_pool()
+        job = await pool.enqueue_job(
+            "generate_pr_task",
+            str(meeting.id),
+            _job_id=f"generate_pr:{meeting.id}",
+        )
+        await pool.close()
+
+        return {
+            "status": "queued",
+            "meeting_id": str(meeting.id),
+            "job_id": f"generate_pr:{meeting.id}",
+            "message": "PR 생성 작업이 시작되었습니다.",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to start generate_pr: meeting={meeting.id}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "INTERNAL_ERROR", "message": f"PR 생성 시작에 실패했습니다: {str(e)}"},
+        )
