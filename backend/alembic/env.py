@@ -2,6 +2,10 @@ import asyncio
 import os
 from logging.config import fileConfig
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -15,6 +19,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 환경변수 DATABASE_URL 사용 (K8s ConfigMap에서 주입)
+# 환경변수가 없으면 alembic.ini의 기본값 사용
 database_url = os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
