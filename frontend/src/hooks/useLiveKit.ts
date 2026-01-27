@@ -693,8 +693,13 @@ export function useLiveKit(meetingId: string) {
         existingParticipants.push(mapParticipant(room.localParticipant, true));
         setParticipants(existingParticipants);
 
-        // 6. 로컬 오디오 트랙 생성 및 게시
-        await setupLocalAudioTrack(room);
+        // 6. 로컬 오디오 트랙 생성 및 게시 (마이크 없어도 참여 가능)
+        try {
+          await setupLocalAudioTrack(room);
+        } catch (audioErr) {
+          logger.warn('[useLiveKit] 오디오 트랙 생성 실패 (마이크 없이 참여):', audioErr);
+          setAudioMuted(true);
+        }
 
         // 7. 자동 녹음 시작
         setTimeout(() => {

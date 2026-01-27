@@ -72,13 +72,6 @@ services:
   livekit:
     image: livekit/livekit-server:latest
     container_name: mit-livekit
-    networks:
-      default:
-        # 고정 IP - egress에서 외부 IP를 이 주소로 매핑하여 hairpin NAT 우회
-        ipv4_address: 172.28.0.10
-        # TURN 도메인 별칭 - egress가 turn.mit-hub.com으로 접속 시 livekit 컨테이너로 해석
-        aliases:
-          - turn.mit-hub.com
     ports:
       - "7880:7880"       # HTTP/WebSocket API
       - "7881:7881"       # WebRTC TCP
@@ -138,55 +131,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
-
-  # LiveKit Egress (서버 측 녹음)
-  livekit-egress:
-    image: livekit/egress:latest
-    container_name: mit-livekit-egress
-    # Chrome 샌드박싱을 위한 권한 (v1.7.6+ 필수)
-    cap_add:
-      - SYS_ADMIN
-    # 외부 템플릿 URL 접근을 위한 DNS 설정
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    # Egress Chrome에서 LiveKit WebRTC 연결을 위한 호스트 매핑
-    # Docker Desktop for Mac hairpin NAT 우회: 외부 IP를 LiveKit 내부 IP로 매핑
-    # TURN 도메인은 Docker 네트워크 별칭으로 livekit 컨테이너에 직접 연결
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "${LIVEKIT_NODE_IP}:172.28.0.10"
-    environment:
-      # 내부 네트워크 사용을 위한 설정
-      EGRESS_INSECURE: "true"
-      # EGRESS_CONFIG_BODY: 전체 설정을 환경변수로 전달 (egress.yaml 대체)
-      # docker-compose가 .env의 ${} 변수를 치환함
-      EGRESS_CONFIG_BODY: |
-        api_key: ${LIVEKIT_API_KEY}
-        api_secret: ${LIVEKIT_API_SECRET}
-        ws_url: ws://livekit:7880
-        redis:
-          address: redis:6379
-        s3:
-          access_key: ${MINIO_ROOT_USER:-minioadmin}
-          secret: ${MINIO_ROOT_PASSWORD:-minioadmin}
-          endpoint: http://minio:9000
-          bucket: recordings
-          force_path_style: true
-        log_level: debug
-        cpu_cost:
-          track_composite_cpu_cost: 2.0
-          track_cpu_cost: 1.0
-          room_composite_cpu_cost: 3.0
-        template_base: /home/egress/templates
-    depends_on:
-      livekit:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
     restart: unless-stopped
 
   backend:
@@ -270,33 +214,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    restart: unless-stopped
-
-  stt-worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    container_name: mit-stt-worker
-    command: uv run python -m app.workers.run_worker
-    environment:
-      APP_ENV: ${APP_ENV:-production}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mit}:${POSTGRES_PASSWORD:-mitpassword}@postgres:5432/${POSTGRES_DB:-mit}
-      REDIS_URL: redis://redis:6379/0
-      ARQ_REDIS_URL: redis://redis:6379/1
-      # MinIO 설정
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      # OpenAI STT 설정
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      STT_PROVIDER: ${STT_PROVIDER:-openai}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
     restart: unless-stopped
 
   # Realtime Worker (S2S 파이프라인: STT -> LLM -> TTS)

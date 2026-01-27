@@ -1,7 +1,7 @@
 """Docker Compose 기반 WorkerManager 구현
 
-subprocess로 docker compose run 호출
-K8s 마이그레이션 시 K8sWorkerManager로 교체
+subprocess로 docker run 호출하여 워커 컨테이너 관리
+K8s 환경에서는 kubernetes.py의 K8sWorkerManager가 사용됨
 """
 
 import asyncio
@@ -246,18 +246,3 @@ class DockerWorkerManager:
                     logger.info(f"워커 컨테이너 삭제됨: {worker.worker_id}")
 
         return removed
-
-
-# 싱글톤 인스턴스 (설정에 따라 교체 가능)
-_worker_manager: DockerWorkerManager | None = None
-
-
-def get_worker_manager() -> DockerWorkerManager:
-    """WorkerManager 싱글톤 반환
-
-    TODO: 설정에 따라 DockerWorkerManager / K8sWorkerManager 분기
-    """
-    global _worker_manager
-    if _worker_manager is None:
-        _worker_manager = DockerWorkerManager()
-    return _worker_manager

@@ -10,7 +10,7 @@ class RealtimeWorkerConfig(BaseSettings):
     """Realtime Worker 설정"""
 
     model_config = SettingsConfigDict(
-        env_file=Path(__file__).parent.parent / ".env",  # backend/worker/.env
+        env_file=Path(__file__).parent.parent.parent.parent / ".env",  # 프로젝트 루트/.env
         env_file_encoding="utf-8",
         extra="ignore",
     )

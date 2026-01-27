@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mit
+description: MIT - 협업 기반 조직 지식 시스템
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

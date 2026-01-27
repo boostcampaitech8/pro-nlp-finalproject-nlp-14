@@ -1,15 +1,21 @@
-.PHONY: help install dev dev-fe dev-be build clean test-fe graph
+.PHONY: help install dev dev-fe dev-be dev-worker build clean test-fe graph
 .PHONY: docker-up docker-down docker-logs docker-build docker-rebuild
 .PHONY: db-migrate db-upgrade db-downgrade db-shell db-users db-tables db-query
 .PHONY: infra-up infra-down livekit-up livekit-down backend-up backend-down backend-rebuild backend-logs
 .PHONY: frontend-up frontend-down frontend-rebuild frontend-logs
 .PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
-.PHONY: neo4j-init neo4j-seed 
+.PHONY: neo4j-init neo4j-seed
+.PHONY: k8s-setup k8s-deploy k8s-deploy-prod
+.PHONY: k8s-push k8s-push-be k8s-push-fe k8s-build-worker k8s-push-worker
+.PHONY: k8s-migrate k8s-db-status k8s-neo4j-update k8s-pf k8s-clean k8s-status k8s-logs
 
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
+DEV_OAUTH_ENV = \
+	NAVER_REDIRECT_URI=http://localhost:3000/auth/naver/callback \
+	GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
 
 # ===================
 # Help
@@ -81,6 +87,21 @@ help:
 	@echo "  make backup              - Backup PostgreSQL, MinIO, Redis"
 	@echo "  make backup-list         - List available backups"
 	@echo "  make backup-restore name=YYYYMMDD_HHMMSS - Restore from backup"
+	@echo ""
+	@echo "Kubernetes (k8s):"
+	@echo "  make k8s-setup        - k3d 클러스터 생성"
+	@echo "  make k8s-deploy       - 로컬 배포"
+	@echo "  make k8s-deploy-prod  - 프로덕션 배포"
+	@echo "  make k8s-push         - 전체 빌드 & 재시작"
+	@echo "  make k8s-push-be      - Backend 빌드 & 재시작"
+	@echo "  make k8s-push-fe      - Frontend 빌드 & 재시작"
+	@echo "  make k8s-push-worker  - Worker 빌드 & 재시작"
+	@echo "  make k8s-migrate      - DB 마이그레이션 실행"
+	@echo "  make k8s-db-status    - DB 마이그레이션 상태 확인"
+	@echo "  make k8s-pf           - 포트 포워딩 (백그라운드)"
+	@echo "  make k8s-status       - Pod 상태 확인"
+	@echo "  make k8s-logs svc=X   - 로그 보기 (svc=backend|frontend|worker)"
+	@echo "  make k8s-clean        - 클러스터 삭제"
 
 # ===================
 # Setup & Development
@@ -90,15 +111,16 @@ install:
 	pnpm --filter @mit/shared-types build
 	cd backend && uv sync
 	cd backend/worker && uv sync
+	cd backend/worker && mkdir -p ./build && uv run python -m grpc_tools.protoc -I=. --python_out=./build --grpc_python_out=./build nest.proto
 
 dev:
-	pnpm run dev
+	$(DEV_OAUTH_ENV) pnpm run dev
 
 dev-fe:
 	pnpm run dev:fe
 
 dev-be:
-	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && $(DEV_OAUTH_ENV) uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-worker:
 	pnpm run dev:worker
@@ -382,3 +404,71 @@ backup-restore:
 	@echo "        Restore Complete!"
 	@echo "=========================================="
 	@echo ""
+
+# ===================
+# Kubernetes (k8s)
+# ===================
+K8S_REGISTRY = localhost:5111
+K8S_DIR = k8s
+
+k8s-setup:
+	@./$(K8S_DIR)/scripts/setup-k3d.sh
+
+k8s-deploy:
+	@./$(K8S_DIR)/scripts/build.sh local
+	@./$(K8S_DIR)/scripts/deploy.sh local
+
+k8s-deploy-prod:
+	@./$(K8S_DIR)/scripts/deploy.sh prod
+
+k8s-push: 
+	@./$(K8S_DIR)/scripts/build.sh
+	@kubectl -n mit rollout restart deployment/backend deployment/frontend deployment/worker
+
+k8s-push-be:
+	@docker build -t $(K8S_REGISTRY)/mit-backend:latest -f backend/Dockerfile backend
+	@docker push $(K8S_REGISTRY)/mit-backend:latest
+	@kubectl -n mit rollout restart deployment/backend
+
+k8s-push-fe:
+	@docker build -t $(K8S_REGISTRY)/mit-frontend:latest --build-arg VITE_API_URL=/api/v1 -f frontend/Dockerfile .
+	@docker push $(K8S_REGISTRY)/mit-frontend:latest
+	@kubectl -n mit rollout restart deployment/frontend
+
+k8s-build-worker:
+	@docker build -t $(K8S_REGISTRY)/mit-worker:latest -f backend/worker/Dockerfile backend/worker
+	@docker push $(K8S_REGISTRY)/mit-worker:latest
+
+k8s-push-worker: k8s-build-worker
+	@kubectl -n mit rollout restart deployment/realtime-worker
+
+k8s-migrate:
+	@kubectl exec -n mit deploy/backend -- /app/.venv/bin/alembic upgrade head
+
+k8s-db-status:
+	@kubectl exec -n mit deploy/backend -- /app/.venv/bin/alembic current
+
+k8s-neo4j-update:
+	@kubectl exec -n mit deploy/backend -- /app/.venv/bin/python /app/neo4j/init_schema.py
+
+k8s-pf:
+	@echo "포트 포워딩 시작 (백그라운드)..."
+	@nohup kubectl port-forward -n mit svc/postgres-postgresql 5432:5432 >/dev/null 2>&1 &
+	@nohup kubectl port-forward -n mit svc/redis-master 6379:6379 >/dev/null 2>&1 &
+	@nohup kubectl port-forward -n mit svc/minio 9000:9000 >/dev/null 2>&1 &
+	@nohup kubectl port-forward -n mit svc/lk-server 7880:80 >/dev/null 2>&1 &
+	@nohup kubectl port-forward -n mit svc/neo4j 7474:7474 7687:7687 >/dev/null 2>&1 &
+	@echo "  postgres: localhost:5432"
+	@echo "  redis:    localhost:6379"
+	@echo "  minio:    localhost:9000"
+	@echo "  livekit:  localhost:7880"
+	@echo "  neo4j:    localhost:7474 (browser), localhost:7687 (bolt)"
+
+k8s-clean:
+	@k3d cluster delete mit
+
+k8s-status:
+	@kubectl -n mit get pods
+
+k8s-logs:
+	@kubectl -n mit logs -f deployment/$(svc)

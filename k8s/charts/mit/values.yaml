@@ -1,0 +1,95 @@
+# 차트 기본값 (helmfile에서 오버라이드됨)
+# 이 파일은 helm lint용 스키마 정의
+
+global:
+  namespace: mit
+  environment: development
+  registry: ""
+
+# 앱 포트
+backend:
+  port: 8000
+
+frontend:
+  port: 80
+
+database:
+  host: postgres-postgresql
+  port: 5432
+  name: mit
+  user: mit
+  password: ""
+
+redis:
+  host: redis-master
+  port: 6379
+
+minio:
+  host: minio
+  port: 9000
+  rootUser: ""
+  rootPassword: ""
+  externalUrl: ""
+
+livekit:
+  host: livekit
+  port: 7880
+  apiKey: ""
+  apiSecret: ""
+  externalUrl: ""
+
+neo4j:
+  host: neo4j
+  boltPort: 7687
+  user: neo4j
+  password: ""
+
+jwt:
+  secretKey: ""
+  accessTokenExpireMinutes: 30
+  refreshTokenExpireDays: 7
+
+app:
+  debug: false
+  logLevel: INFO
+  corsOrigins: []
+
+worker:
+  clovaSttEndpoint: ""
+  clovaSttSecret: ""
+  backendApiKey: ""
+
+# NCP Clova Studio
+ncp:
+  clovaStudioApiKey: ""
+
+# OAuth
+oauth:
+  google:
+    clientId: ""
+    clientSecret: ""
+    redirectUri: ""
+  naver:
+    clientId: ""
+    clientSecret: ""
+    redirectUri: ""
+
+ingress:
+  className: ""
+  host: ""
+  tls: false
+  certManager: false
+  clusterIssuer: ""
+  tlsSecretName: ""
+  annotations: {}
+
+resources:
+  backend:
+    requests: { memory: "256Mi", cpu: "100m" }
+    limits: { memory: "512Mi", cpu: "500m" }
+  frontend:
+    requests: { memory: "64Mi", cpu: "50m" }
+    limits: { memory: "128Mi", cpu: "200m" }
+  worker:
+    requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "512Mi", cpu: "500m" }

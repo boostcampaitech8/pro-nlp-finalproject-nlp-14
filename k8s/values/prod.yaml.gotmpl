@@ -1,0 +1,117 @@
+# 프로덕션 환경 - 여러 곳에서 참조되는 값만 관리
+# 시크릿은 환경변수에서 참조 (deploy.sh에서 .env.prod 로드)
+
+global:
+  namespace: mit
+  environment: production
+  registry: {{ env "REGISTRY" | default "" }}
+
+# Ingress (Traefik + Let's Encrypt)
+ingress:
+  className: traefik
+  host: "www.mit-hub.com"
+  tls: true
+  certManager: true
+  clusterIssuer: "letsencrypt-prod"
+
+# 앱 포트
+backend:
+  port: 8000
+
+frontend:
+  port: 80
+
+# Database
+database:
+  host: postgres-postgresql
+  port: 5432
+  name: mit
+  user: mit
+  password: {{ requiredEnv "DB_PASSWORD" }}
+
+# Redis
+redis:
+  host: redis-master
+  port: 6379
+
+# MinIO
+minio:
+  host: minio
+  port: 9000
+  rootUser: {{ requiredEnv "MINIO_USER" }}
+  rootPassword: {{ requiredEnv "MINIO_PASSWORD" }}
+  externalUrl: "https://www.mit-hub.com/storage"
+
+# Neo4j (Graph DB)
+neo4j:
+  host: neo4j
+  boltPort: 7687
+  user: neo4j
+  password: {{ requiredEnv "NEO4J_PASSWORD" }}
+
+# LiveKit (서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지)
+# 포트 80: Helm 차트가 서비스 80 → 컨테이너 7880 매핑
+livekit:
+  host: lk-server
+  port: 80
+  apiKey: {{ requiredEnv "LIVEKIT_API_KEY" }}
+  apiSecret: {{ requiredEnv "LIVEKIT_API_SECRET" }}
+  externalUrl: "wss://www.mit-hub.com/livekit"
+  # RTC 설정 (프로덕션: 서버 외부 IP 사용)
+  rtc:
+    nodeIp: ""  # 빈 문자열 = 자동 감지
+    useExternalIp: true
+    tcpPort: 7881
+    portRangeStart: 50000
+    portRangeEnd: 50020
+
+# JWT
+jwt:
+  secretKey: {{ requiredEnv "JWT_SECRET" }}
+  accessTokenExpireMinutes: 30
+  refreshTokenExpireDays: 7
+
+# App
+app:
+  debug: false
+  logLevel: INFO
+  corsOrigins:
+    - "https://mit-hub.com"
+    - "https://www.mit-hub.com"
+
+# Worker
+worker:
+  clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
+  clovaSttSecret: {{ requiredEnv "CLOVA_STT_SECRET" }}
+  backendApiKey: {{ requiredEnv "BACKEND_API_KEY" }}
+
+# Resources
+resources:
+  backend:
+    requests: { memory: "512Mi", cpu: "200m" }
+    limits: { memory: "1Gi", cpu: "1000m" }
+  frontend:
+    requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "256Mi", cpu: "500m" }
+  worker:
+    requests: { memory: "256Mi", cpu: "200m" }
+    limits: { memory: "1Gi", cpu: "1000m" }
+  postgres:
+    requests: { memory: "512Mi", cpu: "200m" }
+    limits: { memory: "1Gi", cpu: "1000m" }
+    storage: 50Gi
+  redis:
+    requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "256Mi", cpu: "500m" }
+    storage: 2Gi
+  minio:
+    requests: { memory: "512Mi", cpu: "200m" }
+    limits: { memory: "1Gi", cpu: "500m" }
+    storage: 100Gi
+  livekit:
+    requests: { memory: "256Mi", cpu: "200m" }
+    limits: { memory: "1Gi", cpu: "1000m" }
+  neo4j:
+    requests: { cpu: "500m" }
+    memory: "2Gi"  # heap(1g) + pagecache(512m) + headroom
+    storage: 20Gi
