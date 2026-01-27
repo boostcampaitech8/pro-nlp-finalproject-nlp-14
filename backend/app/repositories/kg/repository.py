@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from neo4j import AsyncDriver
+from neo4j.time import DateTime as Neo4jDateTime
 
 from app.models.kg import (
     KGAgenda,
@@ -17,6 +18,17 @@ from app.models.kg import (
     KGMinutesActionItem,
     KGMinutesDecision,
 )
+
+
+def _convert_neo4j_datetime(value: Any) -> datetime:
+    """Neo4j DateTime을 Python datetime으로 변환"""
+    if value is None:
+        return datetime.now(timezone.utc)
+    if isinstance(value, Neo4jDateTime):
+        return value.to_native()
+    if isinstance(value, datetime):
+        return value
+    return datetime.now(timezone.utc)
 
 
 class KGRepository:
@@ -88,6 +100,9 @@ class KGRepository:
         m = dict(record["m"])
         t = dict(record["t"]) if record["t"] else {}
 
+        created_at_raw = m.get("created_at")
+        created_at = _convert_neo4j_datetime(created_at_raw) if created_at_raw else None
+
         return KGMeeting(
             id=m["id"],
             title=m.get("title", ""),
@@ -95,7 +110,7 @@ class KGRepository:
             team_id=t.get("id"),
             team_name=t.get("name"),
             participant_ids=record["participant_ids"] or [],
-            created_at=m.get("created_at"),
+            created_at=created_at,
         )
 
     # =========================================================================
@@ -245,7 +260,7 @@ class KGRepository:
             id=f"minutes-{meeting_id}",  # 가상 ID (실제 노드 아님)
             meeting_id=meeting_id,
             summary=m.get("summary", ""),
-            created_at=m.get("created_at", datetime.now(timezone.utc)),
+            created_at=_convert_neo4j_datetime(m.get("created_at")),
             decisions=decisions,
             action_items=action_items,
         )
@@ -382,7 +397,7 @@ class KGRepository:
             content=d.get("content", ""),
             status=d.get("status", "pending"),
             context=d.get("context"),
-            created_at=d.get("created_at", datetime.now(timezone.utc)),
+            created_at=_convert_neo4j_datetime(d.get("created_at")),
             agenda_id=a.get("id"),
             agenda_topic=a.get("topic"),
             meeting_title=m.get("title"),
