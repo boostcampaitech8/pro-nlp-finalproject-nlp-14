@@ -27,7 +27,7 @@ class AgendaData(BaseModel):
 
     topic: str = Field(description="아젠다 주제")
     description: str = Field(default="", description="아젠다 설명")
-    decisions: list[DecisionData] = Field(default_factory=list, description="결정사항 목록")
+    decision: DecisionData | None = Field(default=None, description="결정사항 (한 회의에서 한 안건당 최대 1개)")
 
 
 class ExtractionOutput(BaseModel):
@@ -63,15 +63,15 @@ async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
         "트랜스크립트:\n{transcript}\n\n"
         "분석 지침:\n"
         "1. 회의에서 논의된 주요 주제(아젠다)를 식별하세요\n"
-        "2. 각 아젠다에서 합의된 결정사항을 추출하세요\n"
-        "3. 결정사항이 없는 아젠다는 decisions를 빈 배열로 두세요\n"
+        "2. 각 아젠다에서 합의된 결정사항을 추출하세요 (한 안건당 최대 1개)\n"
+        "3. 결정사항이 없는 아젠다는 decision을 null로 두세요\n"
         "4. 전체 회의를 2-3문장으로 요약하세요\n\n"
         "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
         "{format_instructions}\n\n"
         "예시:\n"
         '{{"summary": "프로젝트 진행 상황과 다음 스프린트 계획을 논의했습니다.", '
         '"agendas": [{{"topic": "스프린트 리뷰", "description": "지난 스프린트 결과 검토", '
-        '"decisions": [{{"content": "다음 스프린트에서 성능 개선 우선", "context": "사용자 피드백 기반"}}]}}]}}'
+        '"decision": {{"content": "다음 스프린트에서 성능 개선 우선", "context": "사용자 피드백 기반"}}}}]}}'
     )
 
     chain = prompt | llm | parser
@@ -90,7 +90,7 @@ async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
         })
 
         logger.info(f"Agenda 추출 완료: {len(result.agendas)}개")
-        total_decisions = sum(len(a.decisions) for a in result.agendas)
+        total_decisions = sum(1 for a in result.agendas if a.decision is not None)
         logger.info(f"Decision 추출 완료: {total_decisions}개")
 
         # Pydantic 모델을 dict로 변환
@@ -98,10 +98,9 @@ async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
             {
                 "topic": a.topic,
                 "description": a.description,
-                "decisions": [
-                    {"content": d.content, "context": d.context}
-                    for d in a.decisions
-                ],
+                "decision": {"content": a.decision.content, "context": a.decision.context}
+                if a.decision
+                else None,
             }
             for a in result.agendas
         ]

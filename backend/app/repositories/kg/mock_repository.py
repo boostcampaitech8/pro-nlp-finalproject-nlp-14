@@ -240,7 +240,7 @@ class MockKGRepository:
         Args:
             meeting_id: 회의 ID
             summary: 회의 요약
-            agendas: [{topic, description, decisions: [{content, context}]}]
+            agendas: [{topic, description, decision: {content, context} | null}]
         """
         now = datetime.now(timezone.utc)
 
@@ -263,8 +263,9 @@ class MockKGRepository:
             }
             agenda_ids.append(agenda_id)
 
-            # Decision 생성
-            for decision_data in agenda_data.get("decisions", []):
+            # Decision 생성 (decision이 있는 경우만)
+            decision_data = agenda_data.get("decision")
+            if decision_data:
                 decision_id = f"decision-{uuid4().hex[:8]}"
                 self.data["decisions"][decision_id] = {
                     "id": decision_id,

@@ -38,7 +38,7 @@ class IKGRepository(Protocol):
         Args:
             meeting_id: 회의 ID
             summary: 회의 요약
-            agendas: [{topic, description, decisions: [{content, context}]}]
+            agendas: [{topic, description, decision: {content, context} | null}]
 
         Returns:
             KGMinutes (Projection)
