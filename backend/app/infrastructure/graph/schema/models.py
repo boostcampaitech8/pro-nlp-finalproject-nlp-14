@@ -9,13 +9,14 @@ from pydantic import BaseModel, Field
 class ActionItemData(BaseModel):
     """Action Item 데이터 구조
 
-    NOTE: GraphDB 스키마 확정 전 임시 구조. 추후 변경될 수 있음.
+    KGActionItem과 필드명 통일 (변환 로직 단순화)
     """
 
-    content: str = Field(..., description="할 일 내용")
+    title: str = Field(..., description="할 일 내용")
+    description: str | None = Field(None, description="상세 설명")
+    due_date: str | None = Field(None, description="기한 (ISO 8601)")
     assignee_id: str | None = Field(None, description="담당자 ID")
     assignee_name: str | None = Field(None, description="담당자 이름 (추론된)")
-    deadline: str | None = Field(None, description="기한 (ISO 8601)")
     confidence: float = Field(0.0, ge=0.0, le=1.0, description="추출 신뢰도")
 
 

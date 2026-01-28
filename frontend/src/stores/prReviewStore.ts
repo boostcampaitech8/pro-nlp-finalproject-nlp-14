@@ -40,7 +40,7 @@ function calculatePRStatus(meetingId: string, decisions: Decision[]): PRStatus {
   let rejected = 0;
 
   for (const d of decisions) {
-    if (d.status === 'approved' || d.status === 'merged' || d.status === 'latest') {
+    if (d.status === 'approved' || d.status === 'latest') {
       approved++;
     } else if (d.status === 'rejected') {
       rejected++;

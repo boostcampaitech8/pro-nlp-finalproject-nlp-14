@@ -10,7 +10,7 @@ class KGDecision(BaseModel):
 
     id: str
     content: str
-    status: str  # pending, approved, rejected, merged
+    status: str  # draft, rejected, latest, outdated
     context: str | None = None
     created_at: datetime
 
