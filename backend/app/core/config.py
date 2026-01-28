@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = ""
-    neo4j_database: str = "neo4j"
     use_mock_graph: bool = False  # 테스트 시 Mock KG Repository 사용
 
     # Redis
@@ -79,15 +78,6 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:3000/auth/google/callback"
-
-    # Neo4j 설정
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = ""
-    use_mock_graph: bool = False
-
-    # LangGraph 설정
-    ncp_clovastudio_api_key: str = ""
 
     @field_validator("cors_origins", mode="before")
     @classmethod

@@ -4,7 +4,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_planner_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
@@ -16,14 +16,14 @@ class PlanningOutput(BaseModel):
     reasoning: str = Field(description="도구 필요 여부 판단 근거")
 
 # Planning node
-def create_plan(state: OrchestrationState):
+async def create_plan(state: OrchestrationState) -> OrchestrationState:
     """계획 수립 노드
-    
+
     Contract:
         reads: messages, retry_count, evaluation, evaluation_reason
         writes: plan, need_tools
         side-effects: LLM API 호출
-        failures: PLANNING_FAILED -> errors 기록
+        failures: PLANNING_FAILED -> 기본 계획 반환
     """
     logger.info("Planning 단계 진입")
     messages = state.get('messages', [])
@@ -64,29 +64,33 @@ def create_plan(state: OrchestrationState):
             '{{"plan": "간단한 인사 응답", "need_tools": false, "reasoning": "추가 정보 불필요"}}'
         )
 
-    chain = prompt | llm | parser
+    chain = prompt | get_planner_llm() | parser
 
     try:
-        result = chain.invoke({
+        result = None
+        async for chunk in chain.astream({
             "query": query,
             "previous_evaluation": previous_evaluation,
             "evaluation_reason": evaluation_reason,
             "format_instructions": parser.get_format_instructions()
-        })
+        }):
+            result = chunk  # parser는 최종 결과만 반환
 
-        logger.info(f"생성된 Plan: {result.plan}")
-        logger.info(f"도구 사용 필요 여부: {result.need_tools}")
-        logger.info(f"판단 근거: {result.reasoning}")
+        if result is None:
+            raise ValueError("LLM 스트림에서 결과를 받지 못함")
 
-        return {
-            "plan": result.plan,
-            "need_tools": result.need_tools
-        }
+        logger.info(f"Plan: {result.plan}")
+        logger.info(f"도구 필요: {result.need_tools}")
+
+        return OrchestrationState(
+            plan=result.plan,
+            need_tools=result.need_tools
+        )
 
     except Exception as e:
         logger.error(f"Planning 단계에서 에러 발생: {e}")
-        return {
-            "plan": "계획 수립 실패",
-            "need_tools": False
-        }
+        return OrchestrationState(
+            plan="계획 수립 실패",
+            need_tools=False
+        )
 
