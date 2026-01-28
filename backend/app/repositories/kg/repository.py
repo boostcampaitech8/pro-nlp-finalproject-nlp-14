@@ -156,7 +156,7 @@ class KGRepository:
         Args:
             meeting_id: 회의 ID
             summary: 회의 요약
-            agendas: [{topic, description, decisions: [{content, context}]}]
+            agendas: [{topic, description, decision: {content, context} | null}]
 
         Returns:
             KGMinutes (Projection - 생성된 데이터로 구성)
@@ -182,13 +182,13 @@ class KGRepository:
         })
         CREATE (m)-[:CONTAINS]->(a)
 
-        // 3. Decision 생성 (중첩 UNWIND)
+        // 3. Decision 생성 (decision이 있는 경우만)
         WITH m, a, agenda_data
-        UNWIND agenda_data.decisions AS decision_data
+        WHERE agenda_data.decision IS NOT NULL
         CREATE (d:Decision {
             id: 'decision-' + randomUUID(),
-            content: decision_data.content,
-            context: coalesce(decision_data.context, ''),
+            content: agenda_data.decision.content,
+            context: coalesce(agenda_data.decision.context, ''),
             status: 'draft',
             created_at: datetime($created_at)
         })
