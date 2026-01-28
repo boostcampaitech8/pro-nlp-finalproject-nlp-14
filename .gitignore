@@ -88,3 +88,7 @@ CLAUDE*.md
 .claude*/
 .omc/
 AGENTS.md
+
+# worktree
+.worktreeinclude
+setup-worktree-claude.sh
