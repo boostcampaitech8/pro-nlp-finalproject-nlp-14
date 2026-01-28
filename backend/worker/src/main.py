@@ -238,7 +238,9 @@ class RealtimeWorker:
         if response:
             logger.debug(f"트랜스크립트 저장: id={response.id}")
 
-        if self._agent_enabled:
+        # wake word 감지 시에만 Agent 파이프라인 호출
+        if self._agent_enabled and self.config.agent_wake_word in segment.text:
+            logger.info(f"Wake word 감지: '{self.config.agent_wake_word}' in '{segment.text}'")
             asyncio.create_task(self._run_agent_pipeline(participant_name, segment.text))
 
     async def _run_agent_pipeline(self, participant_name: str, user_text: str) -> None:

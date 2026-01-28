@@ -31,6 +31,7 @@ class RealtimeWorkerConfig(BaseSettings):
     # Agent (LLM) 설정
     agent_enabled: bool = True
     agent_stream_path: str = "/api/v1/agent/meeting"
+    agent_wake_word: str = "부덕"  # wake word 감지 시에만 Agent 호출
 
     # TTS 설정
     tts_server_url: str = ""
