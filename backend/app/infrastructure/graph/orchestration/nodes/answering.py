@@ -2,21 +2,20 @@ import logging
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
 
 
-def generate_answer(state: OrchestrationState):
+async def generate_answer(state: OrchestrationState):
     """최종 응답을 생성하는 노드
-    
+
     Contract:
         reads: messages, plan, tool_results
         writes: response
         side-effects: LLM API 호출
-        failures: GENERATION_FAILED -> errors 기록
     """
     logger.info("최종 응답 생성 단계 진입")
 
@@ -28,7 +27,8 @@ def generate_answer(state: OrchestrationState):
     
     # tool_results가 있으면 추가 context로 활용
     if tool_results:
-        logger.info("도구 실행 결과를 포함하여 응답 생성")
+        logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -69,18 +69,22 @@ def generate_answer(state: OrchestrationState):
             ]
         )
 
-    chain = prompt | llm
+    chain = prompt | get_generator_llm()
 
-    result = chain.invoke(
+    response_chunks = []
+    async for chunk in chain.astream(
         {
             "query": query,
             "plan": plan,
             "tool_results": tool_results or "없음",
             "additional_context": additional_context or "없음",
         }
-    )
+    ):
+        chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
+        response_chunks.append(chunk_text)
 
-    response_text = result.content if hasattr(result, "content") else str(result)
-    logger.info(f"생성된 응답: {response_text[:100]}...")
+    response_text = "".join(response_chunks)
+    logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
 
-    return {"response": response_text}
+    return OrchestrationState(response=response_text)
+

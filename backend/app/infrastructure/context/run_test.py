@@ -106,7 +106,7 @@ def print_context_status(manager: ContextManager) -> None:
     print("=" * 60)
 
 
-def invoke_orchestration(
+async def invoke_orchestration(
     manager: ContextManager,
     user_query: str,
     label: str = "Orchestration Graph Test",
@@ -129,7 +129,7 @@ def invoke_orchestration(
     }
 
     try:
-        planning_result = create_plan(state)
+        planning_result = await create_plan(state)
     except Exception as e:
         print(f"[오류] Planning 실행 실패: {e}")
         return
@@ -176,7 +176,7 @@ def invoke_orchestration(
     }
 
     try:
-        final_state = app.invoke(full_state)
+        final_state = await app.ainvoke(full_state)
     except Exception as e:
         print(f"[오류] Orchestration 실행 실패: {e}")
         return
@@ -195,14 +195,20 @@ def invoke_orchestration(
     print("=" * 50)
 
 
-def run_orchestration_test(manager: ContextManager) -> None:
+async def run_orchestration_test(manager: ContextManager) -> None:
     """오케스트레이션 그래프 연동 테스트 (2단계 컨텍스트 주입)"""
-    user_query = input("에이전트 질문을 입력하세요: ").strip()
+    user_query = (await asyncio.to_thread(
+        input, "에이전트 질문을 입력하세요: "
+    )).strip()
     if not user_query:
         print("빈 입력입니다. 기본 질문으로 진행합니다.")
         user_query = "이번 회의에서 결정된 액션 아이템과 담당자를 요약해줘."
 
-    invoke_orchestration(manager, user_query, label="Orchestration Graph Test")
+    await invoke_orchestration(
+        manager,
+        user_query,
+        label="Orchestration Graph Test",
+    )
 
 
 async def run_interactive_test():
@@ -503,7 +509,7 @@ async def run_batch_test() -> ContextManager:
             print(f"[{utterance_id:2d}] {speaker} (질문): {question}")
             await manager.add_utterance(utterance)
 
-            invoke_orchestration(
+            await invoke_orchestration(
                 manager,
                 question,
                 label=f"Agent Call #{agent_call_id} ({speaker})",
@@ -575,6 +581,12 @@ async def run_verification():
     print("Verification passed!")
 
 
+async def run_batch_with_orchestration():
+    """배치 테스트 후 오케스트레이션 연동 테스트 실행"""
+    manager = await run_batch_test()
+    await run_orchestration_test(manager)
+
+
 def main():
     """메인 함수"""
     print()
@@ -592,7 +604,7 @@ def main():
         choice = sys.argv[1]
     else:
         try:
-            choice = input("선택 (1/2/3): ").strip()
+            choice = input("선택 (1/2/3/4): ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n종료합니다.")
             return
@@ -604,8 +616,7 @@ def main():
     elif choice == "3":
         asyncio.run(run_verification())
     elif choice == "4":
-        manager = asyncio.run(run_batch_test())
-        run_orchestration_test(manager)
+        asyncio.run(run_batch_with_orchestration())
     else:
         print("1, 2, 3 또는 4를 선택해주세요.")
 
