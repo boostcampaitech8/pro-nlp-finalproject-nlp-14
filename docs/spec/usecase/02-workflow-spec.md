@@ -445,8 +445,250 @@ def derive_decision_status(decision):
 
 ---
 
+## WF-006: OAuth 인증 플로우
+
+### 인증 흐름
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    OAuth 인증 플로우                              │
+└─────────────────────────────────────────────────────────────────┘
+
+[사용자]
+    │
+    │ 1. 로그인 버튼 클릭 (Google/Naver)
+    ▼
+[Frontend]
+    │
+    │ GET /auth/{provider}/login
+    ▼
+[Backend API]
+    │ 2. State 토큰 생성 (CSRF 방지)
+    │ 3. Authorization URL 반환
+    ▼
+[Frontend]
+    │
+    │ 4. OAuth Provider로 리다이렉트
+    ▼
+[OAuth Provider] ◀───────────────────────────────────────┐
+    │                                                     │
+    │ 5. 사용자 동의 화면                                   │
+    │                                                     │
+    │ 6. Callback URL로 리다이렉트 (code, state)           │
+    ▼                                                     │
+[Frontend Callback Page]                                  │
+    │                                                     │
+    │ GET /auth/{provider}/callback?code=xxx&state=yyy   │
+    ▼                                                     │
+[Backend API]                                             │
+    │ 7. State 검증                                        │
+    │ 8. Code → Access Token 교환 ◀───────────────────────┘
+    │ 9. Access Token → 사용자 프로필 조회
+    │ 10. 사용자 생성/업데이트
+    │ 11. JWT 토큰 발급 (Access + Refresh)
+    │ 12. Neo4j 사용자 동기화
+    ▼
+[Frontend]
+    │ 13. JWT 토큰 저장
+    │ 14. 메인 페이지 이동
+    ▼
+[인증 완료]
+```
+
+### 토큰 갱신 흐름
+
+```
+[Frontend]
+    │
+    │ Access Token 만료 감지
+    ▼
+[Frontend]
+    │
+    │ POST /auth/refresh (Refresh Token)
+    ▼
+[Backend API]
+    │ 1. Refresh Token 검증
+    │ 2. 사용자 조회
+    │ 3. 새 토큰 쌍 발급
+    ▼
+[Frontend]
+    │ 4. 새 토큰 저장
+    │ 5. 요청 재시도
+    ▼
+[갱신 완료]
+```
+
+### 사용자 연동 플로우
+
+```
+OAuth 프로필 수신
+        │
+        ▼
+┌─────────────────────┐
+│ provider_id로 검색   │
+└─────────┬───────────┘
+          │
+    ┌─────┴─────┐
+    │           │
+   있음         없음
+    │           │
+    ▼           ▼
+[프로필     ┌─────────────────────┐
+ 업데이트]  │ email로 기존 사용자 검색│
+    │      └─────────┬───────────┘
+    │                │
+    │         ┌─────┴─────┐
+    │         │           │
+    │        있음         없음
+    │         │           │
+    │         ▼           ▼
+    │    [Provider    [신규 사용자
+    │     연결]        생성]
+    │         │           │
+    └─────────┼───────────┘
+              │
+              ▼
+       [Neo4j 동기화]
+              │
+              ▼
+       [JWT 토큰 발급]
+```
+
+### 상태 전이 테이블
+
+| 현재 상태 | 이벤트 | 다음 상태 | 조건 |
+|-----------|--------|-----------|------|
+| 미인증 | OAuth 로그인 시작 | Provider 인증 중 | - |
+| Provider 인증 중 | 사용자 동의 | Callback 처리 중 | - |
+| Callback 처리 중 | 신규 사용자 | 인증 완료 | 사용자 생성 성공 |
+| Callback 처리 중 | 기존 사용자 | 인증 완료 | 사용자 조회 성공 |
+| 인증 완료 | Access Token 만료 | 토큰 갱신 필요 | 30분 경과 |
+| 토큰 갱신 필요 | Refresh Token 유효 | 인증 완료 | 갱신 성공 |
+| 토큰 갱신 필요 | Refresh Token 만료 | 미인증 | 재로그인 필요 |
+
+---
+
+## WF-007: Decision 승인 플로우 (상세)
+
+### 전원 승인 및 자동 Merge 플로우
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Decision 승인 상세 플로우                       │
+└─────────────────────────────────────────────────────────────────┘
+
+[사용자]
+    │
+    │ Approve 버튼 클릭
+    ▼
+[Frontend - prReviewStore]
+    │
+    │ approveDecision(decisionId)
+    ▼
+[prReviewService]
+    │
+    │ POST /decisions/{id}/reviews {action: "approve"}
+    ▼
+[Backend API - decisions.py]
+    │
+    │ ReviewService.create_review()
+    ▼
+[ReviewService]
+    │
+    │ KGRepository.approve_and_merge_if_complete()
+    ▼
+[Neo4j - 원자적 트랜잭션]
+    │
+    │ 1. (User)-[:APPROVED_BY]->(Decision) 생성
+    │ 2. 참여자 수 vs 승인자 수 비교
+    │
+    ├─────────────────────────────────────────┐
+    │                                         │
+    │ 전원 승인 완료                            │ 부분 승인
+    │                                         │
+    ▼                                         ▼
+┌─────────────────────┐               ┌─────────────────────┐
+│ Decision.status     │               │ 승인 카운트만 증가    │
+│ = 'latest'          │               └─────────────────────┘
+│ Decision.approved_at│                         │
+│ = datetime()        │                         │
+└─────────┬───────────┘                         │
+          │                                     │
+          │ 기존 latest 처리                      │
+          ▼                                     │
+┌─────────────────────┐                         │
+│ old Decision.status │                         │
+│ = 'outdated'        │                         │
+│ (Decision)-[:SUPERSEDES]->(old)              │
+└─────────┬───────────┘                         │
+          │                                     │
+          │ is_merged = true                    │ is_merged = false
+          ▼                                     │
+┌─────────────────────┐                         │
+│ ARQ 큐잉:            │                         │
+│ mit_action_task     │                         │
+└─────────┬───────────┘                         │
+          │                                     │
+          └─────────────────┬───────────────────┘
+                            │
+                            ▼
+                    [Response 반환]
+                            │
+                            ▼
+                    [Frontend 상태 업데이트]
+                            │
+                            ├─▶ Decision 리스트 갱신
+                            ├─▶ Agenda 그룹 재계산
+                            └─▶ PR 상태 재계산
+```
+
+### Neo4j Cypher 쿼리 (원자적 Merge)
+
+```cypher
+// 승인 + 전원 확인 + 상태 변경 (단일 트랜잭션)
+MATCH (d:Decision {id: $decision_id})<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
+MATCH (u:User {id: $user_id})
+
+// 1. 승인 관계 생성
+MERGE (u)-[:APPROVED_BY]->(d)
+
+// 2. 참여자 vs 승인자 카운트
+WITH d, m
+MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
+WITH d, collect(participant) as participants
+
+MATCH (approver:User)-[:APPROVED_BY]->(d)
+WITH d, participants, collect(approver) as approvers
+
+// 3. 전원 승인 시 상태 변경
+WHERE size(approvers) = size(participants)
+SET d.status = 'latest', d.approved_at = datetime()
+
+// 4. 기존 latest를 outdated로 변경
+WITH d
+OPTIONAL MATCH (old:Decision {status: 'latest'})<-[:HAS_DECISION]-(a:Agenda)-[:HAS_DECISION]->(d)
+WHERE old.id <> d.id
+SET old.status = 'outdated'
+MERGE (d)-[:SUPERSEDES]->(old)
+
+RETURN d, size(participants) as participant_count, size(approvers) as approver_count
+```
+
+### 상태 전이 테이블
+
+| 현재 상태 | 이벤트 | 다음 상태 | 조건 | 후처리 |
+|-----------|--------|-----------|------|--------|
+| draft | Approve (부분) | draft | 전원 미달성 | 승인 카운트 증가 |
+| draft | Approve (전원) | latest | 전원 승인 | mit_action_task 큐잉 |
+| draft | Reject | rejected | 1명 이상 거부 | - |
+| latest | 새 Decision approved | outdated | 같은 Agenda | SUPERSEDES 관계 생성 |
+
+---
+
 ## 참조
 
 - 유즈케이스: [usecase/01-usecase-specs.md](01-usecase-specs.md)
 - 도메인 규칙: [domain/03-domain-rules.md](../domain/03-domain-rules.md)
 - 비즈니스 규칙: [policy/01-business-rules.md](../policy/01-business-rules.md)
+- OAuth 인증: [feature/oauth-authentication.md](../feature/oauth-authentication.md)
+- PR Review 시스템: [feature/pr-review-system.md](../feature/pr-review-system.md)

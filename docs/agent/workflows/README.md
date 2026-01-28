@@ -617,6 +617,162 @@ await kg_repo.create_action_items(
 
 ---
 
+## 6. Realtime Worker 통합
+
+회의 진행 중 실시간 STT 처리를 위한 별도 Worker 서비스입니다.
+
+### 6.1 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Realtime Worker 아키텍처                       │
+└─────────────────────────────────────────────────────────────────┘
+
+[Client Browser]
+      │
+      │ WebRTC (LiveKit SFU)
+      ▼
+[LiveKit Room] ◀───────────────────────────────────────┐
+      │                                                 │
+      │ Audio Track Subscription                       │
+      ▼                                                 │
+[Realtime Worker]                                       │
+      │                                                 │
+      ├─▶ [Clova Speech STT] ─────▶ Transcript         │
+      │         │                                       │
+      │         └─▶ POST /api/v1/meetings/{id}/transcripts
+      │                                                 │
+      └─▶ VAD Events (DataPacket) ◀────────────────────┘
+              │
+              └─▶ epFlag=true (발화 종료 표시)
+```
+
+### 6.2 Worker 구성 요소
+
+| 구성 요소 | 파일 | 역할 |
+|-----------|------|------|
+| **RealtimeWorker** | `worker/src/main.py` | 메인 오케스트레이션 |
+| **LiveKitBot** | `worker/src/livekit.py` | LiveKit Room Bot 연결 |
+| **ClovaSpeechSTTClient** | `worker/src/clients/stt.py` | Clova Speech gRPC 스트리밍 |
+| **BackendAPIClient** | `worker/src/clients/backend.py` | Backend API 통신 |
+
+### 6.3 Worker Manager
+
+Worker 라이프사이클을 관리하는 추상화 레이어입니다.
+
+**위치**: `backend/app/infrastructure/worker_manager/`
+
+| 구현체 | 환경 | 사용 기술 |
+|--------|------|-----------|
+| `DockerWorkerManager` | 로컬/Docker Compose | Docker SDK |
+| `K8sWorkerManager` | Kubernetes | K8s Job API |
+
+**자동 선택 로직**:
+```python
+def get_worker_manager():
+    if Path("/.dockerenv").exists():
+        return DockerWorkerManager()
+    else:
+        return K8sWorkerManager()
+```
+
+### 6.4 Worker 라이프사이클
+
+```
+1. Meeting 시작 (room_started 웹훅)
+   └─▶ worker_manager.start_worker(meeting_id)
+        ├─▶ Docker: docker run -d --name realtime-worker-{meeting_id}
+        └─▶ K8s: Create Job realtime-worker-{meeting_id}
+
+2. Worker 실행
+   └─▶ LiveKit Room에 Bot으로 참여
+   └─▶ 참여자 오디오 트랙 구독
+   └─▶ Clova Speech gRPC 스트리밍
+   └─▶ 실시간 Transcript → Backend API
+
+3. Meeting 종료 (room_finished 웹훅, 30초 후)
+   └─▶ worker_manager.stop_worker(worker_id)
+        ├─▶ Docker: docker stop realtime-worker-{meeting_id}
+        └─▶ K8s: Delete Job realtime-worker-{meeting_id}
+```
+
+### 6.5 VAD 통합
+
+클라이언트 VAD (Voice Activity Detection)와 Worker STT의 통합:
+
+```
+Client (useLiveKit.ts)
+      │
+      └─▶ @ricky0123/vad-web (Silero VAD)
+              │
+              └─▶ speech_start / speech_end 이벤트
+                      │
+                      └─▶ DataPacket → LiveKit Room
+                              │
+                              └─▶ Worker receives via on_data_received
+                                      │
+                                      └─▶ stt_client.mark_end_of_speech()
+                                              │
+                                              └─▶ Clova gRPC: epFlag=true
+                                                      │
+                                                      └─▶ Final Transcript 발행
+```
+
+### 6.6 Silence Filtering
+
+불필요한 오디오 데이터 필터링:
+
+```python
+# RMS (Root Mean Square) 에너지 계산
+def calculate_rms(audio_chunk: bytes) -> float:
+    samples = np.frombuffer(audio_chunk, dtype=np.int16)
+    return np.sqrt(np.mean(samples.astype(np.float32) ** 2))
+
+# 임계값 이하 오디오 스킵
+if calculate_rms(chunk) < SILENCE_THRESHOLD:
+    continue  # STT에 전송하지 않음
+```
+
+**설정값**: `SILENCE_THRESHOLD = 300.0` (기본값)
+
+### 6.7 환경 설정
+
+```bash
+# LiveKit
+LIVEKIT_WS_URL=wss://livekit.example.com
+LIVEKIT_API_KEY=xxx
+LIVEKIT_API_SECRET=xxx
+
+# Clova Speech STT
+CLOVA_STT_ENDPOINT=clovaspeech-gw.ncloud.com:50051
+CLOVA_STT_SECRET=xxx
+
+# Backend API
+BACKEND_API_URL=http://backend:8000
+BACKEND_API_KEY=xxx
+
+# Worker
+MEETING_ID=meeting-uuid  # Worker Manager가 주입
+```
+
+### 6.8 K8s 리소스 설정
+
+```yaml
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+```
+
+**Job 설정**:
+- `ttl_seconds_after_finished`: 300 (완료 후 5분 후 정리)
+- `backoff_limit`: 0 (재시도 없음)
+
+---
+
 ## 부록: 디렉토리 구조
 
 ```
