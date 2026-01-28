@@ -437,3 +437,71 @@ class KGRepository:
         if not records:
             return False
         return records[0].get("all_approved", False)
+
+    # =========================================================================
+    # ActionItem - 액션아이템
+    # =========================================================================
+
+    async def create_action_items_batch(
+        self,
+        decision_id: str,
+        action_items: list[dict],
+    ) -> list[str]:
+        """ActionItem 일괄 생성 + TRIGGERS + ASSIGNED_TO 관계
+
+        Args:
+            decision_id: 연결할 Decision ID
+            action_items: [{"id", "title", "description", "due_date", "assignee_id"}]
+
+        Returns:
+            생성된 ActionItem ID 목록
+        """
+        if not action_items:
+            return []
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # UUID 미리 생성
+        for item in action_items:
+            if "id" not in item:
+                item["id"] = f"action-{uuid4()}"
+
+        query = """
+        MATCH (d:Decision {id: $decision_id})
+
+        UNWIND $items AS item
+        CREATE (ai:ActionItem {
+            id: item.id,
+            title: item.title,
+            description: coalesce(item.description, ''),
+            due_date: CASE WHEN item.due_date IS NOT NULL
+                           THEN datetime(item.due_date)
+                           ELSE null END,
+            status: 'pending',
+            created_at: datetime($created_at)
+        })
+        CREATE (d)-[:TRIGGERS]->(ai)
+
+        // ASSIGNED_TO 관계 (assignee_id가 있는 경우)
+        WITH ai, item
+        OPTIONAL MATCH (u:User {id: item.assignee_id})
+        FOREACH (_ IN CASE WHEN u IS NOT NULL THEN [1] ELSE [] END |
+            CREATE (u)-[:ASSIGNED_TO {assigned_at: datetime($created_at)}]->(ai)
+        )
+
+        RETURN collect(ai.id) as action_ids
+        """
+
+        records = await self._execute_write(
+            query,
+            {
+                "decision_id": decision_id,
+                "items": action_items,
+                "created_at": now,
+            },
+        )
+
+        if not records:
+            return []
+
+        return records[0].get("action_ids", [])
