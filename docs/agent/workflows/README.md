@@ -20,27 +20,30 @@
 
 ## 1. 워크플로우 개요
 
-MitHub는 회의 트랜스크립트에서 지식을 추출하고 구조화하는 2개의 LangGraph 워크플로우를 운영합니다.
+MitHub는 회의 트랜스크립트에서 지식을 추출하고 구조화하는 3개의 LangGraph 워크플로우를 운영합니다.
 
 ### 1.1 워크플로우 목록
 
 | 워크플로우 | 목적 | 입력 | 출력 | 트리거 |
 |-----------|------|------|------|--------|
-| `generate_pr` | 트랜스크립트에서 Agenda와 Decision 추출 | 회의 트랜스크립트 | Agenda + Decision IDs | 수동 (POST /meetings/{id}/generate-pr) |
-| `mit_action` | Decision에서 Action Item 추출 (예정) | Decision 데이터 | Action Items | Decision 머지 완료 시 (자동) |
+| `orchestration` | 사용자 질의에 대한 Agent 응답 생성 | 사용자 메시지 (Chat) | Agent 응답 | Chat API 호출 |
+| `generate_pr` | 트랜스크립트에서 Agenda와 Decision 추출 | 회의 트랜스크립트 | Agenda + Decision IDs | POST /meetings/{id}/generate-pr |
+| `mit_action` | Decision에서 Action Item 추출 (예정) | Decision 데이터 | Action Items | Decision 머지 완료 시 |
 
 ### 1.2 워크플로우 통합 구조
 
 ```
-[STT 완료] → [Transcript 병합] → [수동 트리거: generate_pr]
+[STT 완료] → [Transcript 병합] → [트리거: generate_pr]
                                         ↓
                                   [Meeting-Agenda-Decision 생성]
                                         ↓
                                   [Decision 머지 시]
                                         ↓
-                                  [자동 트리거: mit_action]
+                                  [트리거: mit_action]
                                         ↓
                                   [Action Items 생성]
+                                        ↓
+                                  [담당자 알림 / 외부 도구 연동 (예정)]
 ```
 
 ### 1.3 설계 원칙
@@ -122,6 +125,13 @@ class GeneratePrState(TypedDict, total=False):
 }
 ```
 
+**Note**: 현재 추출 구조는 Agenda를 Meeting 하위에 직접 생성하는 단순화된 형태입니다. 도메인 모델 정의(`02-conceptual-model.md`)에 따르면:
+- Agenda는 Team 레벨 엔티티 (`team_id` 보유, semantic matching용 embedding)
+- Meeting과 Agenda 사이에 Minutes 엔티티가 중개 (Minutes M:N Agenda via MinutesAgenda)
+- Decision은 `agenda_id`와 `minutes_id` 두 FK를 보유
+
+현재 구현은 Minutes 노드를 생략하고 `(Meeting)-[:CONTAINS]->(Agenda)`로 직접 연결하고 있어, 도메인 정의와 불일치합니다. Neo4j 쿼리 및 추출 구조의 업데이트가 필요합니다.
+
 **주요 로직**:
 1. 트랜스크립트 길이 제한 (8000자, 토큰 제한 고려)
 2. Pydantic 출력 파서 사용 (구조화된 추출)
@@ -149,7 +159,7 @@ class GeneratePrState(TypedDict, total=False):
 2. 반환된 `KGMinutes`에서 `decision_ids` 추출
 3. `agenda_ids`는 현재 반환하지 않음 (추후 개선 예정)
 
-**Note**: Minutes는 Meeting + Agenda + Decision의 Projection (별도 노드 없음)
+**Note**: 현재 구현에서 Minutes는 별도 노드 없이 Meeting + Agenda + Decision의 Projection으로 처리됩니다. 도메인 모델과의 정합성을 위해 Minutes 노드 도입 및 Neo4j 쿼리 업데이트가 필요합니다 (도메인 모델 참조: `02-conceptual-model.md`).
 
 **로깅**:
 - `INFO`: KG 저장 시작/완료
