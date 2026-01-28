@@ -25,6 +25,11 @@ def get_neo4j_driver() -> AsyncDriver:
     driver = AsyncGraphDatabase.driver(
         settings.neo4j_uri,
         auth=(settings.neo4j_user, settings.neo4j_password),
+        # 원격 DB 연결 안정화 설정 (VPN 환경 최적화)
+        max_connection_lifetime=300,   # 연결 수명 5분 (VPN idle timeout 대응)
+        max_connection_pool_size=10,   # 최대 연결 풀 크기 (로컬 개발 환경)
+        connection_acquisition_timeout=30.0,  # 연결 획득 타임아웃 30초
+        connection_timeout=30.0,       # 연결 타임아웃 30초
     )
     logger.info(f"[Neo4j] Driver created for {settings.neo4j_uri}")
     return driver

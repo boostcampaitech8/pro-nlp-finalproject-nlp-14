@@ -20,6 +20,7 @@ from app.schemas.transcript import (
     UtteranceResponse,
 )
 from app.services.transcript_service import TranscriptService
+from app.services.transcript_service_ import TranscriptService as TranscriptService_
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,11 @@ router = APIRouter(prefix="/meetings", tags=["Transcripts"])
 def get_transcript_service(db: Annotated[AsyncSession, Depends(get_db)]) -> TranscriptService:
     """TranscriptService 의존성"""
     return TranscriptService(db)
+
+
+def get_transcript_service_(db: Annotated[AsyncSession, Depends(get_db)]) -> TranscriptService_:
+    """TranscriptService_ 의존성 (새 transcripts 테이블)"""
+    return TranscriptService_(db)
 
 
 @router.post(
@@ -255,29 +261,23 @@ async def get_transcript_download_url(
 )
 async def generate_pr(
     meeting: Annotated[Meeting, Depends(require_meeting_participant)],
-    transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
+    transcript_service_: Annotated[TranscriptService_, Depends(get_transcript_service_)],
 ):
     """회의록 PR 생성 시작
 
     회의 트랜스크립트를 기반으로 Agenda와 Decision을 추출합니다.
-    STT 변환이 완료된 후에 호출해야 합니다.
+    실시간 STT 변환이 완료된 후에 호출해야 합니다.
 
     동일 회의에 대해 중복 호출 시 기존 작업이 있으면 무시됩니다.
     """
     try:
-        # 트랜스크립트 존재 확인
-        transcript = await transcript_service.get_transcript(meeting.id)
+        # 트랜스크립트 존재 확인 (새 transcripts 테이블)
+        transcript_response = await transcript_service_.get_meeting_transcripts(meeting.id)
 
-        if not transcript:
+        if not transcript_response.full_text:
             raise HTTPException(
                 status_code=404,
-                detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다. 먼저 STT 변환을 완료해주세요."},
-            )
-
-        if not transcript.full_text:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "BAD_REQUEST", "message": "트랜스크립트 텍스트가 비어있습니다."},
+                detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다. 먼저 실시간 STT 변환을 완료해주세요."},
             )
 
         # ARQ 작업 큐잉 (job_id로 중복 방지)

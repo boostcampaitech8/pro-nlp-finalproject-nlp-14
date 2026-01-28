@@ -21,10 +21,6 @@ data:
   # CORS
   CORS_ORIGINS: {{ include "mit.corsOrigins" . | quote }}
 
-  # MinIO
-  MINIO_ENDPOINT: {{ include "mit.minioEndpoint" . | quote }}
-  STORAGE_EXTERNAL_URL: {{ .Values.minio.externalUrl | quote }}
-
   # LiveKit
   LIVEKIT_WS_URL: {{ include "mit.livekitWsUrl" . | quote }}
   LIVEKIT_EXTERNAL_URL: {{ .Values.livekit.externalUrl | quote }}

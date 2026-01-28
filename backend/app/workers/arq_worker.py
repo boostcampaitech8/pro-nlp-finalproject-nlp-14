@@ -13,8 +13,9 @@ from app.core.config import get_settings
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
 from app.repositories.kg.repository import KGRepository
+from app.schemas.transcript_ import GetMeetingTranscriptsResponse
 from app.services.stt_service import STTService
-from app.services.transcript_service import TranscriptService
+from app.services.transcript_service_ import TranscriptService
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,7 @@ async def merge_utterances_task(ctx: dict, meeting_id: str) -> dict:
 async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
     """PR 생성 태스크
 
-    STT 완료 후 호출되어 Agenda + Decision을 생성합니다.
+    실시간 STT 완료 후 호출되어 Agenda + Decision을 생성합니다.
 
     Args:
         ctx: ARQ 컨텍스트
@@ -259,15 +260,18 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
     meeting_uuid = UUID(meeting_id)
 
     async with async_session_maker() as db:
-        transcript_service = TranscriptService(db)
+        # 새로운 transcripts 테이블에서 데이터 조회
+        transcript_service_ = TranscriptService(db)
 
         try:
-            # 1. 트랜스크립트 조회
-            transcript = await transcript_service.get_transcript(meeting_uuid)
+            # 1. 트랜스크립트 조회 (새로운 테이블)
+            transcript_response: GetMeetingTranscriptsResponse = (
+                await transcript_service_.get_meeting_transcripts(meeting_uuid)
+            )
 
-            if not transcript:
-                logger.error(f"Transcript not found: meeting={meeting_id}")
-                return {"status": "failed", "error": "TRANSCRIPT_NOT_FOUND"}
+            if not transcript_response.full_text:
+                logger.error(f"Transcript empty: meeting={meeting_id}")
+                return {"status": "failed", "error": "TRANSCRIPT_EMPTY"}
 
             # 2. generate_pr 워크플로우 실행
             from app.infrastructure.graph.workflows.generate_pr.graph import (
@@ -278,7 +282,7 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
 
             result = await generate_pr_graph.ainvoke({
                 "generate_pr_meeting_id": meeting_id,
-                "generate_pr_transcript_text": transcript.full_text or "",
+                "generate_pr_transcript_text": transcript_response.full_text,
             })
 
             agenda_count = len(result.get("generate_pr_agenda_ids", []))

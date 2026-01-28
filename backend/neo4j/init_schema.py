@@ -16,9 +16,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
-# .env 파일 로드 (docker/.env 또는 backend/.env)
-load_dotenv(Path(__file__).parent.parent.parent / "docker" / ".env")
-load_dotenv(Path(__file__).parent.parent / ".env")
+# .env 파일 로드 (.env)
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 # 로깅 설정
 logging.basicConfig(
@@ -91,9 +90,7 @@ def _execute_cypher_file(driver, file_path: Path) -> None:
         # 빈 줄과 주석만 있는 경우 스킵
         if line and not line.startswith("//"):
             # 줄 단위 주석 제거
-            clean_lines = [
-                l for l in line.split("\n") if not l.strip().startswith("//")
-            ]
+            clean_lines = [l for l in line.split("\n") if not l.strip().startswith("//")]
             statement = "\n".join(clean_lines).strip()
             if statement:
                 statements.append(statement)
