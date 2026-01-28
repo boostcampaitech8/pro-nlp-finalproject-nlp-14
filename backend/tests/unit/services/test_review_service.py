@@ -102,7 +102,7 @@ class TestReviewService:
             )
 
         assert response.merged is True
-        assert response.status == "merged"
+        assert response.status == "latest"
         assert response.approvers_count == 3
         assert response.participants_count == 3
 
@@ -160,7 +160,7 @@ class TestReviewService:
 
         assert response.id == decision_id
         assert response.content == "RESTful API 설계 원칙 준수"
-        assert response.status == "merged"
+        assert response.status == "latest"
         assert "user-1" in response.approvers
         assert "user-2" in response.approvers
 
@@ -276,4 +276,4 @@ class TestReviewService:
 
         # 큐잉 실패해도 머지는 성공
         assert response.merged is True
-        assert response.status == "merged"
+        assert response.status == "latest"

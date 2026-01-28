@@ -161,20 +161,45 @@
         │     │           │
         │   Yes          No
         │     │           │
-        │     ▼           │
-        │ ┌──────────┐    │
-        │ │ approved │    │
-        │ │-> GT 반영│    │
-        │ │ (즉시)   │    │
-        │ └──────────┘    │
-        │                 │
-        └────────┬────────┘
-                 │
-                 ▼
-           ┌──────────┐
-           │ rejected │ (reject 요청 시)
-           │          │
-           └──────────┘
+        │     ▼           ▼
+        │ ┌──────────┐ ┌──────────┐
+        │ │  latest  │ │ approved │
+        │ │-> GT 반영│ │ (부분)   │
+        │ │-> Action │ └──────────┘
+        │ │   추출   │
+        │ └──────────┘
+        │
+        └────────────────────┐
+                             │
+                             ▼
+                       ┌──────────┐
+                       │ rejected │ (reject 요청 시)
+                       └──────────┘
+```
+
+### Decision Merge 후처리
+
+```
+Decision 전원 approve
+        │
+        ▼
+┌─────────────────┐
+│ status: latest  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐
+│ ReviewService._enqueue_mit_action() │
+│ ARQ 큐잉: mit_action_task           │
+└────────┬────────────────────────────┘
+         │
+         ▼ (비동기)
+┌─────────────────────────────────────┐
+│ mit_action_task (ARQ Worker)        │
+│ - Decision 데이터 조회               │
+│ - mit_action_graph.ainvoke()        │
+│ - Action Item 추출 및 저장           │
+└─────────────────────────────────────┘
 ```
 
 ### PR 상태 정의
@@ -189,8 +214,8 @@
 
 | 상태 | 설명 | 효과 |
 |------|------|------|
-| pending | 리뷰 대기 중 | Decision 상태: draft |
-| approved | 승인됨 | Decision 상태: latest, 즉시 GT 반영 |
+| draft | 리뷰 대기 중 | Decision 상태: draft |
+| approved | 전원 승인 완료 | Decision 상태: latest, GT 반영, mit-action 트리거 (Action Item 추출) |
 | rejected | 거부됨 | Decision 상태: rejected |
 
 ---

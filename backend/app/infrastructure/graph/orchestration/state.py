@@ -1,6 +1,6 @@
 import datetime
 import operator
-from typing import Annotated, List, TypedDict
+from typing import Annotated, List, NotRequired, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -30,3 +30,9 @@ class OrchestrationState(TypedDict):
 
     # Response
     response: Annotated[str, "final response"]  # 최종 응답 (덮어쓰기)
+
+    # Context Engineering (optional)
+    planning_context: NotRequired[str]
+    additional_context: NotRequired[str]
+    required_topics: NotRequired[list[str]]
+    skip_planning: NotRequired[bool]

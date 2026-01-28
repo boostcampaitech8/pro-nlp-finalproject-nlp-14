@@ -3,7 +3,7 @@
  * main 브랜치 API 스키마 기반
  */
 
-export type DecisionStatus = 'draft' | 'approved' | 'rejected' | 'latest' | 'outdated' | 'pending' | 'merged';
+export type DecisionStatus = 'draft' | 'approved' | 'rejected' | 'latest' | 'outdated';
 
 // main API의 DecisionResponse에 맞춤
 export interface Decision {
