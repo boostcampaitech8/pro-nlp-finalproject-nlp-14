@@ -55,7 +55,7 @@ async def main():
             }
 
             # 그래프 실행 (스트리밍)
-            print("\n처리 중...\n")
+            print("\n처리 중...")
 
             final_state = None
             current_response = ""
@@ -67,40 +67,38 @@ async def main():
                 name = event.get("name", "")
                 tags = event.get("tags", [])
 
-                # 디버깅: 주요 이벤트 출력
-                # print(f"[DEBUG] {kind} | {name} | tags: {tags[:3] if tags else []}")
-
-                # 노드 시작 감지
+                # 노드 시작 감지 (필요한 이벤트만 처리)
                 if kind == "on_chain_start":
-                    if name == "planner" or "seq:step:1" in tags:
-                        print("\n[Planning 중...]")
-                    elif name == "generator" or "seq:step:3" in tags or "seq:step:4" in tags:
+                    # Generator 노드만 명시적으로 표시
+                    if name == "generator" or "seq:step:4" in tags:
                         in_generator = True
                         print("\n" + "=" * 50)
                         print("답변:")
                         print("=" * 50)
 
-                # LLM 스트리밍 토큰
+                # LLM 스트리밍 토큰 (응답 출력)
                 elif kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk", {})
-                    if hasattr(chunk, "content"):
-                        content = chunk.content
-                    else:
-                        content = chunk.get("content", "")
-                    
-                    if content:
-                        print(content, end="", flush=True)
-                        current_response += content
+                    # generator 노드에서만 출력
+                    if in_generator:
+                        chunk = event.get("data", {}).get("chunk", {})
+                        if hasattr(chunk, "content"):
+                            content = chunk.content
+                        else:
+                            content = chunk.get("content", "")
+                        
+                        if content:
+                            print(content, end="", flush=True)
+                            current_response += content
 
                 # 노드 종료
                 elif kind == "on_chain_end":
-                    if in_generator and (name == "generator" or "seq:step:3" in tags or "seq:step:4" in tags):
+                    if in_generator and (name == "generator" or "seq:step:4" in tags):
                         print("\n" + "=" * 50)
                         in_generator = False
 
-                # 최종 상태 업데이트 (그래프 종료)
-                if kind == "on_chain_end" and name == "LangGraph":
-                    final_state = event.get("data", {}).get("output", {})
+                    # 최종 그래프 종료 감지
+                    if name == "LangGraph":
+                        final_state = event.get("data", {}).get("output", {})
 
             # 최종 상태가 없으면 초기 상태 사용
             if final_state is None:
