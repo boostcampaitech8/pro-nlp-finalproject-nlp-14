@@ -35,6 +35,7 @@ function vadStaticPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), vadStaticPlugin()],
+  envDir: '..',  // 루트의 .env 사용
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

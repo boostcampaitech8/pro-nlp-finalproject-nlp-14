@@ -81,3 +81,5 @@ frontend/public/vad/
 
 # AI development
 .omc/
+
+nohup.out

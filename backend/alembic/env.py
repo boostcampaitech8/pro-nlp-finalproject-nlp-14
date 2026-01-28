@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -12,6 +13,11 @@ from app.models import User  # noqa: F401 - 모델 임포트 필요
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# 환경변수 DATABASE_URL 사용 (K8s ConfigMap에서 주입)
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = Base.metadata
 
