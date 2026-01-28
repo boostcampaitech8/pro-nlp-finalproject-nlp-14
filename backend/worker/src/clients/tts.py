@@ -89,18 +89,13 @@ class TTSClient:
         if self._client is None:
             return None
 
-        payload: dict[str, object] = {"text": text}
-
-        if self.config.tts_voice:
-            payload["voice"] = self.config.tts_voice
-        if self.config.tts_lang:
-            payload["lang"] = self.config.tts_lang
-        if self.config.tts_speed is not None:
-            payload["speed"] = self.config.tts_speed
-        if self.config.tts_total_step is not None:
-            payload["total_step"] = self.config.tts_total_step
-        if self.config.tts_output_format:
-            payload["output_format"] = self.config.tts_output_format
+        payload: dict[str, object] = {
+            "text": text,
+            "voice": self.config.tts_voice,
+            "lang": "ko",
+            "speed": 1.05,
+            "output_format": "pcm",
+        }
 
         path = self.config.tts_synthesize_path
 
@@ -124,19 +119,6 @@ class TTSClient:
             if not audio_bytes:
                 logger.warning("TTS 응답이 비어 있음")
                 return None
-
-            # WAV 포맷인 경우 RIFF 헤더 확인
-            if self.config.tts_output_format == "wav":
-                if audio_bytes[:4] != b"RIFF":
-                    content_type = response.headers.get("content-type", "")
-                    logger.warning(
-                        "TTS 응답이 유효한 WAV 아님: content-type=%s, "
-                        "첫 16바이트=%s, 크기=%d",
-                        content_type,
-                        audio_bytes[:16].hex(),
-                        len(audio_bytes),
-                    )
-                    return None
 
             # 성공 로깅 (응답 헤더의 메타데이터 활용)
             inference_ms = response.headers.get("x-inference-time-ms", "?")

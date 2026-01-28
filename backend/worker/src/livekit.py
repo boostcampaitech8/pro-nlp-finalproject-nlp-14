@@ -1,9 +1,7 @@
 """LiveKit Bot - 회의 참여, 오디오 구독 및 AI 에이전트 기능"""
 
 import asyncio
-import io
 import logging
-import wave
 from array import array
 from dataclasses import dataclass, field
 from typing import Callable
@@ -168,41 +166,32 @@ class LiveKitBot:
             await self._ctx.room.local_participant.publish_track(self._tts_track, options)
             logger.info("TTS 오디오 트랙 publish 완료 (sr=%s, ch=%s)", sample_rate, num_channels)
 
-    async def play_wav_bytes(
+    async def play_pcm_bytes(
         self,
-        wav_bytes: bytes,
+        pcm_bytes: bytes,
+        sample_rate: int,
+        num_channels: int = 1,
         *,
         target_sample_rate: int | None = None,
         frame_duration_ms: int = 20,
     ) -> None:
-        """WAV 바이트를 LiveKit 오디오로 재생"""
-        if not wav_bytes:
+        """PCM16LE 바이트를 LiveKit 오디오로 재생
+
+        Args:
+            pcm_bytes: raw PCM16LE 오디오 데이터
+            sample_rate: PCM 데이터의 sample rate (Hz)
+            num_channels: 채널 수 (기본 1=mono)
+            target_sample_rate: 출력 sample rate (None이면 입력과 동일)
+            frame_duration_ms: 프레임 길이 (ms)
+        """
+        if not pcm_bytes:
             return
 
-        try:
-            pcm, sample_rate, num_channels, sample_width = self._decode_wav(wav_bytes)
-        except Exception as exc:
-            logger.error(
-                "WAV 디코딩 실패: 크기=%d, 첫 16바이트=%s, 오류=%s",
-                len(wav_bytes),
-                wav_bytes[:16].hex() if len(wav_bytes) >= 16 else wav_bytes.hex(),
-                exc,
-            )
-            return
-
-        if not pcm:
-            return
-
-        if sample_width != 2:
-            logger.warning("지원하지 않는 sample_width=%s (16-bit만 지원)", sample_width)
-            return
+        pcm = pcm_bytes
 
         if num_channels == 2:
             pcm = self._stereo_to_mono_int16(pcm)
             num_channels = 1
-        elif num_channels != 1:
-            logger.warning("지원하지 않는 채널 수=%s (mono/stereo만 지원)", num_channels)
-            return
 
         output_rate = target_sample_rate or sample_rate
         await self.ensure_tts_track(output_rate, num_channels)
@@ -223,17 +212,6 @@ class LiveKitBot:
                 pcm, sample_rate, num_channels, frame_duration_ms
             ):
                 await self._tts_source.capture_frame(frame)
-
-    @staticmethod
-    def _decode_wav(wav_bytes: bytes) -> tuple[bytes, int, int, int]:
-        """WAV 바이트를 PCM으로 디코딩"""
-        with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
-            num_channels = wav_file.getnchannels()
-            sample_rate = wav_file.getframerate()
-            sample_width = wav_file.getsampwidth()
-            pcm_data = wav_file.readframes(wav_file.getnframes())
-
-        return pcm_data, sample_rate, num_channels, sample_width
 
     @staticmethod
     def _stereo_to_mono_int16(pcm_data: bytes) -> bytes:

@@ -34,16 +34,9 @@ class RealtimeWorkerConfig(BaseSettings):
 
     # TTS 설정
     tts_server_url: str = ""
-    tts_synthesize_path: str = "/tts/synthesize"
     tts_timeout: float = 60.0
+    tts_synthesize_path: str = "/tts/synthesize"
     tts_voice: str = "F1"
-    tts_lang: str = "ko"
-    tts_speed: float = 1.0
-    tts_total_step: int | None = None
-    tts_output_format: str = "wav"
-    tts_target_sample_rate: int = 48000
-    tts_frame_duration_ms: int = 20
-    tts_queue_size: int = 50
 
     # Worker 설정
     log_level: str = "INFO"

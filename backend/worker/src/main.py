@@ -57,7 +57,7 @@ class RealtimeWorker:
         self._tts_enabled = bool(self.config.tts_server_url)
         self._tts_client = TTSClient() if self._tts_enabled else None
         self._tts_queue: asyncio.Queue[str] | None = (
-            asyncio.Queue(maxsize=self.config.tts_queue_size) if self._tts_enabled else None
+            asyncio.Queue(maxsize=50) if self._tts_enabled else None
         )
         self._tts_task: asyncio.Task | None = None
 
@@ -289,10 +289,11 @@ class RealtimeWorker:
             try:
                 audio_bytes = await self._tts_client.synthesize(sentence)
                 if audio_bytes:
-                    await self.bot.play_wav_bytes(
+                    await self.bot.play_pcm_bytes(
                         audio_bytes,
-                        target_sample_rate=self.config.tts_target_sample_rate,
-                        frame_duration_ms=self.config.tts_frame_duration_ms,
+                        sample_rate=44100,
+                        target_sample_rate=48000,
+                        frame_duration_ms=20,
                     )
                     consecutive_failures = 0
                 else:
