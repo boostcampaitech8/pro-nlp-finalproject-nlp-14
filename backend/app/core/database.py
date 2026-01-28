@@ -12,6 +12,19 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     future=True,
+    # 원격 DB 연결 안정화 설정 (VPN 환경 최적화)
+    pool_pre_ping=True,  # 연결 재사용 전 테스트 (죽은 연결 감지)
+    pool_recycle=300,    # 5분마다 연결 재활용 (VPN idle timeout 대응)
+    pool_size=5,         # 기본 연결 풀 크기
+    max_overflow=10,     # 최대 추가 연결 수
+    pool_timeout=30,     # 연결 풀에서 연결 대기 타임아웃 (초)
+    connect_args={
+        "command_timeout": 60,  # 쿼리 타임아웃 60초
+        "timeout": 10,  # asyncpg 연결/종료 타임아웃 (초)
+        "server_settings": {
+            "application_name": "mit-backend",
+        },
+    },
 )
 
 # 세션 팩토리
