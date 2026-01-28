@@ -28,6 +28,23 @@ class RealtimeWorkerConfig(BaseSettings):
     backend_api_url: str = ""
     backend_api_key: str = ""  # 내부 서비스 인증용
 
+    # Agent (LLM) 설정
+    agent_enabled: bool = True
+    agent_stream_path: str = "/api/v1/agent/meeting"
+
+    # TTS 설정
+    tts_server_url: str = ""
+    tts_synthesize_path: str = "/tts/synthesize"
+    tts_timeout: float = 60.0
+    tts_voice: str = "F1"
+    tts_lang: str = "ko"
+    tts_speed: float = 1.0
+    tts_total_step: int | None = None
+    tts_output_format: str = "wav"
+    tts_target_sample_rate: int = 48000
+    tts_frame_duration_ms: int = 20
+    tts_queue_size: int = 50
+
     # Worker 설정
     log_level: str = "INFO"
     audio_sample_rate: int = 16000  # 16kHz

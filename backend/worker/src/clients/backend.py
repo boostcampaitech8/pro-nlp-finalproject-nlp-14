@@ -1,6 +1,7 @@
 """Backend API 클라이언트"""
 
 import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -183,3 +184,37 @@ class BackendAPIClient:
         except Exception as e:
             logger.exception(f"회의 퇴장 알림 실패: {e}")
             return False
+
+    async def stream_agent_response(
+        self,
+        user_input: str,
+    ) -> AsyncGenerator[str, None]:
+        """Agent 스트리밍 응답 수신 (SSE)"""
+        if self._client is None:
+            await self.connect()
+
+        if self._client is None:
+            raise RuntimeError("HTTP 클라이언트가 초기화되지 않음")
+
+        payload: dict[str, str] = {"user_input": user_input}
+
+        async with self._client.stream(
+            "POST",
+            self.config.agent_stream_path,
+            json=payload,
+            headers={"Accept": "text/event-stream"},
+            timeout=None,
+        ) as response:
+            response.raise_for_status()
+
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:]
+
+                if data == "[DONE]":
+                    break
+                if data.startswith("[ERROR]"):
+                    raise RuntimeError(data)
+
+                yield data
