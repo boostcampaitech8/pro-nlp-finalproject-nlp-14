@@ -24,6 +24,7 @@ def generate_answer(state: OrchestrationState):
     query = messages[-1].content if messages else ""
     plan = state.get("plan", "")
     tool_results = state.get("tool_results", "")
+    additional_context = state.get("additional_context", "")
     
     # tool_results가 있으면 추가 context로 활용
     if tool_results:
@@ -41,6 +42,7 @@ def generate_answer(state: OrchestrationState):
                         "질문: {query}\n"
                         "계획: {plan}\n"
                         "도구 실행 결과: {tool_results}\n\n"
+                        "추가 컨텍스트:\n{additional_context}\n\n"
                         "도구 실행 결과를 활용하여 사용자 질문에 정확하게 답변해주세요."
                     ),
                 ),
@@ -60,6 +62,7 @@ def generate_answer(state: OrchestrationState):
                         "다음 질문에 답변해주세요.\n\n"
                         "질문: {query}\n"
                         "계획: {plan}\n\n"
+                        "추가 컨텍스트:\n{additional_context}\n\n"
                         "추가 정보 없이 답변 가능한 질문입니다. 친절하게 답변해주세요."
                     ),
                 ),
@@ -73,6 +76,7 @@ def generate_answer(state: OrchestrationState):
             "query": query,
             "plan": plan,
             "tool_results": tool_results or "없음",
+            "additional_context": additional_context or "없음",
         }
     )
 
@@ -80,4 +84,3 @@ def generate_answer(state: OrchestrationState):
     logger.info(f"생성된 응답: {response_text[:100]}...")
 
     return {"response": response_text}
-
