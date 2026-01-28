@@ -23,27 +23,51 @@ async def generate_answer(state: OrchestrationState):
     query = messages[-1].content if messages else ""
     plan = state.get("plan", "")
     tool_results = state.get("tool_results", "")
+    additional_context = state.get("additional_context", "")
+    
+    # tool_results가 있으면 추가 context로 활용
+    if tool_results:
+        logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
 
-    logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                "당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 친절하고 정확하게 답변하는 AI 비서입니다.",
-            ),
-            (
-                "human",
+        prompt = ChatPromptTemplate.from_messages(
+            [
                 (
-                    "다음 정보를 바탕으로 최종 답변을 작성해주세요.\n\n"
-                    "질문: {query}\n"
-                    "계획: {plan}\n"
-                    "도구 실행 결과: {tool_results}\n\n"
-                    "사용자 질문에 정확하고 친절하게 답변해주세요."
+                    "system",
+                    "당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 친절하고 정확하게 답변하는 AI 비서입니다.",
                 ),
-            ),
-        ]
-    )
+                (
+                    "human",
+                    (
+                        "다음 정보를 바탕으로 최종 답변을 작성해주세요.\n\n"
+                        "질문: {query}\n"
+                        "계획: {plan}\n"
+                        "도구 실행 결과: {tool_results}\n\n"
+                        "추가 컨텍스트:\n{additional_context}\n\n"
+                        "도구 실행 결과를 활용하여 사용자 질문에 정확하게 답변해주세요."
+                    ),
+                ),
+            ]
+        )
+    else:
+        logger.info("도구 없이 직접 응답 생성")
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "당신은 사용자의 질문에 친절하고 정확하게 답변하는 AI 비서입니다.",
+                ),
+                (
+                    "human",
+                    (
+                        "다음 질문에 답변해주세요.\n\n"
+                        "질문: {query}\n"
+                        "계획: {plan}\n\n"
+                        "추가 컨텍스트:\n{additional_context}\n\n"
+                        "추가 정보 없이 답변 가능한 질문입니다. 친절하게 답변해주세요."
+                    ),
+                ),
+            ]
+        )
 
     chain = prompt | get_generator_llm()
 
@@ -53,6 +77,7 @@ async def generate_answer(state: OrchestrationState):
             "query": query,
             "plan": plan,
             "tool_results": tool_results or "없음",
+            "additional_context": additional_context or "없음",
         }
     ):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
