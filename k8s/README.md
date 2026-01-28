@@ -52,23 +52,18 @@ k8s 전체 배포 후, fe/be는 로컬에서도 실행하여 실시간 개발.
 # 1. 클러스터 생성 (최초 1회)
 make k8s-setup
 
-# 2. 전체 빌드 및 배포
-make k8s-deploy
+# 2. infra 빌드 및 배포 (초기화 대기)
+make k8s-infra
+
+#3. realtime worker 빌드
+make k8s-build-worker
 
 # 3. 포트 포워딩
 make k8s-pf
 
-# 4. Postgress 마이그레이션
-make k8s-migrate
-
-# 5. Neo4j 스키마 업데이트 (제약조건 + 인덱스)
-make k8s-neo4j-update
-
 # 6. fe / be 로컬 실행
 make dev
 
-# localhost:3000 : 실시간 반영
-# localhost : 하단 재빌드를 통해 반영
 ```
 
 ### 개별 서비스 재빌드
