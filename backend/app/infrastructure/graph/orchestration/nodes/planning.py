@@ -4,7 +4,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_planner_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
@@ -64,7 +64,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             '{{"plan": "간단한 인사 응답", "need_tools": false, "reasoning": "추가 정보 불필요"}}'
         )
 
-    chain = prompt | llm | parser
+    chain = prompt | get_planner_llm() | parser
 
     try:
         result = None

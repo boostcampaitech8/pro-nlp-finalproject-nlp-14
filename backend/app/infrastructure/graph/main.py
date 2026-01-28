@@ -5,21 +5,20 @@ from langchain_core.messages import HumanMessage
 from app.infrastructure.graph.orchestration import app
 
 # # 그래프를 PNG 이미지 데이터로 변환
-try:
-    graph_image = app.get_graph().draw_mermaid_png()
+# try:
+#     graph_image = app.get_graph().draw_mermaid_png()
 
-    # 파일로 저장
-    with open("graph.png", "wb") as f:
-        f.write(graph_image)
-    print("성공: 'graph.png' 파일로 저장되었습니다.")
+#     # 파일로 저장
+#     with open("graph.png", "wb") as f:
+#         f.write(graph_image)
+#     print("성공: 'graph.png' 파일로 저장되었습니다.")
 
-except Exception as e:
-    print(f"오류 발생: {e}")
-    print("Graphviz 등 시각화 의존성이 설치되어 있는지 확인해주세요.")
+# except Exception as e:
+#     print(f"오류 발생: {e}")
+#     print("Graphviz 등 시각화 의존성이 설치되어 있는지 확인해주세요.")
 
-if __name__ == "__main__":
+async def main():
     import uuid
-    from datetime import datetime
 
     print("=" * 50)
     print("종료하려면 'quit', 'exit', 'q' 를 입력하세요")
@@ -55,48 +54,57 @@ if __name__ == "__main__":
                 "retry_count": 0,  # 재시도 카운트 초기화
             }
 
-            # 그래프 실행
-            final_state = app.invoke(initial_state)
+            # 그래프 실행 (스트리밍)
+            print("\n처리 중...\n")
 
-            # Planning 결과 출력
-            plan = final_state.get('plan', '')
-            need_tools = final_state.get('need_tools', False)
+            final_state = None
+            current_response = ""
+            in_generator = False
 
-            if plan:
-                print("\n" + "=" * 50)
-                print("[Planning 결과]")
-                print("=" * 50)
-                print(f"계획: {plan}")
-                print(f"도구 필요 여부: {'예' if need_tools else '아니오'}")
-                print("=" * 50)
+            # astream_events를 사용하여 LLM 토큰 스트리밍
+            async for event in app.astream_events(initial_state, version="v2"):
+                kind = event["event"]
+                name = event.get("name", "")
+                tags = event.get("tags", [])
 
-            # 최종 응답 출력
-            response = final_state.get('response', '응답 없음')
-            print("\n" + "=" * 50)
-            print("답변:")
-            print("=" * 50)
-            print(response)
-            print("=" * 50)
+                # 디버깅: 주요 이벤트 출력
+                # print(f"[DEBUG] {kind} | {name} | tags: {tags[:3] if tags else []}")
 
-            # 디버깅용: 평가 정보 출력
-            evaluation = final_state.get('evaluation', '')
-            evaluation_status = final_state.get('evaluation_status', '')
-            evaluation_reason = final_state.get('evaluation_reason', '')
+                # 노드 시작 감지
+                if kind == "on_chain_start":
+                    if name == "planner" or "seq:step:1" in tags:
+                        print("\n[Planning 중...]")
+                    elif name == "generator" or "seq:step:3" in tags or "seq:step:4" in tags:
+                        in_generator = True
+                        print("\n" + "=" * 50)
+                        print("답변:")
+                        print("=" * 50)
 
-            if evaluation or evaluation_status:
-                print("\n" + "=" * 50)
-                print("[Evaluator 평가 결과]")
-                print("=" * 50)
-                if evaluation:
-                    print(f"평가 내용: {evaluation}")
-                if evaluation_status:
-                    print(f"평가 상태: {evaluation_status}")
-                if evaluation_reason:
-                    print(f"평가 이유: {evaluation_reason}")
-                retry_count = final_state.get('retry_count', 0)
-                if retry_count > 0:
-                    print(f"재시도 횟수: {retry_count}")
-                print("=" * 50)
+                # LLM 스트리밍 토큰
+                elif kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk", {})
+                    if hasattr(chunk, "content"):
+                        content = chunk.content
+                    else:
+                        content = chunk.get("content", "")
+                    
+                    if content:
+                        print(content, end="", flush=True)
+                        current_response += content
+
+                # 노드 종료
+                elif kind == "on_chain_end":
+                    if in_generator and (name == "generator" or "seq:step:3" in tags or "seq:step:4" in tags):
+                        print("\n" + "=" * 50)
+                        in_generator = False
+
+                # 최종 상태 업데이트 (그래프 종료)
+                if kind == "on_chain_end" and name == "LangGraph":
+                    final_state = event.get("data", {}).get("output", {})
+
+            # 최종 상태가 없으면 초기 상태 사용
+            if final_state is None:
+                final_state = initial_state
 
             # 메시지 히스토리 업데이트 (응답을 포함하여)
             messages = final_state.get('messages', messages)
@@ -107,3 +115,7 @@ if __name__ == "__main__":
             traceback.print_exc()
             print("\n다시 시도해주세요.")
 
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())

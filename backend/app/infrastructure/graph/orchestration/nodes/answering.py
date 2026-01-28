@@ -2,7 +2,7 @@ import logging
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
@@ -45,7 +45,7 @@ async def generate_answer(state: OrchestrationState):
         ]
     )
 
-    chain = prompt | llm
+    chain = prompt | get_generator_llm()
 
     response_chunks = []
     async for chunk in chain.astream(

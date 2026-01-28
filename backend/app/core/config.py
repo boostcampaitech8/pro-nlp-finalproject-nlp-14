@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """애플리케이션 설정"""
 
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -79,15 +79,6 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:3000/auth/google/callback"
-
-    # Neo4j 설정
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = ""
-    use_mock_graph: bool = False
-
-    # LangGraph 설정
-    ncp_clovastudio_api_key: str = ""
 
     @field_validator("cors_origins", mode="before")
     @classmethod

@@ -5,7 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
 from app.infrastructure.graph.config import MAX_RETRY
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_evaluator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
@@ -71,7 +71,7 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
         '{{"evaluation": "결과가 충분함", "status": "success", "reason": "질문에 답변 가능"}}'
     )
 
-    chain = prompt | llm | parser
+    chain = prompt | get_evaluator_llm() | parser
 
     try:
         result = None
