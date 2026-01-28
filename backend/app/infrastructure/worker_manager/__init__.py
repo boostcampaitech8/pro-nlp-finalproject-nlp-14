@@ -11,8 +11,12 @@ _worker_manager = None
 
 
 def _is_kubernetes_env() -> bool:
-    """K8s 환경인지 감지 (Pod 내부에서 자동 주입되는 환경변수 확인)"""
-    return "KUBERNETES_SERVICE_HOST" in os.environ
+    """K8s Job을 사용할지 판단
+
+    - Docker 컨테이너 내부: False (DockerWorkerManager)
+    - 그 외 (로컬/K8s Pod): True (K8sWorkerManager)
+    """
+    return not os.path.exists("/.dockerenv")
 
 
 def get_worker_manager() -> WorkerManager:
