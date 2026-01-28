@@ -55,6 +55,10 @@ livekit:
   apiKey: mit-api-key
   apiSecret: secret-change-in-production-min-32-chars
   externalUrl: "ws://localhost/livekit"  # Ingress 경유
+  # 로컬 개발: 두 URL 모두 등록 (로컬 백엔드 + k8s 백엔드)
+  webhookUrls:
+    - "http://host.docker.internal:8000/api/v1/livekit/webhook"  # 로컬 백엔드
+    - "http://backend:8000/api/v1/livekit/webhook"               # k8s 백엔드
   # RTC 설정 (로컬: 127.0.0.1로 ICE 후보 광고)
   rtc:
     nodeIp: "127.0.0.1"
@@ -78,6 +82,7 @@ app:
     - "http://127.0.0.1"
 
 # Worker - Secret, ConfigMap에서 공유
+# BACKEND_API_URL은 백엔드가 Job 생성 시 동적으로 주입 (로컬/k8s 자동 감지)
 worker:
   clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
   clovaSttSecret: {{ env "CLOVA_STT_SECRET" | default "" }}
