@@ -82,6 +82,7 @@ frontend/public/vad/
 nohup.out
 
 # AI tool
+CLAUDE.md
 CLAUDE*.md
 .claude/
 .claude*/
