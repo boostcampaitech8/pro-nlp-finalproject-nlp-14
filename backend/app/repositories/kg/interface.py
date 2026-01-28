@@ -62,18 +62,20 @@ class IKGRepository(Protocol):
         ...
 
     async def merge_decision(self, decision_id: str) -> bool:
-        """결정 머지"""
+        """결정 승격 (draft -> latest, 기존 latest -> outdated)"""
         ...
 
     async def approve_and_merge_if_complete(
         self, decision_id: str, user_id: str
     ) -> dict:
-        """결정 승인 + 전원 승인 시 자동 머지 (원자적 트랜잭션)
+        """결정 승인 + 전원 승인 시 자동 승격 (원자적 트랜잭션)
+
+        전원 승인 시 동일 Agenda의 기존 latest -> outdated 처리됨.
 
         Returns:
             {
                 "approved": bool,
-                "merged": bool,
+                "merged": bool,  # latest 승격 여부
                 "status": str,
                 "approvers_count": int,
                 "participants_count": int,

@@ -96,7 +96,7 @@ MOCK_DATA = {
             "id": "decision-1",
             "content": "RESTful API 설계 원칙 준수",
             "context": "API 일관성 유지 및 클라이언트 개발 편의성을 위해",
-            "status": "merged",
+            "status": "latest",
             "agenda_id": "agenda-1",
             "created_at": "2026-01-20T10:00:00+00:00",
         },
@@ -104,7 +104,7 @@ MOCK_DATA = {
             "id": "decision-2",
             "content": "1차 마일스톤: 2월 15일",
             "context": "MVP 기능 완성 목표",
-            "status": "merged",
+            "status": "latest",
             "agenda_id": "agenda-2",
             "created_at": "2026-01-20T10:30:00+00:00",
         },
@@ -112,7 +112,7 @@ MOCK_DATA = {
             "id": "decision-3",
             "content": "JWT 기반 인증 채택",
             "context": "마이크로서비스 확장성과 stateless 특성 고려",
-            "status": "pending",
+            "status": "draft",
             "agenda_id": "agenda-3",
             "created_at": "2026-01-22T14:00:00+00:00",
         },
@@ -385,7 +385,7 @@ class MockKGRepository:
         if decision_id not in self.data["decisions"]:
             return False
 
-        self.data["decisions"][decision_id]["status"] = "merged"
+        self.data["decisions"][decision_id]["status"] = "latest"
         self.data["decisions"][decision_id]["merged_at"] = datetime.now(
             timezone.utc
         ).isoformat()
@@ -441,7 +441,7 @@ class MockKGRepository:
         # 전원 승인 시 머지
         merged = participants == approvers and len(participants) > 0
         if merged:
-            decision["status"] = "merged"
+            decision["status"] = "latest"
             decision["merged_at"] = datetime.now(timezone.utc).isoformat()
 
         return {
@@ -479,7 +479,7 @@ class MockKGRepository:
         return KGDecision(
             id=decision["id"],
             content=decision.get("content", ""),
-            status=decision.get("status", "pending"),
+            status=decision.get("status", "draft"),
             context=decision.get("context"),
             created_at=created_at or datetime.now(timezone.utc),
             agenda_id=agenda.get("id") if agenda else None,

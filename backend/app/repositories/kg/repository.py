@@ -289,14 +289,24 @@ class KGRepository:
         return len(records) > 0
 
     async def merge_decision(self, decision_id: str) -> bool:
-        """결정 머지 (status -> merged)
+        """결정 승격 (draft -> latest)
+
+        동일 Agenda의 기존 latest Decision은 outdated로 변경됨.
 
         Returns:
-            bool: 머지 성공 여부 (decision이 존재하면 True)
+            bool: 승격 성공 여부 (decision이 존재하면 True)
         """
         query = """
         MATCH (d:Decision {id: $decision_id})
-        SET d.status = 'merged', d.merged_at = datetime()
+
+        // 1. 동일 Agenda의 기존 latest -> outdated
+        OPTIONAL MATCH (d)<-[:HAS_DECISION]-(a:Agenda)-[:HAS_DECISION]->(old:Decision)
+        WHERE old.status = 'latest' AND old.id <> $decision_id
+        SET old.status = 'outdated'
+
+        // 2. 현재 Decision -> latest
+        WITH d
+        SET d.status = 'latest', d.approved_at = datetime()
         RETURN d.id as decision_id
         """
         records = await self._execute_write(query, {"decision_id": decision_id})
@@ -305,15 +315,16 @@ class KGRepository:
     async def approve_and_merge_if_complete(
         self, decision_id: str, user_id: str
     ) -> dict:
-        """결정 승인 + 전원 승인 시 자동 머지 (원자적 트랜잭션)
+        """결정 승인 + 전원 승인 시 자동 승격 (원자적 트랜잭션)
 
-        단일 Cypher 쿼리로 승인 관계 생성, 전원 승인 확인, 머지를 처리.
+        단일 Cypher 쿼리로 승인 관계 생성, 전원 승인 확인, latest 승격을 처리.
         Race condition 없이 원자적으로 처리됨.
+        전원 승인 시 동일 Agenda의 기존 latest Decision은 outdated로 변경됨.
 
         Returns:
             {
                 "approved": bool,       # 승인 성공 여부
-                "merged": bool,         # 머지 여부
+                "merged": bool,         # latest 승격 여부
                 "status": str,          # 최종 상태
                 "approvers_count": int,
                 "participants_count": int,
@@ -330,22 +341,28 @@ class KGRepository:
         WITH d
         MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
         MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
-        WITH d, collect(DISTINCT participant.id) as participants
+        WITH d, a, collect(DISTINCT participant.id) as participants
 
         OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
-        WITH d, participants, collect(DISTINCT approver.id) as approvers
+        WITH d, a, participants, collect(DISTINCT approver.id) as approvers
 
-        // 3. 전원 승인 시 자동 머지
-        WITH d, participants, approvers,
+        // 3. 전원 승인 시: 기존 latest -> outdated
+        WITH d, a, participants, approvers,
              size(participants) as p_count,
              size(approvers) as a_count
+        OPTIONAL MATCH (a)-[:HAS_DECISION]->(old:Decision)
+        WHERE old.status = 'latest' AND old.id <> d.id AND p_count = a_count
+        SET old.status = 'outdated'
+
+        // 4. 전원 승인 시: 현재 Decision -> latest
+        WITH d, participants, approvers, p_count, a_count
         SET d.status = CASE
-            WHEN p_count = a_count THEN 'merged'
+            WHEN p_count = a_count THEN 'latest'
             ELSE d.status
         END,
-        d.merged_at = CASE
+        d.approved_at = CASE
             WHEN p_count = a_count THEN datetime()
-            ELSE d.merged_at
+            ELSE d.approved_at
         END
 
         RETURN d.id as decision_id,
@@ -395,7 +412,7 @@ class KGRepository:
         return KGDecision(
             id=d["id"],
             content=d.get("content", ""),
-            status=d.get("status", "pending"),
+            status=d.get("status", "draft"),
             context=d.get("context"),
             created_at=_convert_neo4j_datetime(d.get("created_at")),
             agenda_id=a.get("id"),
