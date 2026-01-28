@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """애플리케이션 설정"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file="../.env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = ""
-    neo4j_database: str = "neo4j"
     use_mock_graph: bool = False  # 테스트 시 Mock KG Repository 사용
 
     # Redis
