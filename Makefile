@@ -6,10 +6,9 @@
 .PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
 .PHONY: neo4j-init neo4j-seed
-.PHONY: k8s-setup k8s-deploy k8s-deploy-prod
+.PHONY: k8s-setup k8s-infra k8s-deploy k8s-deploy-prod
 .PHONY: k8s-push k8s-push-be k8s-push-fe k8s-build-worker k8s-push-worker
 .PHONY: k8s-migrate k8s-db-status k8s-neo4j-update k8s-pf k8s-clean k8s-status k8s-logs
-
 
 # 기본 변수
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yml
@@ -90,7 +89,9 @@ help:
 	@echo ""
 	@echo "Kubernetes (k8s):"
 	@echo "  make k8s-setup        - k3d 클러스터 생성"
-	@echo "  make k8s-deploy       - 로컬 배포"
+	@echo "  make k8s-deploy       - 로컬 배포 (전체)"
+	@echo "  make k8s-infra        - 인프라만 배포 (redis|livekit)"
+	@echo "  make k8s-deploy svc=postgres  - 특정 서비스만 배포 (mit|postgres|redis|livekit|neo4j)"
 	@echo "  make k8s-deploy-prod  - 프로덕션 배포"
 	@echo "  make k8s-push         - 전체 빌드 & 재시작"
 	@echo "  make k8s-push-be      - Backend 빌드 & 재시작"
@@ -124,6 +125,9 @@ dev-be:
 
 dev-worker:
 	pnpm run dev:worker
+
+dev-arq:
+	cd backend && uv run python -m app.workers.run_worker
 
 # ===================
 # Graph
@@ -253,7 +257,6 @@ neo4j-seed:
 # Neo4j
 # ===================
 neo4j-init:
-	@echo "Neo4j 스키마 초기화 중..."
 	@cd backend && uv run python neo4j/init_schema.py
 
 # ===================
@@ -410,16 +413,29 @@ backup-restore:
 # ===================
 K8S_REGISTRY = localhost:5111
 K8S_DIR = k8s
+# helmfile selector: make k8s-deploy svc=postgres
+# svc: mit | postgres | redis | livekit | neo4j
+K8S_SELECTOR = $(if $(svc),--selector svc=$(svc),)
 
 k8s-setup:
 	@./$(K8S_DIR)/scripts/setup-k3d.sh
 
+k8s-infra:
+	@echo "=== 1/2: Secret 생성 ==="
+	@kubectl create namespace mit --dry-run=client -o yaml | kubectl apply -f -
+	@./$(K8S_DIR)/scripts/deploy.sh local --selector svc=mit --args '--set global.enabled=false --set backend.enabled=false --set frontend.enabled=false --set worker.enabled=false' 2>/dev/null || true
+	@echo ""
+	@echo "=== 2/2: 인프라 배포 ==="
+	@./$(K8S_DIR)/scripts/deploy.sh local --selector type=infra
+
 k8s-deploy:
-	@./$(K8S_DIR)/scripts/build.sh local
-	@./$(K8S_DIR)/scripts/deploy.sh local
+	@if [ -z "$(svc)" ] || [ "$(svc)" = "mit" ]; then \
+		./$(K8S_DIR)/scripts/build.sh local; \
+	fi
+	@./$(K8S_DIR)/scripts/deploy.sh local $(K8S_SELECTOR)
 
 k8s-deploy-prod:
-	@./$(K8S_DIR)/scripts/deploy.sh prod
+	@./$(K8S_DIR)/scripts/deploy.sh prod $(K8S_SELECTOR)
 
 k8s-push: 
 	@./$(K8S_DIR)/scripts/build.sh
@@ -472,3 +488,4 @@ k8s-status:
 
 k8s-logs:
 	@kubectl -n mit logs -f deployment/$(svc)
+

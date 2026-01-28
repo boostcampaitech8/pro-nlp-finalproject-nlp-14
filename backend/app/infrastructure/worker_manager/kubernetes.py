@@ -34,11 +34,21 @@ class K8sWorkerManager:
             namespace: K8s 네임스페이스 (기본값: KUBERNETES_NAMESPACE 환경변수 또는 'mit')
             worker_image: 워커 컨테이너 이미지 (기본값: WORKER_IMAGE 환경변수)
         """
-        config.load_incluster_config()
+        # 로컬 개발 환경 지원: in-cluster 실패 시 kubeconfig 사용
+        try:
+            config.load_incluster_config()
+            logger.info("K8s in-cluster config 로드 완료")
+        except config.ConfigException:
+            try:
+                config.load_kube_config()
+                logger.info("K8s kubeconfig 로드 완료 (로컬 개발 모드)")
+            except config.ConfigException as e:
+                raise RuntimeError("K8s config 로드 실패 (in-cluster, kubeconfig 모두 실패)") from e
+
         self.batch_v1 = client.BatchV1Api()
         self.core_v1 = client.CoreV1Api()
         self.namespace = namespace or os.getenv("KUBERNETES_NAMESPACE", "mit")
-        self.worker_image = worker_image or os.getenv("WORKER_IMAGE", "mit-worker:latest")
+        self.worker_image = worker_image or os.getenv("WORKER_IMAGE", "mit-registry:5000/mit-worker:latest")
         self._worker_prefix = "realtime-worker"
 
     def _get_job_name(self, meeting_id: str) -> str:
@@ -49,6 +59,18 @@ class K8sWorkerManager:
     def _extract_meeting_id(self, job_name: str) -> str:
         """Job 이름에서 meeting_id 추출"""
         return job_name.replace(f"{self._worker_prefix}-", "")
+
+    def _get_backend_url(self) -> str:
+        """백엔드 URL 자동 감지
+
+        백엔드(현재 프로세스)가 어디서 실행되는지에 따라 워커가 사용할 URL 결정:
+        - 백엔드가 k8s Pod에서 실행: backend:8000 (k8s Service)
+        - 백엔드가 로컬에서 실행: host.docker.internal:8000 (호스트 접근)
+        """
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            return "http://backend:8000"
+        else:
+            return "http://host.docker.internal:8000"
 
     def _build_job(self, job_name: str, meeting_id: str) -> client.V1Job:
         """K8s Job 매니페스트 생성"""
@@ -86,6 +108,11 @@ class K8sWorkerManager:
                                     client.V1EnvVar(
                                         name="MEETING_ID",
                                         value=meeting_id,
+                                    ),
+                                    # 워커를 생성한 백엔드 URL 주입 (자동 감지)
+                                    client.V1EnvVar(
+                                        name="BACKEND_API_URL",
+                                        value=self._get_backend_url(),
                                     ),
                                 ],
                                 env_from=[

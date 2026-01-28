@@ -13,9 +13,9 @@ from app.core.config import get_settings
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
 from app.repositories.kg.repository import KGRepository
+from app.schemas.transcript_ import GetMeetingTranscriptsResponse
 from app.services.stt_service import STTService
 from app.services.transcript_service_ import TranscriptService
-from backend.app.schemas.transcript_ import GetMeetingTranscriptsResponse
 
 logger = logging.getLogger(__name__)
 

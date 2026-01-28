@@ -6,8 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(dirname "$SCRIPT_DIR")"
 ROOT_DIR="$(dirname "$K8S_DIR")"
 
-# 환경 선택 (기본: local)
+# 환경 선택 (기본: local), 나머지 인자는 helmfile에 전달
 ENV="${1:-local}"
+shift 2>/dev/null || true
 
 echo "=== $ENV 환경 배포 ==="
 
@@ -23,7 +24,8 @@ fi
 cd "$K8S_DIR"
 
 # helmfile 실행 (시크릿은 .gotmpl에서 환경변수 참조)
-helmfile -f helmfile.yaml.gotmpl -e "$ENV" apply
+# 추가 인자 예: --selector svc=postgres
+helmfile -f helmfile.yaml.gotmpl -e "$ENV" apply "$@"
 
 echo ""
 echo "=== 배포 완료 ==="
