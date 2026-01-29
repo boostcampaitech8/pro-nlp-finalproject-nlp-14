@@ -9,7 +9,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_generator_llm
 from app.infrastructure.graph.workflows.mit_action.state import (
     MitActionState,
 )
@@ -83,7 +83,7 @@ async def extract_actions(state: MitActionState) -> MitActionState:
         '"due_date": "2026-02-01", "assignee_name": "김철수"}}]}}'
     )
 
-    chain = prompt | llm | parser
+    chain = prompt | get_generator_llm() | parser
 
     try:
         result = chain.invoke({

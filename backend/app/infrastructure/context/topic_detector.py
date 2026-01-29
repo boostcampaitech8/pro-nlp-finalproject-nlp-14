@@ -147,12 +147,13 @@ class TopicDetector:
             return None
 
         try:
-            from app.infrastructure.graph.integration.llm import llm
+            from app.infrastructure.graph.integration.llm import get_base_llm
         except Exception as e:
             logger.debug(f"Failed to import LLM client: {e}")
             return None
 
         try:
+            llm = get_base_llm()
             response = await llm.ainvoke(prompt)
             return response.content if hasattr(response, "content") else str(response)
         except Exception as e:
