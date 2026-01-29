@@ -185,18 +185,83 @@ class BackendAPIClient:
             logger.exception(f"회의 퇴장 알림 실패: {e}")
             return False
 
+    async def update_agent_context(
+        self,
+        meeting_id: str,
+        pre_transcript_id: str,
+    ) -> bool:
+        """Agent context update 호출
+
+        Args:
+            meeting_id: 회의 ID
+            pre_transcript_id: 이전 transcript 기준 ID
+
+        Returns:
+            성공 여부
+        """
+        if self._client is None:
+            await self.connect()
+
+        if self._client is None:
+            return False
+
+        try:
+            # meeting_id에서 "meeting-" 접두사 제거
+            pure_meeting_id = meeting_id.replace("meeting-", "")
+
+            payload = {
+                "meetingId": pure_meeting_id,
+                "preTranscriptId": pre_transcript_id,
+            }
+
+            response = await self._client.post(
+                "/api/v1/agent/meeting/call",
+                json=payload,
+            )
+
+            if response.status_code == 200:
+                logger.info(
+                    "Agent context update 성공: meeting_id=%s, pre_transcript_id=%s",
+                    meeting_id,
+                    pre_transcript_id,
+                )
+                return True
+            else:
+                logger.error(
+                    "Agent context update 실패: %s - %s",
+                    response.status_code,
+                    response.text,
+                )
+                return False
+
+        except Exception as e:
+            logger.exception(f"Agent context update 오류: {e}")
+            return False
+
     async def stream_agent_response(
         self,
-        user_input: str,
+        meeting_id: str,
+        transcript_id: str,
     ) -> AsyncGenerator[str, None]:
-        """Agent 스트리밍 응답 수신 (SSE)"""
+        """Agent 스트리밍 응답 수신 (SSE)
+
+        Args:
+            meeting_id: 회의 ID
+            transcript_id: 현재 발화 transcript ID
+        """
         if self._client is None:
             await self.connect()
 
         if self._client is None:
             raise RuntimeError("HTTP 클라이언트가 초기화되지 않음")
 
-        payload: dict[str, str] = {"user_input": user_input}
+        # meeting_id에서 "meeting-" 접두사 제거
+        pure_meeting_id = meeting_id.replace("meeting-", "")
+
+        payload = {
+            "meetingId": pure_meeting_id,
+            "transcriptId": transcript_id,
+        }
 
         async with self._client.stream(
             "POST",

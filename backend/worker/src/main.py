@@ -77,6 +77,9 @@ class RealtimeWorker:
         self._is_running = False
         self._meeting_start_time: datetime | None = None
 
+        # Agent 호출용 이전 transcript ID
+        self._pre_transcript_id: str | None = None
+
     async def start(self) -> None:
         """Worker 시작"""
         if self._is_running:
@@ -238,24 +241,51 @@ class RealtimeWorker:
         if response:
             logger.debug(f"트랜스크립트 저장: id={response.id}")
 
-        # wake word 감지 시에만 Agent 파이프라인 호출
+        # wake word 감지 시에만 Agent 파이프라인 호출 (최신화 전에 호출)
         if self._agent_enabled and self.config.agent_wake_word in segment.text:
             logger.info(f"Wake word 감지: '{self.config.agent_wake_word}' in '{segment.text}'")
-            asyncio.create_task(self._run_agent_pipeline(participant_name, segment.text))
+            if response:
+                # pre_transcript_id를 인자로 전달 (asyncio.create_task 타이밍 문제 방지)
+                asyncio.create_task(
+                    self._run_agent_pipeline(response.id, self._pre_transcript_id)
+                )
 
-    async def _run_agent_pipeline(self, participant_name: str, user_text: str) -> None:
-        """LLM 스트리밍 응답을 문장 단위로 채팅 전송"""
+        # preTranscriptId 최신화 (agent 파이프라인 호출 후)
+        if response:
+            self._pre_transcript_id = response.id
+
+    async def _run_agent_pipeline(
+        self,
+        transcript_id: str,
+        pre_transcript_id: str | None,
+    ) -> None:
+        """LLM 스트리밍 응답을 문장 단위로 채팅 전송
+
+        Args:
+            transcript_id: 현재 발화 transcript ID
+            pre_transcript_id: 이전 transcript ID (context 조회 기준)
+        """
         async with self._agent_lock:
             logger.info(
-                "Agent 스트리밍 시작: speaker=%s, text=%s...",
-                participant_name,
-                user_text[:100],
+                "Agent 파이프라인 시작: meeting_id=%s, transcript_id=%s, pre_transcript_id=%s",
+                self.meeting_id,
+                transcript_id,
+                pre_transcript_id,
             )
 
+            # 1. Context update 호출
+            if pre_transcript_id:
+                await self.api_client.update_agent_context(
+                    meeting_id=self.meeting_id,
+                    pre_transcript_id=pre_transcript_id,
+                )
+
+            # 2. LLM 스트리밍 호출
             buffer = ""
             try:
                 async for token in self.api_client.stream_agent_response(
-                    user_text
+                    meeting_id=self.meeting_id,
+                    transcript_id=transcript_id,
                 ):
                     if not token:
                         continue
@@ -263,12 +293,12 @@ class RealtimeWorker:
                     buffer += token
                     sentences, buffer = self._extract_sentences(buffer)
                     for sentence in sentences:
-                        await self.bot.send_chat_message(sentence)
+                        # await self.bot.send_chat_message(sentence)
                         self._enqueue_tts(sentence)
 
                 tail = buffer.strip()
                 if tail:
-                    await self.bot.send_chat_message(tail)
+                    # await self.bot.send_chat_message(tail)
                     self._enqueue_tts(tail)
 
             except Exception as e:
@@ -385,7 +415,7 @@ async def main():
     # 환경변수에서 meeting_id 가져오기
     import os
 
-    meeting_id = os.environ.get("MEETING_ID", "meeting-1e62ab82-b35e-4010-86f3-44c9a1d30749")
+    meeting_id = os.environ.get("MEETING_ID", "meeting-1de53207-db52-43a7-b928-0a912155202f")
 
     if not meeting_id:
         logger.error("MEETING_ID 환경변수가 설정되지 않음")
