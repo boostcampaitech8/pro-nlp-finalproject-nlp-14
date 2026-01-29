@@ -18,7 +18,12 @@ from app.infrastructure.graph.orchestration import app
 #     print("Graphviz 등 시각화 의존성이 설치되어 있는지 확인해주세요.")
 
 async def main():
+    import argparse
     import uuid
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--query", type=str, default=None)
+    args, _ = parser.parse_known_args()
 
     print("=" * 50)
     print("종료하려면 'quit', 'exit', 'q' 를 입력하세요")
@@ -27,10 +32,15 @@ async def main():
     # 대화 히스토리를 유지할 메시지 리스트
     messages = []
     run_id = str(uuid.uuid4())
-    user_id = "chat_user"
+    user_id = "user-1e6382d1"  # 신수효 (샘플 데이터의 실제 사용자)
+
+    single_query = args.query
 
     while True:
-        user_input = input("\n질문: ").strip()
+        if single_query:
+            user_input = single_query.strip()
+        else:
+            user_input = input("\n질문: ").strip()
 
         # 종료 명령어 체크
         if user_input.lower() in ['quit', 'exit', 'q']:
@@ -39,6 +49,8 @@ async def main():
 
         if not user_input:
             print("입력이 비어있습니다. 다시 입력해주세요.")
+            if single_query:
+                break
             continue
 
         try:
@@ -103,15 +115,25 @@ async def main():
             # 최종 상태가 없으면 초기 상태 사용
             if final_state is None:
                 final_state = initial_state
-
-            # 메시지 히스토리 업데이트 (응답을 포함하여)
-            messages = final_state.get('messages', messages)
+            
+            # 최종 응답 확인 및 출력
+            response = final_state.get('response', '')
+            if response and not current_response:
+                # generator 노드에서 스트리밍되지 않은 응답 (MIT Search 직접 반환)
+                print("\n" + "=" * 50)
+                print("답변:")
+                print("=" * 50)
+                print(response)
+                print("=" * 50)
 
         except Exception as e:
             print(f"\n실행 중 오류 발생: {e}")
             import traceback
             traceback.print_exc()
             print("\n다시 시도해주세요.")
+
+        if single_query:
+            break
 
 
 if __name__ == "__main__":

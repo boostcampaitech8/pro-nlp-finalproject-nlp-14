@@ -26,11 +26,14 @@ async def execute_cypher_search_async(cypher_query: str, parameters: dict[str, A
     logger.info(f"Executing Cypher search with params: {list(parameters.keys())}")
 
     try:
-        # Validate query safety
+        # Validate query safety - 단어 경계를 포함하여 검사
         dangerous_keywords = ["DROP", "DELETE", "DETACH", "CREATE", "MERGE", "SET", "REMOVE"]
         query_upper = cypher_query.upper()
+        
+        import re
         for keyword in dangerous_keywords:
-            if keyword in query_upper:
+            # 단어 경계를 포함하여 정확히 검사 (created_at 같은 컬럼명은 통과)
+            if re.search(rf'\b{keyword}\b', query_upper):
                 raise ValueError(f"Dangerous Cypher keyword detected: {keyword}")
 
         # Neo4j driver integration

@@ -36,7 +36,7 @@ NEO4J_PASSWORD = _settings.neo4j_password
 # ============================================================================
 
 # Orchestration 설정
-MAX_RETRY = 3  # 최대 재시도 횟수
+MAX_RETRY = 2  # 최대 재계획 횟수 (복합 쿼리: 1단계 → replanning → 2단계)
 REQUEST_TIMEOUT = 30  # 요청 타임아웃 (초)
 MAX_TOKENS = 2048  # LLM 최대 토큰
 

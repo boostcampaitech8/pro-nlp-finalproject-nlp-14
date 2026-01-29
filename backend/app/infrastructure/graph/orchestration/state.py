@@ -27,6 +27,7 @@ class OrchestrationState(TypedDict):
     evaluation: Annotated[str, "evaluation result"]  # 평가 내용
     evaluation_status: Annotated[str, "evaluation status"]  # "retry", "success", "replanning"
     evaluation_reason: Annotated[str, "evaluation reason"]  # 평가 이유
+    next_subquery: NotRequired[str]  # replanning 시 다음 검색 쿼리 (서브-쿼리)
 
     # Response
     response: Annotated[str, "final response"]  # 최종 응답 (덮어쓰기)

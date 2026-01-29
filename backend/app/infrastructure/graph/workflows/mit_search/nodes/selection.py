@@ -45,7 +45,7 @@ async def selector_async(state: MitSearchState) -> dict:
         # Apply threshold and limit
         selected = [
             result for result in ranked_results
-            if result.get("final_score", 0) >= min_score
+            if result.get("final_score", result.get("score", 0)) >= min_score
         ][:top_k]
 
         # Format for orchestration
@@ -58,20 +58,31 @@ async def selector_async(state: MitSearchState) -> dict:
                 continue
 
             seen_ids.add(result_id)
+            title = result.get("title") or result.get("content") or result.get("meeting_title") or "제목 없음"
             formatted_results.append({
                 "type": result.get("type", "decision"),
                 "id": result_id,
-                "title": result.get("title", ""),
+                "title": title,
                 "content": result.get("content", ""),
+                "final_score": result.get("final_score", 0),
                 "metadata": {
                     "meeting_id": result.get("meeting_id"),
                     "meeting_title": result.get("meeting_title"),
-                    "decided_at": result.get("decided_at"),
+                    "created_at": result.get("created_at"),
                     "score": result.get("final_score", 0)
                 }
             })
 
         logger.info(f"Selected {len(formatted_results)} final results")
+        
+        # 최종 결과 디버그 출력
+        print(f"\n[선택] 임계값({min_score}) 이상: {len(selected)}개 → Top {top_k}로 제한 → 최종 {len(formatted_results)}개")
+        if formatted_results:
+            for i, result in enumerate(formatted_results, 1):
+                print(f"  [{i}] {result['title'][:50]}")
+                print(f"      점수: {result['final_score']:.3f}")
+        else:
+            print("  ✗ 최종 결과 없음")
 
         return {"mit_search_results": formatted_results}
 

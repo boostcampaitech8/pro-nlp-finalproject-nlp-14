@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _normalize_korean_numbers(query: str) -> str:
     """간단한 억/만원 단위 숫자 정규화."""
+
     def repl_eok(match: re.Match) -> str:
         num = float(match.group(1))
         return f"{int(num * 100_000_000)}원"
@@ -98,10 +99,7 @@ async def normalize_query_with_llm(query: str) -> str:
     user_message = f"쿼리: {query}"
 
     try:
-        response = await llm.ainvoke([
-            SystemMessage(system_prompt),
-            HumanMessage(user_message)
-        ])
+        response = await llm.ainvoke([SystemMessage(system_prompt), HumanMessage(user_message)])
 
         normalized = response.content.strip()
         logger.debug(f"LLM normalized: '{query}' → '{normalized}'")
@@ -138,7 +136,7 @@ async def query_rewriter_async(state: MitSearchState) -> dict:
         failures: LLM 타임아웃/에러 → 로컬 정규화로 폴백 (normalize_query)
 
     처리 과정:
-    1. state.messages[-1].content에서 원본 쿼리 추출
+    1. state.messages[-1].content에서 원본 쿼리 추출 (또는 message 필드 폴백)
     2. LLM 캐시에서 이전 결과 확인 (최대 100개 FIFO)
     3. 시스템 프롬프트로 LLM 호출 (정규화: 한글 숫자, 띄어쓰기, 동의어)
     4. 캐시에 없으면 결과 저장
@@ -147,12 +145,26 @@ async def query_rewriter_async(state: MitSearchState) -> dict:
     logger.info("Starting LLM-based query rewriting")
 
     try:
+        # 1순위: mit_search_query가 이미 있으면 사용 (replanning 서브-쿼리)
+        existing_query = state.get("mit_search_query")
+        if existing_query:
+            logger.info(f"[Replanning] 기존 mit_search_query 사용: '{existing_query}'")
+            return {"mit_search_query": existing_query}
+        
+        # 2순위: messages 또는 message에서 쿼리 추출
         messages = state.get("messages", [])
-        if not messages:
-            raise ValueError("No messages in state")
+        message = state.get("message", "")
 
-        last_message = messages[-1]
-        original_query = last_message.content if hasattr(last_message, 'content') else str(last_message)
+        # message 또는 messages에서 원본 쿼리 추출
+        if messages:
+            last_message = messages[-1]
+            original_query = (
+                last_message.content if hasattr(last_message, "content") else str(last_message)
+            )
+        elif message:
+            original_query = message
+        else:
+            raise ValueError("No messages or message field in state")
 
         # LLM 기반 정규화 (메인 로직)
         normalized_query = await normalize_query_with_llm(original_query)
@@ -169,7 +181,13 @@ async def query_rewriter_async(state: MitSearchState) -> dict:
         logger.error(f"LLM query rewriting failed: {e}", exc_info=True)
         # Fallback: 로컬 정규화 사용
         messages = state.get("messages", [])
-        fallback_query = messages[-1].content if messages else ""
+        message = state.get("message", "")
+
+        if messages:
+            fallback_query = messages[-1].content if messages else ""
+        else:
+            fallback_query = message
+
         normalized_fallback = normalize_query(fallback_query)
         logger.warning(f"Using fallback normalized query: '{normalized_fallback}'")
         return {"mit_search_query": normalized_fallback}

@@ -24,6 +24,10 @@ class MitSearchState(OrchestrationState, total=False):
     # 쿼리 처리
     mit_search_query: Annotated[str, "LLM 정규화 후 재작성된 쿼리"]
     mit_search_filters: Annotated[dict, "추출된 date_range와 entity_types"]
+    mit_search_query_intent: Annotated[dict, "LLM 분석된 쿼리 의도 (intent_type, primary_entity, ...)"]
+
+    # 검색 전략
+    mit_search_strategy: Annotated[dict, "결정된 검색 전략 (strategy, search_term, reasoning)"]
 
     # Cypher 생성
     mit_search_cypher: Annotated[str, "Neo4j FULLTEXT용 생성된 Cypher 쿼리"]
@@ -32,3 +36,7 @@ class MitSearchState(OrchestrationState, total=False):
     mit_search_raw_results: Annotated[list[dict], "Neo4j FULLTEXT 원본 결과"]
     mit_search_ranked_results: Annotated[list[dict], "BGE v2-m3로 재랭킹된 결과"]
     mit_search_results: Annotated[list[dict], "오케스트레이션용 최종 포맷 결과"]
+    mit_search_fallback_used: Annotated[bool, "Fallback 전략 사용 여부 (P1)"]
+
+    # 결과 품질 평가
+    mit_search_result_quality: Annotated[dict, "결과 관련성 점수 (quality_score, assessment)"]

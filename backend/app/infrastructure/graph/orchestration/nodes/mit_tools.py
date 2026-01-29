@@ -1,31 +1,78 @@
 import logging
 
 from app.infrastructure.graph.orchestration.state import OrchestrationState
+from app.infrastructure.graph.workflows.mit_search.graph import mit_search_graph
 
-logger = logging.getLogger("AgentLogger")
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def execute_mit_tools(state: OrchestrationState) -> OrchestrationState:
     """MIT-Tools 실행 노드
 
     Contract:
-        reads: messages, retry_count
+        reads: messages, user_id, plan, retry_count
         writes: tool_results
-        side-effects: 서브그래프 실행 (search, summary 등)
+        side-effects: MIT Search 서브그래프 실행
         failures: TOOL_EXECUTION_FAILED -> 빈 결과 반환
 
-    Note: summary, search 등 다양한 서브그래프로 구성될 예정
+    MIT Search 서브그래프를 호출하여 Knowledge Graph에서 검색을 수행합니다.
     """
     logger.info("MIT-Tools 단계 진입")
 
     messages = state.get('messages', [])
-    query = messages[-1].content if messages else ""
+    user_id = state.get('user_id', 'unknown')
     retry_count = state.get('retry_count', 0)
+    next_subquery = state.get('next_subquery')  # Replanning에서 지정한 서브-쿼리
+    
+    # next_subquery가 있으면 (replanning 후) 그것을 사용, 아니면 원래 쿼리 사용
+    if next_subquery:
+        query = next_subquery
+        logger.info(f"[Replanning] 서브-쿼리 사용: {query}")
+    else:
+        query = messages[-1].content if messages else ""
 
-    logger.info(f"쿼리: {query[:50]}..., 재시도: {retry_count}")
+    logger.info(f"쿼리: {query[:50]}..., 사용자: {user_id}, 재시도: {retry_count}")
 
-    # TODO: 실제 도구 실행 로직 구현
-    # tool_result = await execute_subgraph(plan, query)
+    try:
+        # MIT Search 서브그래프 실행
+        search_result = await mit_search_graph.ainvoke({
+            "mit_search_query": query,  # 핵심: 쿼리 전달
+            "messages": messages,
+            "user_id": user_id,
+        })
 
-    return OrchestrationState(tool_results="")
+        # 검색 결과 추출 (selection 노드의 최종 결과)
+        final_results = search_result.get("mit_search_results", [])
+        
+        # 결과를 tool_results에 추가
+        if final_results:
+            result_summary = f"\n[MIT Search 결과]\n"
+            for idx, item in enumerate(final_results[:10], 1):
+                title = item.get("title", "제목 없음")
+                score = item.get("final_score", item.get("metadata", {}).get("score", 0))
+                result_summary += f"{idx}. {title} (점수: {score:.2f})\n"
+            
+            logger.info(f"✓ MIT Search 성공: {len(final_results)}개 결과 반환")
+            print(f"\n[MIT Tools] ✓ {len(final_results)}개 결과 → tool_results 설정 완료\n")
+            return OrchestrationState(tool_results=result_summary)
+        else:
+            # selection 결과가 없을 때 raw 결과로 폴백
+            raw_results = search_result.get("mit_search_raw_results", [])
+            if raw_results:
+                result_summary = f"\n[MIT Search 결과]\n"
+                for idx, item in enumerate(raw_results[:10], 1):
+                    title = item.get("title") or item.get("content") or item.get("meeting_title") or "제목 없음"
+                    score = item.get("final_score", item.get("score", 0))
+                    result_summary += f"{idx}. {title} (점수: {score:.2f})\n"
+                logger.info(f"✓ MIT Search 폴백: {len(raw_results)}개 결과 반환")
+                print(f"\n[MIT Tools] ✓ {len(raw_results)}개 결과 (폴백) → tool_results 설정 완료\n")
+                return OrchestrationState(tool_results=result_summary)
+
+            logger.warning("✗ MIT Search 결과 없음")
+            print(f"\n[MIT Tools] ✗ 검색 결과 없음\n")
+            return OrchestrationState(tool_results="\n[MIT Search 결과] 검색 결과가 없습니다\n")
+
+    except Exception as e:
+        logger.error(f"MIT-Tools 실행 중 오류: {e}", exc_info=True)
+        print(f"\n[MIT Tools] ✗ 오류: {str(e)}\n")
+        return OrchestrationState(tool_results=f"\n[MIT Search 오류] {str(e)}\n")

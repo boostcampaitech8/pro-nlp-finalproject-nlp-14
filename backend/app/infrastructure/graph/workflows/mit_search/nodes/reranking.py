@@ -5,6 +5,7 @@ import logging
 from typing import Any, Optional
 
 from ..state import MitSearchState
+from ..utils.score_calculator import ScoreCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,15 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
 
         if not query:
             logger.warning("No query for reranking, returning original results")
-            return {"mit_search_ranked_results": raw_results}
+            ranked_results = [
+                {**result, "final_score": result.get("score", 0)}
+                for result in raw_results
+            ]
+            print(f"\n[리랭킹] 쿼리 없음, {len(ranked_results)}개 결과 FULLTEXT 점수로 반환")
+            if ranked_results:
+                for i, r in enumerate(ranked_results[:3]):
+                    print(f"  [{i+1}] {r.get('title', r.get('content', '')[:40])} | 점수: {r.get('final_score')}")
+            return {"mit_search_ranked_results": ranked_results}
 
         # BGE Reranker 모델 로드 (싱글톤)
         reranker_model = _get_reranker_model()
@@ -88,9 +97,23 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
                 key=lambda x: x.get("score", 0),
                 reverse=True
             )
+            # final_score 추가 (FULLTEXT 점수와 동일)
+            ranked_results = [
+                {**result, "final_score": result.get("score", 0)}
+                for result in ranked_results
+            ]
+            print(f"\n[리랭킹] FlagEmbedding 미설치, {len(ranked_results)}개 결과 FULLTEXT 점수로 정렬")
+            if ranked_results:
+                for i, r in enumerate(ranked_results[:3]):
+                    print(f"  [{i+1}] {r.get('title', r.get('content', '')[:40])} | 최종점수: {r.get('final_score')}")
             return {"mit_search_ranked_results": ranked_results}
 
-        # 재순위화 점수 계산
+        # 재순위화 점수 계산 (ScoreCalculator 사용)
+        score_calculator = ScoreCalculator(
+            fulltext_weight=FULLTEXT_WEIGHT,
+            entity_match_weight=0.0,  # reranking에서는 사용 안함
+            recency_weight=1.0 - FULLTEXT_WEIGHT  # 나머지는 semantic weight
+        )
         ranked_results = []
 
         for result in raw_results:
@@ -104,10 +127,13 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
                 # 정규화 (BGE는 음수 점수도 가능하므로 0-1로 정규화)
                 rerank_score_normalized = max(0, min(1, (rerank_score + 1) / 2))
 
-                # 최종 점수 계산 (가중 평균)
+                # 최종 점수 계산 (ScoreCalculator 사용)
                 fulltext_score = result.get("score", 0.5)
-                final_score = (fulltext_score * FULLTEXT_WEIGHT +
-                              rerank_score_normalized * SEMANTIC_WEIGHT)
+                final_score = score_calculator.calculate_combined_score(
+                    fulltext_score=fulltext_score,
+                    entity_match_score=0.5,  # reranking에서는 미사용
+                    recency_score=rerank_score_normalized
+                )
 
                 ranked_results.append({
                     **result,

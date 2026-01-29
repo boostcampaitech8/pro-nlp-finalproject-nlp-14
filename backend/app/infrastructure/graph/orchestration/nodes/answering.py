@@ -25,15 +25,25 @@ async def generate_answer(state: OrchestrationState):
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     
+    logger.info(f"tool_results 확인: {bool(tool_results)}, 길이: {len(tool_results) if tool_results else 0}")
+    print(f"\n[Answering] tool_results 길이: {len(tool_results) if tool_results else 0}자")
+    
     # tool_results가 있으면 추가 context로 활용
-    if tool_results:
+    if tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
+
+        # 도구 결과가 명확할 때는 LLM 없이 그대로 반환 (환각 방지)
+        if "[MIT Search 결과" in tool_results:
+            logger.info("MIT Search 결과를 직접 반환합니다.")
+            print(f"[Answering] ✓ MIT Search 결과 직접 반환\n")
+            return OrchestrationState(response=tool_results.strip())
 
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    "당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 친절하고 정확하게 답변하는 AI 비서입니다.",
+                    "당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 정확하게 답변하는 AI 비서입니다."
+                    " 도구 결과에 없는 사실을 추측하거나 외부 출처(웹/검색엔진)를 언급하지 마세요.",
                 ),
                 (
                     "human",
@@ -85,6 +95,7 @@ async def generate_answer(state: OrchestrationState):
 
     response_text = "".join(response_chunks)
     logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
+    print(f"\n[Answering] 응답 생성 완료: {len(response_text)}자\n")
 
     return OrchestrationState(response=response_text)
 

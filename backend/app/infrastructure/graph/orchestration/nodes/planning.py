@@ -51,25 +51,33 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
     parser = PydanticOutputParser(pydantic_object=PlanningOutput)
 
     if retry_count > 0:
-        # 재계획
-        prompt = ChatPromptTemplate.from_template(
-            "당신은 계획을 수정하는 AI입니다. 반드시 JSON 형식으로만 응답해야 합니다.\n\n"
-            "사용자 질문: {query}\n"
+        # 재계획: 복합 쿼리 처리 (다단계 검색)
+        template_text = (
+            "당신은 다단계 검색을 계획하는 AI입니다. 반드시 JSON 형식으로만 응답해야 합니다.\n\n"
+            "원래 질문: {query}\n"
             "컨텍스트 요약 (L0/L1 토픽 목록):\n{planning_context}\n\n"
-            "이전 평가: {previous_evaluation}\n"
-            "평가 이유: {evaluation_reason}\n\n"
-            "이전 평가를 참고하여 더 나은 계획을 세우세요.\n"
-            "외부 정보(검색, 요약 등)가 필요하면 need_tools를 true로 설정하세요.\n\n"
-            "추가 컨텍스트가 필요한 L1 토픽이 있으면 required_topics에 정확한 토픽명을 넣고,\n"
-            "필요 없으면 빈 리스트로 두세요.\n\n"
-            "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
-            "{format_instructions}\n\n"
+            "이전 검색 결과 평가:\n"
+            "  - 평가: {previous_evaluation}\n"
+            "  - 이유: {evaluation_reason}\n\n"
+            "지시사항 - 복합 쿼리 처리:\n"
+            "1. 사용자의 원래 질문을 다시 읽으세요\n"
+            "2. 이전 검색에서 부족한 부분을 명확히 파악하세요\n"
+            "3. 다음 검색에서 찾아야 할 것을 구체적으로 명시하세요\n\n"
             "예시:\n"
-            '{{"plan": "1단계: 검색, 2단계: 분석", "need_tools": true, "reasoning": "최신 정보 필요", "required_topics": ["Topic_1"]}}'
+            "Q: '교육 프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?'\n"
+            "첫 검색: 액션 아이템 [교육 프로그램 상반기 내 완료 목표]\n"
+            "부족한 것: 담당자와 그 담당자의 팀원\n"
+            "다음 계획: MIT Search로 담당자 찾고, 그 담당자의 팀원 찾기\n\n"
+            "중요:\n"
+            "- need_tools: true (계속 검색 필요)\n"
+            "- plan: \"1단계: ... → 2단계: ...\" 형식\n"
+            "- JSON만 출력\n\n"
+            "{format_instructions}"
         )
+        prompt = ChatPromptTemplate.from_template(template_text)
     else:
         # 초기 계획
-        prompt = ChatPromptTemplate.from_template(
+        template_text = (
             "당신은 계획을 세우는 AI입니다. 반드시 JSON 형식으로만 응답해야 합니다.\n\n"
             "사용자 질문: {query}\n\n"
             "컨텍스트 요약 (L0/L1 토픽 목록):\n{planning_context}\n\n"
@@ -78,24 +86,29 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "간단한 인사나 일반 상식으로 답변 가능하면 need_tools를 false로 설정하세요.\n\n"
             "추가 컨텍스트가 필요한 L1 토픽이 있으면 required_topics에 정확한 토픽명을 넣고,\n"
             "필요 없으면 빈 리스트로 두세요.\n\n"
-            "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
-            "{format_instructions}\n\n"
-            "예시:\n"
-            '{{"plan": "간단한 인사 응답", "need_tools": false, "reasoning": "추가 정보 불필요", "required_topics": []}}'
+            "중요: JSON만 출력하세요!\n\n"
+            "{format_instructions}"
         )
+        prompt = ChatPromptTemplate.from_template(template_text)
 
     chain = prompt | get_planner_llm() | parser
 
     try:
-        result = None
-        async for chunk in chain.astream({
+        # astream에 전달할 인자들 준비
+        stream_args = {
             "query": query,
-            "previous_evaluation": previous_evaluation,
-            "evaluation_reason": evaluation_reason,
             "planning_context": planning_context or "없음",
             "format_instructions": parser.get_format_instructions()
-        }):
-            result = chunk  # parser는 최종 결과만 반환
+        }
+
+        # 재계획인 경우 평가 결과도 포함
+        if retry_count > 0:
+            stream_args["previous_evaluation"] = previous_evaluation
+            stream_args["evaluation_reason"] = evaluation_reason
+
+        result = None
+        async for chunk in chain.astream(stream_args):
+            result = chunk
 
         if result is None:
             raise ValueError("LLM 스트림에서 결과를 받지 못함")
@@ -104,6 +117,20 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         logger.info(f"도구 사용 필요 여부: {result.need_tools}")
         logger.info(f"판단 근거: {result.reasoning}")
         logger.info(f"추가 토픽 필요: {result.required_topics}")
+
+        # 재계획인 경우: 계획에서 명시된 "다음 단계"를 새로운 쿼리로 변환
+        # 예: "1단계: 담당자 찾기" → "이전에 찾은 액션의 담당자는 누구?"
+        if retry_count > 0:
+            next_step_query = _extract_next_step_query(result.plan, query)
+            logger.info(f"[Replanning] 원래 쿼리: {query}")
+            logger.info(f"[Replanning] 다음 단계 쿼리: {next_step_query}")
+            
+            # 새로운 쿼리를 messages에 추가
+            from langchain_core.messages import HumanMessage
+            messages = state.get('messages', [])
+            if next_step_query != query:
+                messages.append(HumanMessage(content=next_step_query))
+                logger.info(f"[Replanning] 새로운 서브-쿼리 추가됨: {next_step_query}")
 
         return {
             "plan": result.plan,
@@ -118,3 +145,24 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             need_tools=False,
             required_topics=[],
         )
+
+
+def _extract_next_step_query(plan: str, original_query: str) -> str:
+    """계획에서 다음 단계를 추출하여 새로운 서브-쿼리 생성
+    
+    예:
+    - plan: "1단계: 교육프로그램 상반기 내 완료 목표의 담당자 찾기 → 2단계: 그 담당자와 팀원 찾기"
+    - original_query: "교육프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?"
+    - return: "이전에 찾은 교육프로그램 상반기 내 완료 목표의 담당자는 누구야?"
+    """
+    # 담당자 찾기 계획
+    if "담당자" in plan and ("찾" in plan or "찾기" in plan):
+        return "이전에 찾은 액션 아이템의 담당자는 누구야?"
+    
+    # 팀원 찾기 계획
+    if "팀원" in plan and ("찾" in plan or "찾기" in plan):
+        return "그 담당자와 같은 팀의 팀원은 누구야?"
+    
+    # 기본: 원래 쿼리 반환
+    return original_query
+
