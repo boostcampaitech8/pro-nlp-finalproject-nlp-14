@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from array import array
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -47,6 +48,7 @@ class LiveKitBot:
         on_participant_joined: Callable[[str, str], None] | None = None,
         on_participant_left: Callable[[str], None] | None = None,
         on_vad_event: Callable[[str, str, dict], None] | None = None,
+        enable_tts_publish: bool = False,
     ):
         """
         Args:
@@ -62,9 +64,13 @@ class LiveKitBot:
         self.on_participant_joined = on_participant_joined
         self.on_participant_left = on_participant_left
         self.on_vad_event = on_vad_event
+        self._enable_tts_publish = enable_tts_publish
 
         self._ctx = LiveKitBotContext(meeting_id=meeting_id)
         self._audio_tasks: dict[str, asyncio.Task] = {}
+        self._tts_source: rtc.AudioSource | None = None
+        self._tts_track: rtc.LocalAudioTrack | None = None
+        self._tts_publish_lock = asyncio.Lock()
 
     async def _create_token(self) -> str:
         """LiveKit 접근 토큰 생성"""
@@ -79,7 +85,8 @@ class LiveKitBot:
                 room_join=True,
                 room=self.meeting_id,
                 can_subscribe=True,
-                can_publish=False,  # 현재는 오디오 발행 안함 (향후 TTS/RAG 응답 시 True)
+                can_publish=self._enable_tts_publish,
+                can_publish_data=True,
             )
         )
         return token.to_jwt()
@@ -140,6 +147,154 @@ class LiveKitBot:
         self._ctx.is_connected = False
         self._ctx.participants.clear()
         logger.info(f"LiveKit 회의 퇴장: {self.meeting_id}")
+
+    async def ensure_tts_track(self, sample_rate: int, num_channels: int = 1) -> None:
+        """TTS 오디오 트랙 생성 및 publish"""
+        if not self._ctx.room or not self._ctx.is_connected:
+            raise RuntimeError("LiveKit 연결이 필요합니다.")
+
+        async with self._tts_publish_lock:
+            if self._tts_source and self._tts_track:
+                return
+
+            self._tts_source = rtc.AudioSource(sample_rate, num_channels, queue_size_ms=1000)
+            self._tts_track = rtc.LocalAudioTrack.create_audio_track(
+                "mit-agent-tts", self._tts_source
+            )
+            options = rtc.TrackPublishOptions()
+            options.source = rtc.TrackSource.SOURCE_MICROPHONE
+            await self._ctx.room.local_participant.publish_track(self._tts_track, options)
+            logger.info("TTS 오디오 트랙 publish 완료 (sr=%s, ch=%s)", sample_rate, num_channels)
+
+    async def play_pcm_bytes(
+        self,
+        pcm_bytes: bytes,
+        sample_rate: int,
+        num_channels: int = 1,
+        *,
+        target_sample_rate: int | None = None,
+        frame_duration_ms: int = 20,
+    ) -> None:
+        """PCM16LE 바이트를 LiveKit 오디오로 재생
+
+        Args:
+            pcm_bytes: raw PCM16LE 오디오 데이터
+            sample_rate: PCM 데이터의 sample rate (Hz)
+            num_channels: 채널 수 (기본 1=mono)
+            target_sample_rate: 출력 sample rate (None이면 입력과 동일)
+            frame_duration_ms: 프레임 길이 (ms)
+        """
+        if not pcm_bytes:
+            return
+
+        pcm = pcm_bytes
+
+        if num_channels == 2:
+            pcm = self._stereo_to_mono_int16(pcm)
+            num_channels = 1
+
+        output_rate = target_sample_rate or sample_rate
+        await self.ensure_tts_track(output_rate, num_channels)
+
+        if output_rate != sample_rate:
+            resampler = rtc.AudioResampler(
+                sample_rate,
+                output_rate,
+                num_channels=num_channels,
+                quality=rtc.AudioResamplerQuality.MEDIUM,
+            )
+            async for frame in self._resample_and_chunk(
+                resampler, pcm, sample_rate, num_channels, frame_duration_ms
+            ):
+                await self._tts_source.capture_frame(frame)
+        else:
+            async for frame in self._chunk_pcm_frames(
+                pcm, sample_rate, num_channels, frame_duration_ms
+            ):
+                await self._tts_source.capture_frame(frame)
+
+    @staticmethod
+    def _stereo_to_mono_int16(pcm_data: bytes) -> bytes:
+        """16-bit stereo PCM을 mono로 변환"""
+        samples = array("h")
+        samples.frombytes(pcm_data)
+        if len(samples) % 2 != 0:
+            samples = samples[:-1]
+
+        mono = array("h")
+        for i in range(0, len(samples), 2):
+            mono.append((samples[i] + samples[i + 1]) // 2)
+
+        return mono.tobytes()
+
+    @staticmethod
+    async def _chunk_pcm_frames(
+        pcm_data: bytes,
+        sample_rate: int,
+        num_channels: int,
+        frame_duration_ms: int,
+    ):
+        """PCM 바이트를 AudioFrame 단위로 분할"""
+        bytes_per_sample = 2
+        samples_per_frame = max(1, int(sample_rate * frame_duration_ms / 1000))
+        frame_size = samples_per_frame * num_channels * bytes_per_sample
+
+        for offset in range(0, len(pcm_data), frame_size):
+            chunk = pcm_data[offset : offset + frame_size]
+            samples = len(chunk) // (num_channels * bytes_per_sample)
+            if samples <= 0:
+                continue
+            yield rtc.AudioFrame(chunk, sample_rate, num_channels, samples)
+
+    @staticmethod
+    async def _resample_and_chunk(
+        resampler: rtc.AudioResampler,
+        pcm_data: bytes,
+        sample_rate: int,
+        num_channels: int,
+        frame_duration_ms: int,
+    ):
+        """리샘플링 후 AudioFrame 단위로 분할"""
+        bytes_per_sample = 2
+        samples_per_frame = max(1, int(sample_rate * frame_duration_ms / 1000))
+        frame_size = samples_per_frame * num_channels * bytes_per_sample
+
+        for offset in range(0, len(pcm_data), frame_size):
+            chunk = pcm_data[offset : offset + frame_size]
+            if not chunk:
+                continue
+            for frame in resampler.push(bytearray(chunk)):
+                yield frame
+
+        for frame in resampler.flush():
+            yield frame
+
+    async def send_chat_message(self, content: str, user_name: str = "Mit Agent") -> None:
+        """DataPacket으로 채팅 메시지 전송"""
+        if not self._ctx.room or not self._ctx.is_connected:
+            return
+
+        try:
+            import json
+            import uuid
+            from datetime import datetime, timezone
+
+            payload = {
+                "type": "chat_message",
+                "payload": {
+                    "id": str(uuid.uuid4()),
+                    "content": content,
+                    "userName": user_name,
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+
+            await self._ctx.room.local_participant.publish_data(
+                json.dumps(payload),
+                reliable=True,
+            )
+        except Exception as e:
+            logger.warning(f"채팅 메시지 전송 실패: {e}")
 
     def _on_participant_connected(self, participant: rtc.RemoteParticipant) -> None:
         """참여자 입장 이벤트"""

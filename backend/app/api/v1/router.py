@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    agent,
     auth,
     chat,
     decisions,
@@ -17,6 +18,7 @@ from app.api.v1.endpoints import (
 
 api_router = APIRouter(prefix="/api/v1")
 
+api_router.include_router(agent.router)
 api_router.include_router(auth.router)
 api_router.include_router(teams.router)
 api_router.include_router(team_members.router)
