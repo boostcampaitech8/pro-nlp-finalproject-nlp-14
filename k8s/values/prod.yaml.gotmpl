@@ -21,31 +21,18 @@ backend:
 frontend:
   port: 80
 
-# Database
+# Database (외부 서버)
 database:
-  host: postgres-postgresql
-  port: 5432
-  name: mit
-  user: mit
-  password: {{ requiredEnv "DB_PASSWORD" }}
+  url: {{ requiredEnv "DATABASE_URL" }}
 
 # Redis
 redis:
   host: redis-master
   port: 6379
 
-# MinIO
-minio:
-  host: minio
-  port: 9000
-  rootUser: {{ requiredEnv "MINIO_USER" }}
-  rootPassword: {{ requiredEnv "MINIO_PASSWORD" }}
-  externalUrl: "https://www.mit-hub.com/storage"
-
-# Neo4j (Graph DB)
+# Neo4j (외부 서버)
 neo4j:
-  host: neo4j
-  boltPort: 7687
+  uri: {{ requiredEnv "NEO4J_URI" }}
   user: neo4j
   password: {{ requiredEnv "NEO4J_PASSWORD" }}
 
@@ -97,22 +84,10 @@ resources:
   worker:
     requests: { memory: "256Mi", cpu: "200m" }
     limits: { memory: "1Gi", cpu: "1000m" }
-  postgres:
-    requests: { memory: "512Mi", cpu: "200m" }
-    limits: { memory: "1Gi", cpu: "1000m" }
-    storage: 50Gi
   redis:
     requests: { memory: "128Mi", cpu: "100m" }
     limits: { memory: "256Mi", cpu: "500m" }
     storage: 2Gi
-  minio:
-    requests: { memory: "512Mi", cpu: "200m" }
-    limits: { memory: "1Gi", cpu: "500m" }
-    storage: 100Gi
   livekit:
     requests: { memory: "256Mi", cpu: "200m" }
     limits: { memory: "1Gi", cpu: "1000m" }
-  neo4j:
-    requests: { cpu: "500m" }
-    memory: "2Gi"  # heap(1g) + pagecache(512m) + headroom
-    storage: 20Gi

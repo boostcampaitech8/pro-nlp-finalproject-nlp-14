@@ -91,7 +91,7 @@ help:
 	@echo "  make k8s-setup        - k3d 클러스터 생성"
 	@echo "  make k8s-deploy       - 로컬 배포 (전체)"
 	@echo "  make k8s-infra        - 인프라만 배포 (redis|livekit)"
-	@echo "  make k8s-deploy svc=postgres  - 특정 서비스만 배포 (mit|postgres|redis|livekit|neo4j)"
+	@echo "  make k8s-deploy svc=redis  - 특정 서비스만 배포 (mit|redis|livekit)"
 	@echo "  make k8s-deploy-prod  - 프로덕션 배포"
 	@echo "  make k8s-push         - 전체 빌드 & 재시작"
 	@echo "  make k8s-push-be      - Backend 빌드 & 재시작"
@@ -413,8 +413,8 @@ backup-restore:
 # ===================
 K8S_REGISTRY = localhost:5111
 K8S_DIR = k8s
-# helmfile selector: make k8s-deploy svc=postgres
-# svc: mit | postgres | redis | livekit | neo4j
+# helmfile selector: make k8s-deploy svc=redis
+# svc: mit | redis | livekit
 K8S_SELECTOR = $(if $(svc),--selector svc=$(svc),)
 
 k8s-setup:
@@ -469,16 +469,12 @@ k8s-neo4j-update:
 
 k8s-pf:
 	@echo "포트 포워딩 시작 (백그라운드)..."
-	@nohup kubectl port-forward -n mit svc/postgres-postgresql 5432:5432 >/dev/null 2>&1 &
 	@nohup kubectl port-forward -n mit svc/redis-master 6379:6379 >/dev/null 2>&1 &
-	@nohup kubectl port-forward -n mit svc/minio 9000:9000 >/dev/null 2>&1 &
 	@nohup kubectl port-forward -n mit svc/lk-server 7880:80 >/dev/null 2>&1 &
-	@nohup kubectl port-forward -n mit svc/neo4j 7474:7474 7687:7687 >/dev/null 2>&1 &
-	@echo "  postgres: localhost:5432"
 	@echo "  redis:    localhost:6379"
-	@echo "  minio:    localhost:9000"
 	@echo "  livekit:  localhost:7880"
-	@echo "  neo4j:    localhost:7474 (browser), localhost:7687 (bolt)"
+	@echo ""
+	@echo "  (PostgreSQL, Neo4j는 외부 서버 사용)"
 
 k8s-clean:
 	@k3d cluster delete mit

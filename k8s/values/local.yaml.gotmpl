@@ -18,33 +18,20 @@ backend:
 frontend:
   port: 80
 
-# Database - Secret, PostgreSQL차트, ConfigMap에서 공유
+# Database (외부 서버)
 database:
-  host: postgres-postgresql
-  port: 5432
-  name: mit
-  user: mit
-  password: mitpassword
+  url: {{ requiredEnv "DATABASE_URL" }}
 
 # Redis - ConfigMap, LiveKit차트에서 공유
 redis:
   host: redis-master
   port: 6379
 
-# MinIO - Secret, MinIO차트, ConfigMap에서 공유
-minio:
-  host: minio
-  port: 9000
-  rootUser: minioadmin
-  rootPassword: minioadmin
-  externalUrl: "http://localhost/storage"  # Ingress 경유
-
-# Neo4j - Secret, Neo4j차트, ConfigMap에서 공유
+# Neo4j (외부 서버)
 neo4j:
-  host: neo4j
-  boltPort: 7687
+  uri: {{ requiredEnv "NEO4J_URI" }}
   user: neo4j
-  password: neo4jpassword
+  password: {{ requiredEnv "NEO4J_PASSWORD" }}
 
 # LiveKit - Secret, LiveKit차트, ConfigMap에서 공유
 # 서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지
@@ -115,22 +102,10 @@ resources:
   worker:
     requests: { memory: "128Mi", cpu: "100m" }
     limits: { memory: "256Mi", cpu: "500m" }
-  postgres:
-    requests: { memory: "192Mi", cpu: "100m" }
-    limits: { memory: "384Mi", cpu: "500m" }
-    storage: 10Gi
   redis:
     requests: { memory: "48Mi", cpu: "50m" }
     limits: { memory: "96Mi", cpu: "200m" }
     storage: 1Gi
-  minio:
-    requests: { memory: "192Mi", cpu: "100m" }
-    limits: { memory: "384Mi", cpu: "500m" }
-    storage: 20Gi
   livekit:
     requests: { memory: "128Mi", cpu: "100m" }
     limits: { memory: "256Mi", cpu: "500m" }
-  neo4j:
-    requests: { cpu: "500m" }
-    memory: "2Gi"  # heap(1g) + pagecache(512m) + headroom
-    storage: 10Gi

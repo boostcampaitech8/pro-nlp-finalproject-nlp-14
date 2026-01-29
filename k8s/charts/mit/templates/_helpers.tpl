@@ -14,13 +14,6 @@
 {{- end -}}
 
 {{/*
-Database URL 생성
-*/}}
-{{- define "mit.databaseUrl" -}}
-postgresql+asyncpg://{{ .Values.database.user }}:{{ .Values.database.password }}@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}
-{{- end -}}
-
-{{/*
 Redis URL 생성
 */}}
 {{- define "mit.redisUrl" -}}
@@ -32,13 +25,6 @@ LiveKit 내부 URL 생성
 */}}
 {{- define "mit.livekitWsUrl" -}}
 ws://{{ .Values.livekit.host }}:{{ .Values.livekit.port }}
-{{- end -}}
-
-{{/*
-Neo4j Bolt URL 생성
-*/}}
-{{- define "mit.neo4jUri" -}}
-bolt://{{ .Values.neo4j.host }}:{{ .Values.neo4j.boltPort }}
 {{- end -}}
 
 {{/*

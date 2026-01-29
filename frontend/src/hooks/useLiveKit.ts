@@ -714,7 +714,7 @@ export function useLiveKit(meetingId: string) {
 
         logger.error('[useLiveKit] Failed to join room:', err);
         setConnectionState('failed');
-        setError(err instanceof Error ? err.message : '회의 참여에 실패했습니다.');
+        setError('회의 연결에 실패했습니다. 잠시 후 다시 시도해주세요.');
         throw err;
       }
     },
