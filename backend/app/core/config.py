@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # LangGraph 설정
     ncp_clovastudio_api_key: str = ""
 
+    # Agent 설정
+    agent_wake_word: str = "부덕"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
