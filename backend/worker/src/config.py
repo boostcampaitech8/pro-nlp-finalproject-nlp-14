@@ -33,6 +33,10 @@ class RealtimeWorkerConfig(BaseSettings):
     agent_stream_path: str = "/api/v1/agent/meeting"
     agent_wake_word: str = "부덕"  # wake word 감지 시에만 Agent 호출
 
+    # 키워드 부스팅 설정 (STT 인식률 향상)
+    stt_boost_keywords: str = "부덕아,부덕이,부덕"  # 쉼표로 구분된 키워드 목록
+    stt_boost_weight: float = 3.0  # 부스팅 가중치 (0.0~5.0)
+
     # TTS 설정
     tts_server_url: str = ""
     tts_timeout: float = 60.0

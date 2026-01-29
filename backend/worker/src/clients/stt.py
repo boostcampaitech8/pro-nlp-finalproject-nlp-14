@@ -120,11 +120,24 @@ class ClovaSpeechSTTClient:
     async def _generate_requests(self) -> AsyncGenerator[nest_pb2.NestRequest, None]:
         """gRPC 요청 생성기
 
-        1. CONFIG 요청 전송 (언어 설정)
+        1. CONFIG 요청 전송 (언어, 키워드 부스팅 설정)
         2. DATA 요청 반복 전송 (오디오 청크)
         """
-        # 1. 초기 설정 요청
-        config_json = json.dumps({"transcription": {"language": self.language}})
+        # 1. 초기 설정 요청 (키워드 부스팅 포함)
+        config_dict: dict = {"transcription": {"language": self.language}}
+
+        # 키워드 부스팅 설정 추가
+        if self.config.stt_boost_keywords:
+            config_dict["keywordBoosting"] = {
+                "boostings": [
+                    {
+                        "words": self.config.stt_boost_keywords,
+                        "weight": self.config.stt_boost_weight,
+                    }
+                ]
+            }
+
+        config_json = json.dumps(config_dict)
         yield nest_pb2.NestRequest(
             type=nest_pb2.RequestType.CONFIG,
             config=nest_pb2.NestConfig(config=config_json),
