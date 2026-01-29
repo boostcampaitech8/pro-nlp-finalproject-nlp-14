@@ -230,6 +230,18 @@ class ClovaSpeechSTTClient:
                             f"full='{self._full_text}' (epFlag={is_final})"
                         )
 
+                        # 중간 결과도 콜백 전달 (wake word 조기 감지용)
+                        if not is_final and text.strip() and self.on_result:
+                            segment = STTSegment(
+                                text=self._full_text.strip(),
+                                start_ms=self._start_timestamp or 0,
+                                end_ms=self._end_timestamp,
+                                confidence=confidence,
+                                is_final=False,
+                                timestamp=timestamp,
+                            )
+                            self.on_result(segment)
+
                         # epFlag=True: 발화 종료, 누적된 전체 텍스트로 콜백
                         if is_final:
                             if self._full_text.strip() and self.on_result:

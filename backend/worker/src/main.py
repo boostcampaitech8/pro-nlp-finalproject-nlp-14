@@ -64,6 +64,11 @@ class RealtimeWorker:
         # 참여자별 STT 클라이언트 (user_id -> STTClient)
         self._stt_clients: dict[str, ClovaSpeechSTTClient] = {}
 
+        # 참여자별 wake word 감지 플래그 (중간 결과에서 감지 시 True)
+        self._wake_word_pending: dict[str, bool] = {}
+        # 참여자별 context 선준비 작업 (wake word 감지 시 시작)
+        self._context_prep_tasks: dict[str, asyncio.Task] = {}
+
         # LiveKit Bot
         self.bot = LiveKitBot(
             meeting_id=meeting_id,
@@ -174,6 +179,12 @@ class RealtimeWorker:
 
     def _on_participant_left(self, user_id: str) -> None:
         """참여자 퇴장 처리 - STT 클라이언트 종료"""
+        # wake word 관련 상태 정리
+        self._wake_word_pending.pop(user_id, None)
+        prep_task = self._context_prep_tasks.pop(user_id, None)
+        if prep_task:
+            prep_task.cancel()
+
         if user_id not in self._stt_clients:
             return
 
@@ -216,9 +227,30 @@ class RealtimeWorker:
         if not segment.text.strip():
             return
 
-        # final 결과만 전송
+        # 중간 결과에서 wake word 감지 시 context 선준비
+        # (STT 클라이언트가 이미 누적된 전체 텍스트를 전달)
         if not segment.is_final:
-            logger.debug(f"STT 중간 결과: [{participant_name}] {segment.text}")
+            logger.debug(
+                f"STT 중간 결과: [{participant_name}] text='{segment.text}'"
+            )
+
+            # 누적된 텍스트에서 wake word 감지
+            if (
+                self._agent_enabled
+                and self.config.agent_wake_word in segment.text
+                and not self._wake_word_pending.get(user_id, False)
+            ):
+                logger.info(
+                    f"Wake word 조기 감지 (중간 결과): '{self.config.agent_wake_word}' "
+                    f"in '{segment.text}'"
+                )
+                self._wake_word_pending[user_id] = True
+
+                # context 선준비 (pre_transcript_id 기준으로 업데이트)
+                if self._pre_transcript_id:
+                    self._context_prep_tasks[user_id] = asyncio.create_task(
+                        self._prepare_context(self._pre_transcript_id)
+                    )
             return
 
         logger.info(
@@ -241,40 +273,83 @@ class RealtimeWorker:
         if response:
             logger.debug(f"트랜스크립트 저장: id={response.id}")
 
-        # wake word 감지 시에만 Agent 파이프라인 호출 (최신화 전에 호출)
-        if self._agent_enabled and self.config.agent_wake_word in segment.text:
-            logger.info(f"Wake word 감지: '{self.config.agent_wake_word}' in '{segment.text}'")
+        # wake word 처리: 중간 결과에서 이미 감지했거나 final에서 감지
+        wake_word_triggered = self._wake_word_pending.pop(user_id, False)
+        if not wake_word_triggered and self._agent_enabled:
+            # final 결과에서도 wake word 확인 (중간 결과에서 놓친 경우)
+            wake_word_triggered = self.config.agent_wake_word in segment.text
+
+        if wake_word_triggered:
+            logger.info(f"Wake word 최종 처리: '{segment.text}'")
             if response:
-                # pre_transcript_id를 인자로 전달 (asyncio.create_task 타이밍 문제 방지)
+                # context 선준비 완료 대기 후 agent 호출
                 asyncio.create_task(
-                    self._run_agent_pipeline(response.id, self._pre_transcript_id)
+                    self._run_agent_pipeline_with_prep(
+                        user_id, response.id, self._pre_transcript_id
+                    )
                 )
 
-        # preTranscriptId 최신화 (agent 파이프라인 호출 후)
+        # preTranscriptId 최신화 (agent 파이프라인 태스크 생성 직후, 완료 전)
         if response:
             self._pre_transcript_id = response.id
+
+    async def _prepare_context(self, pre_transcript_id: str) -> None:
+        """Context 선준비 (wake word 조기 감지 시 호출)"""
+        try:
+            logger.info(f"Context 선준비 시작: pre_transcript_id={pre_transcript_id}")
+            await self.api_client.update_agent_context(
+                meeting_id=self.meeting_id,
+                pre_transcript_id=pre_transcript_id,
+            )
+            logger.info("Context 선준비 완료")
+        except Exception as e:
+            logger.warning(f"Context 선준비 실패 (무시): {e}")
+
+    async def _run_agent_pipeline_with_prep(
+        self,
+        user_id: str,
+        transcript_id: str,
+        pre_transcript_id: str | None,
+    ) -> None:
+        """Context 선준비 완료 후 Agent 파이프라인 실행"""
+        # 해당 사용자의 context 선준비 작업 완료 대기
+        prep_task = self._context_prep_tasks.pop(user_id, None)
+        if prep_task:
+            try:
+                await prep_task
+            except Exception:
+                pass  # 실패해도 계속 진행
+
+        # agent 파이프라인 실행 (context 이미 준비됨, skip_context=True)
+        await self._run_agent_pipeline(
+            transcript_id, pre_transcript_id, skip_context=True
+        )
 
     async def _run_agent_pipeline(
         self,
         transcript_id: str,
         pre_transcript_id: str | None,
+        skip_context: bool = False,
     ) -> None:
         """LLM 스트리밍 응답을 문장 단위로 채팅 전송
 
         Args:
             transcript_id: 현재 발화 transcript ID
             pre_transcript_id: 이전 transcript ID (context 조회 기준)
+            skip_context: True면 context update 건너뜀 (선준비 완료 시)
         """
         async with self._agent_lock:
             logger.info(
-                "Agent 파이프라인 시작: meeting_id=%s, transcript_id=%s, pre_transcript_id=%s",
+                "Agent 파이프라인 시작: meeting_id=%s, transcript_id=%s, "
+                "pre_transcript_id=%s, skip_context=%s",
                 self.meeting_id,
                 transcript_id,
                 pre_transcript_id,
+                skip_context,
             )
 
-            # 1. Context update 호출
-            if pre_transcript_id:
+            # 1. Context update 호출 (선준비 안 된 경우만)
+            if not skip_context and pre_transcript_id:
                 await self.api_client.update_agent_context(
                     meeting_id=self.meeting_id,
                     pre_transcript_id=pre_transcript_id,
