@@ -80,3 +80,15 @@ backup/
 frontend/public/vad/
 
 nohup.out
+
+# AI tool
+**/CLAUDE.md
+**/CLAUDE*.md
+.claude/
+.claude*/
+.omc/
+AGENTS.md
+
+# worktree
+.worktreeinclude
+setup-worktree-claude.sh

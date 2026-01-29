@@ -166,7 +166,7 @@
         │     │           │
         │     ▼           ▼
         │ ┌──────────┐ ┌──────────┐
-        │ │  merged  │ │ approved │
+        │ │  latest  │ │ approved │
         │ │-> GT 반영│ │ (부분)   │
         │ │-> Action │ └──────────┘
         │ │   추출   │
@@ -187,7 +187,7 @@ Decision 전원 approve
         │
         ▼
 ┌─────────────────┐
-│ status: merged  │
+│ status: latest  │
 └────────┬────────┘
          │
          ▼
@@ -218,8 +218,7 @@ Decision 전원 approve
 | 상태 | 설명 | 효과 |
 |------|------|------|
 | draft | 리뷰 대기 중 | Decision 상태: draft |
-| approved | 일부 승인됨 | 전원 승인 대기 중 |
-| merged | 전원 승인 완료 | GT 반영, mit-action 트리거 (Action Item 추출) |
+| approved | 전원 승인 완료 | Decision 상태: latest, GT 반영, mit-action 트리거 (Action Item 추출) |
 | rejected | 거부됨 | Decision 상태: rejected |
 
 ---

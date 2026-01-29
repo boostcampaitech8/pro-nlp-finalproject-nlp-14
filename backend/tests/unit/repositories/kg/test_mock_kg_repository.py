@@ -80,7 +80,7 @@ class TestDecisionOperations:
         assert decision is not None
         assert decision.id == "decision-1"
         assert decision.content == "RESTful API 설계 원칙 준수"
-        assert decision.status == "merged"
+        assert decision.status == "latest"
 
     @pytest.mark.asyncio
     async def test_get_decision_not_found(self, kg_repo):
@@ -159,7 +159,7 @@ class TestDecisionOperations:
         decision = await kg_repo.get_decision("decision-3")
 
         assert result is True
-        assert decision.status == "merged"
+        assert decision.status == "latest"
 
     @pytest.mark.asyncio
     async def test_merge_nonexistent_decision(self, kg_repo):
@@ -282,5 +282,5 @@ class TestDataIsolation:
         decision1 = await repo1.get_decision("decision-3")
         decision2 = await repo2.get_decision("decision-3")
 
-        assert decision1.status == "merged"
-        assert decision2.status == "pending"
+        assert decision1.status == "latest"
+        assert decision2.status == "draft"
