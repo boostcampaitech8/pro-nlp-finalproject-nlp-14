@@ -87,6 +87,7 @@ worker:
   clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
   clovaSttSecret: {{ env "CLOVA_STT_SECRET" | default "" }}
   backendApiKey: {{ env "BACKEND_API_KEY" | default "" }}
+  ttsServerUrl: {{ env "TTS_SERVER_URL" | default "" }}
 
 # NCP Clova Studio
 ncp:

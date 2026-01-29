@@ -293,12 +293,12 @@ class RealtimeWorker:
                     buffer += token
                     sentences, buffer = self._extract_sentences(buffer)
                     for sentence in sentences:
-                        # await self.bot.send_chat_message(sentence)
+                        await self.bot.send_chat_message(sentence)
                         self._enqueue_tts(sentence)
 
                 tail = buffer.strip()
                 if tail:
-                    # await self.bot.send_chat_message(tail)
+                    await self.bot.send_chat_message(tail)
                     self._enqueue_tts(tail)
 
             except Exception as e:
