@@ -3,88 +3,33 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.infrastructure.graph.integration.llm import get_filter_extractor_llm
 
 from ..state import MitSearchState
+from ..utils.temporal_extractor import get_temporal_extractor
 
 logger = logging.getLogger(__name__)
 
 
 def parse_temporal_expressions(query: str) -> dict | None:
-    """규칙 기반 시간 표현 파싱 (폴백용).
+    """ContextAwareTemporalExtractor를 사용한 시간 표현 파싱.
 
     Args:
         query: 검색 쿼리 문자열
 
     Returns:
-        {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"} 또는 None
+        {"start": "YYYY-MM-DDTHH:MM:SS", "end": "YYYY-MM-DDTHH:MM:SS"} 또는 None
     """
-    today = datetime.now()
-
-    # 오늘
-    if "오늘" in query:
-        return {"start": today.strftime("%Y-%m-%d"), "end": today.strftime("%Y-%m-%d")}
-
-    # 어제
-    if "어제" in query:
-        yesterday = today - timedelta(days=1)
-        return {"start": yesterday.strftime("%Y-%m-%d"), "end": yesterday.strftime("%Y-%m-%d")}
-
-    # 지난주 / 금주 / 이번주
-    if "지난주" in query or "금주" in query or "이번주" in query:
-        # 지난주: 7일 전 ~ 어제
-        if "지난주" in query:
-            start = today - timedelta(days=7)
-            end = today - timedelta(days=1)
-        else:  # 이번주/금주
-            # 이번주: 월요일 ~ 일요일
-            monday = today - timedelta(days=today.weekday())
-            end = monday + timedelta(days=6)
-            start = monday
-
-        return {"start": start.strftime("%Y-%m-%d"), "end": end.strftime("%Y-%m-%d")}
-
-    # 지난달 / 이번달 / 금월
-    if "지난달" in query or "이번달" in query or "금월" in query:
-        if "지난달" in query:
-            # 지난달 전체
-            first_day_this_month = today.replace(day=1)
-            last_day_prev_month = first_day_this_month - timedelta(days=1)
-            first_day_prev_month = last_day_prev_month.replace(day=1)
-            return {
-                "start": first_day_prev_month.strftime("%Y-%m-%d"),
-                "end": last_day_prev_month.strftime("%Y-%m-%d"),
-            }
-        else:  # 이번달/금월
-            # 이번달: 1일 ~ 말일
-            first_day = today.replace(day=1)
-            if today.month == 12:
-                last_day = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
-            else:
-                last_day = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
-
-            return {"start": first_day.strftime("%Y-%m-%d"), "end": last_day.strftime("%Y-%m-%d")}
-
-    # YYYY년 MM월 형식
-    import re
-
-    match = re.search(r"(\d{4})년\s*(\d{1,2})월", query)
-    if match:
-        year = int(match.group(1))
-        month = int(match.group(2))
-        first_day = datetime(year, month, 1)
-        if month == 12:
-            last_day = datetime(year + 1, 1, 1) - timedelta(days=1)
-        else:
-            last_day = datetime(year, month + 1, 1) - timedelta(days=1)
-
-        return {"start": first_day.strftime("%Y-%m-%d"), "end": last_day.strftime("%Y-%m-%d")}
-
-    return None
+    extractor = get_temporal_extractor()
+    date_range = extractor.extract_date_range(query)
+    
+    if date_range:
+        logger.info(f"Temporal expression extracted: {date_range}")
+    
+    return date_range
 
 
 async def filter_extractor_async(state: MitSearchState) -> dict:
@@ -138,7 +83,7 @@ async def filter_extractor_async(state: MitSearchState) -> dict:
 
 def _extract_filters_with_rules(query: str) -> dict:
     """규칙 기반 필터 추출 (폴백용)."""
-    # 시간 범위 추출
+    # 시간 범위 추출 (ContextAwareTemporalExtractor 사용)
     date_range = parse_temporal_expressions(query)
 
     # 엔티티 타입 추출

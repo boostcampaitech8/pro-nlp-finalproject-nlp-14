@@ -66,65 +66,11 @@ async def main():
                 "retry_count": 0,  # 재시도 카운트 초기화
             }
 
-            # 그래프 실행 (스트리밍)
-            print("\n처리 중...")
+            # 그래프 실행
+            print("\n처리 중...\n")
 
-            final_state = None
-            current_response = ""
-            in_generator = False
-
-            # astream_events를 사용하여 LLM 토큰 스트리밍
-            async for event in app.astream_events(initial_state, version="v2"):
-                kind = event["event"]
-                name = event.get("name", "")
-                tags = event.get("tags", [])
-
-                # 노드 시작 감지 (필요한 이벤트만 처리)
-                if kind == "on_chain_start":
-                    # Generator 노드만 명시적으로 표시
-                    if name == "generator" or "seq:step:4" in tags:
-                        in_generator = True
-                        print("\n" + "=" * 50)
-                        print("답변:")
-                        print("=" * 50)
-
-                # LLM 스트리밍 토큰 (응답 출력)
-                elif kind == "on_chat_model_stream":
-                    # generator 노드에서만 출력
-                    if in_generator:
-                        chunk = event.get("data", {}).get("chunk", {})
-                        if hasattr(chunk, "content"):
-                            content = chunk.content
-                        else:
-                            content = chunk.get("content", "")
-                        
-                        if content:
-                            print(content, end="", flush=True)
-                            current_response += content
-
-                # 노드 종료
-                elif kind == "on_chain_end":
-                    if in_generator and (name == "generator" or "seq:step:4" in tags):
-                        print("\n" + "=" * 50)
-                        in_generator = False
-
-                    # 최종 그래프 종료 감지
-                    if name == "LangGraph":
-                        final_state = event.get("data", {}).get("output", {})
-
-            # 최종 상태가 없으면 초기 상태 사용
-            if final_state is None:
-                final_state = initial_state
-            
-            # 최종 응답 확인 및 출력
-            response = final_state.get('response', '')
-            if response and not current_response:
-                # generator 노드에서 스트리밍되지 않은 응답 (MIT Search 직접 반환)
-                print("\n" + "=" * 50)
-                print("답변:")
-                print("=" * 50)
-                print(response)
-                print("=" * 50)
+            # ainvoke로 그래프 실행 (answering 노드에서 직접 스트리밍 출력)
+            final_state = await app.ainvoke(initial_state)
 
         except Exception as e:
             print(f"\n실행 중 오류 발생: {e}")

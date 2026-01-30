@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from .recency_calculator import calculate_recency_score, extract_date_from_result
+
 logger = logging.getLogger(__name__)
 
 
@@ -227,8 +229,8 @@ class SearchResultRelevanceScorer:
             # 쿼리 임베딩
             query_embedding = self.embedding_model.encode(query)
 
-            # 결과 본문 임베딩
-            content = result.get("content", "")
+            # 결과 본문 임베딩 (그래프 맥락 우선)
+            content = result.get("graph_context") or result.get("content", "")
             if not content:
                 return 0.3  # 내용이 없으면 낮은 점수
 
@@ -268,21 +270,11 @@ class SearchResultRelevanceScorer:
 
         최근 3개월: 1.0, 6개월: 0.7, 1년: 0.5, 그 외: 0.3
         """
-        # created_at, updated_at, date 등의 필드 확인
-        date_fields = ["created_at", "updated_at", "date", "timestamp"]
-        date_value = None
+        parsed_date = extract_date_from_result(result)
+        if not parsed_date:
+            return 0.5
 
-        for field in date_fields:
-            if field in result:
-                date_value = result[field]
-                break
-
-        if not date_value:
-            return 0.5  # 날짜 정보 없으면 중간 점수
-
-        # TODO: 실제 datetime 비교 구현
-        # 일단 기본값으로 반환
-        return 0.7
+        return calculate_recency_score(parsed_date)
 
     def _assess_quality(self, score: float, result_count: int) -> str:
         """점수 기반 품질 평가"""

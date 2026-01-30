@@ -64,10 +64,10 @@ def get_filter_extractor_llm() -> ChatClovaX:
 def get_cypher_generator_llm() -> ChatClovaX:
     """Cypher 생성 LLM (정확도 최고).
 
-    temperature: 0.1 (매우 일관된 쿼리 생성)
+    temperature: 0.05 (극도로 일관된 쿼리 생성 - 같은 의도는 항상 같은 구조)
     max_tokens: 512
     """
-    return get_base_llm().bind(temperature=0.1, max_tokens=512)
+    return get_base_llm().bind(temperature=0.05, max_tokens=512)
 
 
 def get_answer_generator_llm() -> ChatClovaX:

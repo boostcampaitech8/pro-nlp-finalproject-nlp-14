@@ -53,22 +53,19 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
     """BGE Reranker v2-m3 모델(싱글톤 로드)을 사용하여 원시 결과 재순위화.
 
     Contract:
-        reads: mit_search_raw_results (FULLTEXT 점수가 포함된 리스트), mit_search_query
-        writes: mit_search_ranked_results (결합된 final_score가 포함된 결과)
-        side-effects: BGE 모델 추론 (CPU/GPU), 첫 호출 시 모델 싱글톤 로드
-        failures: FlagEmbedding 미설치 OR 모델 추론 에러 → FULLTEXT 점수만 사용하여 폴백
+        reads: mit_search_raw_results, mit_search_query, mit_search_query_intent
+        writes: mit_search_ranked_results (final_score 포함)
+        side-effects: BGE 모델 추론, 의도 기반 가중치 적응
+        failures: 모델 미설치 → FULLTEXT만 사용하여 폴백
 
-    FULLTEXT 점수 (60%) + BGE reranker 점수 (40%)를 결합.
-    FlagEmbedding 미설치 시 FULLTEXT 점수로 폴백.
-
-    Returns:
-        mit_search_ranked_results로 State 업데이트
+    쿼리 의도(intent)와 포커스(focus)를 반영한 적응형 가중치로 재순위화.
     """
-    logger.info("Starting reranking")
+    logger.info("Starting reranking with intent-aware weighting")
 
     try:
         raw_results = state.get("mit_search_raw_results", [])
         query = state.get("mit_search_query", "")
+        query_intent = state.get("mit_search_query_intent", {})
 
         if not raw_results:
             logger.info("No results to rerank")
@@ -80,11 +77,17 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
                 {**result, "final_score": result.get("score", 0)}
                 for result in raw_results
             ]
-            print(f"\n[리랭킹] 쿼리 없음, {len(ranked_results)}개 결과 FULLTEXT 점수로 반환")
-            if ranked_results:
-                for i, r in enumerate(ranked_results[:3]):
-                    print(f"  [{i+1}] {r.get('title', r.get('content', '')[:40])} | 점수: {r.get('final_score')}")
             return {"mit_search_ranked_results": ranked_results}
+
+        # 쿼리 의도 추출
+        search_focus = query_intent.get("search_focus")
+        primary_entity = query_intent.get("primary_entity")
+        intent_type = query_intent.get("intent_type", "general_search")
+
+        logger.info(
+            "[Reranking] 의도 기반 가중치 적용",
+            extra={"focus": search_focus, "intent": intent_type},
+        )
 
         # BGE Reranker 모델 로드 (싱글톤)
         reranker_model = _get_reranker_model()
@@ -102,38 +105,39 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
                 {**result, "final_score": result.get("score", 0)}
                 for result in ranked_results
             ]
-            print(f"\n[리랭킹] FlagEmbedding 미설치, {len(ranked_results)}개 결과 FULLTEXT 점수로 정렬")
-            if ranked_results:
-                for i, r in enumerate(ranked_results[:3]):
-                    print(f"  [{i+1}] {r.get('title', r.get('content', '')[:40])} | 최종점수: {r.get('final_score')}")
             return {"mit_search_ranked_results": ranked_results}
 
-        # 재순위화 점수 계산 (ScoreCalculator 사용)
-        score_calculator = ScoreCalculator(
-            fulltext_weight=FULLTEXT_WEIGHT,
-            entity_match_weight=0.0,  # reranking에서는 사용 안함
-            recency_weight=1.0 - FULLTEXT_WEIGHT  # 나머지는 semantic weight
-        )
+        # 의도 기반 가중치 결정
+        # entity_search: 의도 명확 → semantic 높음 (90%)
+        # general_search: 의도 불명확 → semantic 낮음 (40%)
+        if intent_type == "entity_search" and primary_entity:
+            semantic_weight = 0.9
+            fulltext_weight = 0.1
+            logger.info(f"[Reranking] Entity search mode: semantic 90% / fulltext 10%")
+        else:
+            semantic_weight = 0.4
+            fulltext_weight = 0.6
+            logger.info(f"[Reranking] General search mode: semantic 40% / fulltext 60%")
+
+        # 재순위화 점수 계산
         ranked_results = []
 
         for result in raw_results:
             try:
-                # 결과 텍스트 준비
-                result_text = f"{result.get('title', '')} {result.get('content', '')}"[:512]  # 최대 512자
+                # 결과 텍스트 준비 - graph_context 우선 사용
+                result_text = result.get('graph_context') or f"{result.get('title', '')} {result.get('content', '')}"
+                result_text = result_text[:512]
 
-                # BGE Reranker로 관련도 점수 계산 (0-1)
-                rerank_score = reranker_model.compute_score([query, result_text])
+                # BGE Reranker로 의미론적 관련도 점수
+                rerank_scores = reranker_model.compute_score([query, result_text])
+                rerank_score = rerank_scores[0] if isinstance(rerank_scores, list) else rerank_scores
 
-                # 정규화 (BGE는 음수 점수도 가능하므로 0-1로 정규화)
-                rerank_score_normalized = max(0, min(1, (rerank_score + 1) / 2))
+                # 정규화 (BGE: -15~+15 → 0~1)
+                rerank_score_normalized = max(0, min(1, (rerank_score + 15) / 30))
 
-                # 최종 점수 계산 (ScoreCalculator 사용)
+                # 최종 점수 = FULLTEXT(의도 무관) + Semantic(의도 반영)
                 fulltext_score = result.get("score", 0.5)
-                final_score = score_calculator.calculate_combined_score(
-                    fulltext_score=fulltext_score,
-                    entity_match_score=0.5,  # reranking에서는 미사용
-                    recency_score=rerank_score_normalized
-                )
+                final_score = fulltext_weight * fulltext_score + semantic_weight * rerank_score_normalized
 
                 ranked_results.append({
                     **result,
@@ -143,7 +147,6 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
 
             except Exception:
                 logger.warning(f"Reranking failed for result {result.get('id')}")
-                # 재순위화 실패 시 원본 점수 사용
                 ranked_results.append({
                     **result,
                     "rerank_score": 0,
@@ -153,8 +156,13 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
         # 최종 점수로 정렬
         ranked_results.sort(key=lambda x: x.get("final_score", 0), reverse=True)
 
-        logger.info(f"Reranked {len(ranked_results)} results")
-        logger.debug(f"Top result score: {ranked_results[0].get('final_score', 0):.3f}" if ranked_results else "No results")
+        logger.info(
+            f"Reranked {len(ranked_results)} results",
+            extra={
+                "top_score": ranked_results[0].get("final_score", 0) if ranked_results else 0,
+                "focus": search_focus,
+            },
+        )
 
         return {"mit_search_ranked_results": ranked_results}
 

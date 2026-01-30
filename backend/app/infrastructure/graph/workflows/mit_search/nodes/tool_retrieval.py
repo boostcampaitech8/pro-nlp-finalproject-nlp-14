@@ -101,7 +101,8 @@ def _generate_cypher_by_strategy(
         cypher = f"""MATCH (u:User)-[:MEMBER_OF]->(t:Team)<-[:MEMBER_OF]-(team_member:User)
 WHERE u.name CONTAINS $query AND (t)<-[:MEMBER_OF]-(:User {{id: $user_id}})
 {date_filter}
-RETURN team_member.id AS id, team_member.name AS title, team_member.name AS content, "active" AS status, t.created_at AS created_at, t.id AS team_id, t.name AS team_name, 1.0 AS score
+RETURN team_member.id AS id, team_member.name AS title, team_member.name AS content, "active" AS status, t.created_at AS created_at, t.id AS team_id, t.name AS team_name, 1.0 AS score,
+       team_member.name + '님은 ' + t.name + ' 팀의 멤버입니다.' AS graph_context
 ORDER BY team_member.name ASC
 LIMIT 20"""
         return cypher
@@ -110,7 +111,8 @@ LIMIT 20"""
         cypher = f"""MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)
 WHERE u.name CONTAINS $query AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
 {date_filter}
-RETURN d.id AS id, d.content AS content, d.status AS status, d.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score
+RETURN d.id AS id, d.content AS content, d.status AS status, d.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
+       u.name + '님이 참여한 ' + m.title + ' 회의의 ' + a.topic + ' 안건에서 도출된 결정사항: ' + d.content AS graph_context
 ORDER BY d.created_at DESC
 LIMIT 20"""
         return cypher
@@ -119,7 +121,8 @@ LIMIT 20"""
         cypher = f"""MATCH (u:User {{id: $user_id}})-[:PARTICIPATED_IN]->(m:Meeting)
 WHERE ($query = "*" OR m.title CONTAINS $query)
 {date_filter}
-RETURN m.id AS id, m.title AS title, m.title AS content, m.status AS status, m.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score
+RETURN m.id AS id, m.title AS title, m.title AS content, m.status AS status, m.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
+       '회의: ' + m.title + ' (참여자: ' + u.name + ')' AS graph_context
 ORDER BY m.created_at DESC
 LIMIT 20"""
         return cypher
@@ -129,7 +132,8 @@ LIMIT 20"""
 MATCH (m)-[:CONTAINS]->(a:Agenda)
 WHERE ($query = "*" OR a.topic CONTAINS $query)
 {date_filter}
-RETURN a.id AS id, a.topic AS title, a.topic AS content, a.status AS status, a.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score
+RETURN a.id AS id, a.topic AS title, a.topic AS content, a.status AS status, a.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
+       m.title + ' 회의의 안건: ' + a.topic AS graph_context
 ORDER BY a.created_at DESC
 LIMIT 20"""
         return cypher
@@ -141,7 +145,8 @@ WHERE ($query = "*" OR ai.title CONTAINS $query)
 {date_filter}
 OPTIONAL MATCH (u:User)-[:ASSIGNED_TO]->(ai)
 RETURN ai.id AS id, ai.title AS title, ai.title AS content, ai.status AS status, ai.created_at AS created_at, 
-       coalesce(u.name, "미배정") AS assignee, u.id AS assignee_id, 1.0 AS score
+       coalesce(u.name, "미배정") AS assignee, u.id AS assignee_id, 1.0 AS score,
+       'Action Item: ' + ai.title + ' (담당자: ' + coalesce(u.name, '미배정') + ', 상태: ' + ai.status + ')' AS graph_context
 ORDER BY ai.created_at DESC
 LIMIT 20"""
         return cypher
@@ -240,7 +245,7 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
         # 파라미터 준비
         parameters = {
             "query": strategy.get("search_term", ""),
-            "user_id": user_id
+            "user_id": user_id,
         }
         
         # 시간 필터 파라미터 추가
