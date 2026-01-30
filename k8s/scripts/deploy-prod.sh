@@ -2,11 +2,15 @@
 # MIT 프로덕션 K8s 배포 스크립트 (k3s 서버용)
 #
 # 사용법:
-#   ./deploy-prod.sh                                    # latest 태그로 배포
-#   ./deploy-prod.sh abc1234                            # 모든 서비스 동일 태그
-#   BACKEND_TAG=abc FRONTEND_TAG=def ./deploy-prod.sh   # 서비스별 개별 태그
-#   ./deploy-prod.sh --setup-ghcr                       # GHCR 인증 시크릿 설정
-#   ./deploy-prod.sh --status                           # 배포 상태 확인
+#   ./k8s/scripts/deploy-prod.sh                                    # 모든 서비스 latest 배포
+#   ./k8s/scripts/deploy-prod.sh abc1234                            # 모든 서비스 동일 태그 배포
+#   BACKEND_TAG=abc ./k8s/scripts/deploy-prod.sh                    # backend만 특정 태그
+#   BACKEND_TAG=a FRONTEND_TAG=b ./k8s/scripts/deploy-prod.sh       # 서비스별 개별 태그
+#   ./k8s/scripts/deploy-prod.sh --setup-ghcr                       # GHCR 인증 시크릿 설정 (최초 1회)
+#   ./k8s/scripts/deploy-prod.sh --rollback                         # 이전 버전으로 롤백
+#   ./k8s/scripts/deploy-prod.sh --status                           # 현재 배포 상태 확인
+#   ./k8s/scripts/deploy-prod.sh --logs backend                     # backend 로그 확인
+#   ./k8s/scripts/deploy-prod.sh --help                             # 도움말
 #
 # 사전 요구사항:
 #   - kubectl이 k3s 클러스터에 연결된 상태
