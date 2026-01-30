@@ -103,18 +103,18 @@ oauth:
 # Resources
 resources:
   backend:
-    requests: { memory: "512Mi", cpu: "200m" }
-    limits: { memory: "1Gi", cpu: "1000m" }
+    requests: { memory: "300Mi", cpu: "100m" }
+    limits:   { memory: "700Mi", cpu: "300m" }
   frontend:
-    requests: { memory: "128Mi", cpu: "100m" }
-    limits: { memory: "256Mi", cpu: "500m" }
+    requests: { memory: "64Mi", cpu: "20m" }
+    limits:   { memory: "192Mi", cpu: "100m" }
   worker:
-    requests: { memory: "256Mi", cpu: "200m" }
-    limits: { memory: "1Gi", cpu: "1000m" }
+    requests: { memory: "300Mi", cpu: "100m" }
+    limits:   { memory: "700Mi", cpu: "300m" }
   redis:
-    requests: { memory: "128Mi", cpu: "100m" }
-    limits: { memory: "256Mi", cpu: "500m" }
+    requests: { memory: "64Mi", cpu: "20m" }
+    limits:   { memory: "256Mi", cpu: "50m" }
     storage: 2Gi
   livekit:
-    requests: { memory: "256Mi", cpu: "200m" }
-    limits: { memory: "1Gi", cpu: "1000m" }
+    requests: { memory: "450Mi", cpu: "150m" }
+    limits:   { memory: "1Gi", cpu: "600m" }
