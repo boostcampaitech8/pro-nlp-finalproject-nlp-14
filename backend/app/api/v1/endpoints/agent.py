@@ -97,10 +97,10 @@ async def update_agent_context(
 
 @router.post(
     "/meeting",
-    summary="Agent 실행 (스트리밍)",
-    description="transcript ID를 기반으로 LLM을 실행하고 스트리밍 응답을 반환합니다.",
+    summary="Agent 실행 (Context Engineering + Orchestration)",
+    description="transcript ID를 기반으로 Context Engineering과 Orchestration Graph를 사용하여 응답을 생성합니다.",
 )
-async def run_agent_streaming(
+async def run_agent_with_context(
     request: AgentMeetingRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     agent_service: Annotated[AgentService, Depends(get_agent_service)],
@@ -118,7 +118,7 @@ async def run_agent_streaming(
     user_input = _strip_wake_word(raw_text, settings.agent_wake_word)
 
     logger.info(
-        "Agent 스트리밍 요청: meeting_id=%s, transcript_id=%s, raw='%s', cleaned='%s'",
+        "Agent Context 요청: meeting_id=%s, transcript_id=%s, raw='%s', cleaned='%s'",
         request.meeting_id,
         request.transcript_id,
         raw_text[:50] if raw_text else "",
@@ -127,13 +127,18 @@ async def run_agent_streaming(
 
     async def event_generator():
         try:
-            async for token in agent_service.process_streaming(
+            # Context Engineering + Orchestration Graph 사용
+            response = await agent_service.process_with_context(
                 user_input=user_input,
-            ):
-                yield f"data: {token}\n\n"
+                meeting_id=str(request.meeting_id),
+                user_id=str(transcript.user_id),
+                db=db,
+            )
+            # 응답을 스트리밍 형태로 전달 (호환성 유지)
+            yield f"data: {response}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
-            logger.error("Agent 스트리밍 오류: %s", e, exc_info=True)
+            logger.error("Agent Context 오류: %s", e, exc_info=True)
             yield f"data: [ERROR] {str(e)}\n\n"
 
     return StreamingResponse(
