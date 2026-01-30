@@ -66,8 +66,8 @@ class RealtimeWorker:
 
         # 참여자별 wake word 감지 플래그 (중간 결과에서 감지 시 True)
         self._wake_word_pending: dict[str, bool] = {}
-        # 참여자별 context 선준비 작업 (wake word 감지 시 시작)
-        self._context_prep_tasks: dict[str, asyncio.Task] = {}
+        # context 선준비 작업 (wake word 감지 시 시작, 단일 task)
+        self._context_prep_task: asyncio.Task | None = None
 
         # LiveKit Bot
         self.bot = LiveKitBot(
@@ -179,11 +179,8 @@ class RealtimeWorker:
 
     def _on_participant_left(self, user_id: str) -> None:
         """참여자 퇴장 처리 - STT 클라이언트 종료"""
-        # wake word 관련 상태 정리
+        # wake word 플래그 정리
         self._wake_word_pending.pop(user_id, None)
-        prep_task = self._context_prep_tasks.pop(user_id, None)
-        if prep_task:
-            prep_task.cancel()
 
         if user_id not in self._stt_clients:
             return
@@ -248,7 +245,7 @@ class RealtimeWorker:
 
                 # context 선준비 (pre_transcript_id 기준으로 업데이트)
                 if self._pre_transcript_id:
-                    self._context_prep_tasks[user_id] = asyncio.create_task(
+                    self._context_prep_task = asyncio.create_task(
                         self._prepare_context(self._pre_transcript_id)
                     )
             return
@@ -285,7 +282,7 @@ class RealtimeWorker:
                 # context 선준비 완료 대기 후 agent 호출
                 asyncio.create_task(
                     self._run_agent_pipeline_with_prep(
-                        user_id, response.id, self._pre_transcript_id
+                        response.id, self._pre_transcript_id
                     )
                 )
 
@@ -307,18 +304,17 @@ class RealtimeWorker:
 
     async def _run_agent_pipeline_with_prep(
         self,
-        user_id: str,
         transcript_id: str,
         pre_transcript_id: str | None,
     ) -> None:
         """Context 선준비 완료 후 Agent 파이프라인 실행"""
-        # 해당 사용자의 context 선준비 작업 완료 대기
-        prep_task = self._context_prep_tasks.pop(user_id, None)
-        if prep_task:
+        # context 선준비 작업 완료 대기
+        if self._context_prep_task:
             try:
-                await prep_task
+                await self._context_prep_task
             except Exception:
                 pass  # 실패해도 계속 진행
+            self._context_prep_task = None
 
         # agent 파이프라인 실행 (context 이미 준비됨, skip_context=True)
         await self._run_agent_pipeline(
