@@ -1,3 +1,4 @@
+import logging
 from langgraph.graph import END, StateGraph
 
 from .nodes.answering import generate_answer
@@ -5,6 +6,9 @@ from .nodes.evaluation import evaluate_result
 from .nodes.mit_tools import execute_mit_tools
 from .nodes.planning import create_plan
 from .state import OrchestrationState
+
+logger = logging.getLogger(__name__)
+
 
 # 워크플로우 생성
 workflow = StateGraph(OrchestrationState)
@@ -15,7 +19,7 @@ workflow.add_node("mit_tools", execute_mit_tools)
 workflow.add_node("evaluator", evaluate_result)
 workflow.add_node("generator", generate_answer)
 
-# 엣지 연결
+# 엣지 연결: START → router (conditional)
 workflow.set_entry_point("planner")
 
 # Planning -> 도구 필요 여부에 따라 라우팅

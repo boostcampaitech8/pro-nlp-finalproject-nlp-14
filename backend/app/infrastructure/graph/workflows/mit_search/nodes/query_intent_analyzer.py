@@ -5,11 +5,12 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.infrastructure.graph.integration.llm import get_generator_llm
+from app.infrastructure.graph.integration.llm import get_query_intent_analyzer_llm
 
 from ..state import MitSearchState
 from ..utils.confidence_calibrator import CalibratedIntentValidator
 from ..utils.query_validator import IntentAnalysisResult, QueryValidator
+from ..utils.temporal_extractor import get_temporal_extractor
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,8 @@ async def query_intent_analyzer_async(state: MitSearchState) -> dict:
         - general_search: 일반 키워드 검색 ("팀 있어")
         - meta_search: 메타데이터 검색 ("누가, 누구, 담당자")
     """
+    import time
+    start_time = time.time()
     logger.info("Starting query intent analysis")
 
     try:
@@ -134,15 +137,17 @@ async def query_intent_analyzer_async(state: MitSearchState) -> dict:
 
 async def _analyze_intent_with_llm(query: str) -> dict:
     """LLM으로 쿼리의 의도를 분석합니다."""
-    llm = get_generator_llm()
+    llm = get_query_intent_analyzer_llm()
 
-    system_prompt = """당신은 검색 쿼리의 의도를 분석하는 AI입니다.
+    system_prompt = """당신은 검색 쿼리의 의도와 필터를 분석하는 AI입니다.
 사용자의 쿼리를 분석하여 다음 JSON을 반환하세요:
 
 {
     "intent_type": "entity_search|temporal_search|general_search|meta_search",
     "primary_entity": "실제 사람이름 또는 팀명 (예: '신수효', '프로덕션팀') 또는 null",
     "search_focus": "Decision|Meeting|Agenda|Action|Team|null",
+    "date_range": {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"} 또는 null,
+    "entity_types": ["Decision", "Meeting", "Agenda", "Action"] 또는 null,
     "confidence": 0.0~1.0,
     "reasoning": "분석 이유 간단히"
 }
@@ -173,11 +178,32 @@ search_focus 분류:
 
 **중요 3**: "상반기", "1월" 등의 시간 정보가 있으면 temporal_search로 분류하되, search_focus는 시간이 가리키는 대상으로 설정합니다.
 
-예1: "신수효랑 같은 팀인 사람은 누구야?"
-→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Team"
+**중요 4 - 한국 이름 명확 인식**:
+- "신수효", "김철수", "박영희" 같은 2-3글자 한국 이름은 반드시 개인명(primary_entity)으로 추출
+- "신수"가 나와도 뒤에 글자가 더 있으면 한국 이름 우선 (신수효 ≠ 신수(신화의 동물))
+- 이름 뒤에 "가", "이", "가 맡은", "이 담당" 등이 있으면 더욱 확실한 사람 이름
+- "신수효 관련", "신수효가 맡은", "신수효 담당" → 무조건 primary_entity: "신수효"
 
-예2: "교육 프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?"
-→ intent_type: "meta_search", search_focus: "Composite" (한 번에 multi-hop Cypher로 처리)
+**필터 추출 규칙**:
+- date_range: "지난주" → {"start": "2026-01-24", "end": "2026-01-31"}, "이번달" → {"start": "2026-01-01", "end": "2026-01-31"}
+  * 시간 표현이 없으면 null
+  * YYYY-MM-DD 형식으로 반환
+- entity_types: search_focus에 해당하는 엔티티 타입 리스트
+  * "결정사항" → ["Decision"]
+  * "회의" → ["Meeting"]
+  * search_focus가 null이면 entity_types도 null
+
+예1: "신수효랑 같은 팀인 사람은 누구야?"
+→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Team", date_range: null, entity_types: ["Team"], confidence: 0.95
+
+예2: "지난주 결정사항"
+→ intent_type: "temporal_search", primary_entity: null, search_focus: "Decision", date_range: {"start": "2026-01-24", "end": "2026-01-31"}, entity_types: ["Decision"], confidence: 0.9
+
+예3: "교육 프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?"
+→ intent_type: "meta_search", search_focus: "Composite", date_range: {"start": "2026-01-01", "end": "2026-06-30"}, entity_types: null, confidence: 0.7
+
+예4: "신수효가 맡은 일 뭐가 있어?"
+→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Action", date_range: null, entity_types: ["Action"], confidence: 0.95
 
 출력은 JSON만 반환하세요."""
 
@@ -203,7 +229,21 @@ search_focus 분류:
             if match:
                 content = match.group(0)
 
-        return json.loads(content)
+        parsed = json.loads(content)
+        
+        # 필터 후처리: LLM이 날짜를 잘못 파싱했으면 규칙 기반 추출 사용
+        if parsed.get("intent_type") in ["temporal_search", "entity_search"] and not parsed.get("date_range"):
+            extractor = get_temporal_extractor()
+            date_range = extractor.extract_date_range(query)
+            if date_range:
+                parsed["date_range"] = date_range
+                logger.info(f"LLM missed temporal, used rule-based: {date_range}")
+        
+        # entity_types 검증: search_focus와 일치하도록
+        if parsed.get("search_focus") and not parsed.get("entity_types"):
+            parsed["entity_types"] = [parsed["search_focus"]]
+        
+        return parsed
     except json.JSONDecodeError:
         logger.warning(f"Failed to parse LLM response: {content}")
         return _analyze_intent_with_rules(query)
@@ -299,10 +339,21 @@ def _analyze_intent_with_rules(query: str) -> dict:
         intent_type = "general_search"
         primary_entity = None
 
+    # 날짜 범위 추출 (규칙 기반)
+    date_range = None
+    if has_temporal:
+        extractor = get_temporal_extractor()
+        date_range = extractor.extract_date_range(query)
+    
+    # entity_types 추출
+    entity_types = [search_focus] if search_focus else None
+    
     return {
         "intent_type": intent_type,
         "primary_entity": primary_entity,
         "search_focus": search_focus,
+        "date_range": date_range,
+        "entity_types": entity_types,
         "confidence": 0.7,
         "reasoning": f"규칙기반 분석: {intent_type}"
     }

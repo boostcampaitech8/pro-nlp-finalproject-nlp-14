@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Any
 
+from neo4j import READ_ACCESS
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,12 +38,12 @@ async def execute_cypher_search_async(cypher_query: str, parameters: dict[str, A
             if re.search(rf'\b{keyword}\b', query_upper):
                 raise ValueError(f"Dangerous Cypher keyword detected: {keyword}")
 
-        # Neo4j driver integration
-        from app.core.neo4j import get_neo4j_driver
+        # Neo4j driver integration (read-only session)
+        from app.core.neo4j import get_neo4j_readonly_driver
 
-        driver = get_neo4j_driver()
+        driver = get_neo4j_readonly_driver()
 
-        async with driver.session() as session:
+        async with driver.session(default_access_mode=READ_ACCESS) as session:
             result = await session.run(cypher_query, parameters)
             records = await result.data()
 

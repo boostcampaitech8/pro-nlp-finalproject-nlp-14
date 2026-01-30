@@ -14,6 +14,10 @@ class PlanningOutput(BaseModel):
     plan: str = Field(description="사용자의 질문을 해결하기 위한 단계별 계획")
     need_tools: bool = Field(description="검색이나 추가 정보가 필요하면 True, 아니면 False")
     reasoning: str = Field(description="도구 필요 여부 판단 근거")
+    next_subquery: str | None = Field(
+        default=None,
+        description="재계획 시 다음 단계에서 사용할 구체적 서브-쿼리 (없으면 null)",
+    )
     required_topics: list[str] = Field(
         default_factory=list,
         description="추가 컨텍스트가 필요한 L1 토픽 이름 목록 (없으면 빈 리스트)",
@@ -28,8 +32,32 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         writes: plan, need_tools
         side-effects: LLM API 호출
         failures: PLANNING_FAILED -> 기본 계획 반환
+
+    Fast-Track 라우팅:
+    - 단순 쿼리는 Planner LLM 호출 없이 직접 MIT Tools로
+    - 쿼리 길이 < 25 또는 팩트 키워드 포함 → 직행
     """
     logger.info("Planning 단계 진입")
+
+    messages = state.get("messages", [])
+    query = messages[-1].content if messages else ""
+
+    # Fast-Track 라우팅 (Planner LLM 호출 없이)
+    if query:
+        is_simple_query = len(query) < 25
+        fact_keywords = ["누구", "뭐", "언제", "어디", "전화", "이메일", "주소", "이름"]
+        has_fact_keyword = any(kw in query for kw in fact_keywords)
+
+        if is_simple_query or has_fact_keyword:
+            logger.info(f"[Fast-Track] 단순 쿼리 감지: {query[:50]}")
+            # Fast-Track: 직접 MIT Tools로 이동
+            return {
+                "plan": f"직접 검색: {query}",
+                "need_tools": True,
+                "fast_track": True,  # 플래그 추가
+                "required_topics": [],
+            }
+
     # 이미 계획이 준비된 경우 스킵 (테스트/외부 오케스트레이션 용도)
     if state.get("skip_planning") and state.get("plan"):
         logger.info("Planning 단계 스킵: 기존 plan 사용")
@@ -39,8 +67,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "required_topics": state.get("required_topics", []),
         }
 
-    messages = state.get('messages', [])
-    query = messages[-1].content if messages else ""
     retry_count = state.get('retry_count', 0)
     planning_context = state.get("planning_context", "")
 
@@ -71,6 +97,8 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "중요:\n"
             "- need_tools: true (계속 검색 필요)\n"
             "- plan: \"1단계: ... → 2단계: ...\" 형식\n"
+            "- next_subquery: 다음 검색 단계에서 사용할 구체적인 한국어 질의\n"
+            "  예: \"이전에 찾은 교육 프로그램 상반기 내 완료 목표의 담당자는 누구야?\"\n"
             "- JSON만 출력\n\n"
             "{format_instructions}"
         )
@@ -86,6 +114,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "간단한 인사나 일반 상식으로 답변 가능하면 need_tools를 false로 설정하세요.\n\n"
             "추가 컨텍스트가 필요한 L1 토픽이 있으면 required_topics에 정확한 토픽명을 넣고,\n"
             "필요 없으면 빈 리스트로 두세요.\n\n"
+            "재계획이 아닌 경우 next_subquery는 null로 설정하세요.\n\n"
             "중요: JSON만 출력하세요!\n\n"
             "{format_instructions}"
         )
@@ -118,23 +147,15 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         logger.info(f"판단 근거: {result.reasoning}")
         logger.info(f"추가 토픽 필요: {result.required_topics}")
 
-        # 재계획인 경우: 계획에서 명시된 "다음 단계"를 새로운 쿼리로 변환
-        # 예: "1단계: 담당자 찾기" → "이전에 찾은 액션의 담당자는 누구?"
+        next_subquery = result.next_subquery if retry_count > 0 else None
         if retry_count > 0:
-            next_step_query = _extract_next_step_query(result.plan, query)
             logger.info(f"[Replanning] 원래 쿼리: {query}")
-            logger.info(f"[Replanning] 다음 단계 쿼리: {next_step_query}")
-            
-            # 새로운 쿼리를 messages에 추가
-            from langchain_core.messages import HumanMessage
-            messages = state.get('messages', [])
-            if next_step_query != query:
-                messages.append(HumanMessage(content=next_step_query))
-                logger.info(f"[Replanning] 새로운 서브-쿼리 추가됨: {next_step_query}")
+            logger.info(f"[Replanning] 다음 단계 쿼리: {next_subquery}")
 
         return {
             "plan": result.plan,
             "need_tools": result.need_tools,
+            "next_subquery": next_subquery,
             "required_topics": result.required_topics,
         }
 
@@ -143,26 +164,8 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         return OrchestrationState(
             plan="계획 수립 실패",
             need_tools=False,
+            next_subquery=None,
             required_topics=[],
         )
 
-
-def _extract_next_step_query(plan: str, original_query: str) -> str:
-    """계획에서 다음 단계를 추출하여 새로운 서브-쿼리 생성
-    
-    예:
-    - plan: "1단계: 교육프로그램 상반기 내 완료 목표의 담당자 찾기 → 2단계: 그 담당자와 팀원 찾기"
-    - original_query: "교육프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?"
-    - return: "이전에 찾은 교육프로그램 상반기 내 완료 목표의 담당자는 누구야?"
-    """
-    # 담당자 찾기 계획
-    if "담당자" in plan and ("찾" in plan or "찾기" in plan):
-        return "이전에 찾은 액션 아이템의 담당자는 누구야?"
-    
-    # 팀원 찾기 계획
-    if "팀원" in plan and ("찾" in plan or "찾기" in plan):
-        return "그 담당자와 같은 팀의 팀원은 누구야?"
-    
-    # 기본: 원래 쿼리 반환
-    return original_query
 

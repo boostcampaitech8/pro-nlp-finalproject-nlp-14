@@ -1,4 +1,15 @@
-"""LangChain LLM 통합 및 용도별 인스턴스 관리."""
+"""LangChain LLM 통합 및 용도별 인스턴스 관리.
+
+모델 선택 전략 (실용적 접근):
+- HCX-003: 주력 모델 (Cypher 생성, 답변 생성, Planning, 의도 분석 등)
+  * temperature로 작업별 차별화: 0.05 (Cypher) ~ 0.6 (답변 생성)
+  * max_tokens로 출력량 조절: 256 ~ 2048
+- DASH: 단순 패턴 변환 전용 (쿼리 정규화, 필터 추출)
+  * 빠른 처리 속도 + 비용 효율성
+  * temperature 조절로 창의성/정확성 균형
+
+참고: HCX-007은 API 미지원으로 제외
+"""
 
 from functools import lru_cache
 
@@ -8,35 +19,82 @@ from app.infrastructure.graph.config import NCP_CLOVASTUDIO_API_KEY
 
 
 @lru_cache
-def get_base_llm() -> ChatClovaX:
-    """Base LLM 인스턴스 반환 (cached)"""
+def get_base_llm(model: str = "HCX-003", **kwargs) -> ChatClovaX:
+    """Base LLM 인스턴스 반환 (cached)
+
+    Args:
+        model: 사용할 모델명 (HCX-007, HCX-003, DASH)
+        **kwargs: 추가 설정 (temperature, max_tokens, thinking 등)
+
+    Returns:
+        ChatClovaX 인스턴스
+    """
     if not NCP_CLOVASTUDIO_API_KEY:
         raise ValueError(
             "NCP_CLOVASTUDIO_API_KEY가 설정되지 않았습니다. "
             ".env 파일에 NCP_CLOVASTUDIO_API_KEY를 설정해주세요."
         )
-    
+
+    # 기본값 설정
+    default_config = {
+        "temperature": 0.5,
+        "max_tokens": 256,
+        "model": model,
+        "ncp_clovastudio_api_key": NCP_CLOVASTUDIO_API_KEY,
+    }
+
+    # kwargs로 덮어쓰기
+    default_config.update(kwargs)
+
+    return ChatClovaX(**default_config)
+
+
+def get_planner_llm() -> ChatClovaX:
+    """Planning 전용 LLM (낮은 temperature)
+
+    Model: HCX-003
+    Use Case: 복잡한 다단계 계획 수립
+    temperature: 0.3 (일관성 우선)
+    max_tokens: 1024 (계획 단계별 설명)
+    """
     return ChatClovaX(
-        temperature=0.5,
-        max_tokens=256,
         model="HCX-003",
+        temperature=0.3,
+        max_tokens=1024,
         ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
     )
 
 
-def get_planner_llm() -> ChatClovaX:
-    """Planning 전용 LLM (낮은 temperature)"""
-    return get_base_llm().bind(temperature=0.3)
-
-
 def get_generator_llm() -> ChatClovaX:
-    """Generator 전용 LLM (기본 temperature)"""
-    return get_base_llm()
+    """Generator 전용 LLM (기본 temperature)
+
+    Model: HCX-003
+    Use Case: 일반적인 텍스트 생성
+    temperature: 0.5 (자연스러운 생성)
+    max_tokens: 512
+    """
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.5,
+        max_tokens=512,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
 
 
 def get_evaluator_llm() -> ChatClovaX:
-    """Evaluator 전용 LLM (낮은 temperature)"""
-    return get_base_llm().bind(temperature=0.3)
+    """Evaluator 전용 LLM (낮은 temperature)
+
+    Model: HCX-003
+    Use Case: 결과 평가 및 검증
+    temperature: 0.2 (일관된 평가 기준)
+    max_tokens: 512
+    """
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.2,
+        max_tokens=512,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
 
 
 # ============================================================================
@@ -46,57 +104,178 @@ def get_evaluator_llm() -> ChatClovaX:
 def get_query_rewriter_llm() -> ChatClovaX:
     """쿼리 정규화 LLM (창의성 높음).
 
-    temperature: 0.7 (창의적인 정규화)
-    max_tokens: 256
+    Model: DASH
+    Use Case: 한글↔숫자, 띄어쓰기, 동의어 정규화
+    temperature: 0.7 (다양한 표현 수용)
+    max_tokens: 256 (짧은 쿼리 출력)
     """
-    return get_base_llm().bind(temperature=0.7, max_tokens=256)
+    return ChatClovaX(
+        model="DASH",
+        temperature=0.7,
+        max_tokens=256,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
 
 
 def get_filter_extractor_llm() -> ChatClovaX:
     """필터 추출 LLM (정확도 높음).
 
-    temperature: 0.2 (정확한 추출)
-    max_tokens: 512
+    Model: DASH
+    Use Case: 시간 범위, 엔티티 타입 패턴 인식
+    temperature: 0.1 (극도로 정확한 추출 - 패턴 매칭)
+    max_tokens: 512 (필터 JSON 출력)
     """
-    return get_base_llm().bind(temperature=0.2, max_tokens=512)
+    return ChatClovaX(
+        model="DASH",
+        temperature=0.1,
+        max_tokens=512,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
 
 
 def get_cypher_generator_llm() -> ChatClovaX:
     """Cypher 생성 LLM (정확도 최고).
 
-    temperature: 0.05 (극도로 일관된 쿼리 생성 - 같은 의도는 항상 같은 구조)
-    max_tokens: 512
+    Model: HCX-003
+    Use Case: Neo4j Cypher 쿼리 생성 (복잡한 그래프 탐색)
+    temperature: 0.05 (극도로 일관된 쿼리 - 같은 의도는 항상 같은 구조)
+    max_tokens: 1024 (복잡한 multi-hop Cypher 대응)
+
+    Why 낮은 temperature?
+    - Cypher 문법 오류는 시스템 장애로 직결
+    - Multi-hop 관계 탐색 시 일관성 필요
+    - 유동적인 쿼리에 대응하려면 결정론적 패턴 필수
     """
-    return get_base_llm().bind(temperature=0.05, max_tokens=512)
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.05,
+        max_tokens=1024,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
 
 
 def get_answer_generator_llm() -> ChatClovaX:
     """답변 생성 LLM (창의성 중간).
 
-    temperature: 0.5 (자연스러운 답변)
-    max_tokens: 1024
-    """
-    return get_base_llm().bind(temperature=0.5, max_tokens=1024)
+    Model: HCX-003
+    Use Case: 최종 사용자 대면 답변 생성
+    temperature: 0.6 (자연스럽고 친근한 답변)
+    max_tokens: 2048 (충분한 설명 + 예시 포함)
 
+    Why 높은 temperature?
+    - 사용자 경험의 최종 접점 (품질 = 시스템 신뢰도)
+    - 여러 검색 결과를 종합하여 일관된 답변 필요
+    - 한국어 자연스러움 극대화
+    """
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.6,
+        max_tokens=2048,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
+
+
+# ============================================================================
+# MIT Search 워크플로우 전용 LLM
+# ============================================================================
+
+def get_query_intent_analyzer_llm() -> ChatClovaX:
+    """쿼리 의도 분석 LLM (경량화).
+
+    Model: HCX-003 (Clova API에서 사용 가능한 모델)
+    Use Case: entity/temporal/general/meta 의도 분류
+    temperature: 0.3 (일관된 분류)
+    max_tokens: 512 (JSON 출력)
+
+    최적화 근거:
+    - Pattern recognition 중심 작업 (낮은 complexity)
+    - Low temperature (0.3)로 빠른 응답 유도
+    - Cost 효율성 + 정확도 > 95% 유지
+    """
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.3,
+        max_tokens=512,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
+
+
+def get_result_scorer_llm() -> ChatClovaX:
+    """검색 결과 점수 매기기 LLM.
+
+    Model: HCX-003
+    Use Case: 검색 결과 relevance 점수 계산
+    temperature: 0.2 (일관된 점수 기준)
+    max_tokens: 256 (점수 + 간단한 이유)
+    """
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.2,
+        max_tokens=256,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
+
+
+def get_reranker_llm() -> ChatClovaX:
+    """검색 결과 재랭킹 LLM.
+
+    Model: HCX-003
+    Use Case: BGE 점수 기반 재랭킹
+    temperature: 0.2 (일관된 랭킹)
+    max_tokens: 512
+    """
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.2,
+        max_tokens=512,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
+
+
+def get_selector_llm() -> ChatClovaX:
+    """최종 결과 선택 LLM.
+
+    Model: HCX-003
+    Use Case: 재랭킹된 결과에서 최종 답변 선택
+    temperature: 0.1 (결정론적 선택)
+    max_tokens: 256
+    """
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.1,
+        max_tokens=256,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
+
+
+# ============================================================================
+# 하위 호환성 함수
+# ============================================================================
 
 def get_llm() -> ChatClovaX:
-    """기본 LLM (하위호환성, 새로운 코드는 용도별 함수 사용).
+    """기본 LLM (하위호환성 전용).
+
+    ⚠️ Deprecated: 새로운 코드는 용도별 함수 사용 권장
+    - get_planner_llm()
+    - get_cypher_generator_llm()
+    - get_answer_generator_llm()
+    - get_query_rewriter_llm()
+    - 등등...
+
+    Model: HCX-003 (기본 모델)
 
     Returns:
         ChatClovaX: Configured LLM instance
     """
-    return get_base_llm()
+    return ChatClovaX(
+        model="HCX-003",
+        temperature=0.5,
+        max_tokens=512,
+        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+    )
 
 
 # 하위 호환성을 위한 변수 export
-# 지연 로딩으로 변경: 모듈 import 시점에 평가하지 않음
-def _lazy_llm():
-    try:
-        return get_llm()
-    except ValueError:
-        # 테스트 환경에서 API 키가 없을 수 있음
-        return None
-
 try:
     llm = get_llm()
 except ValueError:

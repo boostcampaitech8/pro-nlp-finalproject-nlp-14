@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from neo4j import AsyncDriver
+from neo4j import AsyncDriver, READ_ACCESS
 from neo4j.time import DateTime as Neo4jDateTime
 
 from app.models.kg import (
@@ -34,8 +34,14 @@ def _convert_neo4j_datetime(value: Any) -> datetime:
 class KGRepository:
     """Neo4j KG Repository - Raw Cypher"""
 
-    def __init__(self, driver: AsyncDriver):
-        self.driver = driver
+    def __init__(
+        self,
+        driver: AsyncDriver,
+        read_driver: AsyncDriver | None = None,
+        write_driver: AsyncDriver | None = None,
+    ):
+        self.read_driver = read_driver or driver
+        self.write_driver = write_driver or driver
 
     # =========================================================================
     # Internal Helpers
@@ -45,7 +51,7 @@ class KGRepository:
         self, query: str, parameters: dict[str, Any] | None = None
     ) -> list[dict]:
         """읽기 쿼리 실행"""
-        async with self.driver.session() as session:
+        async with self.read_driver.session(default_access_mode=READ_ACCESS) as session:
             result = await session.run(query, parameters or {})
             return [dict(record) async for record in result]
 
@@ -58,7 +64,7 @@ class KGRepository:
             result = await tx.run(query, parameters or {})
             return [dict(record) async for record in result]
 
-        async with self.driver.session() as session:
+        async with self.write_driver.session() as session:
             return await session.execute_write(_write_tx)
 
     # =========================================================================

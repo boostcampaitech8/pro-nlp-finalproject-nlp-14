@@ -4,19 +4,12 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+from app.infrastructure.graph.config import get_graph_settings
+
 from ..state import MitSearchState
 from ..utils.score_calculator import ScoreCalculator
 
 logger = logging.getLogger(__name__)
-
-# ============================================================================
-# Reranking Configuration (로컬 정의)
-# ============================================================================
-
-RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-RERANKER_USE_FP16 = True
-FULLTEXT_WEIGHT = 0.6
-SEMANTIC_WEIGHT = 0.4
 
 # BGE Reranker 싱글톤 (한 번만 로드)
 _reranker_model: Optional[Any] = None
@@ -35,11 +28,15 @@ def _get_reranker_model():
     try:
         from FlagEmbedding import FlagReranker
 
+        settings = get_graph_settings()
+        model_name = settings.reranker_model_name
+        use_fp16 = settings.reranker_use_fp16
+
         _reranker_model = FlagReranker(
-            model_name_or_path=RERANKER_MODEL,
-            use_fp16=RERANKER_USE_FP16
+            model_name_or_path=model_name,
+            use_fp16=use_fp16
         )
-        logger.info(f"BGE Reranker model '{RERANKER_MODEL}' loaded successfully (singleton)")
+        logger.info(f"BGE Reranker model '{model_name}' loaded successfully (singleton)")
         return _reranker_model
     except ImportError:
         logger.warning("FlagEmbedding not installed. Install: pip install FlagEmbedding")
@@ -110,14 +107,19 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
         # 의도 기반 가중치 결정
         # entity_search: 의도 명확 → semantic 높음 (90%)
         # general_search: 의도 불명확 → semantic 낮음 (40%)
+        settings = get_graph_settings()
         if intent_type == "entity_search" and primary_entity:
-            semantic_weight = 0.9
-            fulltext_weight = 0.1
-            logger.info(f"[Reranking] Entity search mode: semantic 90% / fulltext 10%")
+            semantic_weight = settings.reranker_entity_semantic_weight
+            fulltext_weight = settings.reranker_entity_fulltext_weight
+            logger.info(
+                f"[Reranking] Entity search mode: semantic {semantic_weight:.0%} / fulltext {fulltext_weight:.0%}"
+            )
         else:
-            semantic_weight = 0.4
-            fulltext_weight = 0.6
-            logger.info(f"[Reranking] General search mode: semantic 40% / fulltext 60%")
+            semantic_weight = settings.reranker_general_semantic_weight
+            fulltext_weight = settings.reranker_general_fulltext_weight
+            logger.info(
+                f"[Reranking] General search mode: semantic {semantic_weight:.0%} / fulltext {fulltext_weight:.0%}"
+            )
 
         # 재순위화 점수 계산
         ranked_results = []

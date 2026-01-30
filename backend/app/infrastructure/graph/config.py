@@ -44,6 +44,14 @@ MAX_TOKENS = 2048  # LLM 최대 토큰
 MIT_SEARCH_TOP_K = 5  # 선택할 최대 결과 수
 MIT_SEARCH_MIN_SCORE = 0.3  # 최소 점수 임계값
 
+# MIT Search Reranker 설정
+RERANKER_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
+RERANKER_USE_FP16 = True
+RERANKER_ENTITY_SEMANTIC_WEIGHT = 0.9
+RERANKER_ENTITY_FULLTEXT_WEIGHT = 0.1
+RERANKER_GENERAL_SEMANTIC_WEIGHT = 0.4
+RERANKER_GENERAL_FULLTEXT_WEIGHT = 0.6
+
 
 class GraphSettings(BaseModel):
     """LangGraph 전역 설정.
@@ -56,6 +64,12 @@ class GraphSettings(BaseModel):
         max_tokens: LLM 생성 최대 토큰 수 (default: 2048)
         mit_search_top_k: MIT Search 선택 결과 수 (default: 5)
         mit_search_min_score: MIT Search 최소 점수 임계값 (default: 0.3)
+        reranker_model_name: MIT Search 리랭커 모델명
+        reranker_use_fp16: MIT Search 리랭커 FP16 사용 여부
+        reranker_entity_semantic_weight: entity_search의 semantic 가중치
+        reranker_entity_fulltext_weight: entity_search의 fulltext 가중치
+        reranker_general_semantic_weight: general_search의 semantic 가중치
+        reranker_general_fulltext_weight: general_search의 fulltext 가중치
     """
 
     model_config = ConfigDict(frozen=True)
@@ -65,6 +79,12 @@ class GraphSettings(BaseModel):
     max_tokens: int = MAX_TOKENS
     mit_search_top_k: int = MIT_SEARCH_TOP_K
     mit_search_min_score: float = MIT_SEARCH_MIN_SCORE
+    reranker_model_name: str = RERANKER_MODEL_NAME
+    reranker_use_fp16: bool = RERANKER_USE_FP16
+    reranker_entity_semantic_weight: float = RERANKER_ENTITY_SEMANTIC_WEIGHT
+    reranker_entity_fulltext_weight: float = RERANKER_ENTITY_FULLTEXT_WEIGHT
+    reranker_general_semantic_weight: float = RERANKER_GENERAL_SEMANTIC_WEIGHT
+    reranker_general_fulltext_weight: float = RERANKER_GENERAL_FULLTEXT_WEIGHT
 
 
 # ============================================================================
@@ -91,5 +111,11 @@ def get_graph_settings() -> GraphSettings:
         request_timeout=REQUEST_TIMEOUT,
         max_tokens=MAX_TOKENS,
         mit_search_top_k=MIT_SEARCH_TOP_K,
-        mit_search_min_score=MIT_SEARCH_MIN_SCORE
+        mit_search_min_score=MIT_SEARCH_MIN_SCORE,
+        reranker_model_name=RERANKER_MODEL_NAME,
+        reranker_use_fp16=RERANKER_USE_FP16,
+        reranker_entity_semantic_weight=RERANKER_ENTITY_SEMANTIC_WEIGHT,
+        reranker_entity_fulltext_weight=RERANKER_ENTITY_FULLTEXT_WEIGHT,
+        reranker_general_semantic_weight=RERANKER_GENERAL_SEMANTIC_WEIGHT,
+        reranker_general_fulltext_weight=RERANKER_GENERAL_FULLTEXT_WEIGHT,
     )

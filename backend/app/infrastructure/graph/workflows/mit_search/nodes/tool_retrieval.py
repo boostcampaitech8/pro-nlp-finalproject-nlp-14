@@ -11,21 +11,18 @@ from ..tools.search_tools import execute_cypher_search_async
 from ..utils.content_validator import IntentAwareContentValidator
 from ..utils.confidence_calibrator import CalibratedIntentValidator
 from ..utils.result_scorer import SearchResultRelevanceScorer
-from ..utils.search_strategy_router import SearchStrategyRouter
 
 logger = logging.getLogger(__name__)
 
 
 def _normalize_query(query: str) -> str:
     """쿼리를 정규화합니다: 메타키워드 → 동사 → 조사 순서로 제거.
-    
+
     한글 처리 전략:
     1. 복합어 보호: "회의", "예산", "팀" 같은 명사는 먼저 보호
     2. 불필요한 동사/조사 제거
     3. 공백 정리 및 결과 반환
     """
-    import re
-    
     search_query = query.strip()
 
     # 단계 0: 보호해야할 한글 복합어 (동사 제거 전에 보호)
@@ -118,11 +115,16 @@ LIMIT 20"""
         return cypher
 
     elif strategy == "meeting_search":
-        cypher = f"""MATCH (u:User {{id: $user_id}})-[:PARTICIPATED_IN]->(m:Meeting)
-WHERE ($query = "*" OR m.title CONTAINS $query)
+        # [수정] Meeting 검색: 특정 인물($entity_name)이 있다면 그 사람과 함께한 회의 + 키워드 검색
+        # $entity_name 파라미터가 없거나 null일 경우를 대비해 OR 조건 또는 CASE 처리
+        # 여기서는 단순화를 위해 파라미터가 들어온다고 가정하거나, 없을 경우를 대비한 쿼리 작성
+        cypher = f"""MATCH (target:User)-[:PARTICIPATED_IN]->(m:Meeting)
+WHERE ($entity_name IS NULL OR $entity_name = '' OR target.name CONTAINS $entity_name)
+  AND ($query = "*" OR m.title CONTAINS $query OR m.title CONTAINS $query)
+  AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
 {date_filter}
 RETURN m.id AS id, m.title AS title, m.title AS content, m.status AS status, m.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
-       '회의: ' + m.title + ' (참여자: ' + u.name + ')' AS graph_context
+       '회의: ' + m.title + ' (참여자: ' + target.name + ')' AS graph_context
 ORDER BY m.created_at DESC
 LIMIT 20"""
         return cypher
@@ -207,7 +209,6 @@ LIMIT 50"""
 
     elif strategy == "text_to_cypher":
         # LLM이 생성한 Cypher를 그대로 사용
-        # cypher_template에 이미 LLM 생성 쿼리가 들어있음
         return cypher_template
 
     else:  # "fulltext_search"
@@ -225,8 +226,6 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
     Contract:
         reads: mit_search_cypher, mit_search_strategy, mit_search_query, mit_search_filters, user_id
         writes: mit_search_raw_results (점수가 포함된 매칭 레코드 리스트)
-        side-effects: Neo4j execute_cypher_search 호출
-        failures: Neo4j 오류 → 빈 리스트 반환, 에러 로깅
     """
     
     exec_start = time.time()
@@ -236,16 +235,18 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
         cypher = state.get("mit_search_cypher", "")
         strategy = state.get("mit_search_strategy", {})
         filters = state.get("mit_search_filters", {})
+        intent = state.get("mit_search_query_intent", {}) # Intent 가져오기
         user_id = state.get("user_id", "")
 
         if not cypher:
             logger.warning("[Tool Executor] Cypher 쿼리 없음")
             return {"mit_search_raw_results": []}
 
-        # 파라미터 준비
+        # [수정] 파라미터 준비: query + user_id + entity_name(Intent에서 추출)
         parameters = {
             "query": strategy.get("search_term", ""),
             "user_id": user_id,
+            "entity_name": intent.get("primary_entity", ""), # <-- [핵심 수정] 파라미터 주입!
         }
         
         # 시간 필터 파라미터 추가
@@ -256,32 +257,37 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
 
         logger.info(f"[Tool Executor] 실행 중: {strategy.get('strategy')} (검색어: {strategy.get('search_term')})")
         logger.info(f"[Tool Executor] 파라미터: {parameters}")
-        logger.debug(f"[Tool Executor] Cypher:\n{cypher}")        
+        
         # 실행 정보 출력
         print(f"\n[Cypher 실행] 전략: {strategy.get('strategy')}")
-        print(f"[파라미터] query='{parameters.get('query')}', user_id='{parameters.get('user_id')}'")
+        print(f"[파라미터] query='{parameters.get('query')}', entity='{parameters.get('entity_name')}', user_id='{parameters.get('user_id')}'")
+        
         # Cypher 실행 (비동기)
         db_start = time.time()
         results = await execute_cypher_search_async(
             cypher_query=cypher,
             parameters=parameters
         )
-        db_time = (time.time() - db_start) * 1000
+        total_time = (time.time() - exec_start) * 1000
 
         # Text-to-Cypher 결과가 없으면 entity_search 기반 fallback 시도
         fallback_used = False
         if not results and strategy.get("strategy") == "text_to_cypher":
-            intent = state.get("mit_search_query_intent", {})
             primary_entity = intent.get("primary_entity")
 
             if primary_entity:
+                # Fallback 전략 수립
                 fallback_strategy = {
-                    "strategy": "user_search",
+                    "strategy": "user_search", # 기본적으로 user_search로 회귀하거나 meeting_search로 회귀
                     "search_term": primary_entity,
-                    "reasoning": "text_to_cypher 결과 없음 → user_search fallback",
+                    "reasoning": "text_to_cypher 결과 없음 → entity fallback",
                 }
+                
+                # 상황에 맞는 템플릿 선택 (Meeting Focus라면 meeting_search 사용)
+                target_strategy = "meeting_search" if intent.get("search_focus") == "Meeting" else "user_search"
+                
                 fallback_cypher = _generate_cypher_by_strategy(
-                    strategy=fallback_strategy["strategy"],
+                    strategy=target_strategy,
                     query_intent=intent,
                     entity_types=filters.get("entity_types", []),
                     normalized_keywords=primary_entity,
@@ -290,11 +296,16 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
                 )
 
                 logger.info(
-                    "[Tool Executor] fallback 실행: user_search",
+                    f"[Tool Executor] fallback 실행: {target_strategy}",
                     extra={"primary_entity": primary_entity},
                 )
 
-                fallback_params = {"query": primary_entity, "user_id": user_id}
+                # Fallback 파라미터 설정
+                fallback_params = {
+                    "query": primary_entity, # Fallback은 엔티티 이름으로 검색
+                    "entity_name": primary_entity,
+                    "user_id": user_id
+                }
                 if date_range:
                     fallback_params["start_date"] = date_range.get("start")
                     fallback_params["end_date"] = date_range.get("end")
@@ -305,21 +316,14 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
                 )
                 fallback_used = True
 
-                # ✅ P1: Fallback 사용 시 신뢰도 추가 조정
                 print(f"\n[신뢰도 조정] Fallback 사용 감지 → 신뢰도 패널티 적용")
                 logger.info("[Tool Executor] Fallback 사용으로 신뢰도 패널티 적용")
 
-        total_time = (time.time() - exec_start) * 1000
-
         logger.info(f"[Tool Executor] 완료: {len(results)}개 결과 반환 ({total_time:.0f}ms)", extra={
             "count": len(results),
-            "strategy": strategy.get('strategy'),
-            "search_term": strategy.get('search_term'),
-            "duration_ms": total_time,
             "fallback_used": fallback_used,
         })
 
-        # ✅ P1: Fallback 여부를 상태에 저장 (이후 노드에서 사용)
         return {
             "mit_search_raw_results": results,
             "mit_search_fallback_used": fallback_used,
@@ -337,17 +341,24 @@ def tool_executor(state: MitSearchState) -> Dict[str, Any]:
 
 def tool_result_scorer_async(state: MitSearchState) -> Dict[str, Any]:
     """검색 결과의 관련성을 점수로 평가합니다.
-
-    Contract:
-        reads: mit_search_raw_results, mit_search_query_intent, mit_search_fallback_used
-        writes: mit_search_result_quality
-        side-effects: 결과 점수 계산 및 로깅
+    
+    Speculative RAG 지원:
+    - merged_results 있으면 우선 사용 (벡터 또는 Cypher 병합된 결과)
+    - merged_results 없으면 mit_search_raw_results 사용 (기존 방식)
     """
 
     logger.info("[Result Scorer] 시작")
 
     try:
-        results = state.get("mit_search_raw_results", [])
+        # Speculative RAG 지원: merged_results 우선
+        merged_results = state.get("merged_results")
+        if merged_results is not None:
+            results = merged_results
+            logger.info(f"[Result Scorer] merged_results 사용 ({len(results)}개)")
+        else:
+            results = state.get("mit_search_raw_results", [])
+            logger.info(f"[Result Scorer] raw_results 사용 ({len(results)}개)")
+
         intent = state.get("mit_search_query_intent", {})
         query = state.get("mit_search_query", "")
         fallback_used = state.get("mit_search_fallback_used", False)
@@ -376,7 +387,7 @@ def tool_result_scorer_async(state: MitSearchState) -> Dict[str, Any]:
 
         result_count = quality_report.get("result_count", len(results))
 
-        # ✅ P1: Fallback 사용 시 최종 신뢰도 조정
+        # Fallback 사용 시 최종 신뢰도 조정
         original_confidence = intent.get("confidence", 0.5)
         if fallback_used:
             calibrator = CalibratedIntentValidator()
@@ -393,14 +404,9 @@ def tool_result_scorer_async(state: MitSearchState) -> Dict[str, Any]:
                 f"Fallback 페널티: {quality_report['fallback_impact']:.2f} → "
                 f"최종: {final_confidence:.2f}"
             )
-            logger.info(
-                "[Result Scorer] Fallback으로 인한 신뢰도 조정",
-                extra={
-                    "original": original_confidence,
-                    "after_fallback": final_confidence,
-                    "penalty": quality_report["fallback_impact"],
-                },
-            )
+        else:
+            # Fallback 안 썼으면 원래 신뢰도 유지
+            quality_report["confidence_after_fallback"] = original_confidence
 
         logger.info(
             f"[Result Scorer] 평가 완료: {quality_report['assessment']} "
@@ -431,4 +437,3 @@ def tool_result_scorer_async(state: MitSearchState) -> Dict[str, Any]:
 def tool_result_scorer(state: MitSearchState) -> Dict[str, Any]:
     """동기 테스트용 래퍼."""
     return asyncio.run(tool_result_scorer_async(state))
-

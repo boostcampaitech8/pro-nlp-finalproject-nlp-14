@@ -22,9 +22,13 @@ def create_kg_repository() -> IKGRepository:
     if get_settings().use_mock_graph:
         return MockKGRepository()
 
-    from app.core.neo4j import get_neo4j_driver
+    from app.core.neo4j import get_neo4j_driver, get_neo4j_readonly_driver
 
-    return KGRepository(get_neo4j_driver())
+    return KGRepository(
+        get_neo4j_driver(),
+        read_driver=get_neo4j_readonly_driver(),
+        write_driver=get_neo4j_driver(),
+    )
 
 
 def create_kg_sync_repository() -> KGSyncRepository | None:

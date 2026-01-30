@@ -2,7 +2,7 @@ import logging
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.infrastructure.graph.integration.llm import get_generator_llm
+from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
@@ -46,8 +46,12 @@ async def generate_answer(state: OrchestrationState):
             [
                 (
                     "system",
-                    "당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 정확하게 답변하는 AI 비서입니다."
-                    " 도구 결과에 없는 사실을 추측하거나 외부 출처(웹/검색엔진)를 언급하지 마세요.",
+                    """당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 정확하게 답변하는 AI 비서입니다.
+중요 규칙:
+1. 도구 결과에 없는 사실을 추측하거나 외부 출처(웹/검색엔진)를 언급하지 마세요.
+2. 검색 결과가 없으면 명확하게 "정보를 찾을 수 없습니다"라고 답변하세요.
+3. 특정 사람이름 검색 후 결과가 없으면: "신수효에 대한 정보를 찾을 수 없습니다. 혹시 이름을 다시 확인해주시겠어요?"
+4. 일반 지식이나 추측으로 답변하지 마세요. 도구 결과만 신뢰하세요."""
                 ),
                 (
                     "human",
@@ -57,7 +61,7 @@ async def generate_answer(state: OrchestrationState):
                         "계획: {plan}\n"
                         "도구 실행 결과: {tool_results}\n\n"
                         "추가 컨텍스트:\n{additional_context}\n\n"
-                        "도구 실행 결과를 활용하여 사용자 질문에 정확하게 답변해주세요."
+                        "도구 실행 결과를 정확하게 활용하여 사용자 질문에 답변해주세요. 결과가 없으면 명확하게 '정보를 찾을 수 없습니다'라고 답변하세요."
                     ),
                 ),
             ]
@@ -83,7 +87,7 @@ async def generate_answer(state: OrchestrationState):
             ]
         )
 
-    chain = prompt | get_generator_llm()
+    chain = prompt | get_answer_generator_llm()
 
     # 스트리밍으로 응답 생성 및 출력
     response_chunks = []
@@ -98,12 +102,12 @@ async def generate_answer(state: OrchestrationState):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
         response_chunks.append(chunk_text)
         print(chunk_text, end="", flush=True)
-    
+
     print()  # 줄바꿈
     print("=" * 50)
-    
+
     response_text = "".join(response_chunks)
     logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
-    
+
     return OrchestrationState(response=response_text)
 

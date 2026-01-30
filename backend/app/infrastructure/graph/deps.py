@@ -11,6 +11,7 @@ from app.infrastructure.neo4j.interfaces import (
     IMeetingRepository,
     IUserRepository,
 )
+from app.repositories.kg import create_kg_repository
 
 
 class GraphDeps:
@@ -53,6 +54,11 @@ class GraphDeps:
     def user_repo() -> IUserRepository:
         """사용자 활동 관련 Repository 반환"""
         return Neo4jDeps.user_repo()
+
+    @staticmethod
+    def get_graph_repo():
+        """KG Repository 반환 (읽기=read-only, 쓰기=write driver)."""
+        return create_kg_repository()
 
     # --- 헬퍼 메소드 (neo4j 모듈에 위임) ---
 

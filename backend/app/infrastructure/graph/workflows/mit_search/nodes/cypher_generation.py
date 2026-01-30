@@ -1,21 +1,25 @@
-"""전략 기반 Cypher 쿼리 생성 노드."""
+"""전략 기반 Cypher 쿼리 생성 노드 (CoT 및 Template Fallback 포함)."""
 
 import asyncio
 import json
 import logging
 import re
 import textwrap
-from typing import Any, Dict
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.infrastructure.graph.integration.llm import get_cypher_generator_llm
-
 from ..nodes.tool_retrieval import _generate_cypher_by_strategy, _normalize_query
 from ..state import MitSearchState
 from ..utils.search_strategy_router import SearchStrategyRouter
+from ..utils.template_cypher import generate_template_cypher
 
 logger = logging.getLogger(__name__)
+
+# Cypher 생성 캐시 (최대 50개, FIFO)
+_cypher_cache: Dict[str, str] = {}
 
 FOCUS_RULES = {
     "Meeting": {
@@ -42,231 +46,252 @@ async def _generate_text_to_cypher_raw(
     user_id: str,
     feedback: str | None = None,
 ) -> str:
-    """LLM을 사용하여 자연어 쿼리를 Neo4j Cypher로 변환.
+    """LLM을 사용하여 자연어 쿼리를 Neo4j Cypher로 변환 (CoT 적용).
 
     Args:
         query: 자연어 검색 쿼리
         query_intent: 쿼리 의도 분석 결과
         user_id: 사용자 ID
+        feedback: 이전 실패에 대한 피드백 (재시도 시 사용)
 
     Returns:
-        생성된 Cypher 쿼리 또는 빈 문자열 (실패 시)
+        생성된 Cypher 쿼리 문자열 (실패 시 빈 문자열)
     """
     llm = get_cypher_generator_llm()
 
+    # 1. 스키마 정의
     schema_info = textwrap.dedent(
         """
-        Neo4j 스키마:
-        노드 타입:
-        - Meeting: {id, title, date, created_at}
+        [Graph Schema]
+        Nodes:
+        - Meeting: {id, title, created_at(datetime)}
         - Agenda: {id, title, created_at}
-        - Decision: {id, content, status, created_at}
-        - ActionItem: {id, title, status, due_date, created_at}
+        - Decision: {id, content, status("Decided", "Pending"), created_at}
+        - ActionItem: {id, title, status("To Do", "In Progress", "Done"), due_date, created_at}
         - User: {id, name, email, role}
-        - Team: {id, name, description}
+        - Team: {id, name}
 
-        관계:
-        - (Meeting)-[:CONTAINS]->(Agenda)
-        - (Agenda)-[:HAS_DECISION]->(Decision)
-        - (Agenda)-[:HAS_ACTION]->(ActionItem)
-        - (User)-[:PARTICIPATED_IN]->(Meeting)
-        - (User)-[:ASSIGNED_TO]->(ActionItem)
-        - (User)-[:MEMBER_OF]->(Team)
-        - (User)-[:ASSIGNED_TO]->(ActionItem)
-        - (User)-[:PARTICIPATED_IN]->(Meeting)
+        Relationships (Directional):
+        - (:User)-[:PARTICIPATED_IN]->(:Meeting)
+        - (:Meeting)-[:CONTAINS]->(:Agenda)
+        - (:Agenda)-[:HAS_DECISION]->(:Decision)
+        - (:Agenda)-[:HAS_ACTION]->(:ActionItem)
+        - (:User)-[:ASSIGNED_TO]->(:ActionItem)
+        - (:User)-[:MEMBER_OF]->(:Team)
 
-        FULLTEXT 인덱스: decision_search (Decision 노드의 content 필드)
+        Indexes:
+        - CALL db.index.fulltext.queryNodes('decision_search', 'keyword')
         """
     ).strip()
 
-    intent_type = query_intent.get("intent_type", "general_search")
-    search_focus = query_intent.get("search_focus")
-    primary_entity = query_intent.get("primary_entity")
-
-    logger.info(
-        "[Text-to-Cypher] 요청",
-        extra={
-            "query": query,
-            "intent_type": intent_type,
-            "search_focus": search_focus,
-            "primary_entity": primary_entity,
-        },
-    )
-
-    feedback_block = ""
-    if feedback:
-        feedback_block = f"\n\n수정 지침:\n{feedback}\n"
-
+    # 2. 시스템 프롬프트: Few-Shot 예시 추가 (가장 중요)
     system_prompt = textwrap.dedent(
-        f"""당신은 Neo4j Cypher 쿼리 생성 전문가입니다.
-스키마와 관계를 바탕으로 자연어 질문을 Neo4j Cypher 쿼리로 변환하세요.
+        f"""
+        Role: Neo4j Cypher Expert & Graph Navigator.
 
-{schema_info}
+        Task:
+        Convert the user's Natural Language Query into a precise Neo4j Cypher query based on the Schema.
 
-규칙:
+        {schema_info}
 
-1. 오직 Cypher 쿼리만 반환 (설명 없음)
-2. **중요**: 존재하지 않는 관계/속성 사용 금지 (예: MADE_DECISION, Agenda.order, Meeting.date)
-3. **필수**: RETURN 절에 반드시 'graph_context' 필드를 포함하여 그래프 관계를 문장화하세요.
-   - graph_context는 노드 간 관계를 자연어로 표현한 것입니다.
-   - 예: "김철수님이 참여한 예산회의의 마케팅 예산 안건에서 도출된 결정사항: 5천만원 승인"
+        [Execution Principles]
+        1. **Security First**:
+           - MUST append `AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})` to the WHERE clause.
+           - Only READ operations allowed.
 
-현재 쿼리 의도 (반드시 이를 따르세요):
-- Intent: {intent_type}
-- Focus: {search_focus or "일반"}
-- Entity: {primary_entity or "없음"}
+        2. **Search Strategy (CRITICAL)**:
+           - **Dual Filtering**: If the user mentions a Person AND a Topic (e.g., "Meeting with Alice about Budget"), you MUST filter BOTH.
+             - `WHERE u.name CONTAINS 'Alice' AND m.title CONTAINS 'Budget'`
+           - **Literal Extraction**: Use EXACT literal strings. DO NOT TRANSLATE.
+             - '신수효' -> '신수효' (OK), 'Shin Soo Hyo' (NO)
+           - **Traversal**: `User -> Meeting -> Agenda -> Decision`.
 
-**CRITICAL 지시 - Intent별 필수 구조**:
+        3. **Formatting**:
+           - **graph_context**: Construct manually using `+`.
+           - **Alias**: MUST be `AS graph_context`.
+           - **Limit**: ALWAYS end with `LIMIT 20`.
 
-IF Intent = "entity_search" AND primary_entity = "{primary_entity}":
-  → MATCH (u:User {{name: $query}})를 시작점으로 사용하세요
-  IF search_focus = "Meeting": u → Meeting 검색
-  IF search_focus = "Decision": u → Meeting → Agenda → Decision 검색
-  IF search_focus = "User": u → Team → 다른 User 검색
+        [Few-Shot Examples]
+        
+        Q: "민수랑 했던 예산 회의 찾아줘"
+        ```thought
+        1. Intent: Find meetings with '민수' containing keyword '예산'.
+        2. Strategy: User -> Participated -> Meeting
+        3. Entities: Name='민수'
+        4. Keywords: Topic='예산' (Add to WHERE!)
+        ```
+        ```cypher
+        MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
+        WHERE u.name CONTAINS '민수' 
+          AND m.title CONTAINS '예산'
+          AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
+        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
+               u.name + '님과 함께한 예산(Budget) 회의: ' + m.title AS graph_context
+        ORDER BY m.created_at DESC
+        LIMIT 20
+        ```
 
-IF Intent = "general_search":
-  → FULLTEXT 검색으로 시작하세요 (CALL db.index.fulltext.queryNodes)
+        Q: "회고가 포함된 미팅"
+        ```thought
+        1. Intent: Find meetings with keyword '회고'.
+        2. Strategy: Direct Meeting search
+        3. Entities: None
+        4. Keywords: Topic='회고'
+        ```
+        ```cypher
+        MATCH (u:User {{id: $user_id}})-[:PARTICIPATED_IN]->(m:Meeting)
+        WHERE m.title CONTAINS '회고'
+        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
+               '회고 관련 회의: ' + m.title AS graph_context
+        ORDER BY m.created_at DESC
+        LIMIT 20
+        ```
 
-모든 경우:
-    → WHERE 절에 반드시 사용자 접근 제어 포함: (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
-    → 모든 Cypher는 LIMIT로 끝나야 함 (보통 20)
-    → graph_context는 자연어 설명 필수
-
-**중요**: 같은 Intent와 Focus가 주어지면 항상 같은 구조의 Cypher를 생성하세요!
-
-**필수 요건**:
-1. RETURN 절 포함
-2. LIMIT 포함
-3. graph_context 포함
-4. $user_id 접근제어 포함 (WHERE 절 마지막)
-
-=== 예시1 ===
-질문: "신수효가 참가한 회의 뭐가 있어?"
-의도: entity_search + Meeting (primary_entity="신수효")
-명령: primary_entity를 WHERE 절에서 필터링하세요!
-Cypher:
-MATCH (u:User {{name: $query}})-[:PARTICIPATED_IN]->(m:Meeting)
-WHERE (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
-RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
-       u.name + '님이 참여한 회의: ' + m.title AS graph_context
-ORDER BY m.created_at DESC LIMIT 20
-
-=== 예시2 ===
-질문: "신수효 관련 결정사항"
-의도: entity_search + Decision (primary_entity="신수효")
-명령: 사람을 통해 회의→안건→결정으로 이동하되, WHERE 절에서 사람과 사용자 모두 검증!
-Cypher:
-MATCH (u:User {{name: $query}})-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)
-WHERE (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
-RETURN d.id AS id, d.content AS content, d.status AS status, 1.0 AS score,
-       u.name + '님이 참여한 ' + m.title + ' 회의의 결정: ' + d.content AS graph_context
-ORDER BY d.created_at DESC LIMIT 20
-
-=== 예시3 ===
-질문: "교육 프로그램에 대한 결정사항"
-의도: general_search + Decision (no primary_entity)
-명령: FULLTEXT 검색으로 결정사항을 찾되, 사용자가 참여한 회의만 포함!
-Cypher:
-CALL db.index.fulltext.queryNodes('decision_search', $query) YIELD node, score
-MATCH (a:Agenda)-[:HAS_DECISION]->(node)
-MATCH (m:Meeting)-[:CONTAINS]->(a)
-WHERE (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
-RETURN node.id AS id, node.content AS content, node.status AS status, score,
-       m.title + ' 회의의 ' + coalesce(a.title, '안건') + '에서의 결정: ' + node.content AS graph_context
-ORDER BY score DESC LIMIT 20
-
-=== 예시4 ===
-질문: "신수효와 같은 팀원은?"
-의도: entity_search + User (primary_entity="신수효", search_focus="User")
-명령: 사람을 찾으면, 그 사람의 팀을 거쳐 다른 팀원들을 찾으세요!
-Cypher:
-MATCH (u:User {{name: $query}})-[:MEMBER_OF]->(team:Team)
-MATCH (team)<-[:MEMBER_OF]-(member:User)
-WHERE member <> u AND (team)<-[:MEMBER_OF]-(:User {{id: $user_id}})
-RETURN member.id AS id, member.name AS title, member.email AS content, 1.0 AS score,
-       member.name + '님은 ' + team.name + ' 팀의 멤버 (같은 팀: ' + u.name + ')' AS graph_context
-ORDER BY member.name ASC LIMIT 20
-{feedback_block}
-"""
+        [Output Format]
+        Follow the Thought process above.
+        Format:
+        ```thought
+        1. Intent Analysis: ...
+        2. Path Strategy: ...
+        3. Entities: ...
+        4. Keywords: ...
+        ```
+        ```cypher
+        ...
+        ```
+        """
     ).strip()
 
-    user_message = f"질문: {query}\n\nCypher 쿼리를 생성하세요:"
+    # 의도 정보 주입
+    user_context = textwrap.dedent(
+        f"""
+        [Context]
+        - UserID: {user_id}
+        - Query: "{query}"
+        - Analyzed Intent: {query_intent.get('intent_type', 'Unknown')}
+        - Focus Entity: {query_intent.get('primary_entity', 'None')}
+        - Target Node: {query_intent.get('search_focus', 'Any')}
+        """
+    ).strip()
+
+    if feedback:
+        user_context += (
+            f"\n\n[Previous Error Feedback]\n{feedback}\nPlease fix the error and regenerate."
+        )
+
+    full_prompt = [
+        SystemMessage(system_prompt),
+        HumanMessage(user_context),
+    ]
 
     try:
+        response_content = ""
+        print(f"\n[Text-to-Cypher] LLM 호출 시작 (Feedback: {bool(feedback)})...")
+        # 스트리밍으로 응답 받기
+        async for chunk in llm.astream(full_prompt):
+            if hasattr(chunk, "content"):
+                print(chunk.content, end="", flush=True)  # 디버깅용 실시간 출력
+                response_content += chunk.content
+
+        print("\n" + "=" * 50)
+
+        # 3. 파싱 로직: Thought 블록과 Cypher 블록 분리
         cypher = ""
-        async for chunk in llm.astream([
-            SystemMessage(system_prompt),
-            HumanMessage(user_message),
-        ]):
-            if hasattr(chunk, 'content'):
-                cypher += chunk.content
-                print(chunk.content, end="", flush=True)
-        print()  # 줄바꿈
-        cypher = cypher.strip()
 
-        # 코드 블록 제거
-        if cypher.startswith("```"):
-            cypher = re.sub(r"```(?:cypher|sql)?\n?", "", cypher)
-            cypher = cypher.strip("`").strip()
+        # ```cypher ... ``` 블록 추출 우선 시도
+        cypher_match = re.search(
+            r"```cypher\s*(.*?)\s*```", response_content, re.DOTALL | re.IGNORECASE
+        )
+        if cypher_match:
+            cypher = cypher_match.group(1).strip()
+        else:
+            # 포맷을 안 지켰을 경우, 기본적인 코드 블록 추출 시도
+            code_block_match = re.search(
+                r"```\s*(.*?)\s*```", response_content, re.DOTALL
+            )
+            if code_block_match:
+                content = code_block_match.group(1).strip()
+                # thought 블록이 아님을 확인
+                if not content.lower().startswith("thought") and (
+                    "MATCH" in content.upper() or "CALL" in content.upper()
+                ):
+                    cypher = content
+            else:
+                # 최후의 수단: MATCH나 CALL로 시작하는 부분부터 끝까지 추출
+                match_start = re.search(
+                    r"(MATCH|CALL)\s", response_content, re.IGNORECASE
+                )
+                if match_start:
+                    cypher = response_content[match_start.start() :].strip()
 
-        # 기본 검증: MATCH/CALL 포함 확인
-        if not any(keyword in cypher.upper() for keyword in ["MATCH", "CALL"]):
-            logger.warning(f"[Text-to-Cypher] 유효하지 않은 Cypher: {cypher[:100]}")
-            return ""
-
+        # 정제 및 검증
         cypher = _sanitize_generated_cypher(cypher)
 
-        logger.info(f"[Text-to-Cypher] 생성 성공: {len(cypher)} chars")
-        logger.debug(f"[Text-to-Cypher] Cypher:\n{cypher}")
+        # 유효성 검사
+        if not cypher or not any(
+            k in cypher.upper() for k in ["MATCH", "CALL", "RETURN"]
+        ):
+            logger.warning("[Text-to-Cypher] 유효한 Cypher 추출 실패")
+            return ""
 
-        # 콘솔에 생성된 Cypher 출력
-        print(f"\n{'='*80}")
-        print("[LLM 생성 Cypher]")
-        print(f"{'='*80}")
-        print(cypher)
-        print(f"{'='*80}\n")
-
+        logger.info(f"[Text-to-Cypher] 생성 완료: {len(cypher)} chars")
         return cypher
+
     except Exception as e:
-        logger.error(f"[Text-to-Cypher] 생성 실패: {e}")
+        logger.error(f"[Text-to-Cypher] 생성 중 에러: {e}")
         return ""
 
 
-async def _generate_text_to_cypher(query: str, query_intent: dict, user_id: str) -> str:
-    """LLM Cypher 생성 + 품질/안전성 피드백 기반 재시도.
+async def _generate_text_to_cypher(
+    query: str, query_intent: dict, user_id: str
+) -> str:
+    """LLM Cypher 생성 + 품질/안전성 피드백 기반 재시도 (캐싱 포함)."""
+    # 캐시 키 생성
+    cache_key = f"{query}|{query_intent.get('intent_type')}|{query_intent.get('search_focus')}"
 
-    복합 질문은 LLM 기반 분해 후 각 서브쿼리에 대해 생성 시도합니다.
-    """
+    # 캐시 확인
+    if cache_key in _cypher_cache:
+        logger.info(f"[Text-to-Cypher] 캐시 히트: {query}")
+        return _cypher_cache[cache_key]
+
     subqueries = await _extract_subqueries(query)
     logger.info(
         "[Text-to-Cypher] 서브쿼리 분해 완료",
         extra={"count": len(subqueries), "subqueries": subqueries},
     )
+
     for subquery in subqueries:
         cypher = await _attempt_cypher_with_feedback(subquery, query_intent, user_id)
         if cypher:
+            # 캐시에 저장 (최대 50개, FIFO)
+            if len(_cypher_cache) >= 50:
+                _cypher_cache.pop(next(iter(_cypher_cache)))
+            _cypher_cache[cache_key] = cypher
             return cypher
 
     return ""
 
 
 async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
-    """SearchStrategyRouter 기반 Cypher 쿼리 생성.
+    """SearchStrategyRouter 기반 Cypher 쿼리 생성 (Template Fallback 포함).
 
     Contract:
         reads: mit_search_query, mit_search_filters, mit_search_query_intent, user_id
         writes: mit_search_cypher, mit_search_strategy
-        side-effects: None (순수 함수)
-        failures: 전략 선택 실패 → 기본 fulltext Cypher 반환
     """
+    start_time = time.time()
     print("[Cypher Generator] 진입")
     logger.info("[Cypher Generator] 시작")
 
     try:
         query = state.get("mit_search_query", "")
-        filters = state.get("mit_search_filters", {})
         user_id = state.get("user_id", "")
         query_intent = state.get("mit_search_query_intent", {})
+
+        filters = {
+            "date_range": query_intent.get("date_range"),
+            "entity_types": query_intent.get("entity_types"),
+        }
 
         print(f"[Cypher Generator] query={query}, intent={query_intent}")
 
@@ -278,55 +303,86 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
         normalized_keywords = _normalize_query(query)
         logger.info(f"[Cypher Generator] 정규화: '{query}' → '{normalized_keywords}'")
 
-        # LLM 우선 생성 (룰베이스 최소화)
-        llm_cypher = await _generate_text_to_cypher(query, query_intent, user_id)
-        if llm_cypher:
-            strategy = {
-                "strategy": "text_to_cypher",
-                "search_term": normalized_keywords,
-                "reasoning": "LLM 우선 생성",
-            }
-            logger.info(
-                "[Cypher Generator] LLM Cypher 사용",
-                extra={"strategy": strategy["strategy"], "search_term": strategy["search_term"]},
-            )
-            return {"mit_search_cypher": llm_cypher, "mit_search_strategy": strategy}
-
         # 전략 결정
         entity_types = filters.get("entity_types", [])
-        logger.info(f"[Cypher Generator] Intent: {query_intent.get('intent_type')}, Primary Entity: {query_intent.get('primary_entity')}")
-
         router = SearchStrategyRouter()
         strategy = router.determine_strategy(
             query_intent=query_intent,
             entity_types=entity_types,
             normalized_keywords=normalized_keywords,
-            user_id=user_id
+            user_id=user_id,
         )
 
-        print(f"[Cypher Generator] 전략: {strategy['strategy']}")
         logger.info(
-            f"[Cypher Generator] 전략 선택: {strategy['strategy']} (검색어: {strategy['search_term']})",
-            extra={
-                "strategy": strategy["strategy"],
-                "search_term": strategy["search_term"],
-            },
+            f"[Cypher Generator] 전략 선택: {strategy['strategy']} (Fallback: {strategy.get('use_fallback', False)})"
         )
 
         cypher = ""
 
-        if strategy["strategy"] == "text_to_cypher":
-            logger.info("[Cypher Generator] Text-to-Cypher 생성 시도")
+        # Case 1: Template 우선 전략
+        if strategy["strategy"] == "template_based":
+            logger.info("[Cypher Generator] Template 우선 시도")
+            template_cypher = generate_template_cypher(
+                intent_type=query_intent.get("intent_type"),
+                search_focus=query_intent.get("search_focus"),
+                primary_entity=query_intent.get("primary_entity"),
+                search_term=normalized_keywords,
+                user_id=user_id,
+                date_filter=filters.get("date_range"),
+            )
+
+            if template_cypher:
+                cypher = template_cypher
+                strategy["reasoning"] = "Template (pattern matched)"
+                logger.info("[Cypher Generator] ✓ Template 성공")
+            else:
+                logger.info("[Cypher Generator] Template 없음 → LLM Fallback")
+                llm_cypher = await _generate_text_to_cypher(query, query_intent, user_id)
+                if llm_cypher:
+                    cypher = llm_cypher
+                    strategy["reasoning"] = "Template 없음 → LLM Fallback"
+                    logger.info("[Cypher Generator] ✓ LLM Fallback 성공")
+
+        # Case 2: LLM 우선 전략
+        elif strategy["strategy"] == "text_to_cypher":
+            logger.info("[Cypher Generator] LLM 우선 시도")
             llm_cypher = await _generate_text_to_cypher(query, query_intent, user_id)
 
             if llm_cypher:
                 cypher = llm_cypher
-                strategy["reasoning"] = "LLM 생성 Cypher"
+                strategy["reasoning"] = "LLM (text-to-cypher)"
+                logger.info("[Cypher Generator] ✓ LLM 성공")
+
+            # LLM 실패 시 Fallback
+            elif strategy.get("use_fallback", False):
+                logger.warning("[Cypher Generator] LLM 실패 → Template Fallback 시도")
+                template_cypher = generate_template_cypher(
+                    intent_type=query_intent.get("intent_type"),
+                    search_focus=query_intent.get("search_focus"),
+                    primary_entity=query_intent.get("primary_entity"),
+                    search_term=normalized_keywords,
+                    user_id=user_id,
+                    date_filter=filters.get("date_range"),
+                )
+
+                if template_cypher:
+                    cypher = template_cypher
+                    strategy["reasoning"] = "LLM 실패 → Template Fallback"
+                    strategy["strategy"] = "template_based"
+                    logger.info("[Cypher Generator] ✓ Template Fallback 성공")
+                else:
+                    logger.warning("[Cypher Generator] Template도 없음 → fulltext fallback")
+                    cypher, strategy = _apply_focus_fallback(
+                        cypher, strategy, query_intent
+                    )
             else:
-                logger.warning("[Cypher Generator] Text-to-Cypher 실패, fulltext 템플릿 fallback")
+                logger.warning(
+                    "[Cypher Generator] LLM 실패 (Fallback 비활성화) → fulltext fallback"
+                )
                 cypher, strategy = _apply_focus_fallback(cypher, strategy, query_intent)
+
         else:
-            # 템플릿 기반 전략
+            # 기타 전략
             cypher = _generate_cypher_by_strategy(
                 strategy=strategy["strategy"],
                 query_intent=query_intent,
@@ -336,31 +392,22 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
                 cypher_template=_get_fulltext_template(),
             )
 
+        # 품질 검증 및 최종 출력
         quality_issues = _collect_cypher_issues(cypher, query_intent)
         if quality_issues:
             logger.warning(
-                "[Cypher Generator] 품질/의도 검증 실패, LLM 재생성 시도",
-                extra={"issues": quality_issues},
+                "[Cypher Generator] 품질/의도 검증 실패", extra={"issues": quality_issues}
             )
-            if strategy.get("strategy") == "text_to_cypher":
-                repaired = await _attempt_cypher_with_feedback(query, query_intent, user_id)
-                if repaired:
-                    cypher = repaired
-                    strategy["reasoning"] = "품질/의도 이슈 → LLM 재생성"
-                else:
-                    cypher, strategy = _apply_focus_fallback(cypher, strategy, query_intent)
-            else:
+            # 심각한 이슈(보안 등)가 있으면 Fallback
+            if "missing_user_scope" in quality_issues or "unsafe_cypher" in quality_issues:
                 cypher, strategy = _apply_focus_fallback(cypher, strategy, query_intent)
 
-        logger.info(f"Generated Cypher ({len(cypher)} chars)")
-        logger.debug(f"Generated Cypher:\n{cypher}")
-
-        # 생성된 Cypher를 콘솔에 출력
         print(f"\n{'='*80}")
         print(f"[최종 실행 Cypher] (전략: {strategy['strategy']})")
         print(f"{'='*80}")
         print(cypher)
         print(f"{'='*80}\n")
+        logger.info(f"[Cypher Generator] 완료 (소요시간: {time.time() - start_time:.2f}s)")
 
         return {"mit_search_cypher": cypher, "mit_search_strategy": strategy}
 
@@ -369,8 +416,13 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
         return {"mit_search_cypher": "", "mit_search_strategy": {}}
 
 
+# -------------------------------------------------------------------------
+# Helper Functions & Templates
+# -------------------------------------------------------------------------
+
+
 def _get_fulltext_template() -> str:
-    """FULLTEXT 검색용 기본 템플릿"""
+    """FULLTEXT 검색용 기본 템플릿 (키워드 검색)"""
     return """CALL db.index.fulltext.queryNodes('decision_search', $query)
 YIELD node, score
 MATCH (a:Agenda)-[:HAS_DECISION]->(node)
@@ -383,9 +435,9 @@ LIMIT 20"""
 
 
 def _get_meeting_template() -> str:
-    """Meeting 검색용 기본 템플릿 (사람 참여 기준)"""
+    """Meeting 검색용 기본 템플릿 (m.date 제거됨, created_at 사용)"""
     return """MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
-WHERE u.name CONTAINS $query
+WHERE u.name CONTAINS $entity_name
   AND (m)<-[:PARTICIPATED_IN]-(:User {id: $user_id})
 RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
        u.name + '님이 참여한 회의: ' + m.title AS graph_context
@@ -394,8 +446,8 @@ LIMIT 20"""
 
 
 def _get_user_team_template() -> str:
-    """User 검색용 기본 템플릿 (같은 팀원)"""
-    return """MATCH (u:User {name: $query})-[:MEMBER_OF]->(team:Team)
+    """User 검색용 기본 템플릿"""
+    return """MATCH (u:User {name: $entity_name})-[:MEMBER_OF]->(team:Team)
 MATCH (team)<-[:MEMBER_OF]-(member:User)
 WHERE member <> u AND (team)<-[:MEMBER_OF]-(:User {id: $user_id})
 RETURN member.id AS id, member.name AS title, member.email AS content, 1.0 AS score,
@@ -404,7 +456,9 @@ ORDER BY member.name ASC
 LIMIT 20"""
 
 
-def _apply_focus_fallback(cypher: str, strategy: dict, query_intent: dict) -> tuple[str, dict]:
+def _apply_focus_fallback(
+    cypher: str, strategy: dict, query_intent: dict
+) -> Tuple[str, dict]:
     """Focus 기반 fallback 템플릿 적용."""
     focus = query_intent.get("search_focus")
     primary_entity = query_intent.get("primary_entity")
@@ -414,13 +468,18 @@ def _apply_focus_fallback(cypher: str, strategy: dict, query_intent: dict) -> tu
         "User": _get_user_team_template,
         "Decision": _get_fulltext_template,
     }
-    cypher = template_map.get(focus, _get_fulltext_template)()
+    # 템플릿 호출
+    cypher_func = template_map.get(focus, _get_fulltext_template)
+    cypher = cypher_func()
 
     if focus in FOCUS_RULES:
-        strategy["reasoning"] = f"품질 검증 실패 → {FOCUS_RULES[focus]['fallback_reason']}"
+        strategy["reasoning"] = (
+            f"품질 검증 실패 → {FOCUS_RULES[focus]['fallback_reason']}"
+        )
     else:
         strategy["reasoning"] = "품질 검증 실패 → fulltext fallback"
 
+    # Fallback 사용 시 검색어 설정
     if primary_entity:
         strategy["search_term"] = primary_entity
 
@@ -429,11 +488,17 @@ def _apply_focus_fallback(cypher: str, strategy: dict, query_intent: dict) -> tu
 
 def _sanitize_generated_cypher(cypher: str) -> str:
     """LLM 생성 Cypher의 흔한 오류를 보정합니다."""
-    # 존재하지 않는 관계/속성 제거
-    cypher = re.sub(r":MADE_DECISION\b", "", cypher)
-    cypher = re.sub(r"\b(a\.|agenda\.)order\b", "a.title", cypher, flags=re.IGNORECASE)
+    # 주석 제거
+    cypher = re.sub(r"//.*", "", cypher)
 
-    # OPTIONAL MATCH (u:User)-[]->(node) 제거
+    # 존재하지 않는 속성/관계 수정
+    cypher = re.sub(r":MADE_DECISION\b", "", cypher)
+    cypher = re.sub(
+        r"\b(a\.|agenda\.)order\b", "a.title", cypher, flags=re.IGNORECASE
+    )
+    cypher = re.sub(r"\bm\.date\b", "m.created_at", cypher, flags=re.IGNORECASE)
+
+    # OPTIONAL MATCH 제거
     cypher = re.sub(
         r"OPTIONAL MATCH\s*\(u:User\)\s*-\s*\[\s*\]\s*->\s*\(node\)\s*\n?",
         "",
@@ -441,7 +506,7 @@ def _sanitize_generated_cypher(cypher: str) -> str:
         flags=re.IGNORECASE,
     )
 
-    # maker/assignee 필드가 남아있으면 제거
+    # 불필요한 coalesce 제거
     cypher = re.sub(
         r',\s*coalesce\(u\.name,\s*"[^"]*"\)\s+AS\s+\w+',
         "",
@@ -449,22 +514,27 @@ def _sanitize_generated_cypher(cypher: str) -> str:
         flags=re.IGNORECASE,
     )
 
+    # Markdown 및 세미콜론 정리
+    cypher = cypher.replace("```cypher", "").replace("```", "").strip()
+    cypher = cypher.replace(";", "")
+
+    # ORDER BY score 정리
     upper = cypher.upper()
     if "ORDER BY" in upper:
         parts = re.split(r"ORDER BY", cypher, flags=re.IGNORECASE)
         pre_order = parts[0]
         post_order = "ORDER BY" + parts[1] if len(parts) > 1 else ""
 
-        if re.search(r"ORDER BY\s+score\s+DESC,\s*created_at\s+DESC", post_order, re.IGNORECASE):
+        if re.search(
+            r"ORDER BY\s+score\s+DESC,\s*created_at\s+DESC", post_order, re.IGNORECASE
+        ):
             if not re.search(r"\bcreated_at\b", pre_order):
-                # created_at alias가 없으면 제거
                 cypher = re.sub(
                     r"ORDER BY\s+score\s+DESC,\s*created_at\s+DESC",
                     "ORDER BY score DESC",
                     cypher,
                     flags=re.IGNORECASE,
                 )
-
         if re.search(r"ORDER BY\s+created_at\s+DESC", post_order, re.IGNORECASE):
             if not re.search(r"\bcreated_at\b", pre_order):
                 cypher = re.sub(
@@ -478,16 +548,9 @@ def _sanitize_generated_cypher(cypher: str) -> str:
 
 
 def _is_safe_cypher(cypher: str) -> bool:
-    """LLM Cypher 안전성/호환성 검증.
-
-    - 쓰기 작업 차단
-    - 허용되지 않은 CALL 차단
-    - 지원하지 않는 함수 차단 (extract 등)
-    - graph_context 반환 필수
-    """
+    """LLM Cypher 안전성/호환성 검증."""
     upper = cypher.upper()
 
-    # 쓰기/위험 키워드 차단
     forbidden_keywords = [
         "CREATE",
         "MERGE",
@@ -502,23 +565,22 @@ def _is_safe_cypher(cypher: str) -> bool:
         if re.search(rf"\b{keyword}\b", upper):
             return False
 
-    # CALL 제한 (fulltext만 허용)
     if re.search(r"\bCALL\b", upper):
-        if not re.search(r"CALL\s+db\.index\.fulltext\.queryNodes", cypher, re.IGNORECASE):
+        if not re.search(
+            r"CALL\s+db\.index\.fulltext\.queryNodes", cypher, re.IGNORECASE
+        ):
             return False
 
-    # 지원하지 않는 함수 차단
     if re.search(r"\bextract\s*\(", cypher, re.IGNORECASE):
         return False
 
-    # graph_context 반환 필수
     if not re.search(r"\bgraph_context\b", cypher, re.IGNORECASE):
         return False
 
     return True
 
 
-def _collect_cypher_issues(cypher: str, query_intent: dict) -> list[str]:
+def _collect_cypher_issues(cypher: str, query_intent: dict) -> List[str]:
     if not cypher:
         return ["empty_cypher"]
 
@@ -553,17 +615,17 @@ def _is_intent_aligned(cypher: str, query_intent: dict) -> bool:
     return True
 
 
-def _format_cypher_feedback(issues: list[str], cypher: str) -> str:
+def _format_cypher_feedback(issues: List[str], cypher: str) -> str:
     """LLM 재시도를 위한 피드백 생성."""
     issue_lines = ", ".join(issues)
     return (
         "다음 문제를 수정해서 Cypher를 다시 생성하세요."
         f"\n- 문제: {issue_lines}"
-        "\n- 반드시 graph_context 포함"
-        "\n- 반드시 RETURN 절 포함"
+        "\n- 반드시 graph_context 포함 (문자열 조합 필수)"
+        "\n- RETURN ... AS graph_context 형식 준수"
         "\n- 반드시 LIMIT 포함"
         "\n- 반드시 $user_id로 접근 제어 포함"
-        "\n- 허용된 스키마/관계만 사용"
+        "\n- $query 파라미터 사용 금지 (실제 값 사용)"
         f"\n현재 Cypher:\n{cypher}"
     )
 
@@ -577,7 +639,9 @@ async def _attempt_cypher_with_feedback(
     """LLM Cypher 생성 재시도 루프."""
     feedback = None
     for attempt in range(1, max_attempts + 1):
-        cypher = await _generate_text_to_cypher_raw(query, query_intent, user_id, feedback=feedback)
+        cypher = await _generate_text_to_cypher_raw(
+            query, query_intent, user_id, feedback=feedback
+        )
         issues = _collect_cypher_issues(cypher, query_intent)
         if not issues:
             logger.info(
@@ -595,11 +659,8 @@ async def _attempt_cypher_with_feedback(
     return ""
 
 
-async def _extract_subqueries(query: str) -> list[str]:
-    """LLM 기반 쿼리 분해.
-
-    반환은 1~3개의 서브쿼리로 제한합니다.
-    """
+async def _extract_subqueries(query: str) -> List[str]:
+    """LLM 기반 쿼리 분해."""
     llm = get_cypher_generator_llm()
     system_prompt = textwrap.dedent(
         """너는 사용자의 질문을 독립적인 검색 질문으로 분해하는 시스템이다.
@@ -616,11 +677,13 @@ async def _extract_subqueries(query: str) -> list[str]:
 
     try:
         content = ""
-        async for chunk in llm.astream([
-            SystemMessage(system_prompt),
-            HumanMessage(user_message),
-        ]):
-            if hasattr(chunk, 'content'):
+        async for chunk in llm.astream(
+            [
+                SystemMessage(system_prompt),
+                HumanMessage(user_message),
+            ]
+        ):
+            if hasattr(chunk, "content"):
                 content += chunk.content
         content = content.strip()
         if content.startswith("```"):
@@ -630,21 +693,22 @@ async def _extract_subqueries(query: str) -> list[str]:
         data = json.loads(content)
         subqueries = data.get("subqueries")
         if isinstance(subqueries, list):
-            cleaned = [q.strip() for q in subqueries if isinstance(q, str) and q.strip()]
+            cleaned = [
+                q.strip() for q in subqueries if isinstance(q, str) and q.strip()
+            ]
             if cleaned:
                 return cleaned[:3]
     except Exception as e:
-        logger.warning("[Text-to-Cypher] 서브쿼리 분해 실패", extra={"error": str(e)})
+        logger.warning(
+            "[Text-to-Cypher] 서브쿼리 분해 실패", extra={"error": str(e)}
+        )
 
     return [query]
 
 
-def _evaluate_cypher_quality(cypher: str) -> list[str]:
-    """Cypher 품질 검증.
-
-    필수 기준을 충족하지 않으면 이슈 목록을 반환합니다.
-    """
-    issues: list[str] = []
+def _evaluate_cypher_quality(cypher: str) -> List[str]:
+    """Cypher 품질 검증."""
+    issues: List[str] = []
     upper = cypher.upper()
 
     if not any(keyword in upper for keyword in ["MATCH", "CALL"]):
