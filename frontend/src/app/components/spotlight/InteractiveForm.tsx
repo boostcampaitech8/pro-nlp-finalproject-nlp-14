@@ -1,7 +1,8 @@
+// [미사용] 채팅 모드 통합으로 비활성화 (2025.01)
+// 추후 실제 API 연동 시 폼 UI 패턴으로 재활용 가능
 // Interactive Form 컴포넌트 (빈칸 채우기)
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
-import { useCommand } from '@/app/hooks/useCommand';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { Button } from '@/app/components/ui';
 import type { ActiveCommand, CommandField } from '@/app/types/command';
@@ -85,8 +86,7 @@ interface InteractiveFormProps {
 }
 
 export function InteractiveForm({ command }: InteractiveFormProps) {
-  const { submitForm, cancelCommand, updateField } = useCommand();
-  const { isProcessing } = useCommandStore();
+  const { isProcessing, updateField, clearActiveCommand } = useCommandStore();
 
   const handleFieldChange = (fieldId: string, value: string) => {
     updateField(fieldId, value);
@@ -121,7 +121,7 @@ export function InteractiveForm({ command }: InteractiveFormProps) {
             </div>
           </div>
           <button
-            onClick={cancelCommand}
+            onClick={clearActiveCommand}
             className="action-btn"
             title="취소"
           >
@@ -149,14 +149,14 @@ export function InteractiveForm({ command }: InteractiveFormProps) {
         <div className="mt-6 flex justify-end gap-3">
           <Button
             variant="ghost"
-            onClick={cancelCommand}
+            onClick={clearActiveCommand}
             disabled={isProcessing}
           >
             취소
           </Button>
           <Button
             variant="glass-primary"
-            onClick={submitForm}
+            onClick={clearActiveCommand}
             disabled={!isValid || isProcessing}
           >
             {isProcessing ? '처리 중...' : '실행'}

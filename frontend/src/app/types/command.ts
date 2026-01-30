@@ -52,14 +52,19 @@ export interface ModalData {
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
+  type?: 'text' | 'plan';
   content: string;
   timestamp: Date;
+  approved?: boolean;
 }
 
-// Mock 데이터를 위한 에이전트 응답 타입
+// 에이전트 응답 타입 (text 또는 plan)
 export interface AgentResponse {
-  type: 'direct' | 'form' | 'modal';
-  message?: string;
-  command?: ActiveCommand;
-  modalData?: ModalData;
+  type: 'text' | 'plan';
+  message: string;
 }
+
+// Plan 응답 파싱 세그먼트
+export type PlanSegment =
+  | { type: 'text'; value: string }
+  | { type: 'field'; id: string; defaultValue: string };

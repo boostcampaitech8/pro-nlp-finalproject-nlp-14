@@ -32,6 +32,7 @@ interface CommandState {
   enterChatMode: () => void;
   exitChatMode: () => void;
   addChatMessage: (msg: ChatMessage) => void;
+  updateChatMessage: (id: string, updates: Partial<ChatMessage>) => void;
   setStreaming: (streaming: boolean) => void;
 }
 
@@ -89,6 +90,13 @@ export const useCommandStore = create<CommandState>((set) => ({
 
   addChatMessage: (msg) =>
     set((state) => ({ chatMessages: [...state.chatMessages, msg] })),
+
+  updateChatMessage: (id, updates) =>
+    set((state) => ({
+      chatMessages: state.chatMessages.map((msg) =>
+        msg.id === id ? { ...msg, ...updates } : msg
+      ),
+    })),
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
 }));

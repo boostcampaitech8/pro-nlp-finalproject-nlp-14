@@ -9,163 +9,109 @@
 //
 //   입력 예시                     | 매칭 키워드           | 응답 타입 | 동작
 //   ----------------------------|---------------------|----------|------------------
-//   "새 회의 시작"                | 회의+시작/새/만들, 미팅 | modal    | 회의 생성 모달 표시
-//   "회의록 검색"                 | 검색, 찾             | form     | 검색 조건 폼 표시
-//   "예산 변경"                   | 예산 (이력 제외)      | form     | 예산 변경 폼 표시
-//   "예산 이력 조회"              | blame, 이력, 히스토리 | direct   | 히스토리 카드 표시
-//   "오늘 일정"                   | 일정, 스케줄, 오늘    | direct   | 히스토리 카드 표시
-//   "팀 현황"                     | 팀+현황/상태          | direct   | 히스토리 카드 표시
-//   "지난주 회의 요약해줘"         | 요약, 정리, 알려, 질문 | direct   | -> 채팅 모드 진입
-//   (매칭 없는 입력)              | -                   | form     | 기본 상세입력 폼 표시
+//   "새 회의 시작"                | 회의+시작/새/만들, 미팅 | plan     | 회의 생성 계획서
+//   "회의록 검색"                 | 검색, 찾             | plan     | 검색 조건 계획서
+//   "예산 변경"                   | 예산 (이력 제외)      | plan     | 예산 변경 계획서
+//   "예산 이력 조회"              | blame, 이력, 히스토리 | text     | 이력 텍스트 응답
+//   "오늘 일정"                   | 일정, 스케줄, 오늘    | text     | 일정 텍스트 응답
+//   "팀 현황"                     | 팀+현황/상태          | text     | 현황 텍스트 응답
+//   "지난주 회의 요약해줘"         | 요약, 정리, 알려, 질문 | text     | 회의 요약 텍스트
+//   (매칭 없는 입력)              | -                   | plan     | 기본 상세입력 계획서
 //
 // [2] 채팅 모드 (processChatMessage) - 채팅 모드 진입 후 대화 흐름
 //
-//   채팅 모드 진입 조건:
-//     processCommand에서 type='direct' 응답 시 useCommand 훅이 채팅 모드를 활성화한다.
-//     이후 입력은 processChatMessage를 통해 처리된다.
+//   모든 명령이 채팅 모드로 진입한다.
+//   후속 입력은 processChatMessage를 통해 처리된다.
 //
 //   테스트 시나리오:
 //
 //   Step 1 - 채팅 모드 진입
 //     입력: "지난주 개발팀 회의 요약해줘"
 //     결과: 채팅 모드 전환 + 회의 요약 응답 (MOCK_MEETING_SUMMARY)
-//            일시, 참석자, 주요 안건 3건, 결정 사항 2건, 액션 아이템 2건
 //
 //   Step 2 - 후속 질문 (결정 사항 상세)
 //     입력: "결정 사항 더 자세히 알려줘"
 //     매칭: 결정 + (자세/상세/더)
-//     결과: CI/CD 파이프라인 개선, 코드 리뷰 시간 변경 상세 (MOCK_DECISION_DETAIL)
+//     결과: 상세 결정 사항 텍스트
 //
-//   Step 3 - 매칭 안 되는 후속 질문
-//     입력: "다음 회의는 언제야?"
-//     결과: "해당 내용은 아직 확인 중입니다. 다른 질문이 있으신가요?"
+//   Step 3 - 승인 흐름
+//     입력: "승인합니다"
+//     결과: 이전 plan 명령에 대한 완료 응답
 //
 //   채팅 모드 종료:
-//     - ESC 키 또는 뒤로가기 버튼(ArrowLeft) 클릭 -> 기본 Spotlight UI 복귀
+//     - ESC 키 또는 뒤로가기 버튼 -> 기본 Spotlight UI 복귀
 //
 // ============================================================
 
-import type { ActiveCommand, AgentResponse, CommandField, ModalData } from '@/app/types/command';
+import type { AgentResponse } from '@/app/types/command';
 import { API_DELAYS } from '@/app/constants';
 
 // Mock 응답 정의
 interface MockResponse {
-  type: 'form' | 'direct' | 'modal';
-  title?: string;
-  description?: string;
-  icon?: string;
-  fields?: CommandField[];
-  message?: string;
-  modalData?: ModalData;
+  type: 'text' | 'plan';
+  message: string;
 }
 
 const MOCK_RESPONSES: Record<string, MockResponse> = {
-  // 회의 관련 - 모달로 처리
+  // 회의 관련 - plan 계획서
   meeting_create: {
-    type: 'modal',
-    modalData: {
-      modalType: 'meeting',
-    },
+    type: 'plan',
+    message: `회의 생성과 관련된 계획서입니다.
+==nlp-14 team== 내부에서 ==금일 5시== 회의 예정입니다.
+회의에서 이야기할 내용은
+==아젠다1, 아젠다2==
+입니다.
+<주의사항>
+==회의 전 관련 자료 숙지 필요합니다==`,
   },
 
-  // 검색 관련
+  // 검색 관련 - plan 계획서
   search: {
-    type: 'form',
-    title: '회의록 검색',
-    description: '검색 조건을 입력해주세요',
-    icon: '🔍',
-    fields: [
-      {
-        id: 'keyword',
-        label: '검색어',
-        type: 'text',
-        placeholder: '찾고 싶은 키워드',
-        required: true,
-      },
-      {
-        id: 'dateRange',
-        label: '검색 기간',
-        type: 'select',
-        options: ['최근 1주일', '최근 1개월', '최근 3개월', '전체 기간'],
-      },
-      {
-        id: 'team',
-        label: '팀 필터',
-        type: 'select',
-        options: ['전체', '개발팀', '디자인팀', '마케팅팀'],
-      },
-    ],
+    type: 'plan',
+    message: `회의록 검색 계획서입니다.
+검색어: ==키워드를 입력해주세요==
+검색 기간: ==최근 1주일==
+팀 필터: ==전체==`,
   },
 
-  // 예산 관련 (기획서 예시)
+  // 예산 관련 - plan 계획서
   budget: {
-    type: 'form',
-    title: '예산 변경 제안',
-    description: '예산 변경 내용을 입력해주세요',
-    icon: '💰',
-    fields: [
-      {
-        id: 'amount',
-        label: '변경 금액',
-        type: 'text',
-        placeholder: '예: 6,000만원',
-        required: true,
-      },
-      {
-        id: 'reason',
-        label: '변경 사유',
-        type: 'textarea',
-        placeholder: '예산 변경이 필요한 이유를 설명해주세요',
-        required: true,
-      },
-      {
-        id: 'reviewer',
-        label: '리뷰어 지정',
-        type: 'select',
-        options: ['김OO', '이OO', '박OO', '최OO'],
-      },
-    ],
+    type: 'plan',
+    message: `예산 변경 제안 계획서입니다.
+변경 금액: ==6,000만원==
+변경 사유: ==예산 변경이 필요한 이유를 설명해주세요==
+리뷰어: ==김OO==`,
   },
 
-  // Blame 이력 조회
+  // Blame 이력 조회 - text
   blame: {
-    type: 'direct',
+    type: 'text',
     message: '예산 변경 이력을 조회했습니다.',
   },
 
-  // 일정 조회
+  // 일정 조회 - text
   schedule: {
-    type: 'direct',
+    type: 'text',
     message: '오늘 예정된 회의가 2건 있습니다.',
   },
 
-  // 팀 현황
+  // 팀 현황 - text
   team_status: {
-    type: 'direct',
+    type: 'text',
     message: '팀 현황을 불러왔습니다.',
   },
 
-  // 회의 요약/질문 (채팅 모드 진입)
+  // 회의 요약/질문 - text (채팅 모드 진입)
   meeting_chat: {
-    type: 'direct',
+    type: 'text',
     message: '채팅 모드로 전환합니다.',
   },
 
-  // 기본 응답
+  // 기본 응답 - plan 계획서
   default: {
-    type: 'form',
-    title: '명령 상세 입력',
-    description: '추가 정보가 필요합니다',
-    icon: '📝',
-    fields: [
-      {
-        id: 'detail',
-        label: '상세 내용',
-        type: 'textarea',
-        placeholder: '원하시는 작업을 자세히 설명해주세요',
-        required: true,
-      },
-    ],
+    type: 'plan',
+    message: `명령 상세 입력 계획서입니다.
+상세 내용: ==원하시는 작업을 자세히 설명해주세요==`,
   },
 };
 
@@ -252,11 +198,27 @@ const MOCK_DECISION_DETAIL = `결정 사항 상세 내용입니다.
 - 사유: 수요일 오후 회의 충돌 빈번
 - 적용 시점: 다음 주부터`;
 
+// 승인 Mock 응답
+const MOCK_APPROVAL_RESPONSES: Record<string, string> = {
+  meeting_create: '회의가 성공적으로 생성되었습니다. 참가자들에게 알림이 전송됩니다.',
+  search: '검색을 실행합니다. 결과를 불러오는 중...',
+  budget: '예산 변경 제안이 제출되었습니다. 리뷰어에게 알림이 전송됩니다.',
+  default: '명령이 성공적으로 실행되었습니다.',
+};
+
 const MOCK_DEFAULT_FOLLOWUP = '해당 내용은 아직 확인 중입니다. 다른 질문이 있으신가요?';
+
+// 마지막 명령 키 추적 (승인 시 응답 매칭용)
+let lastCommandKey = 'default';
 
 // 채팅 메시지 매칭
 function matchChatResponse(message: string): string {
   const lower = message.toLowerCase();
+
+  // 승인 감지
+  if (lower.includes('승인')) {
+    return MOCK_APPROVAL_RESPONSES[lastCommandKey] || MOCK_APPROVAL_RESPONSES.default;
+  }
 
   // 회의 요약 관련
   if (lower.includes('회의') && (lower.includes('요약') || lower.includes('정리') || lower.includes('내용'))) {
@@ -271,9 +233,30 @@ function matchChatResponse(message: string): string {
   return MOCK_DEFAULT_FOLLOWUP;
 }
 
+// 명령어에서 키를 결정하는 헬퍼
+function resolveCommandKey(command: string): string {
+  const lower = command.toLowerCase();
+
+  if (
+    (lower.includes('회의') && (lower.includes('시작') || lower.includes('새') || lower.includes('만들'))) ||
+    lower.includes('미팅')
+  ) {
+    return 'meeting_create';
+  }
+  if (lower.includes('검색') || lower.includes('찾')) return 'search';
+  if (lower.includes('예산') && !lower.includes('이력')) return 'budget';
+  if (lower.includes('blame') || lower.includes('이력') || lower.includes('히스토리')) return 'blame';
+  if (lower.includes('일정') || lower.includes('스케줄') || lower.includes('오늘')) return 'schedule';
+  if (lower.includes('팀') && (lower.includes('현황') || lower.includes('상태'))) return 'team_status';
+  if (lower.includes('요약') || lower.includes('정리') || lower.includes('알려') || lower.includes('질문')) {
+    return 'meeting_chat';
+  }
+  return 'default';
+}
+
 export const agentService = {
   /**
-   * 명령어 처리
+   * 명령어 처리 (항상 text 또는 plan 응답 반환)
    * @param command 사용자가 입력한 명령어
    * @returns AgentResponse
    */
@@ -281,70 +264,29 @@ export const agentService = {
     // API 호출 시뮬레이션
     await new Promise((resolve) => setTimeout(resolve, API_DELAYS.COMMAND_PROCESS));
 
+    // 마지막 명령 키 기록 (승인 시 참조)
+    lastCommandKey = resolveCommandKey(command);
+
     const matched = matchCommand(command);
 
-    // 모달 타입 응답 처리
-    if (matched.type === 'modal' && matched.modalData) {
-      return {
-        type: 'modal',
-        modalData: matched.modalData,
-      };
-    }
-
-    // 폼 타입 응답 처리
-    if (matched.type === 'form' && matched.fields) {
-      const activeCommand: ActiveCommand = {
-        id: `cmd-${Date.now()}`,
-        type: 'user-command',
-        title: matched.title || '명령 실행',
-        description: matched.description || '',
-        icon: matched.icon,
-        fields: matched.fields,
-      };
-
-      return {
-        type: 'form',
-        command: activeCommand,
-      };
-    }
-
-    // 직접 응답 처리
     return {
-      type: 'direct',
-      message: matched.message || `"${command}" 명령을 처리했습니다.`,
-    };
-  },
-
-  /**
-   * Form 제출 처리
-   * @param commandId 명령 ID
-   * @param commandTitle 명령 제목
-   * @param fields 필드 값들
-   * @returns AgentResponse
-   */
-  async submitForm(
-    _commandId: string,
-    commandTitle: string,
-    _fields: Record<string, string>
-  ): Promise<AgentResponse> {
-    // API 호출 시뮬레이션
-    await new Promise((resolve) => setTimeout(resolve, API_DELAYS.FORM_SUBMIT));
-
-    return {
-      type: 'direct',
-      message: `${commandTitle}이(가) 성공적으로 실행되었습니다.`,
+      type: matched.type,
+      message: matched.message,
     };
   },
 
   /**
    * 채팅 메시지 처리
    * @param message 사용자 입력 메시지
-   * @returns 에이전트 응답 텍스트
+   * @returns AgentResponse (항상 text)
    */
-  async processChatMessage(message: string): Promise<string> {
+  async processChatMessage(message: string): Promise<AgentResponse> {
     // API 호출 시뮬레이션
     await new Promise((resolve) => setTimeout(resolve, API_DELAYS.COMMAND_PROCESS));
-    return matchChatResponse(message);
+    return {
+      type: 'text',
+      message: matchChatResponse(message),
+    };
   },
 
   /**

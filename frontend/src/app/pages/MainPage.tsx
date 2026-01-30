@@ -1,6 +1,6 @@
 // 새 서비스 메인 페이지 (Spotlight UI)
 import { useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { agentService } from '@/app/services/agentService';
@@ -8,7 +8,6 @@ import {
   SpotlightInput,
   CommandSuggestions,
   CommandHistory,
-  InteractiveForm,
   ChatFlow,
 } from '@/app/components/spotlight';
 import { ScrollArea } from '@/app/components/ui';
@@ -19,7 +18,7 @@ const layoutTransition = {
 };
 
 export function MainPage() {
-  const { activeCommand, isChatMode, setSuggestions } = useCommandStore();
+  const { isChatMode, setSuggestions } = useCommandStore();
   const exitChatMode = useCommandStore((s) => s.exitChatMode);
 
   // 추천 명령어 로드
@@ -95,11 +94,6 @@ export function MainPage() {
       >
         <div className="max-w-3xl mx-auto">
           <SpotlightInput />
-
-          {/* Interactive Form (조건부 렌더링) */}
-          <AnimatePresence mode="wait">
-            {activeCommand && <InteractiveForm command={activeCommand} />}
-          </AnimatePresence>
         </div>
       </motion.section>
 

@@ -22,3 +22,7 @@ export const API_DELAYS = {
   FORM_SUBMIT: 800,
   SUGGESTIONS_FETCH: 200,
 } as const;
+
+// Plan 응답 관련 상수
+export const PLAN_FIELD_REGEX = /==([^=]+)==/g;
+export const PLAN_APPROVAL_DELAY = 600;

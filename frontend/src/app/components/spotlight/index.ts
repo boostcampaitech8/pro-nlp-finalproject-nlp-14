@@ -5,3 +5,4 @@ export { CommandHistory } from './CommandHistory';
 export { InteractiveForm } from './InteractiveForm';
 export { ChatFlow } from './ChatFlow';
 export { ChatBubble } from './ChatBubble';
+export { PlanBubble } from './PlanBubble';
