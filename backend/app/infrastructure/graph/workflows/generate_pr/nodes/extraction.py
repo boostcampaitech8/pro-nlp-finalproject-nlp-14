@@ -9,7 +9,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_generator_llm
 from app.infrastructure.graph.workflows.generate_pr.state import GeneratePrState
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
         '"decision": {{"content": "다음 스프린트에서 성능 개선 우선", "context": "사용자 피드백 기반"}}}}]}}'
     )
 
-    chain = prompt | llm | parser
+    chain = prompt | get_generator_llm() | parser
 
     try:
         # 트랜스크립트가 너무 길면 truncate
