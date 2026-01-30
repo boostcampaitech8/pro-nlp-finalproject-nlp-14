@@ -772,14 +772,29 @@ export function useLiveKit(meetingId: string) {
   /**
    * 오디오 음소거 토글
    */
-  const toggleMute = useCallback(() => {
+  const toggleMute = useCallback(async () => {
     const currentMuted = useMeetingRoomStore.getState().isAudioMuted;
     const newMuted = !currentMuted;
     setAudioMuted(newMuted);
 
     const room = roomRef.current;
     if (room) {
-      room.localParticipant.setMicrophoneEnabled(!newMuted);
+      await room.localParticipant.setMicrophoneEnabled(!newMuted);
+
+      // 음소거 해제 시 sourceNode 재연결 (Web Audio 그래프 복구)
+      if (!newMuted && audioContextRef.current && gainNodeRef.current) {
+        // LiveKit 트랙에서 새 MediaStream 생성
+        const audioPublication = room.localParticipant.audioTrackPublications.values().next().value;
+        if (audioPublication?.track?.mediaStreamTrack) {
+          const freshStream = new MediaStream([audioPublication.track.mediaStreamTrack]);
+
+          // 기존 sourceNode 해제 후 재연결
+          sourceNodeRef.current?.disconnect();
+          sourceNodeRef.current = audioContextRef.current.createMediaStreamSource(freshStream);
+          sourceNodeRef.current.connect(gainNodeRef.current);
+          logger.log('[useLiveKit] sourceNode reconnected after unmute');
+        }
+      }
 
       // 다른 참여자에게 음소거 상태 전송
       sendDataPacket({
