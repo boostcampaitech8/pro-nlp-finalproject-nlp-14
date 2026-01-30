@@ -11,12 +11,12 @@
 
 불변식은 시스템 전체에서 항상 참이어야 하는 규칙이다.
 
-### INV-001: 회의당 브랜치 단일성
+### INV-001: 회의당 PR 단일성
 
-- **규칙**: 하나의 회의는 정확히 하나의 브랜치를 생성한다
-- **표현**: `Meeting:Branch = 1:1`
+- **규칙**: 하나의 회의는 정확히 하나의 PR을 생성한다
+- **표현**: `Meeting:PR = 1:1`
 - **근거**: 병합 충돌 방지, 단순한 이력 관리
-- **위반 시**: 시스템 오류 (브랜치 생성 거부)
+- **위반 시**: 시스템 오류 (PR 생성 거부)
 
 ### INV-002: 결정 상태 파생
 
@@ -110,17 +110,7 @@
 - **조건**: `current_user.role == 'host' AND meeting.status == 'ongoing'`
 - **위반 시**: 403 Forbidden / 400 Bad Request
 
-### CON-004: Branch 상태 전이
-
-- **규칙**: Branch 상태는 정해진 순서로만 전이
-- **허용 전이**:
-  ```
-  active -> merged (via PR merge)
-  active -> closed (via PR close or meeting cancel)
-  ```
-- **위반 시**: 400 Bad Request - "Invalid state transition"
-
-### CON-005: Meeting 상태 전이
+### CON-004: Meeting 상태 전이
 
 - **규칙**: Meeting 상태는 정해진 순서로만 전이
 - **허용 전이**:
@@ -135,34 +125,34 @@
   ```
 - **위반 시**: 400 Bad Request - "Invalid state transition"
 
-### CON-006: Decision은 Agenda에 종속
+### CON-005: Decision은 Agenda에 종속
 
 - **규칙**: Decision은 반드시 Agenda에 속해야 함
 - **조건**: `Decision.agenda_id IS NOT NULL`
 - **위반 시**: 400 Bad Request - "Decision must belong to Agenda"
 
-### CON-007: PR 생성은 회의 종료 후에만 가능
+### CON-006: PR 생성은 회의 종료 후에만 가능
 
 - **규칙**: 회의에 대한 PR은 해당 회의가 종료(회의록 생성)된 후에만 생성 가능
 - **조건**: `Meeting.status IN ('completed', 'in_review', 'confirmed')`
 - **근거**: 회의록이 존재해야 PR 대상이 됨
 - **위반 시**: 400 Bad Request - "Meeting must be completed before creating PR"
 
-### CON-008: PR close 조건
+### CON-007: PR close 조건
 
 - **규칙**: PR은 모든 Decision이 처리(approved 또는 rejected)되면 자동 close
 - **조건**: `PR.decision_reviews.all(status IN ('approved', 'rejected'))`
 - **효과**: PR.status = 'closed'
 - **위반 시**: 해당 없음 (시스템 자동 처리)
 
-### CON-009: Decision approve 시 GT 반영
+### CON-008: Decision approve 시 GT 반영
 
 - **규칙**: Decision이 approved되면 즉시 GT에 반영
 - **조건**: `DecisionReview.status == 'approved'`
 - **효과**: Decision.status = 'latest', GT 업데이트
 - **위반 시**: 해당 없음 (시스템 자동 처리)
 
-### CON-010: 본인 Decision approve 불가
+### CON-009: 본인 Decision approve 불가
 
 - **규칙**: Decision 작성자는 해당 Decision을 approve할 수 없음
 - **조건**: `DecisionReview.approver != Decision.created_by`
@@ -175,7 +165,7 @@
 | 구분 | 도메인 규칙 (이 문서) | 비즈니스 규칙 (policy/) |
 |------|----------------------|------------------------|
 | 변경 가능성 | 시스템 설계 수준, 변경 어려움 | 운영 정책, 변경 가능 |
-| 예시 | "회의당 1 브랜치" | "회의 중 PR 금지" |
+| 예시 | "회의당 1 PR" | "회의 중 PR 금지" |
 | 강제 방식 | 시스템 오류 (API 거부) | 경고 또는 설정 가능 |
 
 ---

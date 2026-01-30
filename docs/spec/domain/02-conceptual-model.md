@@ -27,22 +27,15 @@
           │            │         │         │            │ 1:N
           │            ▼         ▼         ▼            │
           │      ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-          │      │Recording │ │Transcript│ │  Branch  │ │
+          │      │Recording │ │Transcript│ │ Minutes  │ │
           │      │  - id    │ │  - id    │ │  - id    │ │
-          │      │  - path  │ │  - text  │ │  - base  │ │
+          │      │  - path  │ │  - text  │ │ - summary│ │
           │      └──────────┘ └──────────┘ └────┬─────┘ │
           │                                     │       │
           └─────────────────────────────────────┤       │
-                                                │ 1:1   │
+                                                │ M:N   │
+                                                │(via MinutesAgenda)
                                                 ▼       │
-                                          ┌──────────┐  │
-                                          │ Minutes  │  │
-                                          │  - id    │  │
-                                          │  - summary│ │
-                                          └────┬─────┘  │
-                                               │ M:N    │
-                                               │ (via MinutesAgenda)
-                                               ▼        │
                                           ┌──────────┐  │
                                           │  Agenda  │◀─┘
                                           │ (참조)   │
@@ -55,12 +48,14 @@
                                           │  - content│
                                           └────┬─────┘
                                                │
-                                               ▼
-                                          ┌──────────┐
-                                          │    GT    │
-                                          │(Knowledge│
-                                          │  Graph)  │
-                                          └──────────┘
+                                     ┌─────────┼─────────┐
+                                     │         │         │
+                                     ▼         ▼         ▼
+                               ┌──────────┐ ┌──────────┐ ┌──────────┐
+                               │ActionItem│ │    GT    │ │  Chat    │
+                               │  - id    │ │(Knowledge│ │ Message  │
+                               │  - title │ │  Graph)  │ │ - id     │
+                               └──────────┘ └──────────┘ └──────────┘
 ```
 
 ---
@@ -190,24 +185,11 @@
 
 **책임**: 발화 기록(STT 결과)을 저장하고 회의록의 근거 자료로 제공한다.
 
-### Branch
-
-| 속성 | 타입 | 설명 |
-|------|------|------|
-| id | UUID | 고유 식별자 |
-| meeting_id | UUID (FK) | 회의 ID |
-| base_gt_version | UUID | 파생 시점의 GT 버전 |
-| status | enum | active / merged / closed |
-| created_at | datetime | 생성 시각 |
-
-**책임**: 회의별 작업 공간을 제공하고 GT로부터의 파생을 추적한다.
-
 ### Minutes (회의록)
 
 | 속성 | 타입 | 설명 |
 |------|------|------|
 | id | UUID | 고유 식별자 |
-| branch_id | UUID (FK) | 브랜치 ID |
 | meeting_id | UUID (FK) | 회의 ID |
 | summary | text | 회의 요약 |
 | created_by | UUID (FK) | 작성자 (Agent 또는 User) |
@@ -230,9 +212,9 @@
 
 **책임**: 특정 Agenda에 대해 합의된 사실/선택을 저장하고 GT의 구성 요소로 작동한다.
 
-**상태 (파생)**: Decision 상태는 자체 저장하지 않고 Agenda approve 상태로 파생
+**상태 (파생)**: Decision 상태는 자체 저장하지 않고 DecisionReview 상태로 파생
 - `draft`: PR에 존재하지만 아직 approved되지 않음
-- `latest`: Agenda가 approved되어 GT에 반영됨
+- `latest`: Decision이 approved되어 GT에 반영됨
 - `rejected`: 리뷰에서 거부됨 (합의 실패)
 - `outdated`: 이후 Decision에 의해 대체됨
 
@@ -241,7 +223,7 @@
 | 속성 | 타입 | 설명 |
 |------|------|------|
 | id | UUID | 고유 식별자 |
-| branch_id | UUID (FK) | 브랜치 ID |
+| meeting_id | UUID (FK) | 회의 ID |
 | title | string | PR 제목 |
 | description | text | PR 설명 |
 | status | enum | open / in_review / closed |
@@ -249,7 +231,7 @@
 | created_at | datetime | 생성 시각 |
 | closed_at | datetime | 종료 시각 |
 
-**책임**: 브랜치의 회의록을 GT로 병합하는 리뷰/합의 절차를 관리한다. Decision별 부분 approve/merge를 지원한다.
+**책임**: 회의의 Decision들을 GT로 병합하는 리뷰/합의 절차를 관리한다. Decision별 부분 approve/merge를 지원한다.
 
 **종료 조건**: 모든 Decision이 처리(approved 또는 rejected)되면 자동 close
 
@@ -286,6 +268,56 @@
 | responded_at | datetime | 응답 시각 |
 
 **책임**: 각 리뷰어의 개별 승인/거부 상태를 관리한다.
+
+### ChatMessage (채팅 메시지)
+
+| 속성 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | 고유 식별자 |
+| meeting_id | UUID (FK) | 회의 ID |
+| user_id | UUID (FK) | 작성자 ID |
+| content | text | 메시지 내용 (Markdown 지원) |
+| created_at | datetime | 작성 시각 |
+
+**책임**: 회의 중 실시간 텍스트 커뮤니케이션을 저장하고, 회의 기록의 보조 자료로 제공한다.
+
+**특징**:
+- LiveKit DataPacket을 통한 실시간 전송
+- 서버 수신 후 DB에 영구 저장
+- REST API를 통한 히스토리 조회
+- Markdown 렌더링 지원
+
+---
+
+### ActionItem (할 일)
+
+| 속성 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | 고유 식별자 |
+| decision_id | UUID (FK) | 결정 ID |
+| meeting_id | UUID (FK) | 회의 ID |
+| title | string | 할 일 제목 |
+| description | text | 할 일 상세 설명 |
+| assignee_id | UUID (FK) | 담당자 ID |
+| due_date | datetime | 기한 |
+| status | enum | pending / in_progress / completed |
+| created_at | datetime | 생성 시각 |
+| updated_at | datetime | 수정 시각 |
+
+**책임**: 확정된 Decision에서 추출된 실행 가능한 작업 항목을 관리한다.
+
+**생성 과정**:
+1. Decision이 approved되면 `mit_action` 워크플로우 트리거
+2. LLM이 Decision 내용에서 Action Item 추출
+3. 품질 평가 후 Neo4j에 저장
+4. 외부 도구 연동 가능 (Jira, Notion 등)
+
+**상태 (ActionItemStatus)**:
+- `pending`: 아직 시작되지 않음
+- `in_progress`: 진행 중
+- `completed`: 완료됨
+
+---
 
 ### GT (Ground Truth)
 
@@ -340,13 +372,14 @@ ELSE:  # DecisionReview.status == 'pending'
 | Meeting - Participant | 1:N | 회의는 여러 참여자를 가짐 |
 | Meeting - Recording | 1:N | 회의는 여러 녹음을 가질 수 있음 |
 | Meeting - Transcript | 1:1 | 회의당 하나의 최종 transcript |
-| Meeting - Branch | 1:1 | 회의당 하나의 브랜치 |
-| Branch - Minutes | 1:1 | 브랜치당 하나의 회의록 |
+| Meeting - Minutes | 1:1 | 회의당 하나의 회의록 |
+| Meeting - PR | 1:1 | 회의당 하나의 PR |
 | Minutes - Agenda | M:N (via MinutesAgenda) | 회의록은 여러 안건을 포함, 안건은 여러 회의에서 논의 |
 | Agenda - Decision | 1:N | 안건은 여러 결정을 가짐 (회의별로 축적) |
-| Branch - PR | 1:1 | 브랜치당 하나의 PR |
 | PR - DecisionReview | 1:N | PR은 여러 결정 리뷰를 포함 |
 | DecisionReview - ReviewerApproval | 1:N | 결정 리뷰는 여러 리뷰어 승인을 포함 |
+| Meeting - ChatMessage | 1:N | 회의는 여러 채팅 메시지를 가짐 |
+| Decision - ActionItem | 1:N | 결정은 여러 할 일 항목을 가짐 |
 
 ---
 
