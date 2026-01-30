@@ -43,8 +43,9 @@ dependencies = [
     "langchain-community>=0.4.1",
     "langchain-openai>=1.1.7",
     "neo4j>=6.1.0",
-    # Kubernetes (K8s WorkerManager용)
-    "kubernetes>=31.0.0",
+    "transformers==4.46.2",
+    "peft==0.12.0",
+    "flagembedding>=1.1.0",  # For BGE reranker
 ]
 
 [dependency-groups]
