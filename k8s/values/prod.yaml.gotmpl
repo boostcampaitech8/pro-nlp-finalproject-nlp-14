@@ -4,7 +4,17 @@
 global:
   namespace: mit
   environment: production
-  registry: {{ env "REGISTRY" | default "" }}
+  registry: "ghcr.io/teamatoi"
+
+# 이미지 태그 (CI에서 SHA 기반, 환경변수로 오버라이드 가능)
+images:
+  backend:
+    tag: {{ env "BACKEND_TAG" | default "latest" }}
+  frontend:
+    tag: {{ env "FRONTEND_TAG" | default "latest" }}
+  worker:
+    tag: {{ env "WORKER_TAG" | default "latest" }}
+  pullSecret: "ghcr-secret"  # GHCR Private 레지스트리 인증용
 
 # Ingress (Traefik + Let's Encrypt)
 ingress:
@@ -44,6 +54,8 @@ livekit:
   apiKey: {{ requiredEnv "LIVEKIT_API_KEY" }}
   apiSecret: {{ requiredEnv "LIVEKIT_API_SECRET" }}
   externalUrl: "wss://www.mit-hub.com/livekit"
+  webhookUrls:
+    - "http://backend:8000/api/v1/livekit/webhook"
   # RTC 설정 (프로덕션: 서버 외부 IP 사용)
   rtc:
     nodeIp: ""  # 빈 문자열 = 자동 감지
@@ -72,6 +84,21 @@ worker:
   clovaSttSecret: {{ requiredEnv "CLOVA_STT_SECRET" }}
   backendApiKey: {{ requiredEnv "BACKEND_API_KEY" }}
   ttsServerUrl: {{ requiredEnv "TTS_SERVER_URL" }}
+
+# NCP Clova Studio
+ncp:
+  clovaStudioApiKey: {{ requiredEnv "NCP_CLOVASTUDIO_API_KEY" }}
+
+# OAuth
+oauth:
+  google:
+    clientId: {{ requiredEnv "GOOGLE_CLIENT_ID" }}
+    clientSecret: {{ requiredEnv "GOOGLE_CLIENT_SECRET" }}
+    redirectUri: {{ requiredEnv "GOOGLE_REDIRECT_URI" }}
+  naver:
+    clientId: {{ requiredEnv "NAVER_CLIENT_ID" }}
+    clientSecret: {{ requiredEnv "NAVER_CLIENT_SECRET" }}
+    redirectUri: {{ requiredEnv "NAVER_REDIRECT_URI" }}
 
 # Resources
 resources:

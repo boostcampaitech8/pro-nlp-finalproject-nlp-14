@@ -29,6 +29,7 @@ releases:
     createNamespace: true
     values:
       - global: {{ .Values.global | toYaml | nindent 10 }}
+        images: {{ .Values.images | toYaml | nindent 10 }}
         backend: {{ .Values.backend | toYaml | nindent 10 }}
         frontend: {{ .Values.frontend | toYaml | nindent 10 }}
         database: {{ .Values.database | toYaml | nindent 10 }}

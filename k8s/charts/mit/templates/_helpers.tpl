@@ -4,13 +4,26 @@
 
 {{/*
 이미지 경로 생성
+사용법: {{ include "mit.image" (dict "Values" .Values "name" "backend") }}
 */}}
 {{- define "mit.image" -}}
+{{- $imageName := printf "mit-%s" .name -}}
+{{- $tag := index .Values.images .name "tag" | default "latest" -}}
 {{- if .Values.global.registry -}}
-{{ .Values.global.registry }}/{{ .image }}:{{ .tag | default "latest" }}
+{{ .Values.global.registry }}/{{ $imageName }}:{{ $tag }}
 {{- else -}}
-{{ .image }}:{{ .tag | default "latest" }}
+{{ $imageName }}:{{ $tag }}
 {{- end -}}
+{{- end -}}
+
+{{/*
+imagePullSecrets 설정
+*/}}
+{{- define "mit.imagePullSecrets" -}}
+{{- if .Values.images.pullSecret }}
+imagePullSecrets:
+  - name: {{ .Values.images.pullSecret }}
+{{- end }}
 {{- end -}}
 
 {{/*
