@@ -1,17 +1,9 @@
 // 명령 처리 훅
 import { useCallback } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
-import { usePreviewStore, type PreviewType } from '@/app/stores/previewStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { agentService } from '@/app/services/agentService';
 import type { HistoryItem } from '@/app/types/command';
-
-// 유효한 프리뷰 타입 목록
-const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result'];
-
-function isValidPreviewType(type: string): type is PreviewType {
-  return VALID_PREVIEW_TYPES.includes(type as PreviewType);
-}
 
 export function useCommand() {
   const {
@@ -25,7 +17,6 @@ export function useCommand() {
     clearActiveCommand,
   } = useCommandStore();
 
-  const { setPreview } = usePreviewStore();
   const { openModal: openMeetingModal } = useMeetingModalStore();
 
   // 명령 제출
@@ -65,25 +56,6 @@ export function useCommand() {
             status: 'success',
           };
           addHistory(historyItem);
-
-          // 프리뷰 패널 업데이트
-          if (response.previewData) {
-            const previewType = response.previewData.type;
-            if (isValidPreviewType(previewType)) {
-              setPreview(previewType, {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            } else {
-              console.warn(`Unknown preview type: ${previewType}, falling back to command-result`);
-              setPreview('command-result', {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            }
-          }
         }
       } catch (error) {
         // 에러 처리
@@ -101,7 +73,7 @@ export function useCommand() {
         setProcessing(false);
       }
     },
-    [inputValue, setInputValue, setProcessing, setActiveCommand, addHistory, setPreview, openMeetingModal]
+    [inputValue, setInputValue, setProcessing, setActiveCommand, addHistory, openMeetingModal]
   );
 
   // Form 제출
@@ -136,15 +108,6 @@ export function useCommand() {
       };
       addHistory(historyItem);
 
-      // 프리뷰 업데이트
-      if (response.previewData) {
-        setPreview('command-result', {
-          title: response.previewData.title,
-          content: response.previewData.content,
-          createdAt: new Date().toISOString(),
-        });
-      }
-
       clearActiveCommand();
     } catch (error) {
       const historyItem: HistoryItem = {
@@ -159,7 +122,7 @@ export function useCommand() {
       console.error('Form submission error:', error);
       clearActiveCommand();
     }
-  }, [activeCommand, setProcessing, addHistory, setPreview, clearActiveCommand]);
+  }, [activeCommand, setProcessing, addHistory, clearActiveCommand]);
 
   // 명령 취소
   const cancelCommand = useCallback(() => {

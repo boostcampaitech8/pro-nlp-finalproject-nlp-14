@@ -1,7 +1,7 @@
 // 명령 상태 관리 스토어
 import { create } from 'zustand';
 import { HISTORY_LIMIT } from '@/app/constants';
-import type { ActiveCommand, HistoryItem, Suggestion } from '@/app/types/command';
+import type { ActiveCommand, ChatMessage, HistoryItem, Suggestion } from '@/app/types/command';
 
 interface CommandState {
   // 상태

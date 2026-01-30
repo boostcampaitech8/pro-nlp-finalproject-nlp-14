@@ -12,8 +12,6 @@ interface MockResponse {
   icon?: string;
   fields?: CommandField[];
   message?: string;
-  previewType?: string;
-  previewContent?: string;
   modalData?: ModalData;
 }
 
@@ -89,52 +87,18 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
   blame: {
     type: 'direct',
     message: '예산 변경 이력을 조회했습니다.',
-    previewType: 'document',
-    previewContent: `## 예산 변경 이력
-
-| 날짜 | 금액 | 변경자 | 사유 |
-|------|------|--------|------|
-| 2026-01-10 | 5,000만원 | 김OO | 최종 확정 |
-| 2026-01-05 | 4,500만원 | 이OO | 범위 확대로 인한 조정 |
-| 2026-01-01 | 3,000만원 | 박OO | 초기 제안 |
-
-총 3건의 변경 이력이 있습니다.`,
   },
 
   // 일정 조회
   schedule: {
     type: 'direct',
     message: '오늘 예정된 회의가 2건 있습니다.',
-    previewType: 'meeting',
-    previewContent: `## 오늘의 일정
-
-### 1. 주간 팀 미팅
-- 시간: 10:00 - 11:00
-- 참여자: 개발팀 전원 (8명)
-- 장소: 회의실 A
-
-### 2. 프로젝트 리뷰
-- 시간: 14:00 - 15:30
-- 참여자: 김OO, 이OO, 박OO
-- 장소: 회의실 B`,
   },
 
   // 팀 현황
   team_status: {
     type: 'direct',
     message: '팀 현황을 불러왔습니다.',
-    previewType: 'document',
-    previewContent: `## 팀 현황 요약
-
-### 개발팀
-- 총 인원: 8명
-- 진행 중인 프로젝트: 3개
-- 이번 주 회의: 5회
-
-### 최근 활동
-- 어제: 스프린트 회고 회의
-- 그제: 기술 리뷰 세션
-- 지난주: 신규 입사자 온보딩`,
   },
 
   // 기본 응답
@@ -236,13 +200,6 @@ export const agentService = {
     return {
       type: 'direct',
       message: matched.message || `"${command}" 명령을 처리했습니다.`,
-      previewData: matched.previewContent
-        ? {
-            type: matched.previewType || 'command-result',
-            title: matched.title || command,
-            content: matched.previewContent,
-          }
-        : undefined,
     };
   },
 
@@ -256,33 +213,14 @@ export const agentService = {
   async submitForm(
     _commandId: string,
     commandTitle: string,
-    fields: Record<string, string>
+    _fields: Record<string, string>
   ): Promise<AgentResponse> {
     // API 호출 시뮬레이션
     await new Promise((resolve) => setTimeout(resolve, API_DELAYS.FORM_SUBMIT));
 
-    // 필드 값 포맷팅
-    const fieldSummary = Object.entries(fields)
-      .filter(([, value]) => value)
-      .map(([key, value]) => `- **${key}**: ${value}`)
-      .join('\n');
-
     return {
       type: 'direct',
       message: `${commandTitle}이(가) 성공적으로 실행되었습니다.`,
-      previewData: {
-        type: 'command-result',
-        title: `${commandTitle} 결과`,
-        content: `## 실행 완료
-
-${commandTitle}이(가) 성공적으로 처리되었습니다.
-
-### 입력된 정보
-${fieldSummary || '(입력된 정보 없음)'}
-
-### 처리 시간
-${new Date().toLocaleString('ko-KR')}`,
-      },
     };
   },
 

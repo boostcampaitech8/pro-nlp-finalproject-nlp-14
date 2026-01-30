@@ -48,15 +48,18 @@ export interface ModalData {
   teamId?: string;
 }
 
+// 채팅 메시지 타입
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'agent';
+  content: string;
+  timestamp: Date;
+}
+
 // Mock 데이터를 위한 에이전트 응답 타입
 export interface AgentResponse {
   type: 'direct' | 'form' | 'modal';
   message?: string;
   command?: ActiveCommand;
   modalData?: ModalData;
-  previewData?: {
-    type: string;
-    title: string;
-    content: string;
-  };
 }

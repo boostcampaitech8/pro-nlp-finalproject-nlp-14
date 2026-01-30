@@ -13,14 +13,8 @@ export const STATUS_COLORS = {
 
 export type StatusType = keyof typeof STATUS_COLORS;
 
-// Preview 타이틀 매핑
-export const PREVIEW_TITLES: Record<string, string> = {
-  empty: 'Preview',
-  meeting: 'Meeting Details',
-  document: 'Document Preview',
-  'search-result': 'Search Result',
-  'command-result': 'Command Result',
-};
+// 채팅 스트리밍 속도 (ms per character)
+export const STREAMING_CHAR_SPEED = 20;
 
 // API 딜레이 (Mock)
 export const API_DELAYS = {
