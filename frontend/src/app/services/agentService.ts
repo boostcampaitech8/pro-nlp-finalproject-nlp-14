@@ -5,41 +5,73 @@
 // Mock 테스트 시나리오 가이드
 // ============================================================
 //
+// 모든 명령은 채팅 모드로 진입한다. (modal/form 분기 제거됨)
+// processCommand()는 AgentResponse { type: 'text' | 'plan', message: string }을 반환한다.
+// processChatMessage()도 동일한 AgentResponse를 반환한다.
+//
 // [1] 명령 모드 (processCommand) - 키워드 기반 응답 분기
 //
 //   입력 예시                     | 매칭 키워드           | 응답 타입 | 동작
 //   ----------------------------|---------------------|----------|------------------
-//   "새 회의 시작"                | 회의+시작/새/만들, 미팅 | plan     | 회의 생성 계획서
-//   "회의록 검색"                 | 검색, 찾             | plan     | 검색 조건 계획서
-//   "예산 변경"                   | 예산 (이력 제외)      | plan     | 예산 변경 계획서
+//   "새 회의 시작"                | 회의+시작/새/만들, 미팅 | plan     | 회의 생성 계획서 (==필드== 포함)
+//   "회의록 검색"                 | 검색, 찾             | plan     | 검색 조건 계획서 (==필드== 포함)
+//   "예산 변경"                   | 예산 (이력 제외)      | plan     | 예산 변경 계획서 (==필드== 포함)
 //   "예산 이력 조회"              | blame, 이력, 히스토리 | text     | 이력 텍스트 응답
 //   "오늘 일정"                   | 일정, 스케줄, 오늘    | text     | 일정 텍스트 응답
 //   "팀 현황"                     | 팀+현황/상태          | text     | 현황 텍스트 응답
 //   "지난주 회의 요약해줘"         | 요약, 정리, 알려, 질문 | text     | 회의 요약 텍스트
-//   (매칭 없는 입력)              | -                   | plan     | 기본 상세입력 계획서
+//   (매칭 없는 입력)              | -                   | plan     | 기본 상세입력 계획서 (==필드== 포함)
+//
+//   부수 효과: processCommand 호출 시 lastCommandKey를 기록한다.
+//   이 키는 이후 승인 요청 시 MOCK_APPROVAL_RESPONSES 매칭에 사용된다.
 //
 // [2] 채팅 모드 (processChatMessage) - 채팅 모드 진입 후 대화 흐름
 //
 //   모든 명령이 채팅 모드로 진입한다.
-//   후속 입력은 processChatMessage를 통해 처리된다.
+//   후속 입력은 processChatMessage를 통해 처리된다 (항상 text 타입 반환).
 //
-//   테스트 시나리오:
+//   시나리오 A: text 응답 -> 후속 대화
 //
-//   Step 1 - 채팅 모드 진입
-//     입력: "지난주 개발팀 회의 요약해줘"
-//     결과: 채팅 모드 전환 + 회의 요약 응답 (MOCK_MEETING_SUMMARY)
+//     Step 1 - 채팅 모드 진입 (text 응답)
+//       입력: "지난주 개발팀 회의 요약해줘"
+//       결과: 채팅 모드 전환 + 회의 요약 응답 (MOCK_MEETING_SUMMARY)
 //
-//   Step 2 - 후속 질문 (결정 사항 상세)
-//     입력: "결정 사항 더 자세히 알려줘"
-//     매칭: 결정 + (자세/상세/더)
-//     결과: 상세 결정 사항 텍스트
+//     Step 2 - 후속 질문 (결정 사항 상세)
+//       입력: "결정 사항 더 자세히 알려줘"
+//       매칭: 결정 + (자세/상세/더)
+//       결과: AgentResponse { type: 'text', message: MOCK_DECISION_DETAIL }
 //
-//   Step 3 - 승인 흐름
-//     입력: "승인합니다"
-//     결과: 이전 plan 명령에 대한 완료 응답
+//     Step 3 - 매칭 안 되는 후속 질문
+//       입력: "다음 회의는 언제야?"
+//       결과: AgentResponse { type: 'text', message: MOCK_DEFAULT_FOLLOWUP }
+//
+//   시나리오 B: plan 응답 -> 필드 편집 -> 승인
+//
+//     Step 1 - 채팅 모드 진입 (plan 응답)
+//       입력: "새 회의 시작"
+//       결과: 채팅 모드 전환 + PlanBubble 렌더링 (==값== 인라인 편집 필드)
+//       부수 효과: lastCommandKey = 'meeting_create'
+//
+//     Step 2 - 사용자가 PlanBubble에서 필드 편집 (프론트엔드 전용, API 호출 없음)
+//
+//     Step 3 - 승인 버튼 클릭 (useCommand.approvePlan 호출)
+//       내부 동작: updateChatMessage(approved: true) + "승인합니다" 메시지 전송
+//       입력: "승인합니다"
+//       매칭: '승인' 키워드 감지 -> MOCK_APPROVAL_RESPONSES[lastCommandKey]
+//       결과: AgentResponse { type: 'text', message: '회의가 성공적으로 생성되었습니다...' }
+//
+//   시나리오 C: 기본(default) plan 응답 -> 승인
+//
+//     Step 1 - 매칭 없는 입력
+//       입력: "프로젝트 일정 조정"
+//       결과: 기본 plan 계획서 (==상세 내용== 필드)
+//       부수 효과: lastCommandKey = 'default'
+//
+//     Step 2 - 승인
+//       결과: AgentResponse { type: 'text', message: '명령이 성공적으로 실행되었습니다.' }
 //
 //   채팅 모드 종료:
-//     - ESC 키 또는 뒤로가기 버튼 -> 기본 Spotlight UI 복귀
+//     - ESC 키 또는 뒤로가기 버튼(ArrowLeft) -> 기본 Spotlight UI 복귀
 //
 // ============================================================
 
