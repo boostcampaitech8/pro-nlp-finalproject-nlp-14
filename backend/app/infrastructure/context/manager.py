@@ -535,13 +535,12 @@ class ContextManager:
 
         try:
             from app.infrastructure.graph.integration.llm import get_base_llm
-
-            llm = get_base_llm()
         except Exception as e:
             logger.debug(f"Failed to import LLM client: {e}")
             return None
 
         try:
+            llm = get_base_llm()
             runnable = llm.bind(max_tokens=max_tokens) if max_tokens else llm
             response = await runnable.ainvoke(prompt)
             return response.content if hasattr(response, "content") else str(response)
