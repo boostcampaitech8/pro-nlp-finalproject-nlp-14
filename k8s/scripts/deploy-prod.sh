@@ -77,14 +77,14 @@ deploy() {
     log_info "  worker:   ${WORKER_TAG:-latest}"
 
     # .env.prod 파일 로드
-    ENV_FILE="$ROOT_DIR/.env.prod"
+    ENV_FILE="$ROOT_DIR/.env"
     if [ -f "$ENV_FILE" ]; then
-        log_info ".env.prod 로드"
+        log_info ".env 로드"
         set -a
         source "$ENV_FILE"
         set +a
     else
-        log_error ".env.prod 파일 없음: $ENV_FILE"
+        log_error ".env 파일 없음: $ENV_FILE"
         exit 1
     fi
 

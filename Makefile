@@ -6,7 +6,7 @@
 .PHONY: worker-build worker-rebuild worker-list worker-clean
 .PHONY: show-usage backup backup-restore backup-list
 .PHONY: neo4j-init neo4j-seed
-.PHONY: k8s-setup k8s-infra k8s-deploy k8s-deploy-prod
+.PHONY: k8s-setup k8s-infra k8s-deploy
 .PHONY: k8s-push k8s-push-be k8s-push-fe k8s-build-worker k8s-push-worker
 .PHONY: k8s-migrate k8s-db-status k8s-neo4j-update k8s-pf k8s-clean k8s-status k8s-logs
 
@@ -92,7 +92,6 @@ help:
 	@echo "  make k8s-deploy       - 로컬 배포 (전체)"
 	@echo "  make k8s-infra        - 인프라만 배포 (redis|livekit)"
 	@echo "  make k8s-deploy svc=redis  - 특정 서비스만 배포 (mit|redis|livekit)"
-	@echo "  make k8s-deploy-prod  - 프로덕션 배포"
 	@echo "  make k8s-push         - 전체 빌드 & 재시작"
 	@echo "  make k8s-push-be      - Backend 빌드 & 재시작"
 	@echo "  make k8s-push-fe      - Frontend 빌드 & 재시작"
@@ -433,9 +432,6 @@ k8s-deploy:
 		./$(K8S_DIR)/scripts/build.sh local; \
 	fi
 	@./$(K8S_DIR)/scripts/deploy.sh local $(K8S_SELECTOR)
-
-k8s-deploy-prod:
-	@./$(K8S_DIR)/scripts/deploy.sh prod $(K8S_SELECTOR)
 
 k8s-push: 
 	@./$(K8S_DIR)/scripts/build.sh
