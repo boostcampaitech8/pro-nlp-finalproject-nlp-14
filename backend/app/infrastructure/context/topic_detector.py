@@ -147,7 +147,9 @@ class TopicDetector:
             return None
 
         try:
-            from app.infrastructure.graph.integration.llm import llm
+            from app.infrastructure.graph.integration.llm import get_base_llm
+
+            llm = get_base_llm()
         except Exception as e:
             logger.debug(f"Failed to import LLM client: {e}")
             return None

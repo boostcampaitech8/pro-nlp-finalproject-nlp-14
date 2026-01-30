@@ -39,12 +39,8 @@ class ContextConfig(BaseSettings):
     topic_quick_check_enabled: bool = True  # 키워드 기반 빠른 감지 활성화
 
     # === LLM 설정 (HCX-003 기준) ===
-    summary_model_name: str = "HCX-007"  # 요약용
+    summary_model_name: str = "HCX-003"  # 요약용
     topic_detection_model_name: str = "HCX-003"  # 토픽 감지용
-
-    # === DB 동기화 설정 ===
-    db_sync_interval_seconds: int = 5  # DB 동기화 주기 (초)
-    db_sync_utterance_threshold: int = 10  # 발화 N개마다 DB 동기화
 
     # === 화자 컨텍스트 설정 ===
     speaker_buffer_max_per_speaker: int = 25  # 화자별 최대 발화 버퍼 크기
