@@ -12,6 +12,11 @@ interface CommandState {
   history: HistoryItem[];
   suggestions: Suggestion[];
 
+  // 채팅 모드 상태
+  isChatMode: boolean;
+  chatMessages: ChatMessage[];
+  isStreaming: boolean;
+
   // Actions
   setInputValue: (value: string) => void;
   setInputFocused: (focused: boolean) => void;
@@ -22,6 +27,12 @@ interface CommandState {
   clearHistory: () => void;
   clearActiveCommand: () => void;
   setSuggestions: (suggestions: Suggestion[]) => void;
+
+  // 채팅 모드 Actions
+  enterChatMode: () => void;
+  exitChatMode: () => void;
+  addChatMessage: (msg: ChatMessage) => void;
+  setStreaming: (streaming: boolean) => void;
 }
 
 export const useCommandStore = create<CommandState>((set) => ({
@@ -32,6 +43,11 @@ export const useCommandStore = create<CommandState>((set) => ({
   activeCommand: null,
   history: [],
   suggestions: [], // agentService.getSuggestions()로 로드
+
+  // 채팅 모드 초기 상태
+  isChatMode: false,
+  chatMessages: [],
+  isStreaming: false,
 
   // Actions
   setInputValue: (value) => set({ inputValue: value }),
@@ -64,4 +80,15 @@ export const useCommandStore = create<CommandState>((set) => ({
   clearActiveCommand: () => set({ activeCommand: null, isProcessing: false }),
 
   setSuggestions: (suggestions) => set({ suggestions }),
+
+  // 채팅 모드 Actions
+  enterChatMode: () => set({ isChatMode: true, chatMessages: [] }),
+
+  exitChatMode: () =>
+    set({ isChatMode: false, chatMessages: [], isStreaming: false }),
+
+  addChatMessage: (msg) =>
+    set((state) => ({ chatMessages: [...state.chatMessages, msg] })),
+
+  setStreaming: (streaming) => set({ isStreaming: streaming }),
 }));

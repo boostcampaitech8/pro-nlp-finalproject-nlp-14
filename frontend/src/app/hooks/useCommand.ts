@@ -3,21 +3,63 @@ import { useCallback } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { agentService } from '@/app/services/agentService';
-import type { HistoryItem } from '@/app/types/command';
+import type { ChatMessage, HistoryItem } from '@/app/types/command';
 
 export function useCommand() {
   const {
     inputValue,
     activeCommand,
+    isChatMode,
     setInputValue,
     setProcessing,
     setActiveCommand,
     updateField,
     addHistory,
     clearActiveCommand,
+    enterChatMode,
+    exitChatMode,
+    addChatMessage,
+    setStreaming,
   } = useCommandStore();
 
   const { openModal: openMeetingModal } = useMeetingModalStore();
+
+  // 채팅 메시지 전송 (에이전트 응답 요청 포함)
+  const sendChatMessage = useCallback(
+    async (text: string) => {
+      // 사용자 메시지 추가
+      const userMsg: ChatMessage = {
+        id: `chat-${Date.now()}`,
+        role: 'user',
+        content: text,
+        timestamp: new Date(),
+      };
+      addChatMessage(userMsg);
+
+      // 에이전트 응답 요청
+      try {
+        const response = await agentService.processChatMessage(text);
+        const agentMsg: ChatMessage = {
+          id: `chat-${Date.now()}-agent`,
+          role: 'agent',
+          content: response,
+          timestamp: new Date(),
+        };
+        setStreaming(true);
+        addChatMessage(agentMsg);
+      } catch {
+        const errorMsg: ChatMessage = {
+          id: `chat-${Date.now()}-error`,
+          role: 'agent',
+          content: '응답 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+          timestamp: new Date(),
+        };
+        setStreaming(true);
+        addChatMessage(errorMsg);
+      }
+    },
+    [addChatMessage, setStreaming]
+  );
 
   // 명령 제출
   const submitCommand = useCallback(
@@ -25,11 +67,18 @@ export function useCommand() {
       const cmd = command || inputValue;
       if (!cmd.trim()) return;
 
-      setProcessing(true);
       setInputValue('');
 
+      // 채팅 모드: 메시지 전송
+      if (isChatMode) {
+        await sendChatMessage(cmd);
+        return;
+      }
+
+      // 기존 명령 처리 로직 (채팅 모드가 아닌 경우)
+      setProcessing(true);
+
       try {
-        // agentService를 통해 명령 처리
         const response = await agentService.processCommand(cmd);
 
         if (response.type === 'modal' && response.modalData) {
@@ -46,16 +95,38 @@ export function useCommand() {
           // Form 표시
           setActiveCommand(response.command);
         } else {
-          // 직접 결과 표시
-          const historyItem: HistoryItem = {
-            id: `history-${Date.now()}`,
-            command: cmd,
-            result: response.message || '완료',
+          // 채팅 모드 진입 (direct 응답)
+          enterChatMode();
+          // 사용자 메시지 + 에이전트 응답 추가
+          const userMsg: ChatMessage = {
+            id: `chat-${Date.now()}`,
+            role: 'user',
+            content: cmd,
             timestamp: new Date(),
-            icon: '✅',
-            status: 'success',
           };
-          addHistory(historyItem);
+          addChatMessage(userMsg);
+
+          // 에이전트 채팅 응답 요청
+          try {
+            const chatResponse = await agentService.processChatMessage(cmd);
+            const agentMsg: ChatMessage = {
+              id: `chat-${Date.now()}-agent`,
+              role: 'agent',
+              content: chatResponse,
+              timestamp: new Date(),
+            };
+            setStreaming(true);
+            addChatMessage(agentMsg);
+          } catch {
+            const errorMsg: ChatMessage = {
+              id: `chat-${Date.now()}-error`,
+              role: 'agent',
+              content: '응답 처리 중 오류가 발생했습니다.',
+              timestamp: new Date(),
+            };
+            setStreaming(true);
+            addChatMessage(errorMsg);
+          }
         }
       } catch (error) {
         // 에러 처리
@@ -64,7 +135,7 @@ export function useCommand() {
           command: cmd,
           result: '명령 처리 중 오류가 발생했습니다.',
           timestamp: new Date(),
-          icon: '❌',
+          icon: '---',
           status: 'error',
         };
         addHistory(historyItem);
@@ -73,7 +144,19 @@ export function useCommand() {
         setProcessing(false);
       }
     },
-    [inputValue, setInputValue, setProcessing, setActiveCommand, addHistory, openMeetingModal]
+    [
+      inputValue,
+      isChatMode,
+      setInputValue,
+      setProcessing,
+      setActiveCommand,
+      addHistory,
+      openMeetingModal,
+      enterChatMode,
+      addChatMessage,
+      setStreaming,
+      sendChatMessage,
+    ]
   );
 
   // Form 제출
@@ -103,7 +186,7 @@ export function useCommand() {
         command: activeCommand.title,
         result: response.message || `${activeCommand.title} 완료`,
         timestamp: new Date(),
-        icon: activeCommand.icon || '✅',
+        icon: activeCommand.icon || '---',
         status: 'success',
       };
       addHistory(historyItem);
@@ -115,7 +198,7 @@ export function useCommand() {
         command: activeCommand.title,
         result: '명령 실행 중 오류가 발생했습니다.',
         timestamp: new Date(),
-        icon: '❌',
+        icon: '---',
         status: 'error',
       };
       addHistory(historyItem);
@@ -132,10 +215,12 @@ export function useCommand() {
   return {
     inputValue,
     activeCommand,
+    isChatMode,
     setInputValue,
     submitCommand,
     submitForm,
     cancelCommand,
     updateField,
+    exitChatMode,
   };
 }
