@@ -2,16 +2,17 @@
 # MIT 프로덕션 K8s 배포 스크립트 (k3s 서버용)
 #
 # 사용법:
-#   ./k8s/scripts/deploy-prod.sh                                    # 모든 서비스 latest 배포
-#   ./k8s/scripts/deploy-prod.sh abc1234                            # 모든 서비스 동일 태그 배포
-#   BACKEND_TAG=abc ./k8s/scripts/deploy-prod.sh                    # backend만 특정 태그
-#   BACKEND_TAG=a FRONTEND_TAG=b ./k8s/scripts/deploy-prod.sh       # 서비스별 개별 태그
-#   ./k8s/scripts/deploy-prod.sh --setup-ghcr                       # GHCR 인증 시크릿 설정 (최초 1회)
-#   ./k8s/scripts/deploy-prod.sh --rollback                         # 이전 버전으로 롤백
-#   ./k8s/scripts/deploy-prod.sh --status                           # 현재 배포 상태 확인
-#   ./k8s/scripts/deploy-prod.sh --logs backend                     # backend 로그 확인
-#   ./k8s/scripts/deploy-prod.sh --help                             # 도움말
-#   kubectl logs -n mit -f realtime-worker-meeting-3cb16db7-1235-44d1-98ff-76e2e4c2ce0b
+#   ./k8s/scripts/deploy-prod.sh              # helmfile 배포 (설정 변경 시)
+#   ./k8s/scripts/deploy-prod.sh --restart    # backend, frontend 재시작 (이미지 pull)
+#   ./k8s/scripts/deploy-prod.sh --rollback   # 이전 버전으로 롤백
+#   ./k8s/scripts/deploy-prod.sh --status     # 현재 배포 상태 확인
+#   ./k8s/scripts/deploy-prod.sh --logs backend        # 로그 확인
+#   ./k8s/scripts/deploy-prod.sh --logs worker <id>    # worker 로그 확인
+#   ./k8s/scripts/deploy-prod.sh --migrate             # DB 마이그레이션 실행
+#   ./k8s/scripts/deploy-prod.sh --db-status           # DB 마이그레이션 상태
+#   ./k8s/scripts/deploy-prod.sh --neo4j-update        # Neo4j 스키마 업데이트
+#   ./k8s/scripts/deploy-prod.sh --setup-ghcr          # GHCR 인증 시크릿 (최초 1회)
+#   ./k8s/scripts/deploy-prod.sh --help                # 도움말
 #
 # 사전 요구사항:
 #   - kubectl이 k3s 클러스터에 연결된 상태
@@ -63,21 +64,9 @@ setup_ghcr_secret() {
 
 # 배포 실행
 deploy() {
-    local TAG="${1:-}"
-
-    # 단일 태그 지정 시 모든 서비스에 적용
-    if [ -n "$TAG" ]; then
-        export BACKEND_TAG="${BACKEND_TAG:-$TAG}"
-        export FRONTEND_TAG="${FRONTEND_TAG:-$TAG}"
-        export WORKER_TAG="${WORKER_TAG:-$TAG}"
-    fi
-
     log_info "배포 시작"
-    log_info "  backend:  ${BACKEND_TAG:-latest}"
-    log_info "  frontend: ${FRONTEND_TAG:-latest}"
-    log_info "  worker:   ${WORKER_TAG:-latest}"
 
-    # .env.prod 파일 로드
+    # .env 파일 로드
     ENV_FILE="$ROOT_DIR/.env"
     if [ -f "$ENV_FILE" ]; then
         log_info ".env 로드"
@@ -121,7 +110,43 @@ status() {
 # 로그 확인
 logs() {
     local SVC="${1:-backend}"
-    kubectl logs -n "$NAMESPACE" -f deployment/"$SVC"
+    local MEETING_ID="$2"
+
+    if [ "$SVC" = "worker" ]; then
+        if [ -z "$MEETING_ID" ]; then
+            log_error "worker 로그는 meetingId가 필요합니다"
+            echo "사용법: $0 --logs worker <meetingId>"
+            exit 1
+        fi
+        kubectl logs -n "$NAMESPACE" -f "job/realtime-worker-meeting-$MEETING_ID"
+    else
+        kubectl logs -n "$NAMESPACE" -f deployment/"$SVC"
+    fi
+}
+
+# 재시작
+restart() {
+    log_info "backend, frontend 재시작"
+    kubectl rollout restart deployment backend frontend -n "$NAMESPACE"
+    kubectl rollout status deployment backend frontend -n "$NAMESPACE"
+}
+
+# DB 마이그레이션
+migrate() {
+    log_info "DB 마이그레이션 실행"
+    kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/alembic upgrade head
+}
+
+# DB 마이그레이션 상태
+db_status() {
+    log_info "DB 마이그레이션 상태"
+    kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/alembic current
+}
+
+# Neo4j 스키마 업데이트
+neo4j_update() {
+    log_info "Neo4j 스키마 업데이트"
+    kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/python /app/neo4j/init_schema.py
 }
 
 # 메인
@@ -136,25 +161,42 @@ case "${1:-}" in
         status
         ;;
     --logs)
-        logs "$2"
+        logs "$2" "$3"
+        ;;
+    --restart)
+        restart
+        ;;
+    --migrate)
+        migrate
+        ;;
+    --db-status)
+        db_status
+        ;;
+    --neo4j-update)
+        neo4j_update
         ;;
     --help|-h)
-        echo "사용법: $0 [옵션] [태그]"
+        echo "사용법: $0 [옵션]"
         echo ""
-        echo "옵션:"
-        echo "  --setup-ghcr    GHCR 인증 시크릿 설정 (최초 1회)"
-        echo "  --rollback      이전 버전으로 롤백"
-        echo "  --status        현재 배포 상태 확인"
-        echo "  --logs [svc]    로그 확인 (기본: backend)"
-        echo "  --help, -h      도움말"
+        echo "배포:"
+        echo "  (옵션 없음)               helmfile 배포 (설정 변경 시)"
+        echo "  --restart                 backend, frontend 재시작 (이미지 pull)"
+        echo "  --rollback                이전 버전으로 롤백"
         echo ""
-        echo "태그 지정:"
-        echo "  $0                              # 모든 서비스 latest"
-        echo "  $0 abc1234                      # 모든 서비스 동일 태그"
-        echo "  BACKEND_TAG=abc $0              # backend만 특정 태그"
-        echo "  BACKEND_TAG=a FRONTEND_TAG=b $0 # 서비스별 개별 태그"
+        echo "상태 확인:"
+        echo "  --status                  현재 배포 상태"
+        echo "  --logs [svc]              로그 (backend|frontend)"
+        echo "  --logs worker <id>        worker 로그"
+        echo ""
+        echo "DB/스키마:"
+        echo "  --migrate                 DB 마이그레이션 실행"
+        echo "  --db-status               DB 마이그레이션 상태"
+        echo "  --neo4j-update            Neo4j 스키마 업데이트"
+        echo ""
+        echo "설정:"
+        echo "  --setup-ghcr              GHCR 인증 시크릿 (최초 1회)"
         ;;
     *)
-        deploy "$1"
+        deploy
         ;;
 esac
