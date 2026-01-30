@@ -653,7 +653,7 @@ class ContextManager:
             logger.warning("DB session not provided, skipping load_from_db")
             return 0
 
-        from app.models.transcript_ import Transcript
+        from app.models.transcript import Transcript
 
         query = (
             select(Transcript)

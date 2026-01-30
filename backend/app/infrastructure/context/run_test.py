@@ -829,7 +829,7 @@ async def run_db_seed_and_test():
     from sqlalchemy.orm import sessionmaker
 
     from app.core.config import get_settings
-    from app.models.transcript_ import Transcript
+    from app.models.transcript import Transcript
 
     print_header("Context Engineering DB Seed & Test (RealtimeWorker 시뮬레이션)")
 
