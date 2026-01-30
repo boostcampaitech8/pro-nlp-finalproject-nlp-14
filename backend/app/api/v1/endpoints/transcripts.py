@@ -10,12 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_arq_pool, require_meeting_participant
 from app.core.database import get_db
 from app.models.meeting import Meeting
-from app.schemas.transcript_ import (
+from app.schemas.transcript import (
     CreateTranscriptRequest,
     CreateTranscriptResponse,
     GetMeetingTranscriptsResponse,
 )
-from app.services.transcript_service_ import TranscriptService
+from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
 

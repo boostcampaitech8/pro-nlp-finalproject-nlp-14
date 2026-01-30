@@ -10,8 +10,8 @@ from app.core.config import get_settings
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
 from app.repositories.kg.repository import KGRepository
-from app.schemas.transcript_ import GetMeetingTranscriptsResponse
-from app.services.transcript_service_ import TranscriptService
+from app.schemas.transcript import GetMeetingTranscriptsResponse
+from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
 

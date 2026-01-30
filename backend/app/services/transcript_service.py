@@ -1,4 +1,4 @@
-"""새 Transcript Service (임시)"""
+"""Transcript Service"""
 
 from datetime import datetime, timezone
 from uuid import UUID
@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.meeting import Meeting
-from app.models.transcript_ import Transcript
+from app.models.transcript import Transcript
 from app.models.user import User
-from app.schemas.transcript_ import (
+from app.schemas.transcript import (
     CreateTranscriptRequest,
     CreateTranscriptResponse,
     GetMeetingTranscriptsResponse,
