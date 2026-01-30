@@ -11,6 +11,7 @@
 #   ./k8s/scripts/deploy-prod.sh --status                           # 현재 배포 상태 확인
 #   ./k8s/scripts/deploy-prod.sh --logs backend                     # backend 로그 확인
 #   ./k8s/scripts/deploy-prod.sh --help                             # 도움말
+#   kubectl logs -n mit -f realtime-worker-meeting-3cb16db7-1235-44d1-98ff-76e2e4c2ce0b
 #
 # 사전 요구사항:
 #   - kubectl이 k3s 클러스터에 연결된 상태
