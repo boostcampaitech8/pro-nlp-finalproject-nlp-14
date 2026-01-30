@@ -65,23 +65,3 @@ class LiveKitRoomResponse(BaseModel):
     class Config:
         populate_by_name = True
 
-
-class StartRecordingResponse(BaseModel):
-    """녹음 시작 응답"""
-
-    meeting_id: UUID = Field(serialization_alias="meetingId")
-    egress_id: str = Field(serialization_alias="egressId")
-    started_at: datetime = Field(serialization_alias="startedAt")
-
-    class Config:
-        populate_by_name = True
-
-
-class StopRecordingResponse(BaseModel):
-    """녹음 중지 응답"""
-
-    meeting_id: UUID = Field(serialization_alias="meetingId")
-    stopped_at: datetime = Field(serialization_alias="stoppedAt")
-
-    class Config:
-        populate_by_name = True
