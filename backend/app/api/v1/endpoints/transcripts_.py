@@ -174,7 +174,7 @@ async def generate_pr(
 
         # ARQ 작업 큐잉 (job_id로 중복 방지)
         pool = await get_arq_pool()
-        job = await pool.enqueue_job(
+        await pool.enqueue_job(
             "generate_pr_task",
             str(meeting.id),
             _job_id=f"generate_pr:{meeting.id}",
