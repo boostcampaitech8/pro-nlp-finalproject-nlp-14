@@ -4,7 +4,7 @@ workflow 노드에서 사용하는 의존성 (LLM, Neo4j Repository).
 Neo4j Repository는 infrastructure/neo4j 모듈에서 가져옴.
 """
 
-from app.infrastructure.graph.integration.llm import llm
+from app.infrastructure.graph.integration.llm import get_base_llm
 from app.infrastructure.neo4j.deps import Neo4jDeps
 from app.infrastructure.neo4j.interfaces import (
     IDecisionRepository,
@@ -35,7 +35,7 @@ class GraphDeps:
     @staticmethod
     def get_llm():
         """LLM 인스턴스 반환"""
-        return llm
+        return get_base_llm()
 
     # --- Neo4j Repository (neo4j 모듈에 위임) ---
 
