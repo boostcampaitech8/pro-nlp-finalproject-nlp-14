@@ -1,41 +1,70 @@
 components:
   schemas:
-    TranscriptStatus:
-      type: string
-      enum:
-        - pending
-        - processing
-        - completed
-        - failed
-      description: |
-        회의록 트랜스크립트 상태:
-        - pending: 대기 중
-        - processing: 처리 중
-        - completed: 완료
-        - failed: 실패
-
-    TranscriptSegment:
+    CreateTranscriptRequest:
       type: object
       required:
-        - id
+        - meetingId
+        - userId
         - startMs
         - endMs
         - text
+        - confidence
+        - minConfidence
       properties:
-        id:
-          type: integer
-          description: 세그먼트 ID
+        meetingId:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 회의 ID (path parameter와 일치해야 함)
+        userId:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 발화자 ID
         startMs:
           type: integer
-          description: 시작 시간 (밀리초)
+          minimum: 0
+          description: 발화 시작 시간 (밀리초)
         endMs:
           type: integer
-          description: 종료 시간 (밀리초)
+          description: 발화 종료 시간 (밀리초, startMs보다 커야 함)
         text:
           type: string
-          description: 해당 구간 텍스트
+          minLength: 1
+          description: 전사된 텍스트
+        confidence:
+          type: number
+          format: float
+          description: 평균 신뢰도
+        minConfidence:
+          type: number
+          format: float
+          description: 최소 신뢰도
+        agentCall:
+          type: boolean
+          default: false
+          description: 에이전트 호출 여부
+        agentCallKeyword:
+          type: string
+          maxLength: 50
+          nullable: true
+          description: 에이전트 호출 키워드
+        agentCall_confidence:
+          type: number
+          format: float
+          nullable: true
+          description: 에이전트 호출 키워드 신뢰도
 
-    Utterance:
+    CreateTranscriptResponse:
+      type: object
+      required:
+        - id
+        - createdAt
+      properties:
+        id:
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: 생성된 transcript segment ID
+        createdAt:
+          $ref: './common.yaml#/components/schemas/Timestamp'
+          description: 생성 시간
+
+    UtteranceItem:
       type: object
       required:
         - id
@@ -47,125 +76,72 @@ components:
         - timestamp
       properties:
         id:
-          type: integer
-          description: 발화 ID
+          $ref: './common.yaml#/components/schemas/UUID'
+          description: Transcript segment ID
         speakerId:
           $ref: './common.yaml#/components/schemas/UUID'
+          description: 발화자 ID
         speakerName:
           type: string
-          description: 화자 이름
+          description: 발화자 이름 (user가 없으면 "Unknown")
         startMs:
           type: integer
-          description: 시작 시간 (밀리초)
+          description: 발화 시작 시간 (밀리초)
         endMs:
           type: integer
-          description: 종료 시간 (밀리초)
+          description: 발화 종료 시간 (밀리초)
         text:
           type: string
           description: 발화 텍스트
         timestamp:
-          type: string
-          format: date-time
-          description: 실제 발화 시각 (wall-clock time, ISO 8601)
+          $ref: './common.yaml#/components/schemas/Timestamp'
+          description: segment 생성 시간
 
-    MeetingTranscript:
+    GetMeetingTranscriptsResponse:
       type: object
       required:
-        - id
         - meetingId
         - status
+        - fullText
+        - utterances
+        - totalDurationMs
+        - speakerCount
         - createdAt
       properties:
-        id:
-          $ref: './common.yaml#/components/schemas/UUID'
         meetingId:
           $ref: './common.yaml#/components/schemas/UUID'
+          description: 회의 ID
         status:
-          $ref: '#/components/schemas/TranscriptStatus'
+          type: string
+          enum:
+            - completed
+          description: 트랜스크립트 상태 (현재는 항상 completed)
         fullText:
           type: string
-          nullable: true
-          description: 전체 텍스트 (화자 라벨 포함)
+          description: |
+            전체 전사 텍스트 (서버에서 조립)
+            형식: "{speakerName}: {text}\n..."
         utterances:
           type: array
-          nullable: true
           items:
-            $ref: '#/components/schemas/Utterance'
-          description: 화자별 발화 목록
+            $ref: '#/components/schemas/UtteranceItem'
+          description: 개별 발화 목록 (createdAt 기준 ASC 정렬)
         totalDurationMs:
           type: integer
-          nullable: true
-          description: 전체 녹음 길이 (밀리초)
+          description: 전체 길이 (가장 큰 endMs 값)
         speakerCount:
           type: integer
-          nullable: true
-          description: 화자 수
+          description: 고유 발화자 수
         meetingStart:
           type: string
           format: date-time
           nullable: true
-          description: 회의 실제 시작 시각
+          description: 회의 시작 시간 (현재 null)
         meetingEnd:
           type: string
           format: date-time
           nullable: true
-          description: 회의 실제 종료 시각
-        filePath:
-          type: string
-          nullable: true
-          description: MinIO에 저장된 회의록 파일 경로
+          description: 회의 종료 시간 (현재 null)
         createdAt:
           $ref: './common.yaml#/components/schemas/Timestamp'
-        updatedAt:
-          type: string
-          format: date-time
-          nullable: true
-        error:
-          type: string
-          nullable: true
-          description: 실패 시 에러 메시지
-
-    TranscribeRequest:
-      type: object
-      properties:
-        language:
-          type: string
-          default: "ko"
-          description: 우선 언어 코드 (ko, en 등)
-
-    TranscribeResponse:
-      type: object
-      required:
-        - transcriptId
-        - status
-      properties:
-        transcriptId:
-          $ref: './common.yaml#/components/schemas/UUID'
-        status:
-          $ref: '#/components/schemas/TranscriptStatus'
-        message:
-          type: string
-          description: 상태 메시지
-
-    TranscriptStatusResponse:
-      type: object
-      required:
-        - transcriptId
-        - status
-        - totalRecordings
-        - processedRecordings
-      properties:
-        transcriptId:
-          $ref: './common.yaml#/components/schemas/UUID'
-        status:
-          $ref: '#/components/schemas/TranscriptStatus'
-        totalRecordings:
-          type: integer
-          description: 전체 녹음 수
-        processedRecordings:
-          type: integer
-          description: 처리 완료된 녹음 수
-        error:
-          type: string
-          nullable: true
-          description: 실패 시 에러 메시지
+          description: 첫 번째 transcript 생성 시간

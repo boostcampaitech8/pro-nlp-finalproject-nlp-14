@@ -1,9 +1,8 @@
-"""LiveKit SFU 서비스 - 토큰 생성, 룸 관리, 녹음 제어
+"""LiveKit SFU 서비스 - 토큰 생성, 룸 관리
 
 LiveKit SDK를 사용하여:
 - 참여자 액세스 토큰 생성
 - 룸 생성/삭제
-- Egress(서버 측 녹음) 시작/중지
 """
 
 import logging
@@ -13,13 +12,8 @@ from uuid import UUID
 from livekit import api
 
 from app.core.config import get_settings
-from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
-
-# Redis 키 prefix
-EGRESS_KEY_PREFIX = "livekit:egress:"
-EGRESS_TTL_SECONDS = 86400  # 24시간
 
 
 class LiveKitService:
@@ -31,27 +25,6 @@ class LiveKitService:
         self._api_secret = settings.livekit_api_secret
         self._ws_url = settings.livekit_ws_url
         self._external_url = settings.livekit_external_url
-
-    # ===== Redis 기반 Egress 상태 관리 =====
-
-    async def _get_active_egress(self, meeting_id: UUID) -> str | None:
-        """Redis에서 활성 egress ID 조회"""
-        redis_client = await get_redis()
-        return await redis_client.get(f"{EGRESS_KEY_PREFIX}{meeting_id}")
-
-    async def _set_active_egress(self, meeting_id: UUID, egress_id: str) -> None:
-        """Redis에 활성 egress ID 저장"""
-        redis_client = await get_redis()
-        await redis_client.set(
-            f"{EGRESS_KEY_PREFIX}{meeting_id}",
-            egress_id,
-            ex=EGRESS_TTL_SECONDS,
-        )
-
-    async def _clear_active_egress(self, meeting_id: UUID) -> None:
-        """Redis에서 활성 egress ID 삭제"""
-        redis_client = await get_redis()
-        await redis_client.delete(f"{EGRESS_KEY_PREFIX}{meeting_id}")
 
     @property
     def is_configured(self) -> bool:
@@ -195,203 +168,9 @@ class LiveKitService:
             logger.error(f"[LiveKit] Failed to list participants: {e}")
             return []
 
-    async def start_room_recording(
-        self,
-        meeting_id: UUID,
-        room_name: str,
-    ) -> str | None:
-        """룸 녹음 시작 (Room Composite Egress)
-
-        모든 참여자의 오디오를 하나의 파일로 녹음합니다.
-
-        Args:
-            meeting_id: 회의 ID (파일명에 사용)
-            room_name: 룸 이름
-
-        Returns:
-            Egress ID 또는 None (실패 시)
-        """
-        if not self.is_configured:
-            logger.warning("[LiveKit] Not configured, skipping recording")
-            return None
-
-        try:
-            # LiveKit API로 실제 활성 egress 확인 (Redis 캐시보다 신뢰할 수 있음)
-            async with api.LiveKitAPI(
-                self._ws_url, self._api_key, self._api_secret
-            ) as lk_api:
-                response = await lk_api.egress.list_egress(
-                    api.ListEgressRequest(room_name=room_name, active=True)
-                )
-                if response.items:
-                    active_egress_id = response.items[0].egress_id
-                    logger.warning(
-                        f"[LiveKit] Recording already active for meeting {meeting_id}: {active_egress_id}"
-                    )
-                    # Redis 캐시 동기화
-                    await self._set_active_egress(meeting_id, active_egress_id)
-                    return active_egress_id
-
-            # Redis 캐시에 있지만 실제 활성 egress가 없으면 정리
-            cached_egress = await self._get_active_egress(meeting_id)
-            if cached_egress:
-                logger.info(f"[LiveKit] Cleaning stale egress cache for meeting {meeting_id}")
-                await self._clear_active_egress(meeting_id)
-
-            # S3 업로드 설정 (MinIO)
-            settings = get_settings()
-            s3_upload = api.S3Upload(
-                access_key=settings.minio_access_key,
-                secret=settings.minio_secret_key,
-                endpoint=f"http://{settings.minio_endpoint}",
-                bucket="recordings",
-                force_path_style=True,
-            )
-
-            # Room Composite Egress - 모든 트랙 믹싱
-            # audio_only=True여도 template base url 필요 (브라우저 기반 렌더링)
-            # self-hosted: egress 컨테이너 내장 템플릿 사용 (localhost:7980)
-            request = api.RoomCompositeEgressRequest(
-                room_name=room_name,
-                audio_only=True,  # 오디오만 녹음
-                custom_base_url="http://localhost:7980",  # Egress 내장 템플릿
-                file_outputs=[
-                    api.EncodedFileOutput(
-                        file_type=api.EncodedFileType.OGG,  # OGG Opus 포맷
-                        filepath=f"meetings/{meeting_id}/composite-{{time}}.ogg",
-                        s3=s3_upload,
-                    )
-                ],
-            )
-
-            async with api.LiveKitAPI(
-                self._ws_url, self._api_key, self._api_secret
-            ) as lk_api:
-                info = await lk_api.egress.start_room_composite_egress(request)
-                egress_id = info.egress_id
-
-            await self._set_active_egress(meeting_id, egress_id)
-            logger.info(f"[LiveKit] Recording started: meeting={meeting_id}, egress={egress_id}")
-
-            return egress_id
-
-        except Exception as e:
-            logger.error(f"[LiveKit] Failed to start recording for {meeting_id}: {e}")
-            return None
-
-    async def stop_room_recording(self, meeting_id: UUID) -> bool:
-        """룸 녹음 중지
-
-        Args:
-            meeting_id: 회의 ID
-
-        Returns:
-            성공 여부
-        """
-        if not self.is_configured:
-            return False
-
-        room_name = self.get_room_name(meeting_id)
-
-        # Redis에서 egress_id 확인, 없으면 LiveKit API로 조회
-        egress_id = await self._get_active_egress(meeting_id)
-
-        try:
-            async with api.LiveKitAPI(
-                self._ws_url, self._api_key, self._api_secret
-            ) as lk_api:
-                # Redis에 없으면 LiveKit에서 활성 egress 조회
-                if not egress_id:
-                    response = await lk_api.egress.list_egress(
-                        api.ListEgressRequest(room_name=room_name, active=True)
-                    )
-                    if response.items:
-                        egress_id = response.items[0].egress_id
-                        logger.info(f"[LiveKit] Found active egress from API: {egress_id}")
-                    else:
-                        logger.warning(f"[LiveKit] No active recording for meeting {meeting_id}")
-                        return False
-
-                # Egress 중지
-                await lk_api.egress.stop_egress(api.StopEgressRequest(egress_id=egress_id))
-
-            # Redis에서 제거
-            await self._clear_active_egress(meeting_id)
-
-            logger.info(f"[LiveKit] Recording stopped: meeting={meeting_id}, egress={egress_id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"[LiveKit] Failed to stop recording for {meeting_id}: {e}")
-            return False
-
-    async def start_track_recording(
-        self,
-        meeting_id: UUID,
-        room_name: str,
-        user_id: UUID,
-        track_id: str,
-    ) -> str | None:
-        """개별 트랙 녹음 시작 (Track Egress)
-
-        특정 참여자의 오디오 트랙만 녹음합니다.
-        VAD 기반 실시간 STT 준비용.
-
-        Args:
-            meeting_id: 회의 ID
-            room_name: 룸 이름
-            user_id: 사용자 ID
-            track_id: 트랙 ID
-
-        Returns:
-            Egress ID 또는 None
-        """
-        if not self.is_configured:
-            return None
-
-        try:
-            settings = get_settings()
-            s3_upload = api.S3Upload(
-                access_key=settings.minio_access_key,
-                secret=settings.minio_secret_key,
-                endpoint=f"http://{settings.minio_endpoint}",
-                bucket="recordings",
-                force_path_style=True,
-            )
-
-            request = api.TrackEgressRequest(
-                room_name=room_name,
-                track_id=track_id,
-                file=api.DirectFileOutput(
-                    filepath=f"meetings/{meeting_id}/{user_id}/{{track_id}}-{{time}}.ogg",
-                    s3=s3_upload,
-                ),
-            )
-
-            async with api.LiveKitAPI(
-                self._ws_url, self._api_key, self._api_secret
-            ) as lk_api:
-                info = await lk_api.egress.start_track_egress(request)
-
-            logger.info(f"[LiveKit] Track recording started: user={user_id}, track={track_id}")
-
-            return info.egress_id
-
-        except Exception as e:
-            logger.error(f"[LiveKit] Failed to start track recording: {e}")
-            return None
-
     def get_ws_url_for_client(self) -> str:
         """클라이언트용 WebSocket URL 반환"""
         return self._external_url
-
-    async def clear_active_egress(self, meeting_id: UUID) -> None:
-        """활성 egress 캐시 정리 (webhook에서 호출)
-
-        Egress가 종료(완료/실패/중단)되면 Redis 캐시에서 제거합니다.
-        """
-        await self._clear_active_egress(meeting_id)
-        logger.info(f"[LiveKit] Cleared egress cache for meeting {meeting_id}")
 
     @staticmethod
     def get_room_name(meeting_id: UUID) -> str:

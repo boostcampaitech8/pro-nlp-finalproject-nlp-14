@@ -1,4 +1,4 @@
-"""트랜스크립트 관련 API 엔드포인트"""
+"""Transcript API 엔드포인트 (실시간 STT)"""
 
 import logging
 from typing import Annotated
@@ -10,17 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_arq_pool, require_meeting_participant
 from app.core.database import get_db
 from app.models.meeting import Meeting
-from app.core.storage import storage_service
 from app.schemas.transcript import (
-    MeetingTranscriptResponse,
-    TranscribeRequest,
-    TranscribeResponse,
-    TranscriptDownloadResponse,
-    TranscriptStatusResponse,
-    UtteranceResponse,
+    CreateTranscriptRequest,
+    CreateTranscriptResponse,
+    GetMeetingTranscriptsResponse,
 )
 from app.services.transcript_service import TranscriptService
-from app.services.transcript_service_ import TranscriptService as TranscriptService_
 
 logger = logging.getLogger(__name__)
 
@@ -32,226 +27,123 @@ def get_transcript_service(db: Annotated[AsyncSession, Depends(get_db)]) -> Tran
     return TranscriptService(db)
 
 
-def get_transcript_service_(db: Annotated[AsyncSession, Depends(get_db)]) -> TranscriptService_:
-    """TranscriptService_ 의존성 (새 transcripts 테이블)"""
-    return TranscriptService_(db)
-
-
 @router.post(
-    "/{meeting_id}/transcribe",
-    response_model=TranscribeResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+    "/{meeting_id}/transcripts",
+    response_model=CreateTranscriptResponse,
+    response_model_by_alias=True,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"description": "Invalid request"},
+        404: {"description": "Meeting not found"},
+    },
 )
-async def start_transcription(
-    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
+async def create_transcript(
+    meeting_id: UUID,
+    request: CreateTranscriptRequest,
     transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
-    request: TranscribeRequest | None = None,
-):
-    """회의 STT 변환 시작
+) -> CreateTranscriptResponse:
+    """발화 segment 저장 (Worker → Backend)
 
-    회의의 모든 완료된 녹음에 대해 STT 작업을 시작합니다.
-    비동기로 처리되며, 상태는 /transcript/status로 확인할 수 있습니다.
-    """
-    language = request.language if request else "ko"
+    Worker가 전송한 전사 segment를 DB에 저장합니다.
 
-    try:
-        # 트랜스크립트 생성 또는 조회
-        transcript = await transcript_service.start_transcription(meeting.id)
+    Args:
+        meeting_id: 회의 ID (path parameter)
+        request: 발화 segment 데이터
+        transcript_service: TranscriptService 의존성
 
-        # ARQ 작업 큐잉
-        pool = await get_arq_pool()
-        await pool.enqueue_job(
-            "transcribe_meeting_task",
-            str(meeting.id),
-            language,
-        )
-        await pool.close()
+    Returns:
+        CreateTranscriptResponse: 생성된 segment ID와 생성 시간
 
-        return TranscribeResponse(
-            transcript_id=transcript.id,
-            status=transcript.status,
-            message="STT 변환 작업이 시작되었습니다.",
-        )
-
-    except ValueError as e:
-        error_code = str(e)
-        if error_code == "NO_COMPLETED_RECORDINGS":
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "BAD_REQUEST", "message": "완료된 녹음이 없습니다."},
-            )
-        if error_code == "TRANSCRIPTION_IN_PROGRESS":
-            raise HTTPException(
-                status_code=409,
-                detail={"error": "CONFLICT", "message": "이미 STT 변환이 진행 중입니다."},
-            )
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "BAD_REQUEST", "message": str(e)},
-        )
-    except Exception as e:
-        logger.exception(f"Failed to start transcription: meeting={meeting.id}")
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "INTERNAL_ERROR", "message": f"STT 변환 시작에 실패했습니다: {str(e)}"},
-        )
-
-
-@router.get("/{meeting_id}/transcript/status", response_model=TranscriptStatusResponse)
-async def get_transcription_status(
-    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
-    transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
-):
-    """STT 변환 진행 상태 조회
-
-    회의의 STT 변환 진행 상태를 조회합니다.
+    Raises:
+        HTTPException:
+            - 400: path meeting_id와 body meetingId 불일치, startMs/endMs 유효하지 않음
+            - 404: meeting 존재하지 않음
     """
     try:
-        status_info = await transcript_service.get_transcription_status(meeting.id)
-
-        if not status_info:
-            raise HTTPException(
-                status_code=404,
-                detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다."},
-            )
-
-        return TranscriptStatusResponse(
-            transcript_id=status_info["transcript_id"],
-            status=status_info["status"],
-            total_recordings=status_info["total_recordings"],
-            processed_recordings=status_info["processed_recordings"],
-            error=status_info.get("error"),
-        )
-
+        return await transcript_service.create_transcript(meeting_id, request)
     except ValueError as e:
         error_code = str(e)
-        if error_code == "TRANSCRIPT_NOT_FOUND":
+        if error_code == "MEETING_ID_MISMATCH":
             raise HTTPException(
-                status_code=404,
-                detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다."},
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MEETING_ID_MISMATCH",
+                    "message": "Path meeting_id와 body meetingId가 일치하지 않습니다.",
+                },
+            )
+        if error_code == "INVALID_TIME_RANGE":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "INVALID_TIME_RANGE",
+                    "message": "endMs는 startMs보다 커야 합니다.",
+                },
             )
         if error_code == "MEETING_NOT_FOUND":
             raise HTTPException(
-                status_code=404,
-                detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "MEETING_NOT_FOUND",
+                    "message": "회의를 찾을 수 없습니다.",
+                },
             )
+        # 예상치 못한 에러
         raise HTTPException(
-            status_code=400,
-            detail={"error": "BAD_REQUEST", "message": str(e)},
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Failed to get transcription status: meeting={meeting.id}")
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "INTERNAL_ERROR", "message": f"상태 조회에 실패했습니다: {str(e)}"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "VALIDATION_ERROR",
+                "message": str(e),
+            },
         )
 
 
-@router.get("/{meeting_id}/transcript", response_model=MeetingTranscriptResponse)
-async def get_meeting_transcript(
-    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
+@router.get(
+    "/{meeting_id}/transcripts",
+    response_model=GetMeetingTranscriptsResponse,
+    response_model_by_alias=True,
+    responses={
+        404: {"description": "Meeting not found"},
+    },
+)
+async def get_meeting_transcripts(
+    meeting_id: UUID,
     transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
-):
-    """회의 트랜스크립트 조회
+) -> GetMeetingTranscriptsResponse:
+    """회의 전체 전사 조회 (Client → Backend)
 
-    회의의 전체 트랜스크립트(화자별 병합 결과)를 조회합니다.
-    STT 변환이 완료된 후에만 결과가 포함됩니다.
+    회의 ID를 기준으로 모든 전사 segment를 조회하고,
+    시간 순서대로 정렬된 전체 전사 텍스트를 반환합니다.
+
+    Args:
+        meeting_id: 회의 ID (path parameter)
+        transcript_service: TranscriptService 의존성
+
+    Returns:
+        GetMeetingTranscriptsResponse: 회의 전체 전사 데이터
+
+    Raises:
+        HTTPException:
+            - 404: meeting 존재하지 않음
     """
     try:
-        transcript = await transcript_service.get_transcript(meeting.id)
-
-        if not transcript:
+        return await transcript_service.get_meeting_transcripts(meeting_id)
+    except ValueError as e:
+        error_code = str(e)
+        if error_code == "MEETING_NOT_FOUND":
             raise HTTPException(
-                status_code=404,
-                detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다."},
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "MEETING_NOT_FOUND",
+                    "message": "회의를 찾을 수 없습니다.",
+                },
             )
-
-        # utterances 변환 (DB에는 camelCase로 저장됨)
-        utterances = None
-        if transcript.utterances:
-            from datetime import datetime
-            utterances = [
-                UtteranceResponse(
-                    id=u["id"],
-                    speaker_id=u["speakerId"],
-                    speaker_name=u["speakerName"],
-                    start_ms=u["startMs"],
-                    end_ms=u["endMs"],
-                    text=u["text"],
-                    timestamp=datetime.fromisoformat(u["timestamp"]),
-                )
-                for u in transcript.utterances
-            ]
-
-        return MeetingTranscriptResponse(
-            id=transcript.id,
-            meeting_id=transcript.meeting_id,
-            status=transcript.status,
-            full_text=transcript.full_text,
-            utterances=utterances,
-            total_duration_ms=transcript.total_duration_ms,
-            speaker_count=transcript.speaker_count,
-            meeting_start=transcript.meeting_start,
-            meeting_end=transcript.meeting_end,
-            file_path=transcript.file_path,
-            created_at=transcript.created_at,
-            updated_at=transcript.updated_at,
-            error=transcript.error,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Failed to get transcript: meeting={meeting.id}")
+        # 예상치 못한 에러
         raise HTTPException(
-            status_code=500,
-            detail={"error": "INTERNAL_ERROR", "message": f"트랜스크립트 조회에 실패했습니다: {str(e)}"},
-        )
-
-
-@router.get("/{meeting_id}/transcript/download", response_model=TranscriptDownloadResponse)
-async def get_transcript_download_url(
-    meeting: Annotated[Meeting, Depends(require_meeting_participant)],
-    transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
-):
-    """회의록 다운로드 URL 조회
-
-    MinIO에 저장된 회의록 JSON 파일의 Presigned URL을 반환합니다.
-    URL은 1시간 동안 유효합니다.
-    """
-    try:
-        transcript = await transcript_service.get_transcript(meeting.id)
-
-        if not transcript:
-            raise HTTPException(
-                status_code=404,
-                detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다."},
-            )
-
-        if not transcript.file_path:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "BAD_REQUEST", "message": "회의록 파일이 아직 생성되지 않았습니다."},
-            )
-
-        # Presigned URL 생성
-        download_url = storage_service.get_transcript_url(transcript.file_path)
-
-        return TranscriptDownloadResponse(
-            meeting_id=meeting.id,
-            download_url=download_url,
-            expires_in_seconds=3600,  # 1시간
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Failed to get transcript download URL: meeting={meeting.id}")
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "INTERNAL_ERROR", "message": f"다운로드 URL 생성에 실패했습니다: {str(e)}"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": str(e),
+            },
         )
 
 
@@ -261,7 +153,7 @@ async def get_transcript_download_url(
 )
 async def generate_pr(
     meeting: Annotated[Meeting, Depends(require_meeting_participant)],
-    transcript_service_: Annotated[TranscriptService_, Depends(get_transcript_service_)],
+    transcript_service: Annotated[TranscriptService, Depends(get_transcript_service)],
 ):
     """회의록 PR 생성 시작
 
@@ -272,7 +164,7 @@ async def generate_pr(
     """
     try:
         # 트랜스크립트 존재 확인 (새 transcripts 테이블)
-        transcript_response = await transcript_service_.get_meeting_transcripts(meeting.id)
+        transcript_response = await transcript_service.get_meeting_transcripts(meeting.id)
 
         if not transcript_response.full_text:
             raise HTTPException(
@@ -282,7 +174,7 @@ async def generate_pr(
 
         # ARQ 작업 큐잉 (job_id로 중복 방지)
         pool = await get_arq_pool()
-        job = await pool.enqueue_job(
+        await pool.enqueue_job(
             "generate_pr_task",
             str(meeting.id),
             _job_id=f"generate_pr:{meeting.id}",

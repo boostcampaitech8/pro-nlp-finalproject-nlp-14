@@ -3,7 +3,6 @@
 LiveKit SFU를 사용한 실시간 음성 회의 기능:
 - 회의 시작/종료
 - LiveKit 토큰 발급
-- 서버 측 녹음 (Egress)
 """
 
 import logging
@@ -28,8 +27,6 @@ from app.schemas.webrtc import (
     LiveKitTokenResponse,
     RoomParticipant,
     StartMeetingResponse,
-    StartRecordingResponse,
-    StopRecordingResponse,
 )
 from app.services.livekit_service import livekit_service
 
@@ -138,9 +135,6 @@ async def end_meeting(
 
     # LiveKit 룸 정리
     if livekit_service.is_configured:
-        # 녹음 중지 (진행 중인 경우)
-        await livekit_service.stop_room_recording(meeting_id)
-        # 룸 삭제
         room_name = livekit_service.get_room_name(meeting_id)
         await livekit_service.delete_room(room_name)
 
@@ -314,121 +308,4 @@ async def get_livekit_room(
         max_participants=MAX_PARTICIPANTS,
         ws_url=livekit_service.get_ws_url_for_client(),
         token=token,
-    )
-
-
-# ===== 녹음 엔드포인트 =====
-
-
-@router.post("/{meeting_id}/start-recording", response_model=StartRecordingResponse)
-async def start_livekit_recording(
-    meeting_id: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """서버 측 녹음 시작 (Host만 가능)
-
-    LiveKit Egress를 사용하여 룸 전체 오디오를 녹음합니다.
-    """
-    # LiveKit 설정 확인
-    if not livekit_service.is_configured:
-        raise HTTPException(
-            status_code=503,
-            detail={"error": "SERVICE_UNAVAILABLE", "message": "LiveKit is not configured"},
-        )
-
-    # 회의 조회
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.participants))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # Host인지 확인
-    if meeting.created_by != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "Host만 녹음을 시작할 수 있습니다."},
-        )
-
-    # 회의 진행 중인지 확인
-    if meeting.status != MeetingStatus.ONGOING.value:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "BAD_REQUEST", "message": "진행 중인 회의에서만 녹음을 시작할 수 있습니다."},
-        )
-
-    # 녹음 시작
-    room_name = livekit_service.get_room_name(meeting_id)
-    egress_id = await livekit_service.start_room_recording(meeting_id, room_name)
-
-    if not egress_id:
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "RECORDING_FAILED", "message": "녹음 시작에 실패했습니다."},
-        )
-
-    logger.info(f"Recording started: meeting={meeting_id}, egress={egress_id}")
-
-    return StartRecordingResponse(
-        meeting_id=meeting_id,
-        egress_id=egress_id,
-        started_at=datetime.now(timezone.utc),
-    )
-
-
-@router.post("/{meeting_id}/stop-recording", response_model=StopRecordingResponse)
-async def stop_livekit_recording(
-    meeting_id: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """서버 측 녹음 중지 (Host만 가능)"""
-    # LiveKit 설정 확인
-    if not livekit_service.is_configured:
-        raise HTTPException(
-            status_code=503,
-            detail={"error": "SERVICE_UNAVAILABLE", "message": "LiveKit is not configured"},
-        )
-
-    # 회의 조회
-    query = select(Meeting).where(Meeting.id == meeting_id)
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-
-    if not meeting:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "NOT_FOUND", "message": "회의를 찾을 수 없습니다."},
-        )
-
-    # Host인지 확인
-    if meeting.created_by != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "FORBIDDEN", "message": "Host만 녹음을 중지할 수 있습니다."},
-        )
-
-    # 녹음 중지
-    success = await livekit_service.stop_room_recording(meeting_id)
-
-    if not success:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "NO_ACTIVE_RECORDING", "message": "진행 중인 녹음이 없습니다."},
-        )
-
-    logger.info(f"Recording stopped: meeting={meeting_id}")
-
-    return StopRecordingResponse(
-        meeting_id=meeting_id,
-        stopped_at=datetime.now(timezone.utc),
     )
