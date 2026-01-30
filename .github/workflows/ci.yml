@@ -62,6 +62,7 @@ jobs:
         with:
           app-id: ${{ secrets.MIT_APP_ID }}
           private-key: ${{ secrets.MIT_APP_PRIVATE_KEY }}
+          owner: teamatoi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -110,6 +111,7 @@ jobs:
         with:
           app-id: ${{ secrets.MIT_APP_ID }}
           private-key: ${{ secrets.MIT_APP_PRIVATE_KEY }}
+          owner: teamatoi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -161,6 +163,7 @@ jobs:
         with:
           app-id: ${{ secrets.MIT_APP_ID }}
           private-key: ${{ secrets.MIT_APP_PRIVATE_KEY }}
+          owner: teamatoi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
