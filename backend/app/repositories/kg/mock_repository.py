@@ -8,12 +8,15 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.models.kg import (
+    KGActionItem,
     KGAgenda,
+    KGComment,
     KGDecision,
     KGMeeting,
     KGMinutes,
     KGMinutesActionItem,
     KGMinutesDecision,
+    KGSuggestion,
 )
 
 # =============================================================================
@@ -145,6 +148,8 @@ MOCK_DATA = {
             "created_at": "2026-01-20T11:00:00+00:00",
         },
     },
+    "suggestions": {},
+    "comments": {},
     # 관계 데이터
     "approvals": [
         ("user-1", "decision-1"),
@@ -510,3 +515,417 @@ class MockKGRepository:
         }
 
         return participants == approvers
+
+    # =========================================================================
+    # Suggestion - 제안
+    # =========================================================================
+
+    async def create_suggestion(
+        self, decision_id: str, user_id: str, content: str
+    ) -> KGSuggestion:
+        """Suggestion + 새 Decision 생성 (원자적)"""
+        if decision_id not in self.data["decisions"]:
+            raise ValueError(f"Decision not found: {decision_id}")
+        if user_id not in self.data["users"]:
+            raise ValueError(f"User not found: {user_id}")
+
+        now = datetime.now(timezone.utc)
+        original_decision = self.data["decisions"][decision_id]
+        agenda_id = original_decision.get("agenda_id")
+
+        # 새 Decision 생성
+        new_decision_id = f"decision-{uuid4().hex[:8]}"
+        self.data["decisions"][new_decision_id] = {
+            "id": new_decision_id,
+            "content": content,
+            "context": None,
+            "status": "draft",
+            "agenda_id": agenda_id,
+            "supersedes": decision_id,
+            "created_at": now.isoformat(),
+        }
+
+        # Suggestion 생성
+        suggestion_id = f"suggestion-{uuid4().hex[:8]}"
+        self.data["suggestions"][suggestion_id] = {
+            "id": suggestion_id,
+            "content": content,
+            "author_id": user_id,
+            "decision_id": decision_id,
+            "created_decision_id": new_decision_id,
+            "created_at": now.isoformat(),
+        }
+
+        return KGSuggestion(
+            id=suggestion_id,
+            content=content,
+            author_id=user_id,
+            created_decision_id=new_decision_id,
+            created_at=now,
+        )
+
+    # =========================================================================
+    # Comment - 댓글
+    # =========================================================================
+
+    async def create_comment(
+        self, decision_id: str, user_id: str, content: str
+    ) -> KGComment:
+        """Comment 생성"""
+        if decision_id not in self.data["decisions"]:
+            raise ValueError(f"Decision not found: {decision_id}")
+        if user_id not in self.data["users"]:
+            raise ValueError(f"User not found: {user_id}")
+
+        now = datetime.now(timezone.utc)
+        comment_id = f"comment-{uuid4().hex[:8]}"
+
+        self.data["comments"][comment_id] = {
+            "id": comment_id,
+            "content": content,
+            "author_id": user_id,
+            "decision_id": decision_id,
+            "parent_id": None,
+            "created_at": now.isoformat(),
+        }
+
+        return KGComment(
+            id=comment_id,
+            content=content,
+            author_id=user_id,
+            decision_id=decision_id,
+            parent_id=None,
+            created_at=now,
+        )
+
+    async def create_reply(
+        self, comment_id: str, user_id: str, content: str
+    ) -> KGComment:
+        """대댓글 생성"""
+        if comment_id not in self.data["comments"]:
+            raise ValueError(f"Comment not found: {comment_id}")
+        if user_id not in self.data["users"]:
+            raise ValueError(f"User not found: {user_id}")
+
+        parent_comment = self.data["comments"][comment_id]
+        now = datetime.now(timezone.utc)
+        reply_id = f"comment-{uuid4().hex[:8]}"
+
+        self.data["comments"][reply_id] = {
+            "id": reply_id,
+            "content": content,
+            "author_id": user_id,
+            "decision_id": parent_comment["decision_id"],
+            "parent_id": comment_id,
+            "created_at": now.isoformat(),
+        }
+
+        return KGComment(
+            id=reply_id,
+            content=content,
+            author_id=user_id,
+            decision_id=parent_comment["decision_id"],
+            parent_id=comment_id,
+            created_at=now,
+        )
+
+    async def delete_comment(self, comment_id: str, user_id: str) -> bool:
+        """Comment 삭제 (작성자 확인 + CASCADE)"""
+        if comment_id not in self.data["comments"]:
+            return False
+
+        comment = self.data["comments"][comment_id]
+        if comment["author_id"] != user_id:
+            return False  # 작성자만 삭제 가능
+
+        # 대댓글도 함께 삭제 (CASCADE)
+        replies_to_delete = [
+            cid
+            for cid, c in self.data["comments"].items()
+            if c.get("parent_id") == comment_id
+        ]
+        for reply_id in replies_to_delete:
+            del self.data["comments"][reply_id]
+
+        del self.data["comments"][comment_id]
+        return True
+
+    # =========================================================================
+    # Decision CRUD 확장
+    # =========================================================================
+
+    async def update_decision(
+        self, decision_id: str, user_id: str, data: dict
+    ) -> KGDecision:
+        """Decision 수정"""
+        if decision_id not in self.data["decisions"]:
+            raise ValueError(f"Decision not found: {decision_id}")
+
+        # 필드 업데이트 (content, context만 수정 가능)
+        decision = self.data["decisions"][decision_id]
+        if "content" in data:
+            decision["content"] = data["content"]
+        if "context" in data:
+            decision["context"] = data["context"]
+
+        return await self.get_decision(decision_id)  # type: ignore
+
+    async def delete_decision(self, decision_id: str, user_id: str) -> bool:
+        """Decision 삭제 (전체 CASCADE)"""
+        if decision_id not in self.data["decisions"]:
+            return False
+
+        # 관련 Comment 삭제
+        comments_to_delete = [
+            cid
+            for cid, c in self.data["comments"].items()
+            if c.get("decision_id") == decision_id
+        ]
+        for cid in comments_to_delete:
+            del self.data["comments"][cid]
+
+        # 관련 Suggestion 삭제
+        suggestions_to_delete = [
+            sid
+            for sid, s in self.data["suggestions"].items()
+            if s.get("decision_id") == decision_id
+        ]
+        for sid in suggestions_to_delete:
+            # Suggestion이 생성한 Decision도 삭제
+            created_decision_id = self.data["suggestions"][sid].get("created_decision_id")
+            if created_decision_id and created_decision_id in self.data["decisions"]:
+                del self.data["decisions"][created_decision_id]
+            del self.data["suggestions"][sid]
+
+        # 관련 ActionItem 삭제
+        action_items_to_delete = [
+            aid
+            for aid, ai in self.data["action_items"].items()
+            if ai.get("decision_id") == decision_id
+        ]
+        for aid in action_items_to_delete:
+            del self.data["action_items"][aid]
+
+        # Approval/Rejection 삭제
+        self.data["approvals"] = [
+            (uid, did) for uid, did in self.data["approvals"] if did != decision_id
+        ]
+        self.data["rejections"] = [
+            (uid, did) for uid, did in self.data["rejections"] if did != decision_id
+        ]
+
+        del self.data["decisions"][decision_id]
+        return True
+
+    # =========================================================================
+    # Agenda CRUD
+    # =========================================================================
+
+    async def update_agenda(
+        self, agenda_id: str, user_id: str, data: dict
+    ) -> KGAgenda:
+        """Agenda 수정"""
+        if agenda_id not in self.data["agendas"]:
+            raise ValueError(f"Agenda not found: {agenda_id}")
+
+        agenda = self.data["agendas"][agenda_id]
+        if "topic" in data:
+            agenda["topic"] = data["topic"]
+        if "description" in data:
+            agenda["description"] = data["description"]
+
+        return KGAgenda(
+            id=agenda["id"],
+            topic=agenda.get("topic", ""),
+            description=agenda.get("description"),
+            order=agenda.get("order", 0),
+            meeting_id=agenda.get("meeting_id"),
+        )
+
+    async def delete_agenda(self, agenda_id: str, user_id: str) -> bool:
+        """Agenda 삭제 (전체 CASCADE)"""
+        if agenda_id not in self.data["agendas"]:
+            return False
+
+        # 관련 Decision 찾기
+        decisions_to_delete = [
+            did
+            for did, d in self.data["decisions"].items()
+            if d.get("agenda_id") == agenda_id
+        ]
+
+        # 각 Decision과 관련된 엔티티 삭제
+        for decision_id in decisions_to_delete:
+            await self.delete_decision(decision_id, user_id)
+
+        del self.data["agendas"][agenda_id]
+        return True
+
+    # =========================================================================
+    # ActionItem CRUD 확장
+    # =========================================================================
+
+    async def get_action_items(
+        self, user_id: str | None = None, status: str | None = None
+    ) -> list[KGActionItem]:
+        """ActionItem 목록 조회 (필터링)"""
+        items = []
+        for ai in self.data["action_items"].values():
+            # 필터 적용
+            if user_id and ai.get("assignee_id") != user_id:
+                continue
+            if status and ai.get("status") != status:
+                continue
+
+            due_date = ai.get("due_date")
+            if isinstance(due_date, str):
+                due_date = datetime.fromisoformat(due_date)
+
+            items.append(
+                KGActionItem(
+                    id=ai["id"],
+                    title=ai.get("title", ""),
+                    description=ai.get("description"),
+                    status=ai.get("status", "pending"),
+                    assignee_id=ai.get("assignee_id"),
+                    due_date=due_date,
+                    decision_id=ai.get("decision_id"),
+                )
+            )
+        return items
+
+    async def update_action_item(
+        self, action_item_id: str, user_id: str, data: dict
+    ) -> KGActionItem:
+        """ActionItem 수정"""
+        if action_item_id not in self.data["action_items"]:
+            raise ValueError(f"ActionItem not found: {action_item_id}")
+
+        ai = self.data["action_items"][action_item_id]
+        for key in ["title", "description", "status", "assignee_id", "due_date"]:
+            if key in data:
+                ai[key] = data[key]
+
+        due_date = ai.get("due_date")
+        if isinstance(due_date, str):
+            due_date = datetime.fromisoformat(due_date)
+
+        return KGActionItem(
+            id=ai["id"],
+            title=ai.get("title", ""),
+            description=ai.get("description"),
+            status=ai.get("status", "pending"),
+            assignee_id=ai.get("assignee_id"),
+            due_date=due_date,
+            decision_id=ai.get("decision_id"),
+        )
+
+    async def delete_action_item(self, action_item_id: str, user_id: str) -> bool:
+        """ActionItem 삭제"""
+        if action_item_id not in self.data["action_items"]:
+            return False
+
+        del self.data["action_items"][action_item_id]
+        return True
+
+    # =========================================================================
+    # Minutes View
+    # =========================================================================
+
+    async def get_minutes_view(self, meeting_id: str) -> dict:
+        """Minutes 전체 View 조회 (중첩 구조)"""
+        meeting = self.data["meetings"].get(meeting_id)
+        if not meeting:
+            raise ValueError(f"Meeting not found: {meeting_id}")
+
+        minutes = None
+        for m in self.data["minutes"].values():
+            if m.get("meeting_id") == meeting_id:
+                minutes = m
+                break
+
+        # Agenda 조회
+        agendas = []
+        for a in sorted(
+            [ag for ag in self.data["agendas"].values() if ag.get("meeting_id") == meeting_id],
+            key=lambda x: x.get("order", 0),
+        ):
+            # Decision 조회
+            decisions = []
+            for d in self.data["decisions"].values():
+                if d.get("agenda_id") != a["id"]:
+                    continue
+
+                # Suggestion 조회
+                suggestions = []
+                for s in self.data["suggestions"].values():
+                    if s.get("decision_id") == d["id"]:
+                        suggestions.append({
+                            "id": s["id"],
+                            "content": s["content"],
+                            "author_id": s["author_id"],
+                            "created_decision_id": s.get("created_decision_id"),
+                            "created_at": s["created_at"],
+                        })
+
+                # Comment 조회 (최상위만, 대댓글은 중첩)
+                comments = []
+                for c in self.data["comments"].values():
+                    if c.get("decision_id") == d["id"] and c.get("parent_id") is None:
+                        # 대댓글 조회
+                        replies = [
+                            {
+                                "id": r["id"],
+                                "content": r["content"],
+                                "author_id": r["author_id"],
+                                "created_at": r["created_at"],
+                            }
+                            for r in self.data["comments"].values()
+                            if r.get("parent_id") == c["id"]
+                        ]
+                        comments.append({
+                            "id": c["id"],
+                            "content": c["content"],
+                            "author_id": c["author_id"],
+                            "replies": replies,
+                            "created_at": c["created_at"],
+                        })
+
+                created_at = d.get("created_at")
+                decisions.append({
+                    "id": d["id"],
+                    "content": d.get("content", ""),
+                    "context": d.get("context"),
+                    "status": d.get("status", "draft"),
+                    "created_at": created_at,
+                    "suggestions": suggestions,
+                    "comments": comments,
+                })
+
+            agendas.append({
+                "id": a["id"],
+                "topic": a.get("topic", ""),
+                "description": a.get("description"),
+                "order": a.get("order", 0),
+                "decisions": decisions,
+            })
+
+        # ActionItem 조회
+        action_items = []
+        decision_ids = [d["id"] for a in agendas for d in a["decisions"]]
+        for ai in self.data["action_items"].values():
+            if ai.get("decision_id") in decision_ids:
+                action_items.append({
+                    "id": ai["id"],
+                    "title": ai.get("title", ""),
+                    "status": ai.get("status", "pending"),
+                    "assignee_id": ai.get("assignee_id"),
+                    "due_date": ai.get("due_date"),
+                })
+
+        return {
+            "meeting_id": meeting_id,
+            "summary": minutes.get("summary", "") if minutes else "",
+            "agendas": agendas,
+            "action_items": action_items,
+        }
