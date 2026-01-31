@@ -43,7 +43,20 @@ class SearchStrategyRouter:
         search_focus = query_intent.get("search_focus")
         primary_entity = query_intent.get("primary_entity")
 
-        # 🎯 Case 1: 높은 신뢰도 → Text-to-Cypher만
+        # 🎯 Case 1: 단순 패턴 (template으로 충분) → Template 우선
+        if _is_simple_pattern(intent_type, search_focus, primary_entity):
+            return {
+                "strategy": "template_based",
+                "search_term": original_query,
+                "reasoning": "Simple pattern detected - Template 우선 (Fallback: LLM)",
+                "use_fallback": True,
+                "confidence": confidence,
+                "intent_type": intent_type,
+                "search_focus": search_focus,
+                "primary_entity": primary_entity,
+            }
+
+        # 🎯 Case 2: 높은 신뢰도 → Text-to-Cypher만
         if confidence > 0.7:
             return {
                 "strategy": "text_to_cypher",
@@ -51,19 +64,6 @@ class SearchStrategyRouter:
                 "reasoning": f"High confidence ({confidence:.2f}) - LLM Cypher 단독 사용",
                 "use_fallback": False,
                 "confidence": confidence
-            }
-
-        # 🎯 Case 2: 단순 패턴 (template으로 충분) → Template 우선
-        if _is_simple_pattern(intent_type, search_focus, primary_entity):
-            return {
-                "strategy": "template_based",
-                "search_term": original_query,
-                "reasoning": f"Simple pattern detected - Template 우선 (Fallback: LLM)",
-                "use_fallback": True,
-                "confidence": confidence,
-                "intent_type": intent_type,
-                "search_focus": search_focus,
-                "primary_entity": primary_entity
             }
 
         # 🎯 Case 3: 중간/낮은 신뢰도 → LLM 시도 + Template Fallback
@@ -80,13 +80,17 @@ def _is_simple_pattern(intent_type: str, search_focus: str, primary_entity: str)
     """단순 패턴 감지 (Template으로 충분한 경우)"""
     # 명확한 엔티티 검색
     if intent_type == "entity_search" and primary_entity:
-        if search_focus in ["Decision", "Meeting", "Action"]:
+        if search_focus in ["Decision", "Meeting", "Action", "Team"]:
             return True
-    
+
+    # 복합 메타 검색 (템플릿 처리 가능)
+    if intent_type == "meta_search" and search_focus == "Composite":
+        return True
+
     # 시간 기반 검색
     if intent_type == "temporal_search" and search_focus in ["Meeting", "Decision"]:
         return True
-    
+
     return False
 
 

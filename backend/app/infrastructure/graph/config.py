@@ -40,13 +40,11 @@ MAX_RETRY = 2  # 최대 재계획 횟수 (복합 쿼리: 1단계 → replanning 
 REQUEST_TIMEOUT = 30  # 요청 타임아웃 (초)
 MAX_TOKENS = 2048  # LLM 최대 토큰
 
-# MIT Search Selection 설정
-MIT_SEARCH_TOP_K = 5  # 선택할 최대 결과 수
-MIT_SEARCH_MIN_SCORE = 0.3  # 최소 점수 임계값
 
 # MIT Search Reranker 설정
-RERANKER_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
+RERANKER_MODEL_NAME = "BAAI/bge-reranker-base"
 RERANKER_USE_FP16 = True
+RERANKER_ENABLED = False
 RERANKER_ENTITY_SEMANTIC_WEIGHT = 0.9
 RERANKER_ENTITY_FULLTEXT_WEIGHT = 0.1
 RERANKER_GENERAL_SEMANTIC_WEIGHT = 0.4
@@ -62,8 +60,6 @@ class GraphSettings(BaseModel):
         max_retry_count: 워크플로우 재시도 최대 횟수 (default: 3)
         request_timeout: 외부 API 호출 타임아웃 (초) (default: 30)
         max_tokens: LLM 생성 최대 토큰 수 (default: 2048)
-        mit_search_top_k: MIT Search 선택 결과 수 (default: 5)
-        mit_search_min_score: MIT Search 최소 점수 임계값 (default: 0.3)
         reranker_model_name: MIT Search 리랭커 모델명
         reranker_use_fp16: MIT Search 리랭커 FP16 사용 여부
         reranker_entity_semantic_weight: entity_search의 semantic 가중치
@@ -77,10 +73,9 @@ class GraphSettings(BaseModel):
     max_retry_count: int = MAX_RETRY
     request_timeout: int = REQUEST_TIMEOUT
     max_tokens: int = MAX_TOKENS
-    mit_search_top_k: int = MIT_SEARCH_TOP_K
-    mit_search_min_score: float = MIT_SEARCH_MIN_SCORE
     reranker_model_name: str = RERANKER_MODEL_NAME
     reranker_use_fp16: bool = RERANKER_USE_FP16
+    reranker_enabled: bool = RERANKER_ENABLED
     reranker_entity_semantic_weight: float = RERANKER_ENTITY_SEMANTIC_WEIGHT
     reranker_entity_fulltext_weight: float = RERANKER_ENTITY_FULLTEXT_WEIGHT
     reranker_general_semantic_weight: float = RERANKER_GENERAL_SEMANTIC_WEIGHT
@@ -110,10 +105,9 @@ def get_graph_settings() -> GraphSettings:
         max_retry_count=MAX_RETRY,
         request_timeout=REQUEST_TIMEOUT,
         max_tokens=MAX_TOKENS,
-        mit_search_top_k=MIT_SEARCH_TOP_K,
-        mit_search_min_score=MIT_SEARCH_MIN_SCORE,
         reranker_model_name=RERANKER_MODEL_NAME,
         reranker_use_fp16=RERANKER_USE_FP16,
+        reranker_enabled=RERANKER_ENABLED,
         reranker_entity_semantic_weight=RERANKER_ENTITY_SEMANTIC_WEIGHT,
         reranker_entity_fulltext_weight=RERANKER_ENTITY_FULLTEXT_WEIGHT,
         reranker_general_semantic_weight=RERANKER_GENERAL_SEMANTIC_WEIGHT,

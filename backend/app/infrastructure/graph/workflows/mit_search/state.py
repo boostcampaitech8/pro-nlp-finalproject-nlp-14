@@ -43,7 +43,6 @@ class MitSearchState(TypedDict, total=False):
     # 결과 파이프라인
     mit_search_raw_results: Annotated[list[dict], "Neo4j FULLTEXT 원본 결과"]
     mit_search_ranked_results: Annotated[list[dict], "BGE v2-m3로 재랭킹된 결과"]
-    mit_search_results: Annotated[list[dict], "오케스트레이션용 최종 포맷 결과"]
     mit_search_fallback_used: Annotated[bool, "Fallback 전략 사용 여부 (P1)"]
 
     # 결과 품질 평가

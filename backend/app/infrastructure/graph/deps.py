@@ -57,7 +57,7 @@ class GraphDeps:
 
     @staticmethod
     def get_graph_repo():
-        """KG Repository 반환 (읽기=read-only, 쓰기=write driver)."""
+        """KG Repository 반환."""
         return create_kg_repository()
 
     # --- 헬퍼 메소드 (neo4j 모듈에 위임) ---

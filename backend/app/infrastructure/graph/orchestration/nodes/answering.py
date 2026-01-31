@@ -22,6 +22,8 @@ async def generate_answer(state: OrchestrationState):
     messages = state.get('messages', [])
     query = messages[-1].content if messages else ""
     plan = state.get("plan", "")
+    can_answer = state.get("can_answer")
+    missing_requirements = state.get("missing_requirements", [])
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     
@@ -31,6 +33,21 @@ async def generate_answer(state: OrchestrationState):
     print("답변:")
     print("=" * 50)
     
+    # planner가 답변 불가로 판단한 경우
+    if can_answer is False:
+        missing_text = (
+            "\n필요한 요소: " + ", ".join(missing_requirements)
+            if missing_requirements
+            else ""
+        )
+        response_text = (
+            "현재 워크플로우의 도구( mit_search )로는 요청을 처리할 수 없습니다."
+            + missing_text
+        )
+        print(response_text, flush=True)
+        print("=" * 50)
+        return OrchestrationState(response=response_text)
+
     # tool_results가 있으면 추가 context로 활용
     if tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")

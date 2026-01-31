@@ -94,22 +94,29 @@ async def _generate_text_to_cypher_raw(
 
         {schema_info}
 
-        [Execution Principles]
-        1. **Security First**:
-           - MUST append `AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})` to the WHERE clause.
-           - Only READ operations allowed.
+                [Execution Principles]
+                    1. **Security & Safety**:
+                            - Only READ operations allowed.
+                            - Do NOT use CREATE/DELETE/SET/MERGE/LOAD CSV/CALL except fulltext index call.
+                            - Prefer scoping to the current user when possible.
 
-        2. **Search Strategy (CRITICAL)**:
-           - **Dual Filtering**: If the user mentions a Person AND a Topic (e.g., "Meeting with Alice about Budget"), you MUST filter BOTH.
-             - `WHERE u.name CONTAINS 'Alice' AND m.title CONTAINS 'Budget'`
-           - **Literal Extraction**: Use EXACT literal strings. DO NOT TRANSLATE.
-             - '신수효' -> '신수효' (OK), 'Shin Soo Hyo' (NO)
-           - **Traversal**: `User -> Meeting -> Agenda -> Decision`.
+                    2. **Intent Alignment (CRITICAL)**:
+                            - Use the provided intent fields to choose the target node and filters.
+                            - If intent specifies a person/team and a topic, filter BOTH.
+                                `WHERE u.name CONTAINS $entity_name AND m.title CONTAINS $search_term`
+                            - If a non-entity keyword exists, 반드시 CONTAINS 필터를 추가.
+                            - Use EXACT literals; DO NOT TRANSLATE.
 
-        3. **Formatting**:
-           - **graph_context**: Construct manually using `+`.
-           - **Alias**: MUST be `AS graph_context`.
-           - **Limit**: ALWAYS end with `LIMIT 20`.
+                    3. **Traversal**:
+                            - Use the schema paths only (User → Meeting → Agenda → Decision, etc.).
+                            - Team/Composite intent must follow Member/Assigned relationships.
+
+                    4. **Formatting**:
+                            - Must return: id, title/content, created_at, score, graph_context.
+                            - `graph_context` must be a human-readable string built with `+`.
+                            - Alias MUST be `AS graph_context`.
+                            - ALWAYS end with `LIMIT 20`.
+                            - No UNION/UNION ALL. Single query only.
 
         [Few-Shot Examples]
         
@@ -122,9 +129,8 @@ async def _generate_text_to_cypher_raw(
         ```
         ```cypher
         MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
-        WHERE u.name CONTAINS '민수' 
+        WHERE u.name CONTAINS '민수'
           AND m.title CONTAINS '예산'
-          AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
         RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
                u.name + '님과 함께한 예산(Budget) 회의: ' + m.title AS graph_context
         ORDER BY m.created_at DESC
@@ -139,7 +145,7 @@ async def _generate_text_to_cypher_raw(
         4. Keywords: Topic='회고'
         ```
         ```cypher
-        MATCH (u:User {{id: $user_id}})-[:PARTICIPATED_IN]->(m:Meeting)
+         MATCH (m:Meeting)
         WHERE m.title CONTAINS '회고'
         RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
                '회고 관련 회의: ' + m.title AS graph_context
@@ -155,6 +161,7 @@ async def _generate_text_to_cypher_raw(
         2. Path Strategy: ...
         3. Entities: ...
         4. Keywords: ...
+        5. Constraints: ...
         ```
         ```cypher
         ...
@@ -171,6 +178,8 @@ async def _generate_text_to_cypher_raw(
         - Analyzed Intent: {query_intent.get('intent_type', 'Unknown')}
         - Focus Entity: {query_intent.get('primary_entity', 'None')}
         - Target Node: {query_intent.get('search_focus', 'Any')}
+        - Date Range: {query_intent.get('date_range', None)}
+        - Entity Types: {query_intent.get('entity_types', None)}
         """
     ).strip()
 
@@ -427,7 +436,6 @@ def _get_fulltext_template() -> str:
 YIELD node, score
 MATCH (a:Agenda)-[:HAS_DECISION]->(node)
 MATCH (m:Meeting)-[:CONTAINS]->(a)
-WHERE (m)<-[:PARTICIPATED_IN]-(:User {id: $user_id})
 RETURN node.id AS id, node.content AS content, node.status AS status, node.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, score,
        m.title + ' 회의의 ' + coalesce(a.title, '안건') + '에서 도출된 결정: ' + node.content AS graph_context
 ORDER BY score DESC, node.created_at DESC
@@ -438,7 +446,6 @@ def _get_meeting_template() -> str:
     """Meeting 검색용 기본 템플릿 (m.date 제거됨, created_at 사용)"""
     return """MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
 WHERE u.name CONTAINS $entity_name
-  AND (m)<-[:PARTICIPATED_IN]-(:User {id: $user_id})
 RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
        u.name + '님이 참여한 회의: ' + m.title AS graph_context
 ORDER BY m.created_at DESC
@@ -570,6 +577,9 @@ def _is_safe_cypher(cypher: str) -> bool:
             r"CALL\s+db\.index\.fulltext\.queryNodes", cypher, re.IGNORECASE
         ):
             return False
+
+    if re.search(r"\bUNION\b", upper):
+        return False
 
     if re.search(r"\bextract\s*\(", cypher, re.IGNORECASE):
         return False
@@ -722,9 +732,6 @@ def _evaluate_cypher_quality(cypher: str) -> List[str]:
 
     if not re.search(r"\bgraph_context\b", cypher, re.IGNORECASE):
         issues.append("missing_graph_context")
-
-    if not re.search(r"\$user_id\b", cypher):
-        issues.append("missing_user_scope")
 
     if re.search(r"\bCALL\b", upper) and not re.search(
         r"CALL\s+db\.index\.fulltext\.queryNodes", cypher, re.IGNORECASE

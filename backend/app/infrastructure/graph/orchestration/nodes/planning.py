@@ -7,12 +7,12 @@ from pydantic import BaseModel, Field
 from app.infrastructure.graph.integration.llm import get_planner_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
-logger = logging.getLogger("AgentLogger")
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 class PlanningOutput(BaseModel):
     plan: str = Field(description="사용자의 질문을 해결하기 위한 단계별 계획")
     need_tools: bool = Field(description="검색이나 추가 정보가 필요하면 True, 아니면 False")
+    can_answer: bool = Field(description="현재 워크플로우의 도구/로직으로 답변 가능하면 True")
     reasoning: str = Field(description="도구 필요 여부 판단 근거")
     next_subquery: str | None = Field(
         default=None,
@@ -21,6 +21,10 @@ class PlanningOutput(BaseModel):
     required_topics: list[str] = Field(
         default_factory=list,
         description="추가 컨텍스트가 필요한 L1 토픽 이름 목록 (없으면 빈 리스트)",
+    )
+    missing_requirements: list[str] = Field(
+        default_factory=list,
+        description="답변에 필요한데 현재 없는 정보/도구 목록",
     )
 
 # Planning node
@@ -33,30 +37,11 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         side-effects: LLM API 호출
         failures: PLANNING_FAILED -> 기본 계획 반환
 
-    Fast-Track 라우팅:
-    - 단순 쿼리는 Planner LLM 호출 없이 직접 MIT Tools로
-    - 쿼리 길이 < 25 또는 팩트 키워드 포함 → 직행
     """
     logger.info("Planning 단계 진입")
 
     messages = state.get("messages", [])
     query = messages[-1].content if messages else ""
-
-    # Fast-Track 라우팅 (Planner LLM 호출 없이)
-    if query:
-        is_simple_query = len(query) < 25
-        fact_keywords = ["누구", "뭐", "언제", "어디", "전화", "이메일", "주소", "이름"]
-        has_fact_keyword = any(kw in query for kw in fact_keywords)
-
-        if is_simple_query or has_fact_keyword:
-            logger.info(f"[Fast-Track] 단순 쿼리 감지: {query[:50]}")
-            # Fast-Track: 직접 MIT Tools로 이동
-            return {
-                "plan": f"직접 검색: {query}",
-                "need_tools": True,
-                "fast_track": True,  # 플래그 추가
-                "required_topics": [],
-            }
 
     # 이미 계획이 준비된 경우 스킵 (테스트/외부 오케스트레이션 용도)
     if state.get("skip_planning") and state.get("plan"):
@@ -82,6 +67,11 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "당신은 다단계 검색을 계획하는 AI입니다. 반드시 JSON 형식으로만 응답해야 합니다.\n\n"
             "원래 질문: {query}\n"
             "컨텍스트 요약 (L0/L1 토픽 목록):\n{planning_context}\n\n"
+            "현재 사용 가능한 도구/로직:\n"
+            "- mit_search: 지식 그래프 읽기 전용 검색\n\n"
+            "역할과 제약:\n"
+            "- mit_search만 사용 가능 (쓰기/수정/외부 웹/mit_action 불가)\n"
+            "- 사용 가능한 도구로 답변 불가하면 can_answer=false로 설정\n\n"
             "이전 검색 결과 평가:\n"
             "  - 평가: {previous_evaluation}\n"
             "  - 이유: {evaluation_reason}\n\n"
@@ -89,6 +79,9 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "1. 사용자의 원래 질문을 다시 읽으세요\n"
             "2. 이전 검색에서 부족한 부분을 명확히 파악하세요\n"
             "3. 다음 검색에서 찾아야 할 것을 구체적으로 명시하세요\n\n"
+            "계획 작성 규칙:\n"
+            "- plan은 실제 도구 호출 순서대로 1단계, 2단계로 작성\n"
+            "- 각 단계는 mit_search로 무엇을 검색할지 명확히 적기\n"
             "예시:\n"
             "Q: '교육 프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?'\n"
             "첫 검색: 액션 아이템 [교육 프로그램 상반기 내 완료 목표]\n"
@@ -99,6 +92,9 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "- plan: \"1단계: ... → 2단계: ...\" 형식\n"
             "- next_subquery: 다음 검색 단계에서 사용할 구체적인 한국어 질의\n"
             "  예: \"이전에 찾은 교육 프로그램 상반기 내 완료 목표의 담당자는 누구야?\"\n"
+            "- 사용할 수 없는 도구가 필요하거나 외부 정보가 필요한 질문이면 can_answer=false로 설정\n"
+            "  (예: mit_action, 외부 웹, 데이터 수정/생성 요청)\n"
+            "- can_answer=false일 때 need_tools=false로 두고 missing_requirements에 필요한 항목을 적어주세요\n"
             "- JSON만 출력\n\n"
             "{format_instructions}"
         )
@@ -109,12 +105,23 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "당신은 계획을 세우는 AI입니다. 반드시 JSON 형식으로만 응답해야 합니다.\n\n"
             "사용자 질문: {query}\n\n"
             "컨텍스트 요약 (L0/L1 토픽 목록):\n{planning_context}\n\n"
+            "현재 사용 가능한 도구/로직:\n"
+            "- mit_search: 지식 그래프 읽기 전용 검색\n\n"
+            "역할과 제약:\n"
+            "- mit_search만 사용 가능 (쓰기/수정/외부 웹/mit_action 불가)\n"
+            "- 사용 가능한 도구로 답변 불가하면 can_answer=false로 설정\n\n"
             "이 질문에 대한 답변을 하기 위한 계획을 세우세요.\n"
             "외부 정보(검색, 요약 등)가 필요하면 need_tools를 true로 설정하세요.\n"
             "간단한 인사나 일반 상식으로 답변 가능하면 need_tools를 false로 설정하세요.\n\n"
+            "계획 작성 규칙:\n"
+            "- plan은 실제 도구 호출 순서대로 1단계, 2단계로 작성\n"
+            "- 각 단계는 mit_search로 무엇을 검색할지 명확히 적기\n\n"
             "추가 컨텍스트가 필요한 L1 토픽이 있으면 required_topics에 정확한 토픽명을 넣고,\n"
             "필요 없으면 빈 리스트로 두세요.\n\n"
             "재계획이 아닌 경우 next_subquery는 null로 설정하세요.\n\n"
+            "사용 가능한 도구로 답변할 수 없으면 can_answer=false로 설정하고,\n"
+            "missing_requirements에 필요한 도구/정보를 적어주세요.\n"
+            "(예: mit_action, 외부 웹, 데이터 수정/생성 권한 등)\n\n"
             "중요: JSON만 출력하세요!\n\n"
             "{format_instructions}"
         )
@@ -144,8 +151,20 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
 
         logger.info(f"생성된 Plan: {result.plan}")
         logger.info(f"도구 사용 필요 여부: {result.need_tools}")
+        logger.info(f"답변 가능 여부: {result.can_answer}")
         logger.info(f"판단 근거: {result.reasoning}")
         logger.info(f"추가 토픽 필요: {result.required_topics}")
+        logger.info(f"부족한 요소: {result.missing_requirements}")
+        print(
+            "\n[Planner Output]\n"
+            f"Plan: {result.plan}\n"
+            f"Need tools: {result.need_tools}\n"
+            f"Can answer: {result.can_answer}\n"
+            f"Reasoning: {result.reasoning}\n"
+            f"Required topics: {result.required_topics}\n"
+            f"Missing requirements: {result.missing_requirements}\n"
+            f"Next subquery: {result.next_subquery}\n"
+        )
 
         next_subquery = result.next_subquery if retry_count > 0 else None
         if retry_count > 0:
@@ -155,8 +174,10 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         return {
             "plan": result.plan,
             "need_tools": result.need_tools,
+            "can_answer": result.can_answer,
             "next_subquery": next_subquery,
             "required_topics": result.required_topics,
+            "missing_requirements": result.missing_requirements,
         }
 
     except Exception as e:
@@ -164,8 +185,10 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         return OrchestrationState(
             plan="계획 수립 실패",
             need_tools=False,
+            can_answer=False,
             next_subquery=None,
             required_topics=[],
+            missing_requirements=["planner_failure"],
         )
 
 

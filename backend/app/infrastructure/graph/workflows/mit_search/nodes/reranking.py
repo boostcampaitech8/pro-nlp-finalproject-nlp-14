@@ -34,15 +34,38 @@ def _get_reranker_model():
 
         _reranker_model = FlagReranker(
             model_name_or_path=model_name,
-            use_fp16=use_fp16
+            use_fp16=use_fp16,
         )
         logger.info(f"BGE Reranker model '{model_name}' loaded successfully (singleton)")
         return _reranker_model
     except ImportError:
         logger.warning("FlagEmbedding not installed. Install: pip install FlagEmbedding")
         return None
-    except Exception:
-        logger.error("Failed to load BGE Reranker model")
+    except Exception as exc:
+        logger.error("Failed to load BGE Reranker model", exc_info=True)
+
+        fallback_model_name = "BAAI/bge-reranker-base"
+        if "out of memory" in str(exc).lower() and model_name != fallback_model_name:
+            try:
+                from FlagEmbedding import FlagReranker
+
+                logger.warning(
+                    "Reranker OOM detected. Falling back to '%s'.",
+                    fallback_model_name,
+                )
+                _reranker_model = FlagReranker(
+                    model_name_or_path=fallback_model_name,
+                    use_fp16=use_fp16,
+                )
+                logger.info(
+                    "BGE Reranker fallback model '%s' loaded successfully (singleton)",
+                    fallback_model_name,
+                )
+                return _reranker_model
+            except Exception:
+                logger.error("Failed to load fallback BGE Reranker model", exc_info=True)
+                return None
+
         return None
 
 
@@ -63,6 +86,15 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
         raw_results = state.get("mit_search_raw_results", [])
         query = state.get("mit_search_query", "")
         query_intent = state.get("mit_search_query_intent", {})
+
+        settings = get_graph_settings()
+        if not settings.reranker_enabled:
+            logger.warning("Reranker disabled. Returning raw results.")
+            ranked_results = [
+                {**result, "final_score": result.get("score", 0)}
+                for result in raw_results
+            ]
+            return {"mit_search_ranked_results": ranked_results}
 
         if not raw_results:
             logger.info("No results to rerank")

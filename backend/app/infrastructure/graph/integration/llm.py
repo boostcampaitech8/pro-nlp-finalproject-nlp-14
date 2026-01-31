@@ -101,37 +101,6 @@ def get_evaluator_llm() -> ChatClovaX:
 # MIT Search용 LLM 인스턴스
 # ============================================================================
 
-def get_query_rewriter_llm() -> ChatClovaX:
-    """쿼리 정규화 LLM (창의성 높음).
-
-    Model: DASH
-    Use Case: 한글↔숫자, 띄어쓰기, 동의어 정규화
-    temperature: 0.7 (다양한 표현 수용)
-    max_tokens: 256 (짧은 쿼리 출력)
-    """
-    return ChatClovaX(
-        model="DASH",
-        temperature=0.7,
-        max_tokens=256,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
-    )
-
-
-def get_filter_extractor_llm() -> ChatClovaX:
-    """필터 추출 LLM (정확도 높음).
-
-    Model: DASH
-    Use Case: 시간 범위, 엔티티 타입 패턴 인식
-    temperature: 0.1 (극도로 정확한 추출 - 패턴 매칭)
-    max_tokens: 512 (필터 JSON 출력)
-    """
-    return ChatClovaX(
-        model="DASH",
-        temperature=0.1,
-        max_tokens=512,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
-    )
-
 
 def get_cypher_generator_llm() -> ChatClovaX:
     """Cypher 생성 LLM (정확도 최고).
@@ -259,7 +228,6 @@ def get_llm() -> ChatClovaX:
     - get_planner_llm()
     - get_cypher_generator_llm()
     - get_answer_generator_llm()
-    - get_query_rewriter_llm()
     - 등등...
 
     Model: HCX-003 (기본 모델)

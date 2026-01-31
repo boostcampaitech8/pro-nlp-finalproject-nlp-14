@@ -35,30 +35,6 @@ def get_neo4j_driver() -> AsyncDriver:
     return driver
 
 
-@lru_cache
-def get_neo4j_readonly_driver() -> AsyncDriver:
-    """Neo4j 읽기 전용 드라이버 싱글턴 반환.
-
-    읽기 전용 계정이 설정되지 않은 경우 기본 드라이버를 반환합니다.
-    """
-    settings = get_settings()
-
-    if not settings.neo4j_readonly_user:
-        logger.warning("[Neo4j] Read-only user not configured; falling back to default driver")
-        return get_neo4j_driver()
-
-    driver = AsyncGraphDatabase.driver(
-        settings.neo4j_uri,
-        auth=(settings.neo4j_readonly_user, settings.neo4j_readonly_password),
-        max_connection_lifetime=300,
-        max_connection_pool_size=10,
-        connection_acquisition_timeout=30.0,
-        connection_timeout=30.0,
-    )
-    logger.info(f"[Neo4j] Read-only driver created for {settings.neo4j_uri}")
-    return driver
-
-
 async def close_neo4j() -> None:
     """Neo4j 연결 종료
 
@@ -68,9 +44,6 @@ async def close_neo4j() -> None:
         driver = get_neo4j_driver()
         await driver.close()
         get_neo4j_driver.cache_clear()
-        readonly_driver = get_neo4j_readonly_driver()
-        await readonly_driver.close()
-        get_neo4j_readonly_driver.cache_clear()
         logger.info("[Neo4j] Connection closed")
     except Exception:
         # 드라이버가 생성되지 않은 경우

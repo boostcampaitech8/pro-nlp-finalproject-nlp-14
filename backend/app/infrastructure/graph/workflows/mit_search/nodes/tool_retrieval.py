@@ -106,7 +106,7 @@ LIMIT 20"""
 
     elif strategy == "user_search":
         cypher = f"""MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)
-WHERE u.name CONTAINS $query AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
+WHERE u.name CONTAINS $query
 {date_filter}
 RETURN d.id AS id, d.content AS content, d.status AS status, d.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
        u.name + '님이 참여한 ' + m.title + ' 회의의 ' + a.topic + ' 안건에서 도출된 결정사항: ' + d.content AS graph_context
@@ -120,8 +120,7 @@ LIMIT 20"""
         # 여기서는 단순화를 위해 파라미터가 들어온다고 가정하거나, 없을 경우를 대비한 쿼리 작성
         cypher = f"""MATCH (target:User)-[:PARTICIPATED_IN]->(m:Meeting)
 WHERE ($entity_name IS NULL OR $entity_name = '' OR target.name CONTAINS $entity_name)
-  AND ($query = "*" OR m.title CONTAINS $query OR m.title CONTAINS $query)
-  AND (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
+  AND ($query = "*" OR m.title CONTAINS $query OR m.description CONTAINS $query OR m.summary CONTAINS $query)
 {date_filter}
 RETURN m.id AS id, m.title AS title, m.title AS content, m.status AS status, m.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
        '회의: ' + m.title + ' (참여자: ' + target.name + ')' AS graph_context
@@ -174,7 +173,6 @@ LIMIT 50"""
         cypher = f"""CALL db.index.fulltext.queryNodes('decision_search', $query) YIELD node, score
 MATCH (a:Agenda)-[:HAS_DECISION]->(node)
 MATCH (m:Meeting)-[:CONTAINS]->(a)
-WHERE (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
 {date_filter}
 OPTIONAL MATCH (ai:ActionItem)<-[:HAS_ACTION]-(a)
 OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
@@ -243,10 +241,18 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
             return {"mit_search_raw_results": []}
 
         # [수정] 파라미터 준비: query + user_id + entity_name(Intent에서 추출)
+        primary_entity = intent.get("primary_entity", "")
+        search_term_value = strategy.get("search_term", "")
         parameters = {
-            "query": strategy.get("search_term", ""),
             "user_id": user_id,
-            "entity_name": intent.get("primary_entity", ""), # <-- [핵심 수정] 파라미터 주입!
+            "query": search_term_value,
+            "search_term": search_term_value,  # [CRITICAL] Template Cypher 호환성
+            "keyword": search_term_value,
+            "entity_name": primary_entity,
+            "primary_entity": primary_entity,
+            "entity": primary_entity,
+            "name": primary_entity,
+            "target_name": primary_entity,
         }
         
         # 시간 필터 파라미터 추가
