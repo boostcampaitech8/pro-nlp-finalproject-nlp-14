@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.meeting import Meeting, MeetingParticipant
+from app.models.meeting import Meeting
 from app.models.user import User
 from app.services.auth.auth_service import AuthService
 
@@ -96,6 +96,10 @@ SERVICE_ERROR_MAPPING: dict[str, tuple[int, str, str]] = {
     "INVALID_ROLE": (400, "BAD_REQUEST", "Invalid role"),
     # Decision 관련
     "DECISION_NOT_FOUND": (404, "NOT_FOUND", "Decision not found"),
+    "COMMENT_NOT_FOUND": (404, "NOT_FOUND", "Comment not found"),
+    "SUGGESTION_NOT_FOUND": (404, "NOT_FOUND", "Suggestion not found"),
+    "AGENDA_NOT_FOUND": (404, "NOT_FOUND", "Agenda not found"),
+    "ACTION_ITEM_NOT_FOUND": (404, "NOT_FOUND", "ActionItem not found"),
 }
 
 

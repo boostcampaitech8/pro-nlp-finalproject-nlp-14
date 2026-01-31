@@ -7,17 +7,20 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from neo4j import AsyncDriver
 from neo4j.time import DateTime as Neo4jDateTime
 
 from app.models.kg import (
+    KGActionItem,
     KGAgenda,
+    KGComment,
     KGDecision,
     KGMeeting,
     KGMinutes,
     KGMinutesActionItem,
     KGMinutesDecision,
+    KGSuggestion,
 )
+from neo4j import AsyncDriver
 
 
 def _convert_neo4j_datetime(value: Any) -> datetime:
@@ -505,3 +508,536 @@ class KGRepository:
             return []
 
         return records[0].get("action_ids", [])
+
+    # =========================================================================
+    # Suggestion - 제안
+    # =========================================================================
+
+    async def create_suggestion(
+        self, decision_id: str, user_id: str, content: str
+    ) -> "KGSuggestion":
+        """Suggestion + 새 Decision 생성 (원자적)"""
+        from app.models.kg import KGSuggestion
+
+        now = datetime.now(timezone.utc).isoformat()
+        suggestion_id = f"suggestion-{uuid4()}"
+        new_decision_id = f"decision-{uuid4()}"
+
+        query = """
+        MATCH (d:Decision {id: $decision_id})
+        MATCH (u:User {id: $user_id})
+        MATCH (d)<-[:HAS_DECISION]-(a:Agenda)
+
+        // 새 Decision 생성 (draft)
+        CREATE (nd:Decision {
+            id: $new_decision_id,
+            content: $content,
+            context: '',
+            status: 'draft',
+            created_at: datetime($created_at)
+        })
+        CREATE (a)-[:HAS_DECISION]->(nd)
+        CREATE (d)-[:SUPERSEDED_BY]->(nd)
+
+        // Suggestion 생성
+        CREATE (s:Suggestion {
+            id: $suggestion_id,
+            content: $content,
+            created_at: datetime($created_at)
+        })
+        CREATE (u)-[:SUGGESTS]->(s)
+        CREATE (s)-[:CREATES]->(nd)
+
+        RETURN s.id as id, $content as content, $user_id as author_id,
+               nd.id as created_decision_id, s.created_at as created_at
+        """
+        records = await self._execute_write(query, {
+            "decision_id": decision_id,
+            "user_id": user_id,
+            "content": content,
+            "suggestion_id": suggestion_id,
+            "new_decision_id": new_decision_id,
+            "created_at": now,
+        })
+
+        if not records:
+            raise ValueError(f"Decision not found: {decision_id}")
+
+        r = records[0]
+        return KGSuggestion(
+            id=r["id"],
+            content=r["content"],
+            author_id=r["author_id"],
+            created_decision_id=r["created_decision_id"],
+            created_at=_convert_neo4j_datetime(r["created_at"]),
+        )
+
+    # =========================================================================
+    # Comment - 댓글
+    # =========================================================================
+
+    async def create_comment(
+        self, decision_id: str, user_id: str, content: str
+    ) -> "KGComment":
+        """Comment 생성"""
+        from app.models.kg import KGComment
+
+        now = datetime.now(timezone.utc).isoformat()
+        comment_id = f"comment-{uuid4()}"
+
+        query = """
+        MATCH (d:Decision {id: $decision_id})
+        MATCH (u:User {id: $user_id})
+
+        CREATE (c:Comment {
+            id: $comment_id,
+            content: $content,
+            created_at: datetime($created_at)
+        })
+        CREATE (u)-[:COMMENTS]->(c)
+        CREATE (c)-[:ON]->(d)
+
+        RETURN c.id as id, $content as content, $user_id as author_id,
+               $decision_id as decision_id, c.created_at as created_at
+        """
+        records = await self._execute_write(query, {
+            "decision_id": decision_id,
+            "user_id": user_id,
+            "content": content,
+            "comment_id": comment_id,
+            "created_at": now,
+        })
+
+        if not records:
+            raise ValueError(f"Decision not found: {decision_id}")
+
+        r = records[0]
+        return KGComment(
+            id=r["id"],
+            content=r["content"],
+            author_id=r["author_id"],
+            decision_id=r["decision_id"],
+            parent_id=None,
+            created_at=_convert_neo4j_datetime(r["created_at"]),
+        )
+
+    async def create_reply(
+        self, comment_id: str, user_id: str, content: str
+    ) -> "KGComment":
+        """대댓글 생성"""
+        from app.models.kg import KGComment
+
+        now = datetime.now(timezone.utc).isoformat()
+        reply_id = f"comment-{uuid4()}"
+
+        query = """
+        MATCH (parent:Comment {id: $comment_id})
+        MATCH (u:User {id: $user_id})
+        MATCH (parent)-[:ON]->(d:Decision)
+
+        CREATE (r:Comment {
+            id: $reply_id,
+            content: $content,
+            created_at: datetime($created_at)
+        })
+        CREATE (u)-[:COMMENTS]->(r)
+        CREATE (r)-[:REPLY_TO]->(parent)
+        CREATE (r)-[:ON]->(d)
+
+        RETURN r.id as id, $content as content, $user_id as author_id,
+               d.id as decision_id, $comment_id as parent_id, r.created_at as created_at
+        """
+        records = await self._execute_write(query, {
+            "comment_id": comment_id,
+            "user_id": user_id,
+            "content": content,
+            "reply_id": reply_id,
+            "created_at": now,
+        })
+
+        if not records:
+            raise ValueError(f"Comment not found: {comment_id}")
+
+        r = records[0]
+        return KGComment(
+            id=r["id"],
+            content=r["content"],
+            author_id=r["author_id"],
+            decision_id=r["decision_id"],
+            parent_id=r["parent_id"],
+            created_at=_convert_neo4j_datetime(r["created_at"]),
+        )
+
+    async def delete_comment(self, comment_id: str, user_id: str) -> bool:
+        """Comment 삭제 (작성자 확인 + CASCADE)"""
+        query = """
+        MATCH (u:User {id: $user_id})-[:COMMENTS]->(c:Comment {id: $comment_id})
+
+        // 대댓글도 함께 삭제
+        OPTIONAL MATCH (reply:Comment)-[:REPLY_TO]->(c)
+        DETACH DELETE reply
+
+        DETACH DELETE c
+        RETURN true as deleted
+        """
+        records = await self._execute_write(query, {
+            "comment_id": comment_id,
+            "user_id": user_id,
+        })
+        return len(records) > 0
+
+    # =========================================================================
+    # Decision CRUD 확장
+    # =========================================================================
+
+    async def update_decision(
+        self, decision_id: str, user_id: str, data: dict
+    ) -> KGDecision:
+        """Decision 수정"""
+        set_clauses = []
+        params = {"decision_id": decision_id, "user_id": user_id}
+        for key, value in data.items():
+            if key in ("content", "context"):
+                set_clauses.append(f"d.{key} = ${key}")
+                params[key] = value
+
+        if not set_clauses:
+            decision = await self.get_decision(decision_id)
+            if not decision:
+                raise ValueError(f"Decision not found: {decision_id}")
+            return decision
+
+        query = f"""
+        MATCH (d:Decision {{id: $decision_id}})
+        SET {', '.join(set_clauses)}
+        RETURN d.id as id
+        """
+        records = await self._execute_write(query, params)
+
+        if not records:
+            raise ValueError(f"Decision not found: {decision_id}")
+
+        return await self.get_decision(decision_id)  # type: ignore
+
+    async def delete_decision(self, decision_id: str, user_id: str) -> bool:
+        """Decision 삭제 (전체 CASCADE)"""
+        query = """
+        MATCH (d:Decision {id: $decision_id})
+
+        // 관련 Comment 삭제
+        OPTIONAL MATCH (c:Comment)-[:ON]->(d)
+        OPTIONAL MATCH (reply:Comment)-[:REPLY_TO]->(c)
+        DETACH DELETE reply
+        DETACH DELETE c
+
+        // 관련 Suggestion 삭제
+        OPTIONAL MATCH (s:Suggestion)-[:CREATES]->(d)
+        DETACH DELETE s
+
+        // 관련 ActionItem 삭제
+        OPTIONAL MATCH (d)-[:TRIGGERS]->(ai:ActionItem)
+        DETACH DELETE ai
+
+        DETACH DELETE d
+        RETURN true as deleted
+        """
+        records = await self._execute_write(query, {"decision_id": decision_id})
+        return len(records) > 0
+
+    # =========================================================================
+    # Agenda CRUD
+    # =========================================================================
+
+    async def update_agenda(
+        self, agenda_id: str, user_id: str, data: dict
+    ) -> KGAgenda:
+        """Agenda 수정"""
+        set_clauses = []
+        params = {"agenda_id": agenda_id}
+        for key, value in data.items():
+            if key in ("topic", "description"):
+                set_clauses.append(f"a.{key} = ${key}")
+                params[key] = value
+
+        if not set_clauses:
+            raise ValueError(f"Agenda not found: {agenda_id}")
+
+        query = f"""
+        MATCH (a:Agenda {{id: $agenda_id}})
+        OPTIONAL MATCH (m:Meeting)-[:CONTAINS]->(a)
+        SET {', '.join(set_clauses)}
+        RETURN a.id as id, a.topic as topic, a.description as description,
+               a.order as order, m.id as meeting_id
+        """
+        records = await self._execute_write(query, params)
+
+        if not records:
+            raise ValueError(f"Agenda not found: {agenda_id}")
+
+        r = records[0]
+        return KGAgenda(
+            id=r["id"],
+            topic=r["topic"] or "",
+            description=r["description"],
+            order=r["order"] or 0,
+            meeting_id=r["meeting_id"],
+        )
+
+    async def delete_agenda(self, agenda_id: str, user_id: str) -> bool:
+        """Agenda 삭제 (전체 CASCADE)"""
+        query = """
+        MATCH (a:Agenda {id: $agenda_id})
+
+        // 관련 Decision과 하위 엔티티 삭제
+        OPTIONAL MATCH (a)-[:HAS_DECISION]->(d:Decision)
+        OPTIONAL MATCH (c:Comment)-[:ON]->(d)
+        OPTIONAL MATCH (reply:Comment)-[:REPLY_TO]->(c)
+        OPTIONAL MATCH (s:Suggestion)-[:CREATES]->(d)
+        OPTIONAL MATCH (d)-[:TRIGGERS]->(ai:ActionItem)
+
+        DETACH DELETE reply
+        DETACH DELETE c
+        DETACH DELETE s
+        DETACH DELETE ai
+        DETACH DELETE d
+        DETACH DELETE a
+
+        RETURN true as deleted
+        """
+        records = await self._execute_write(query, {"agenda_id": agenda_id})
+        return len(records) > 0
+
+    # =========================================================================
+    # ActionItem CRUD 확장
+    # =========================================================================
+
+    async def get_action_items(
+        self, user_id: str | None = None, status: str | None = None
+    ) -> list["KGActionItem"]:
+        """ActionItem 목록 조회 (필터링)"""
+        from app.models.kg import KGActionItem
+
+        where_clauses = []
+        params: dict[str, Any] = {}
+
+        if user_id:
+            where_clauses.append("assignee.id = $user_id")
+            params["user_id"] = user_id
+        if status:
+            where_clauses.append("ai.status = $status")
+            params["status"] = status
+
+        where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        query = f"""
+        MATCH (ai:ActionItem)
+        OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
+        OPTIONAL MATCH (d:Decision)-[:TRIGGERS]->(ai)
+        {where_clause}
+        RETURN ai.id as id, ai.title as title, ai.description as description,
+               ai.status as status, assignee.id as assignee_id,
+               ai.due_date as due_date, d.id as decision_id
+        """
+        records = await self._execute_read(query, params)
+
+        return [
+            KGActionItem(
+                id=r["id"],
+                title=r["title"] or "",
+                description=r["description"],
+                status=r["status"] or "pending",
+                assignee_id=r["assignee_id"],
+                due_date=_convert_neo4j_datetime(r["due_date"]) if r["due_date"] else None,
+                decision_id=r["decision_id"],
+            )
+            for r in records
+        ]
+
+    async def update_action_item(
+        self, action_item_id: str, user_id: str, data: dict
+    ) -> "KGActionItem":
+        """ActionItem 수정"""
+        from app.models.kg import KGActionItem
+
+        set_clauses = []
+        params: dict[str, Any] = {"action_item_id": action_item_id}
+
+        for key, value in data.items():
+            if key in ("title", "description", "status"):
+                set_clauses.append(f"ai.{key} = ${key}")
+                params[key] = value
+            elif key == "due_date" and value:
+                set_clauses.append("ai.due_date = datetime($due_date)")
+                params["due_date"] = value.isoformat() if hasattr(value, 'isoformat') else value
+
+        if not set_clauses:
+            raise ValueError(f"ActionItem not found: {action_item_id}")
+
+        query = f"""
+        MATCH (ai:ActionItem {{id: $action_item_id}})
+        OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
+        OPTIONAL MATCH (d:Decision)-[:TRIGGERS]->(ai)
+        SET {', '.join(set_clauses)}
+        RETURN ai.id as id, ai.title as title, ai.description as description,
+               ai.status as status, assignee.id as assignee_id,
+               ai.due_date as due_date, d.id as decision_id
+        """
+        records = await self._execute_write(query, params)
+
+        if not records:
+            raise ValueError(f"ActionItem not found: {action_item_id}")
+
+        r = records[0]
+        return KGActionItem(
+            id=r["id"],
+            title=r["title"] or "",
+            description=r["description"],
+            status=r["status"] or "pending",
+            assignee_id=r["assignee_id"],
+            due_date=_convert_neo4j_datetime(r["due_date"]) if r["due_date"] else None,
+            decision_id=r["decision_id"],
+        )
+
+    async def delete_action_item(self, action_item_id: str, user_id: str) -> bool:
+        """ActionItem 삭제"""
+        query = """
+        MATCH (ai:ActionItem {id: $action_item_id})
+        DETACH DELETE ai
+        RETURN true as deleted
+        """
+        records = await self._execute_write(query, {"action_item_id": action_item_id})
+        return len(records) > 0
+
+    # =========================================================================
+    # Minutes View
+    # =========================================================================
+
+    async def get_minutes_view(self, meeting_id: str) -> dict:
+        """Minutes 전체 View 조회 (중첩 구조)"""
+        # 1. Meeting + Summary 조회
+        meeting_query = """
+        MATCH (m:Meeting {id: $meeting_id})
+        RETURN m.id as meeting_id, m.summary as summary
+        """
+        meeting_records = await self._execute_read(meeting_query, {"meeting_id": meeting_id})
+        if not meeting_records:
+            return {}
+
+        meeting = meeting_records[0]
+
+        # 2. Agendas 조회
+        agenda_query = """
+        MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)
+        RETURN a.id as id, a.topic as topic, a.description as description, a.order as order
+        ORDER BY a.order
+        """
+        agenda_records = await self._execute_read(agenda_query, {"meeting_id": meeting_id})
+
+        agendas = []
+        for a in agenda_records:
+            # 3. Decisions per Agenda
+            decision_query = """
+            MATCH (a:Agenda {id: $agenda_id})-[:HAS_DECISION]->(d:Decision)
+            RETURN d.id as id, d.content as content, d.context as context,
+                   d.status as status, d.created_at as created_at
+            """
+            decision_records = await self._execute_read(decision_query, {"agenda_id": a["id"]})
+
+            decisions = []
+            for d in decision_records:
+                # 4. Suggestions per Decision
+                suggestion_query = """
+                MATCH (s:Suggestion)-[:CREATES]->(nd:Decision)
+                MATCH (d:Decision {id: $decision_id})-[:SUPERSEDED_BY]->(nd)
+                MATCH (u:User)-[:SUGGESTS]->(s)
+                RETURN s.id as id, s.content as content, u.id as author_id,
+                       nd.id as created_decision_id, s.created_at as created_at
+                """
+                suggestion_records = await self._execute_read(suggestion_query, {"decision_id": d["id"]})
+                suggestions = [
+                    {
+                        "id": s["id"],
+                        "content": s["content"],
+                        "author_id": s["author_id"],
+                        "created_decision_id": s["created_decision_id"],
+                        "created_at": _convert_neo4j_datetime(s["created_at"]).isoformat(),
+                    }
+                    for s in suggestion_records
+                ]
+
+                # 5. Comments per Decision (top-level only)
+                comment_query = """
+                MATCH (u:User)-[:COMMENTS]->(c:Comment)-[:ON]->(d:Decision {id: $decision_id})
+                WHERE NOT (c)-[:REPLY_TO]->()
+                RETURN c.id as id, c.content as content, u.id as author_id, c.created_at as created_at
+                """
+                comment_records = await self._execute_read(comment_query, {"decision_id": d["id"]})
+
+                comments = []
+                for c in comment_records:
+                    # 6. Replies per Comment
+                    reply_query = """
+                    MATCH (u:User)-[:COMMENTS]->(r:Comment)-[:REPLY_TO]->(c:Comment {id: $comment_id})
+                    RETURN r.id as id, r.content as content, u.id as author_id, r.created_at as created_at
+                    """
+                    reply_records = await self._execute_read(reply_query, {"comment_id": c["id"]})
+                    replies = [
+                        {
+                            "id": r["id"],
+                            "content": r["content"],
+                            "author_id": r["author_id"],
+                            "created_at": _convert_neo4j_datetime(r["created_at"]).isoformat(),
+                        }
+                        for r in reply_records
+                    ]
+                    comments.append({
+                        "id": c["id"],
+                        "content": c["content"],
+                        "author_id": c["author_id"],
+                        "replies": replies,
+                        "created_at": _convert_neo4j_datetime(c["created_at"]).isoformat(),
+                    })
+
+                decisions.append({
+                    "id": d["id"],
+                    "content": d["content"] or "",
+                    "context": d["context"],
+                    "status": d["status"] or "draft",
+                    "created_at": _convert_neo4j_datetime(d["created_at"]).isoformat(),
+                    "suggestions": suggestions,
+                    "comments": comments,
+                })
+
+            agendas.append({
+                "id": a["id"],
+                "topic": a["topic"] or "",
+                "description": a["description"],
+                "order": a["order"] or 0,
+                "decisions": decisions,
+            })
+
+        # 7. ActionItems 조회
+        action_item_query = """
+        MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)-[:TRIGGERS]->(ai:ActionItem)
+        OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
+        RETURN ai.id as id, ai.title as title, ai.status as status,
+               assignee.id as assignee_id, ai.due_date as due_date
+        """
+        action_item_records = await self._execute_read(action_item_query, {"meeting_id": meeting_id})
+        action_items = [
+            {
+                "id": ai["id"],
+                "title": ai["title"] or "",
+                "status": ai["status"] or "pending",
+                "assignee_id": ai["assignee_id"],
+                "due_date": _convert_neo4j_datetime(ai["due_date"]).isoformat() if ai["due_date"] else None,
+            }
+            for ai in action_item_records
+        ]
+
+        return {
+            "meeting_id": meeting["meeting_id"],
+            "summary": meeting["summary"] or "",
+            "agendas": agendas,
+            "action_items": action_items,
+        }
