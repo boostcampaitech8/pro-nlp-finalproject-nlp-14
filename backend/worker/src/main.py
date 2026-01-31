@@ -346,18 +346,20 @@ class RealtimeWorker:
         """Context 선준비 완료 후 Agent 파이프라인 실행"""
         try:
             # context 선준비 작업 완료 대기
+            context_prepped = False
             if self._context_prep_task:
                 try:
                     await self._context_prep_task
+                    context_prepped = True
                 except asyncio.CancelledError:
                     raise  # 취소는 상위로 전파
                 except Exception:
                     pass  # 다른 에러는 무시하고 계속 진행
                 self._context_prep_task = None
 
-            # agent 파이프라인 실행 (context 이미 준비됨, skip_context=True)
+            # agent 파이프라인 실행 (선준비 성공 시에만 context skip)
             await self._run_agent_pipeline(
-                transcript_id, pre_transcript_id, skip_context=True
+                transcript_id, pre_transcript_id, skip_context=context_prepped
             )
         except asyncio.CancelledError:
             logger.info("Agent 파이프라인 (with prep) 취소됨")
