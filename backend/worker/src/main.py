@@ -563,7 +563,7 @@ async def main():
     # 환경변수에서 meeting_id 가져오기
     import os
 
-    meeting_id = os.environ.get("MEETING_ID", "meeting-1de53207-db52-43a7-b928-0a912155202f")
+    meeting_id = os.environ.get("MEETING_ID")
 
     if not meeting_id:
         logger.error("MEETING_ID 환경변수가 설정되지 않음")
