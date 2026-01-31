@@ -347,16 +347,11 @@ def tool_executor(state: MitSearchState) -> Dict[str, Any]:
 
 def tool_result_scorer_async(state: MitSearchState) -> Dict[str, Any]:
     """검색 결과의 관련성을 점수로 평가합니다.
-    
-    Speculative RAG 지원:
-    - merged_results 있으면 우선 사용 (벡터 또는 Cypher 병합된 결과)
-    - merged_results 없으면 mit_search_raw_results 사용 (기존 방식)
     """
 
     logger.info("[Result Scorer] 시작")
 
     try:
-        # Speculative RAG 지원: merged_results 우선
         merged_results = state.get("merged_results")
         if merged_results is not None:
             results = merged_results

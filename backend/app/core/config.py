@@ -30,8 +30,6 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = ""
-    neo4j_vector_index_name: str = "meeting_embedding_index"
-    neo4j_vector_top_k: int = 5
     use_mock_graph: bool = False  # 테스트 시 Mock KG Repository 사용
 
     # Redis

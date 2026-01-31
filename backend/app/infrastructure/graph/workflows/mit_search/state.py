@@ -32,11 +32,7 @@ class MitSearchState(TypedDict, total=False):
     # Cypher 생성
     mit_search_cypher: Annotated[str, "Neo4j FULLTEXT용 생성된 Cypher 쿼리"]
 
-    # Speculative RAG - 병렬 검색 (Priority 3)
-    cypher_results: NotRequired[list[dict]]
-    vector_search_results: NotRequired[list[dict]]
-    vector_confidence: NotRequired[float]
-    vector_embedding: NotRequired[list[float]]
+    # 병합 결과
     merged_results: NotRequired[list[dict]]
     merge_strategy: NotRequired[str]
 
