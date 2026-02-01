@@ -13,11 +13,40 @@ from .review import DecisionResponse
 from .suggestion import SuggestionResponse
 
 
+class DecisionHistoryItemResponse(BaseModel):
+    """Decision 히스토리 아이템 (superseded 체인)"""
+
+    id: str
+    content: str
+    status: str
+    created_at: str = Field(serialization_alias="createdAt")
+
+    class Config:
+        populate_by_name = True
+
+
+class SupersedesResponse(BaseModel):
+    """이전 버전 Decision 정보 (GT 표시용)"""
+
+    id: str
+    content: str
+    meeting_id: str | None = Field(default=None, serialization_alias="meetingId")
+
+    class Config:
+        populate_by_name = True
+
+
 class DecisionWithReviewResponse(DecisionResponse):
     """Decision + Suggestion + Comment 중첩 응답"""
 
     suggestions: list[SuggestionResponse] = []
     comments: list[CommentResponse] = []
+
+    # 추가 필드: Minutes View에서 필요한 필드들
+    meeting_id: str | None = Field(default=None, serialization_alias="meetingId")
+    updated_at: datetime | None = Field(default=None, serialization_alias="updatedAt")
+    supersedes: SupersedesResponse | None = None
+    history: list[DecisionHistoryItemResponse] = []
 
 
 class AgendaWithDecisionsResponse(BaseModel):

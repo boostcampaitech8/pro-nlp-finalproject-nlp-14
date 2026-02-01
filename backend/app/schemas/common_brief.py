@@ -3,15 +3,13 @@
 Comment/Suggestion에서 사용되는 간략화된 응답 타입.
 """
 
-from uuid import UUID
-
 from pydantic import BaseModel
 
 
 class UserBriefResponse(BaseModel):
     """사용자 간략 정보 (Comment/Suggestion 작성자 표시용)"""
 
-    id: UUID
+    id: str  # Neo4j에서는 string으로 저장
     name: str
 
     class Config:

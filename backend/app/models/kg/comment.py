@@ -17,4 +17,5 @@ class KGComment(BaseModel):
     author_id: str
     parent_id: str | None = None  # 대댓글인 경우 부모 Comment ID
     decision_id: str  # 속한 Decision
+    pending_agent_reply: bool = False  # @mit 멘션 시 AI 응답 대기 중
     created_at: datetime

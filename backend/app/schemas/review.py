@@ -14,6 +14,13 @@ class DecisionReviewRequest(BaseModel):
     )
 
 
+class UpdateDecisionRequest(BaseModel):
+    """Decision 수정 요청"""
+
+    content: str | None = None
+    context: str | None = None
+
+
 class DecisionReviewResponse(BaseModel):
     """리뷰 생성 응답"""
 
