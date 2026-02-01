@@ -30,7 +30,7 @@ from app.infrastructure.context import (
     Utterance,
     format_context_as_system_prompt,
 )
-from app.infrastructure.graph.orchestration import app
+from app.infrastructure.graph.orchestration import get_compiled_app
 from app.infrastructure.graph.orchestration.nodes.planning import create_plan
 
 
@@ -182,6 +182,7 @@ async def invoke_orchestration(
     }
 
     try:
+        app = await get_compiled_app(with_checkpointer=False)
         final_state = await app.ainvoke(full_state)
     except Exception as e:
         print(f"[오류] Orchestration 실행 실패: {e}")
@@ -1027,6 +1028,251 @@ async def run_db_seed_and_test():
     print("\nDB Seed & Test 완료!")
 
 
+async def run_checkpointer_test():
+    """Checkpointer (AsyncPostgresSaver) 연동 테스트
+
+    멀티턴 대화 영속화 테스트:
+    - thread_id = meeting_id로 대화 컨텍스트 유지
+    - 같은 thread_id로 여러 번 호출 시 메시지 누적 확인
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.config import get_settings
+    from app.infrastructure.graph.checkpointer import get_checkpointer
+
+    print_header("Checkpointer (AsyncPostgresSaver) Test")
+
+    settings = get_settings()
+    database_url = settings.database_url
+
+    print(f"DB 연결 중: {database_url[:50]}...")
+
+    engine = create_async_engine(database_url, echo=False)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with async_session() as db:
+        # meeting_id 선택
+        print()
+        meeting_id_input = input("테스트할 meeting_id (빈 값이면 기존 회의에서 선택): ").strip()
+
+        if not meeting_id_input:
+            result = await db.execute(
+                text("""
+                    SELECT DISTINCT t.meeting_id, COUNT(*) as cnt, MAX(t.created_at) as last_at
+                    FROM transcripts t
+                    GROUP BY t.meeting_id
+                    ORDER BY last_at DESC
+                    LIMIT 5
+                """)
+            )
+            rows = result.fetchall()
+            if not rows:
+                print("[오류] transcripts 테이블에 데이터가 없습니다.")
+                return
+
+            print("\n최근 회의 목록:")
+            for i, row in enumerate(rows):
+                print(f"  {i+1}. {row[0]} ({row[1]}개 발화)")
+
+            choice = input("\n번호를 선택하세요 (1-5): ").strip()
+            try:
+                idx = int(choice) - 1
+                meeting_id = str(rows[idx][0])
+            except (ValueError, IndexError):
+                meeting_id = str(rows[0][0])
+        else:
+            meeting_id = meeting_id_input
+
+        print(f"\n선택된 meeting_id (thread_id): {meeting_id}")
+
+        # ContextManager 초기화
+        config = ContextConfig(l0_max_turns=25, l1_update_turn_threshold=25)
+        manager = ContextManager(meeting_id=meeting_id, config=config, db_session=db)
+
+        print("\nDB에서 발화 로드 중...")
+        loaded = await manager.load_from_db()
+        print(f"로드된 발화 수: {loaded}")
+
+        if loaded == 0:
+            print("[오류] 해당 meeting에 transcript가 없습니다.")
+            return
+
+        # Checkpointer 연결 테스트
+        print("\n" + "=" * 50)
+        print("[1] Checkpointer 연결 테스트")
+        print("=" * 50)
+
+        try:
+            checkpointer = await get_checkpointer()
+            print("✅ Checkpointer 연결 성공!")
+        except Exception as e:
+            print(f"❌ Checkpointer 연결 실패: {e}")
+            print("\n해결 방법:")
+            print("  1. make k8s-pf 로 PostgreSQL 포트 포워딩")
+            print("  2. DB 인코딩을 UTF8로 변경 (SQL_ASCII 오류 시)")
+            await engine.dispose()
+            return
+
+        # 기존 체크포인트 상태 확인
+        print("\n" + "=" * 50)
+        print("[2] 기존 체크포인트 상태 확인")
+        print("=" * 50)
+
+        thread_config = {"configurable": {"thread_id": meeting_id}}
+        existing_state = await checkpointer.aget(thread_config)
+
+        if existing_state:
+            values = existing_state.get("channel_values", {})
+            msg_count = len(values.get("messages", []))
+            print(f"✅ 기존 상태 발견! (메시지 수: {msg_count})")
+
+            if "messages" in values:
+                print("\n최근 메시지 (최대 3개):")
+                for msg in values["messages"][-3:]:
+                    role = type(msg).__name__
+                    content = msg.content[:50] + "..." if len(msg.content) > 50 else msg.content
+                    print(f"  [{role}] {content}")
+        else:
+            print("⚠️  기존 상태 없음 (새 대화)")
+
+        # Checkpointer 포함 Orchestration 테스트
+        print("\n" + "=" * 50)
+        print("[3] Checkpointer 포함 Orchestration 테스트")
+        print("=" * 50)
+
+        user_query = input("\n에이전트 질문 입력: ").strip()
+        if not user_query:
+            user_query = "이번 회의에서 결정된 사항을 요약해줘."
+
+        # L1 대기
+        if manager.has_pending_l1:
+            print("L1 요약 처리 대기 중...")
+            await manager.await_pending_l1()
+
+        # Context 생성
+        builder = ContextBuilder()
+        planning_context = builder.build_planning_input_context(manager, user_query=user_query)
+
+        # 초기 상태
+        state = {
+            "messages": [HumanMessage(content=user_query)],
+            "run_id": str(uuid.uuid4()),
+            "user_id": "test_user",
+            "executed_at": datetime.now(timezone.utc),
+            "retry_count": 0,
+            "planning_context": planning_context,
+        }
+
+        # Planning
+        print("\nPlanning 실행 중...")
+        try:
+            planning_result = await create_plan(state)
+            print(f"  Plan: {planning_result.get('plan', '')[:80]}...")
+        except Exception as e:
+            print(f"❌ Planning 실패: {e}")
+            await engine.dispose()
+            return
+
+        # 추가 컨텍스트
+        required_topics = planning_result.get("required_topics", [])
+        additional_context, _ = builder.build_required_topic_context(manager, required_topics)
+
+        full_state = {
+            **state,
+            **planning_result,
+            "additional_context": additional_context,
+            "skip_planning": True,
+        }
+
+        # Checkpointer 포함 앱 실행
+        print("\nOrchestration 실행 중 (checkpointer 포함)...")
+        try:
+            compiled_app = await get_compiled_app(with_checkpointer=True)
+            final_state = await compiled_app.ainvoke(full_state, thread_config)
+            print("✅ Orchestration 완료!")
+        except Exception as e:
+            print(f"❌ Orchestration 실패: {e}")
+            if "SQL_ASCII" in str(e):
+                print("\n[원인] PostgreSQL DB 인코딩이 SQL_ASCII입니다.")
+                print("[해결] DB를 UTF8로 재생성하거나, checkpointer 없이 실행하세요.")
+            await engine.dispose()
+            return
+
+        # 응답 출력
+        print("\n" + "=" * 50)
+        print("응답:")
+        print("=" * 50)
+        print(final_state.get("response", "응답 없음"))
+
+        # 저장된 상태 확인
+        print("\n" + "=" * 50)
+        print("[4] 저장된 체크포인트 확인")
+        print("=" * 50)
+
+        saved_state = await checkpointer.aget(thread_config)
+        if saved_state:
+            values = saved_state.get("channel_values", {})
+            msg_count = len(values.get("messages", []))
+            print(f"✅ 체크포인트 저장됨! (총 메시지 수: {msg_count})")
+
+            print("\n전체 메시지 내역:")
+            for i, msg in enumerate(values.get("messages", []), 1):
+                role = type(msg).__name__
+                content = msg.content[:60] + "..." if len(msg.content) > 60 else msg.content
+                print(f"  {i}. [{role}] {content}")
+        else:
+            print("⚠️  체크포인트가 저장되지 않음")
+
+        # 멀티턴 테스트 (추가 질문)
+        print("\n" + "=" * 50)
+        print("[5] 멀티턴 테스트 (추가 질문)")
+        print("=" * 50)
+
+        followup = input("\n추가 질문 (빈 값이면 스킵): ").strip()
+        if followup:
+            followup_state = {
+                "messages": [HumanMessage(content=followup)],
+                "run_id": str(uuid.uuid4()),
+                "user_id": "test_user",
+                "executed_at": datetime.now(timezone.utc),
+                "retry_count": 0,
+                "planning_context": planning_context,
+            }
+
+            # Planning
+            followup_planning = await create_plan(followup_state)
+            followup_additional, _ = builder.build_required_topic_context(
+                manager, followup_planning.get("required_topics", [])
+            )
+
+            followup_full = {
+                **followup_state,
+                **followup_planning,
+                "additional_context": followup_additional,
+                "skip_planning": True,
+            }
+
+            print("\n추가 질문 처리 중...")
+            try:
+                followup_result = await compiled_app.ainvoke(followup_full, thread_config)
+                print("\n추가 응답:")
+                print("=" * 50)
+                print(followup_result.get("response", "응답 없음"))
+
+                # 누적 메시지 확인
+                final_check = await checkpointer.aget(thread_config)
+                if final_check:
+                    total_msgs = len(final_check.get("channel_values", {}).get("messages", []))
+                    print(f"\n✅ 멀티턴 확인: 총 {total_msgs}개 메시지 누적")
+            except Exception as e:
+                print(f"❌ 추가 질문 실패: {e}")
+
+    await engine.dispose()
+    print("\nCheckpointer 테스트 완료!")
+
+
 def main():
     """메인 함수"""
     print()
@@ -1040,13 +1286,14 @@ def main():
     print("  4. 오케스트레이션 연동 테스트 (배치 시나리오 + 그래프)")
     print("  5. DB 연동 테스트 (실제 DB에서 transcript 로드)")
     print("  6. DB Seed & 테스트 (RealtimeWorker 시뮬레이션 - 전체 시나리오)")
+    print("  7. Checkpointer 테스트 (AsyncPostgresSaver 멀티턴)")
     print()
 
     if len(sys.argv) > 1:
         choice = sys.argv[1]
     else:
         try:
-            choice = input("선택 (1/2/3/4/5/6): ").strip()
+            choice = input("선택 (1-7): ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n종료합니다.")
             return
@@ -1063,8 +1310,10 @@ def main():
         asyncio.run(run_db_test())
     elif choice == "6":
         asyncio.run(run_db_seed_and_test())
+    elif choice == "7":
+        asyncio.run(run_checkpointer_test())
     else:
-        print("1, 2, 3, 4, 5 또는 6을 선택해주세요.")
+        print("1-7 중에서 선택해주세요.")
 
 
 if __name__ == "__main__":

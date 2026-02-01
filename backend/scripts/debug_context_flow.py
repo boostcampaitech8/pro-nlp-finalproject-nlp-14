@@ -127,6 +127,49 @@ async def debug_context_flow(meeting_id: str):
             print("... (생략)")
 
 
+async def debug_checkpointer(meeting_id: str):
+    """Checkpointer 상태 확인"""
+    from app.infrastructure.graph.checkpointer import get_checkpointer
+
+    print("\n" + "=" * 60)
+    print("🗄️  Checkpointer 상태 확인")
+    print("=" * 60)
+
+    try:
+        checkpointer = await get_checkpointer()
+        config = {"configurable": {"thread_id": meeting_id}}
+
+        # 저장된 상태 조회
+        state = await checkpointer.aget(config)
+
+        if state is None:
+            print(f"\n⚠️  thread_id={meeting_id}에 저장된 상태 없음")
+            print("   (아직 에이전트 호출이 없었거나 checkpointer가 비활성화됨)")
+            return
+
+        print(f"\n✅ 상태 발견!")
+        print(f"  Thread ID: {meeting_id}")
+
+        values = state.get("channel_values", {})
+        if "messages" in values:
+            messages = values["messages"]
+            print(f"\n  저장된 메시지 수: {len(messages)}")
+            print("\n  메시지 내역:")
+            for i, msg in enumerate(messages[-5:], 1):  # 최근 5개만
+                role = type(msg).__name__
+                content = msg.content[:60] + "..." if len(msg.content) > 60 else msg.content
+                print(f"    {i}. [{role}] {content}")
+
+        if "response" in values:
+            resp = values["response"]
+            print(f"\n  마지막 응답: {resp[:100]}..." if len(resp) > 100 else f"\n  마지막 응답: {resp}")
+
+    except Exception as e:
+        print(f"\n❌ Checkpointer 연결 실패: {e}")
+        print("   - PostgreSQL이 실행 중인지 확인하세요 (make k8s-pf)")
+        print("   - DB 인코딩이 UTF8인지 확인하세요")
+
+
 async def main():
     if len(sys.argv) < 2:
         print("Usage: python scripts/debug_context_flow.py <meeting_id>")
@@ -138,6 +181,9 @@ async def main():
 
     # Context 플로우 디버깅
     await debug_context_flow(meeting_id)
+
+    # Checkpointer 디버깅
+    await debug_checkpointer(meeting_id)
 
     print("\n" + "=" * 60)
     print("✅ 디버깅 완료")
