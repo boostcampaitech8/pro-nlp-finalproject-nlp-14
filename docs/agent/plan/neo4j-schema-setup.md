@@ -14,6 +14,8 @@ MIT 그래프 데이터베이스 스키마 정의 및 데이터 구축
 | Agenda | 안건 | id, topic, description, created_at |
 | Decision | 결정사항 (GT) | id, content, status, context, created_at |
 | ActionItem | 액션아이템 | id, title, description, due_date, status, created_at |
+| Suggestion | 결정 수정 제안 | id, content, created_at |
+| Comment | 결정에 대한 댓글 | id, content, created_at |
 
 ### 관계 타입
 
@@ -25,9 +27,15 @@ MIT 그래프 데이터베이스 스키마 정의 및 데이터 구축
 | CONTAINS | Meeting | Agenda | - | 회의에 안건 포함 |
 | HAS_DECISION | Agenda | Decision | - | 안건의 결정사항 |
 | REVIEWED | User | Decision | status, responded_at | GT 승인 |
-| SUPERSEDES | Decision | Decision | - | 결정 대체 (버전 관리) |
+| SUPERSEDES | Decision | Decision | - | draft → superseded (Suggestion 히스토리) |
+| OUTDATES | Decision | Decision | - | latest → outdated (GT 변화 추적) |
 | TRIGGERS | Decision | ActionItem | - | 결정에서 액션아이템 파생 |
 | ASSIGNED_TO | User | ActionItem | assigned_at | 액션아이템 할당 |
+| SUGGESTS | User | Suggestion | - | 사용자가 수정 제안 작성 |
+| CREATES | Suggestion | Decision | - | 제안이 새 Decision 생성 |
+| COMMENTS | User | Comment | - | 사용자가 댓글 작성 |
+| ON | Comment | Decision | - | 댓글이 Decision에 연결 |
+| REPLY_TO | Comment | Comment | - | 대댓글 관계 |
 
 ## 2. 제약조건 생성
 
@@ -39,6 +47,8 @@ CREATE CONSTRAINT meeting_id IF NOT EXISTS FOR (m:Meeting) REQUIRE m.id IS UNIQU
 CREATE CONSTRAINT agenda_id IF NOT EXISTS FOR (a:Agenda) REQUIRE a.id IS UNIQUE;
 CREATE CONSTRAINT decision_id IF NOT EXISTS FOR (d:Decision) REQUIRE d.id IS UNIQUE;
 CREATE CONSTRAINT actionitem_id IF NOT EXISTS FOR (ai:ActionItem) REQUIRE ai.id IS UNIQUE;
+CREATE CONSTRAINT suggestion_id IF NOT EXISTS FOR (s:Suggestion) REQUIRE s.id IS UNIQUE;
+CREATE CONSTRAINT comment_id IF NOT EXISTS FOR (c:Comment) REQUIRE c.id IS UNIQUE;
 
 // 이메일 고유성
 CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE;
@@ -53,6 +63,8 @@ CREATE INDEX meeting_scheduled IF NOT EXISTS FOR (m:Meeting) ON (m.scheduled_at)
 CREATE INDEX decision_status IF NOT EXISTS FOR (d:Decision) ON (d.status);
 CREATE INDEX actionitem_status IF NOT EXISTS FOR (ai:ActionItem) ON (ai.status);
 CREATE INDEX actionitem_due IF NOT EXISTS FOR (ai:ActionItem) ON (ai.due_date);
+CREATE INDEX suggestion_created IF NOT EXISTS FOR (s:Suggestion) ON (s.created_at);
+CREATE INDEX comment_created IF NOT EXISTS FOR (c:Comment) ON (c.created_at);
 
 // 전문 검색 인덱스 (선택)
 CREATE FULLTEXT INDEX meeting_search IF NOT EXISTS
@@ -60,6 +72,9 @@ FOR (m:Meeting) ON EACH [m.title, m.summary];
 
 CREATE FULLTEXT INDEX decision_search IF NOT EXISTS
 FOR (d:Decision) ON EACH [d.content, d.context];
+
+CREATE FULLTEXT INDEX comment_search IF NOT EXISTS
+FOR (c:Comment) ON EACH [c.content];
 ```
 
 ## 4. 데이터 Import
@@ -155,3 +170,47 @@ SHOW INDEXES;
 - 관계 CSV: `data/augment/relationships/` (member_of.csv, hosts.csv, ...)
 - Import 스크립트: `data/augment/import.cypher`
 - 조회 쿼리: `data/augment/view_cypher.md`
+
+## 7. 관계 다이어그램
+
+### Suggestion 흐름 (draft → superseded)
+```
+User ─SUGGESTS─> Suggestion ─CREATES─> Decision (새 draft)
+                                             │
+                        ┌──SUPERSEDES────────┘
+                        ▼
+               Decision (기존 draft → superseded)
+```
+
+### GT 변화 흐름 (latest → outdated)
+```
+Decision (새 latest) ─OUTDATES─> Decision (기존 latest → outdated)
+```
+
+### Comment 흐름
+```
+User ─COMMENTS─> Comment ─ON─> Decision
+                    │
+                    └──REPLY_TO──> Comment (대댓글)
+```
+
+### 전체 Minutes View 구조
+```
+Meeting ─CONTAINS─> Agenda ─HAS_DECISION─> Decision (active: draft/latest)
+   │                                            │
+   └──DECIDED_IN────────────────────────────────┤
+                                                │
+                     ┌──SUPERSEDES──────────────┼─> Decision (superseded, 히스토리)
+                     │                          │
+                     │ ┌──OUTDATES──────────────┼─> Decision (outdated, 이전 GT)
+                     │ │                        │
+                     │ │                        ├─> Suggestion (via ON -> CREATES)
+                     │ │                        ├─> Comment (via ON)
+                     │ │                        └─> ActionItem (via TRIGGERS)
+```
+
+### 관계 구분 요약
+| 관계 | 용도 | 상태 전이 |
+|------|------|----------|
+| SUPERSEDES | Suggestion 히스토리 | draft → superseded |
+| OUTDATES | GT 변화 추적 | latest → outdated |

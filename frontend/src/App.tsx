@@ -10,7 +10,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { NaverCallbackPage } from '@/pages/NaverCallbackPage';
 import { MeetingDetailPage } from '@/dashboard/pages/MeetingDetailPage';
 import MeetingRoomPage from '@/dashboard/pages/MeetingRoomPage';
-import { PRReviewPage } from '@/dashboard/pages/PRReviewPage';
+import { MinutesViewPage } from '@/dashboard/pages/MinutesViewPage';
 import { TeamDetailPage } from '@/dashboard/pages/TeamDetailPage';
 import logger from '@/utils/logger';
 
@@ -82,11 +82,16 @@ function App() {
           </PrivateRoute>
         }
       />
+      {/* /review를 /minutes로 리다이렉트 (PRReviewPage와 MinutesViewPage 통합) */}
       <Route
         path="/dashboard/meetings/:meetingId/review"
+        element={<Navigate to="../minutes" replace />}
+      />
+      <Route
+        path="/dashboard/meetings/:meetingId/minutes"
         element={
           <PrivateRoute>
-            <PRReviewPage />
+            <MinutesViewPage />
           </PrivateRoute>
         }
       />
