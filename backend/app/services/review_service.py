@@ -154,15 +154,45 @@ class ReviewService:
     # =========================================================================
 
     async def create_suggestion(
-        self, decision_id: str, user_id: str, content: str
+        self, decision_id: str, user_id: str, content: str, meeting_id: str
     ) -> KGSuggestion:
-        """Suggestion 생성 (새 Decision도 함께 생성)"""
-        suggestion = await self.kg_repo.create_suggestion(decision_id, user_id, content)
+        """Suggestion 생성 + 즉시 draft Decision 생성
+
+        워크플로우:
+        1. Suggestion 노드 생성 (status: 'pending')
+        2. 새 draft Decision 즉시 생성
+        3. 기존 draft Decision → superseded
+        4. AI 분석 태스크 큐잉 (선택적)
+        """
+        suggestion = await self.kg_repo.create_suggestion(
+            decision_id, user_id, content, meeting_id
+        )
         logger.info(
             f"Suggestion created: suggestion={suggestion.id}, "
             f"decision={decision_id}, new_decision={suggestion.created_decision_id}"
         )
+
+        # AI 분석 태스크 큐잉 (선택적 - 필요 시)
+        await self._enqueue_suggestion_analysis(suggestion.id, decision_id, content)
+
         return suggestion
+
+    async def _enqueue_suggestion_analysis(
+        self, suggestion_id: str, decision_id: str, content: str
+    ) -> None:
+        """Suggestion AI 분석 태스크 큐잉"""
+        try:
+            pool = await get_arq_pool()
+            await pool.enqueue_job(
+                "process_suggestion_task",
+                suggestion_id=suggestion_id,
+                decision_id=decision_id,
+                content=content,
+            )
+            await pool.close()
+            logger.info(f"process_suggestion_task enqueued: suggestion={suggestion_id}")
+        except Exception as e:
+            logger.error(f"Failed to enqueue process_suggestion_task: {e}")
 
     # =========================================================================
     # Comment 관련
@@ -172,11 +202,15 @@ class ReviewService:
         self, decision_id: str, user_id: str, content: str
     ) -> KGComment:
         """Comment 생성 + @mit 멘션 감지 시 Agent 호출 큐잉"""
-        comment = await self.kg_repo.create_comment(decision_id, user_id, content)
+        # @mit 멘션이 있으면 Agent 응답 대기 중
+        has_mit_mention = MIT_MENTION_PATTERN.search(content) is not None
+        comment = await self.kg_repo.create_comment(
+            decision_id, user_id, content, pending_agent_reply=has_mit_mention
+        )
         logger.info(f"Comment created: comment={comment.id}, decision={decision_id}")
 
         # @mit 멘션 감지 시 ARQ 태스크 큐잉
-        if MIT_MENTION_PATTERN.search(content):
+        if has_mit_mention:
             await self._enqueue_mit_mention(comment.id, decision_id, content)
 
         return comment
@@ -185,11 +219,15 @@ class ReviewService:
         self, comment_id: str, user_id: str, content: str
     ) -> KGComment:
         """대댓글 생성 + @mit 멘션 감지 시 Agent 호출 큐잉"""
-        reply = await self.kg_repo.create_reply(comment_id, user_id, content)
+        # @mit 멘션이 있으면 Agent 응답 대기 중
+        has_mit_mention = MIT_MENTION_PATTERN.search(content) is not None
+        reply = await self.kg_repo.create_reply(
+            comment_id, user_id, content, pending_agent_reply=has_mit_mention
+        )
         logger.info(f"Reply created: reply={reply.id}, parent={comment_id}")
 
         # @mit 멘션 감지 시 ARQ 태스크 큐잉
-        if MIT_MENTION_PATTERN.search(content):
+        if has_mit_mention:
             await self._enqueue_mit_mention(reply.id, reply.decision_id, content)
 
         return reply

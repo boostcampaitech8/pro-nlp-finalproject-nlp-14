@@ -16,6 +16,7 @@ from app.schemas.review import (
     DecisionResponse,
     DecisionReviewRequest,
     DecisionReviewResponse,
+    UpdateDecisionRequest,
 )
 from app.services.review_service import ReviewService
 
@@ -73,6 +74,34 @@ async def get_decision(
     """결정사항 상세 조회"""
     try:
         return await service.get_decision(decision_id)
+    except ValueError as e:
+        handle_service_error(e)
+
+
+@router.put(
+    "/{decision_id}",
+    response_model=DecisionResponse,
+    summary="결정 수정",
+    description="결정사항의 내용이나 컨텍스트를 수정합니다.",
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+async def update_decision(
+    decision_id: str,
+    request: UpdateDecisionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ReviewService, Depends(get_review_service)],
+) -> DecisionResponse:
+    """결정사항 수정"""
+    try:
+        return await service.update_decision(
+            decision_id=decision_id,
+            user_id=str(current_user.id),
+            content=request.content,
+            context=request.context,
+        )
     except ValueError as e:
         handle_service_error(e)
 

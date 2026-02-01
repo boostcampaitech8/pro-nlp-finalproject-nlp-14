@@ -12,6 +12,7 @@ from app.core.neo4j import get_neo4j_driver
 from app.models.user import User
 from app.schemas import ErrorResponse
 from app.schemas.comment import CommentResponse, CreateCommentRequest
+from app.schemas.common_brief import UserBriefResponse
 from app.services.review_service import ReviewService
 
 router = APIRouter(prefix="/comments", tags=["Comments"])
@@ -52,7 +53,7 @@ async def create_comment(
         return CommentResponse(
             id=comment.id,
             content=comment.content,
-            author={"id": current_user.id, "name": current_user.name},
+            author=UserBriefResponse(id=str(current_user.id), name=current_user.name),
             replies=[],
             pending_agent_reply="@mit" in request.content.lower(),
             created_at=comment.created_at,
@@ -64,7 +65,6 @@ async def create_comment(
 @router.post(
     "/{comment_id}/replies",
     response_model=CommentResponse,
-    status_code=status.HTTP_201_CREATED,
     summary="대댓글 생성",
     responses={
         401: {"model": ErrorResponse},
@@ -86,7 +86,7 @@ async def create_reply(
         return CommentResponse(
             id=reply.id,
             content=reply.content,
-            author={"id": current_user.id, "name": current_user.name},
+            author=UserBriefResponse(id=str(current_user.id), name=current_user.name),
             replies=[],
             pending_agent_reply="@mit" in request.content.lower(),
             created_at=reply.created_at,

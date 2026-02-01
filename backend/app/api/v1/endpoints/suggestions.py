@@ -11,6 +11,7 @@ from app.api.dependencies import get_current_user, handle_service_error
 from app.core.neo4j import get_neo4j_driver
 from app.models.user import User
 from app.schemas import ErrorResponse
+from app.schemas.common_brief import DecisionBriefResponse, UserBriefResponse
 from app.schemas.suggestion import CreateSuggestionRequest, SuggestionResponse
 from app.services.review_service import ReviewService
 
@@ -45,12 +46,17 @@ async def create_suggestion(
             decision_id=decision_id,
             user_id=str(current_user.id),
             content=request.content,
+            meeting_id=request.meeting_id,
         )
         return SuggestionResponse(
             id=suggestion.id,
             content=suggestion.content,
-            author={"id": current_user.id, "name": current_user.name},
-            created_decision={"id": suggestion.created_decision_id, "content": request.content, "status": "draft"}
+            author=UserBriefResponse(id=str(current_user.id), name=current_user.name),
+            created_decision=DecisionBriefResponse(
+                id=suggestion.created_decision_id,
+                content=request.content,
+                status="draft",
+            )
             if suggestion.created_decision_id
             else None,
             created_at=suggestion.created_at,
