@@ -1,21 +1,26 @@
 """ContextManager - 실시간 회의 컨텍스트 관리자
 
 책임:
-1. STT 세그먼트 수신 및 L0 업데이트
-2. 토픽 전환 감지 및 L1 업데이트 트리거
+1. DB(transcripts)에서 발화 데이터 로드 (읽기 전용)
+2. 토픽 전환 감지 및 L1 요약 생성 (메모리 내 처리)
 3. 에이전트 호출 시 적절한 컨텍스트 조합 제공
 
 상태 관리:
-- DB(PostgreSQL)가 SSOT, 인메모리는 캐시
-- 워커 시작 시 DB에서 기존 상태 복원
-- 주기적으로 DB에 상태 저장
+- DB는 읽기 전용 (transcripts 테이블이 SSOT)
+- L0/L1은 에이전트 호출 시점에 메모리에서 on-demand 생성
+- 저장 없이 매 호출마다 fresh하게 구성
 """
 
+import asyncio
 import json
 import logging
-import uuid
+import uuid as uuid_module
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.infrastructure.context.config import ContextConfig
@@ -31,21 +36,28 @@ logger = logging.getLogger(__name__)
 
 
 class ContextManager:
-    """실시간 회의 컨텍스트 관리자 (Topic-Segmented)
+    """실시간 회의 컨텍스트 관리자 (Topic-Segmented, Read-Only DB)
 
     책임:
-    1. STT 수신 및 L0(현재 토픽) 버퍼링
-    2. 주기적(N턴)으로 토픽 변경 감지
-    3. 토픽 변경 시: 현재 버퍼 요약 -> L1(TopicSegment) 저장 -> 버퍼 초기화
+    1. DB(transcripts)에서 발화 로드 및 L0 버퍼링
+    2. 토픽 전환 감지 및 L1 요약 생성 (메모리 내)
+    3. 에이전트 호출 시 컨텍스트 제공
 
-    상태 영속화:
-    - 워커 재시작/스케일아웃 대응을 위해 DB에 상태 저장
-    - 인메모리는 성능을 위한 캐시로만 사용
+    데이터 흐름:
+    - load_from_db() → L0 버퍼 구성 + L1 청크 큐잉
+    - await_pending_l1() → L1 요약 병렬 생성
+    - 저장 없음 (transcripts가 유일한 SSOT)
     """
 
-    def __init__(self, meeting_id: str, config: ContextConfig | None = None):
+    def __init__(
+        self,
+        meeting_id: str,
+        config: ContextConfig | None = None,
+        db_session: AsyncSession | None = None,
+    ):
         self.meeting_id = meeting_id
         self.config = config or ContextConfig()
+        self._db = db_session
         self._llm_enabled = bool(get_settings().ncp_clovastudio_api_key)
 
         # L0: Raw Window (고정 크기)
@@ -67,10 +79,6 @@ class ContextManager:
         # 반복 요약 방지: 마지막으로 요약에 포함된 발화 ID
         self._last_summarized_utterance_id: int | None = None
 
-        # DB 동기화 추적
-        self._utterances_since_db_sync: int = 0
-        self._last_db_sync: datetime = datetime.now(timezone.utc)
-
         # 토픽 감지기
         self._topic_detector = TopicDetector(config=self.config)
 
@@ -79,8 +87,13 @@ class ContextManager:
             max_buffer_per_speaker=self.config.speaker_buffer_max_per_speaker
         )
 
+        # L1 비동기 처리용
+        self._pending_l1_chunks: list[list[Utterance]] = []  # 요약 대기 청크
+        self._l1_task: asyncio.Task | None = None  # 백그라운드 L1 처리 태스크
+        self._l1_processing: bool = False  # L1 처리 중 플래그
+
     async def add_utterance(self, utterance: Utterance) -> None:
-        """새 발화 추가
+        """새 발화 추가 (L1은 비동기 처리)
 
         Args:
             utterance: STT로 받은 발화 데이터
@@ -96,19 +109,104 @@ class ContextManager:
         # 화자 컨텍스트 업데이트
         self._speaker_context.add_utterance(utterance_with_topic)
 
-        # L1 업데이트 필요 여부 확인
-        should_update, reason, next_topic = await self._should_update_l1(
-            utterance_with_topic
-        )
-        if should_update:
-            await self._update_l1(reason, next_topic)
-
-        # DB 동기화 체크
-        await self._maybe_sync_to_db()
+        # L1 업데이트 필요 여부 확인 (토픽 전환 키워드 또는 임계값)
+        should_queue = self._should_queue_l1(utterance_with_topic)
+        if should_queue:
+            # 현재 토픽 버퍼를 청크로 저장하고 비동기 처리 시작
+            self._queue_l1_chunk()
 
         logger.debug(
             f"Utterance added: {utterance.speaker_name}: {utterance.text[:50]}..."
         )
+
+    def _should_queue_l1(self, utterance: Utterance) -> bool:
+        """L1 청크 큐잉 필요 여부 판단 (동기, 빠른 체크)"""
+        # 요약할 새 발화가 있는지 확인
+        new_utterances = self._get_unsummarized_utterances()
+        if not new_utterances:
+            return False
+
+        # 토픽 전환 키워드 감지
+        if self._topic_detector.quick_check(utterance.text):
+            return True
+
+        # 턴 수 임계값 도달
+        if len(new_utterances) >= self.config.l1_update_turn_threshold:
+            return True
+
+        return False
+
+    def _queue_l1_chunk(self) -> None:
+        """현재 토픽 버퍼를 L1 처리 큐에 추가"""
+        utterances_to_queue = self._get_unsummarized_utterances()
+        if not utterances_to_queue:
+            return
+
+        # 청크 저장
+        self._pending_l1_chunks.append(list(utterances_to_queue))
+
+        # 마지막 발화 ID 업데이트 (반복 요약 방지)
+        self._last_summarized_utterance_id = utterances_to_queue[-1].id
+        self._turn_count_since_l1 = 0
+
+        logger.info(
+            f"L1 chunk queued: {len(utterances_to_queue)} utterances, "
+            f"total pending: {len(self._pending_l1_chunks)}"
+        )
+
+    async def await_pending_l1(self) -> None:
+        """대기 중인 모든 L1 처리 완료 대기 (에이전트 호출 전 사용)
+
+        에이전트 호출 전에 이 메서드를 호출하여 모든 L1 요약이
+        완료된 상태에서 컨텍스트를 제공합니다.
+        """
+        if not self._pending_l1_chunks:
+            logger.debug("No pending L1 chunks to process")
+            return
+
+        logger.info(f"Awaiting {len(self._pending_l1_chunks)} pending L1 chunks...")
+
+        # 모든 대기 청크를 병렬로 처리
+        chunks = self._pending_l1_chunks.copy()
+        self._pending_l1_chunks.clear()
+
+        # 비동기 병렬 요약 생성
+        async def summarize_chunk(
+            chunk: list[Utterance], chunk_idx: int
+        ) -> tuple[int, dict]:
+            topic_name = f"Topic_{len(self.l1_segments) + chunk_idx + 1}"
+            if len(self.l1_segments) == 0 and chunk_idx == 0:
+                topic_name = "Intro"
+            summary_payload = await self._summarize_topic(chunk, topic_name)
+            return chunk_idx, summary_payload
+
+        tasks = [summarize_chunk(chunk, i) for i, chunk in enumerate(chunks)]
+        results = await asyncio.gather(*tasks)
+
+        # 결과를 순서대로 L1 세그먼트에 추가
+        for chunk_idx, summary_payload in sorted(results, key=lambda x: x[0]):
+            chunk = chunks[chunk_idx]
+            topic_name = f"Topic_{len(self.l1_segments) + 1}"
+            if len(self.l1_segments) == 0:
+                topic_name = "Intro"
+
+            segment = self._build_topic_segment(
+                topic_name=summary_payload.get("detected_topic") or topic_name,
+                summary_payload=summary_payload,
+                utterances=chunk,
+            )
+            self.l1_segments.append(segment)
+
+        # 현재 토픽 업데이트
+        if self.l1_segments:
+            self.current_topic = self.l1_segments[-1].name
+
+        logger.info(f"L1 processing complete: {len(self.l1_segments)} total segments")
+
+    @property
+    def has_pending_l1(self) -> bool:
+        """대기 중인 L1 처리가 있는지 확인"""
+        return len(self._pending_l1_chunks) > 0
 
     async def _should_update_l1(
         self,
@@ -229,9 +327,6 @@ class ContextManager:
         # 업데이트 추적 리셋 (UTC 사용)
         self._last_l1_update = datetime.now(timezone.utc)
         self._turn_count_since_l1 = 0
-
-        # DB에 L1 상태 저장
-        await self._sync_to_db()
 
     def _get_current_topic_summary(self) -> str:
         """현재 토픽 요약 반환"""
@@ -384,7 +479,7 @@ class ContextManager:
     ) -> TopicSegment:
         """TopicSegment 생성"""
         return TopicSegment(
-            id=str(uuid.uuid4()),
+            id=str(uuid_module.uuid4()),
             name=topic_name,
             summary=summary_payload.get("summary", ""),
             start_utterance_id=utterances[0].id,
@@ -516,62 +611,6 @@ class ContextManager:
         """토픽 감지기 접근"""
         return self._topic_detector
 
-    # === DB 동기화 메서드 ===
-
-    async def _sync_to_db(self) -> None:
-        """현재 상태를 DB에 저장
-
-        워커 재시작/스케일아웃 대응을 위해 주기적으로 호출
-        """
-        try:
-            # TODO: 실제 DB 모델 및 저장 로직 구현
-            # MeetingContextState 테이블에 저장
-            # - current_topic
-            # - l1_segments (JSON)
-            # - _last_summarized_utterance_id
-            # - _last_l1_update
-            logger.debug(f"Syncing context to DB: meeting={self.meeting_id}")
-            self._last_db_sync = datetime.now(timezone.utc)
-            self._utterances_since_db_sync = 0
-        except Exception as e:
-            logger.error(f"Failed to sync context to DB: {e}")
-
-    async def restore_from_db(self) -> bool:
-        """DB에서 기존 상태 복원
-
-        워커 시작 시 호출하여 기존 회의 컨텍스트 복원
-
-        Returns:
-            bool: 복원 성공 여부
-        """
-        try:
-            # TODO: 실제 DB 조회 및 상태 복원 로직 구현
-            # 1. MeetingContextState 테이블에서 조회
-            # 2. 인메모리 상태에 복원
-            # 3. 최근 N개 발화 DB에서 로드하여 l0_buffer 채우기
-            logger.info(f"Restoring context from DB: meeting={self.meeting_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to restore context from DB: {e}")
-            return False
-
-    async def _maybe_sync_to_db(self) -> None:
-        """조건 충족 시 DB 동기화
-
-        - 발화 N개마다
-        - 또는 시간 간격마다
-        """
-        self._utterances_since_db_sync += 1
-
-        should_sync = (
-            self._utterances_since_db_sync >= self.config.db_sync_utterance_threshold
-            or (datetime.now(timezone.utc) - self._last_db_sync).total_seconds()
-            >= self.config.db_sync_interval_seconds
-        )
-
-        if should_sync:
-            await self._sync_to_db()
-
     # === 토픽 수동 제어 ===
 
     async def force_topic_change(self, new_topic_name: str) -> None:
@@ -593,3 +632,154 @@ class ContextManager:
             keywords: 추가할 키워드 목록
         """
         self._topic_detector.add_custom_keywords(keywords)
+
+    # === DB 로드 메서드 ===
+
+    async def load_from_db(self, limit: int | None = None, build_l1: bool = True) -> int:
+        """DB(transcripts 테이블)에서 발화 데이터 로드하여 L0/L1 구성
+
+        에이전트 호출 시점에 호출하여 최신 컨텍스트를 메모리에 구성합니다.
+        L0는 항상 최근 25개 턴을 유지합니다 (deque maxlen으로 자동 관리).
+        L1은 비동기 배치 처리로 빠르게 생성합니다.
+
+        Args:
+            limit: 최대 로드 발화 수 (None이면 전체)
+            build_l1: L1 세그먼트도 생성할지 여부 (기본 True)
+
+        Returns:
+            int: 로드된 발화 수
+        """
+        if not self._db:
+            logger.warning("DB session not provided, skipping load_from_db")
+            return 0
+
+        from app.models.transcript import Transcript
+
+        query = (
+            select(Transcript)
+            .where(Transcript.meeting_id == UUID(self.meeting_id))
+            .order_by(Transcript.start_ms)
+        )
+        if limit:
+            query = query.limit(limit)
+
+        result = await self._db.execute(query)
+        rows = result.scalars().all()
+
+        # 1단계: 모든 발화를 L0 버퍼에 로드
+        utterances: list[Utterance] = []
+        for i, row in enumerate(rows):
+            utterance = Utterance(
+                id=i + 1,
+                speaker_id=str(row.user_id),
+                speaker_name="",  # TODO: user 테이블 조인으로 이름 가져오기
+                text=row.transcript_text,
+                start_ms=row.start_ms,
+                end_ms=row.end_ms,
+                confidence=row.confidence,
+                absolute_timestamp=row.start_at or row.created_at,
+            )
+            utterances.append(utterance)
+
+            # L0 버퍼에 추가
+            utterance_with_topic = utterance.model_copy(update={"topic": self.current_topic})
+            self.l0_buffer.append(utterance_with_topic)
+            self.l0_topic_buffer.append(utterance_with_topic)
+            self._speaker_context.add_utterance(utterance_with_topic)
+
+        # 2단계: L1 청크 큐잉 (build_l1=True일 때)
+        if build_l1 and utterances:
+            self._queue_l1_chunks_from_utterances(utterances)
+
+        logger.info(
+            f"Loaded {len(rows)} utterances from DB for meeting {self.meeting_id}, "
+            f"L0 buffer size: {len(self.l0_buffer)}, pending L1 chunks: {len(self._pending_l1_chunks)}"
+        )
+        return len(rows)
+
+    def _queue_l1_chunks_from_utterances(self, utterances: list[Utterance]) -> None:
+        """발화 목록을 L1 청크로 분할하여 큐에 추가"""
+        if not utterances:
+            return
+
+        # 토픽 전환 키워드로 청크 분할
+        current_chunk: list[Utterance] = []
+        threshold = self.config.l1_update_turn_threshold
+
+        for utt in utterances:
+            current_chunk.append(utt)
+
+            # 토픽 전환 키워드 감지 또는 임계값 도달 시 청크 분할
+            is_topic_change = self._topic_detector.quick_check(utt.text)
+            if is_topic_change or len(current_chunk) >= threshold:
+                self._pending_l1_chunks.append(current_chunk)
+                current_chunk = []
+
+        # 남은 발화 처리
+        if current_chunk:
+            self._pending_l1_chunks.append(current_chunk)
+
+        logger.info(f"Queued {len(self._pending_l1_chunks)} L1 chunks for processing")
+
+    async def _build_l1_batch(self, utterances: list[Utterance]) -> None:
+        """L1 세그먼트 배치 생성 (비동기 병렬 처리)
+
+        발화를 토픽 키워드 기준으로 청크로 나누고,
+        각 청크의 요약을 병렬로 생성합니다.
+        """
+        import asyncio
+
+        if not utterances:
+            return
+
+        # 토픽 전환 키워드로 청크 분할
+        chunks: list[list[Utterance]] = []
+        current_chunk: list[Utterance] = []
+        threshold = self.config.l1_update_turn_threshold
+
+        for utt in utterances:
+            current_chunk.append(utt)
+
+            # 토픽 전환 키워드 감지 또는 임계값 도달 시 청크 분할
+            is_topic_change = self._topic_detector.quick_check(utt.text)
+            if is_topic_change or len(current_chunk) >= threshold:
+                chunks.append(current_chunk)
+                current_chunk = []
+
+        # 남은 발화 처리
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        if not chunks:
+            return
+
+        logger.info(f"L1 배치 요약 시작: {len(chunks)}개 청크")
+
+        # 비동기 병렬 요약 생성
+        async def summarize_chunk(
+            chunk: list[Utterance], chunk_idx: int
+        ) -> tuple[int, dict]:
+            topic_name = f"Topic_{chunk_idx + 1}" if chunk_idx > 0 else "Intro"
+            summary_payload = await self._summarize_topic(chunk, topic_name)
+            return chunk_idx, summary_payload
+
+        tasks = [summarize_chunk(chunk, i) for i, chunk in enumerate(chunks)]
+        results = await asyncio.gather(*tasks)
+
+        # 결과를 순서대로 L1 세그먼트에 추가
+        for chunk_idx, summary_payload in sorted(results, key=lambda x: x[0]):
+            chunk = chunks[chunk_idx]
+            topic_name = f"Topic_{chunk_idx + 1}" if chunk_idx > 0 else "Intro"
+
+            segment = self._build_topic_segment(
+                topic_name=summary_payload.get("detected_topic") or topic_name,
+                summary_payload=summary_payload,
+                utterances=chunk,
+            )
+            self.l1_segments.append(segment)
+
+        # 현재 토픽 업데이트
+        if self.l1_segments:
+            self.current_topic = self.l1_segments[-1].name
+
+        logger.info(f"L1 배치 요약 완료: {len(self.l1_segments)}개 세그먼트 생성")

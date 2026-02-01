@@ -61,34 +61,53 @@ class ContextBuilder:
         self,
         ctx: ContextManager,
         l0_limit: int = 10,
+        user_query: str | None = None,
     ) -> str:
-        """Planning 입력용 요약 컨텍스트 (L0 + L1 토픽 목록만)"""
+        """Planning 입력용 요약 컨텍스트 (질문 → 토픽 목록 → 최근 발화)
+
+        Args:
+            ctx: ContextManager 인스턴스
+            l0_limit: L0 발화 최대 개수
+            user_query: 사용자 질문 (명확하게 분리하여 표시)
+
+        Returns:
+            str: 포맷팅된 컨텍스트
+        """
         lines: list[str] = []
 
-        # 현재 토픽
+        # 1. 사용자 질문 (가장 먼저)
+        if user_query:
+            lines.append("## 사용자 질문")
+            lines.append(f"**\"{user_query}\"**")
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+
+        # 2. 현재 토픽
         lines.append(f"## 현재 토픽: {ctx.current_topic}")
         lines.append("")
 
-        # L0 최근 발화
-        lines.append("## L0 최근 발화")
+        # 3. L1 토픽 목록 (과거 논의)
+        lines.append("## L1 토픽 목록 (과거 논의)")
+        segments = ctx.get_l1_segments()
+        if segments:
+            for seg in segments:
+                summary_preview = seg.summary[:100] + "..." if len(seg.summary) > 100 else seg.summary
+                lines.append(
+                    f"- **{seg.name}** (발화 {seg.start_utterance_id}~{seg.end_utterance_id}): {summary_preview}"
+                )
+        else:
+            lines.append("- 없음")
+
+        # 4. L0 최근 발화 (회의 맥락)
+        lines.append("")
+        lines.append("## L0 최근 발화 (회의 맥락)")
         recent = ctx.get_l0_utterances(limit=l0_limit)
         if recent:
             for u in recent:
                 ts = u.absolute_timestamp.strftime("%H:%M:%S")
                 topic_label = u.topic or ctx.current_topic
                 lines.append(f"[{ts}] {u.speaker_name} (topic: {topic_label}): {u.text}")
-        else:
-            lines.append("- 없음")
-
-        # L1 토픽 목록
-        lines.append("")
-        lines.append("## L1 토픽 목록")
-        segments = ctx.get_l1_segments()
-        if segments:
-            for seg in segments:
-                lines.append(
-                    f"- {seg.name} (utterances {seg.start_utterance_id}~{seg.end_utterance_id})"
-                )
         else:
             lines.append("- 없음")
 
