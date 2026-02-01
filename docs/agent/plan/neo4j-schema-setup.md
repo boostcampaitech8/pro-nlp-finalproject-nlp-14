@@ -27,8 +27,8 @@ MIT 그래프 데이터베이스 스키마 정의 및 데이터 구축
 | CONTAINS | Meeting | Agenda | - | 회의에 안건 포함 |
 | HAS_DECISION | Agenda | Decision | - | 안건의 결정사항 |
 | REVIEWED | User | Decision | status, responded_at | GT 승인 |
-| SUPERSEDES | Decision | Decision | - | 결정 대체 (버전 관리) |
-| SUPERSEDED_BY | Decision | Decision | - | 원본 → 새 버전 관계 |
+| SUPERSEDES | Decision | Decision | - | draft → superseded (Suggestion 히스토리) |
+| OUTDATES | Decision | Decision | - | latest → outdated (GT 변화 추적) |
 | TRIGGERS | Decision | ActionItem | - | 결정에서 액션아이템 파생 |
 | ASSIGNED_TO | User | ActionItem | assigned_at | 액션아이템 할당 |
 | SUGGESTS | User | Suggestion | - | 사용자가 수정 제안 작성 |
@@ -173,11 +173,18 @@ SHOW INDEXES;
 
 ## 7. 관계 다이어그램
 
-### Suggestion 흐름
+### Suggestion 흐름 (draft → superseded)
 ```
-User ─SUGGESTS─> Suggestion ─CREATES─> Decision (새 버전, status='draft')
+User ─SUGGESTS─> Suggestion ─CREATES─> Decision (새 draft)
                                              │
-Decision (원본) ─SUPERSEDED_BY─────────────>─┘
+                        ┌──SUPERSEDES────────┘
+                        ▼
+               Decision (기존 draft → superseded)
+```
+
+### GT 변화 흐름 (latest → outdated)
+```
+Decision (새 latest) ─OUTDATES─> Decision (기존 latest → outdated)
 ```
 
 ### Comment 흐름
@@ -189,9 +196,21 @@ User ─COMMENTS─> Comment ─ON─> Decision
 
 ### 전체 Minutes View 구조
 ```
-Meeting ─CONTAINS─> Agenda ─HAS_DECISION─> Decision
-                                               │
-                                               ├─> Suggestion (via SUPERSEDED_BY -> CREATES)
-                                               ├─> Comment (via ON)
-                                               └─> ActionItem (via TRIGGERS)
+Meeting ─CONTAINS─> Agenda ─HAS_DECISION─> Decision (active: draft/latest)
+   │                                            │
+   └──DECIDED_IN────────────────────────────────┤
+                                                │
+                     ┌──SUPERSEDES──────────────┼─> Decision (superseded, 히스토리)
+                     │                          │
+                     │ ┌──OUTDATES──────────────┼─> Decision (outdated, 이전 GT)
+                     │ │                        │
+                     │ │                        ├─> Suggestion (via ON -> CREATES)
+                     │ │                        ├─> Comment (via ON)
+                     │ │                        └─> ActionItem (via TRIGGERS)
 ```
+
+### 관계 구분 요약
+| 관계 | 용도 | 상태 전이 |
+|------|------|----------|
+| SUPERSEDES | Suggestion 히스토리 | draft → superseded |
+| OUTDATES | GT 변화 추적 | latest → outdated |
