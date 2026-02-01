@@ -13,7 +13,7 @@
     ctx_manager = ContextManager(meeting_id="meeting-xxx")
 
     # 기존 상태 복원 (워커 재시작 대응)
-    await ctx_manager.restore_from_db()
+    await ctx_manager.load_from_db()
 
     # STT 세그먼트 수신 시
     await ctx_manager.add_utterance(utterance)
@@ -37,10 +37,10 @@ from app.infrastructure.context.models import (
     AgentContext,
     Participant,
     TopicSegment,
+    TopicSummary,
     Utterance,
 )
 from app.infrastructure.context.speaker_context import SpeakerContext, SpeakerStats
-from app.infrastructure.context.topic_detector import TopicChangeResult, TopicDetector
 
 __all__ = [
     # Config
@@ -50,8 +50,6 @@ __all__ = [
     "ContextBuilder",
     "format_context_as_system_prompt",
     # Detectors
-    "TopicDetector",
-    "TopicChangeResult",
     "SpeakerContext",
     "SpeakerStats",
     # Models
@@ -59,5 +57,6 @@ __all__ = [
     "AgentContext",
     "Utterance",
     "TopicSegment",
+    "TopicSummary",
     "Participant",
 ]

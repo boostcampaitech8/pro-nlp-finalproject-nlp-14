@@ -13,7 +13,7 @@ OrchestrationState에 주입할 컨텍스트를 생성
 from datetime import datetime, timezone
 
 from app.infrastructure.context.manager import ContextManager
-from app.infrastructure.context.models import AgentCallType, AgentContext, Participant
+from app.infrastructure.context.models import AgentCallType, AgentContext, Participant, TopicSegment
 
 
 class ContextBuilder:
@@ -100,6 +100,60 @@ class ContextBuilder:
             lines.append("- 없음")
 
         # 4. L0 최근 발화 (회의 맥락)
+        lines.append("")
+        lines.append("## L0 최근 발화 (회의 맥락)")
+        recent = ctx.get_l0_utterances(limit=l0_limit)
+        if recent:
+            for u in recent:
+                ts = u.absolute_timestamp.strftime("%H:%M:%S")
+                topic_label = u.topic or ctx.current_topic
+                lines.append(f"[{ts}] {u.speaker_name} (topic: {topic_label}): {u.text}")
+        else:
+            lines.append("- 없음")
+
+        return "\n".join(lines)
+
+    async def build_context_with_search(
+        self,
+        ctx: ContextManager,
+        query: str,
+        l0_limit: int = 25,
+        topic_limit: int | None = None,
+    ) -> str:
+        """시맨틱 서치 기반 컨텍스트 구성 (L0 + 관련 토픽).
+
+        Args:
+            ctx: ContextManager 인스턴스
+            query: 사용자 쿼리
+            l0_limit: L0 발화 최대 개수
+            topic_limit: Top-K 토픽 개수 (None이면 config 사용)
+
+        Returns:
+            str: 포맷팅된 컨텍스트
+        """
+        lines: list[str] = []
+
+        if query:
+            lines.append("## 사용자 질문")
+            lines.append(f"**\"{query}\"**")
+            lines.append("")
+
+        # 인메모리 시맨틱 서치 사용
+        topic_limit = topic_limit or ctx.config.topic_search_top_k
+        topic_results: list[TopicSegment] = ctx.search_similar_topics(
+            query, top_k=topic_limit
+        )
+
+        lines.append("## 관련 토픽 요약 (Semantic Search)")
+        if topic_results:
+            for seg in topic_results:
+                lines.append(
+                    f"- **{seg.name}** "
+                    f"(발화 {seg.start_utterance_id}~{seg.end_utterance_id}): {seg.summary}"
+                )
+        else:
+            lines.append("- 없음")
+
         lines.append("")
         lines.append("## L0 최근 발화 (회의 맥락)")
         recent = ctx.get_l0_utterances(limit=l0_limit)
