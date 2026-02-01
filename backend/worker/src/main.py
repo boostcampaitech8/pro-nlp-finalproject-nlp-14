@@ -283,6 +283,7 @@ class RealtimeWorker:
             end_ms=segment.end_ms,
             text=segment.text,
             confidence=segment.confidence,
+            min_confidence=segment.min_confidence,
             agent_call=False,
         )
 
