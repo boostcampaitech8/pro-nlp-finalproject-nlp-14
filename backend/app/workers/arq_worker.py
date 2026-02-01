@@ -140,6 +140,171 @@ async def mit_action_task(ctx: dict, decision_id: str) -> dict:
         }
 
 
+async def process_suggestion_task(
+    ctx: dict, suggestion_id: str, decision_id: str, content: str
+) -> dict:
+    """Suggestion AI 분석 태스크
+
+    NOTE: 새로운 설계에서는 Suggestion 생성 시 즉시 draft Decision이 생성됩니다.
+    이 태스크는 AI 분석 후 Suggestion 상태 업데이트만 수행합니다.
+
+    워크플로우:
+    1. Decision 컨텍스트 조회
+    2. LangGraph mit-suggestion 워크플로우 실행 (선택적)
+    3. Suggestion 상태 업데이트 (accepted/rejected)
+
+    Args:
+        ctx: ARQ 컨텍스트
+        suggestion_id: Suggestion ID
+        decision_id: 원본 Decision ID
+        content: Suggestion 내용
+
+    Returns:
+        dict: 작업 결과
+    """
+    logger.info(f"[process_suggestion_task] Starting: suggestion={suggestion_id}")
+
+    try:
+        # 1. Decision 컨텍스트 조회
+        driver = get_neo4j_driver()
+        kg_repo = KGRepository(driver)
+        decision = await kg_repo.get_decision(decision_id)
+
+        if not decision:
+            logger.error(f"[process_suggestion_task] Decision not found: {decision_id}")
+            await kg_repo.update_suggestion_status(suggestion_id, "rejected")
+            return {"status": "error", "message": "Decision not found"}
+
+        # 2. mit-suggestion 워크플로우 실행 (선택적)
+        # TODO: LangGraph 워크플로우 구현 시 활성화
+        # from app.infrastructure.graph.workflows.mit_suggestion.graph import (
+        #     mit_suggestion_graph,
+        # )
+        #
+        # result = await mit_suggestion_graph.ainvoke({
+        #     "suggestion_content": content,
+        #     "decision_context": decision.content,
+        # })
+
+        # 3. Suggestion 상태 업데이트 (새 Decision은 이미 생성됨)
+        # AI 분석 결과에 따라 accepted/rejected로 업데이트
+        # 현재는 임시로 accepted로 설정
+        await kg_repo.update_suggestion_status(suggestion_id, "accepted")
+
+        logger.info(
+            f"[process_suggestion_task] Completed: suggestion={suggestion_id}"
+        )
+
+        return {
+            "status": "success",
+            "suggestion_id": suggestion_id,
+        }
+
+    except Exception as e:
+        logger.exception(f"[process_suggestion_task] Failed: suggestion={suggestion_id}")
+        # 실패 시 rejected로 변경
+        try:
+            driver = get_neo4j_driver()
+            kg_repo = KGRepository(driver)
+            await kg_repo.update_suggestion_status(suggestion_id, "rejected")
+        except Exception:
+            pass
+        return {
+            "status": "failed",
+            "suggestion_id": suggestion_id,
+            "error": str(e),
+        }
+
+
+async def process_mit_mention(
+    ctx: dict, comment_id: str, decision_id: str, content: str
+) -> dict:
+    """@mit 멘션 처리 태스크
+
+    Comment에서 @mit 멘션 시 Agent가 Decision 컨텍스트를 바탕으로
+    응답을 생성하고 대댓글로 작성합니다.
+
+    Args:
+        ctx: ARQ 컨텍스트
+        comment_id: 원본 Comment ID
+        decision_id: Decision ID
+        content: Comment 내용
+
+    Returns:
+        dict: 작업 결과
+    """
+    logger.info(f"[process_mit_mention] Starting: comment={comment_id}")
+
+    try:
+        # 1. Decision 컨텍스트 조회
+        driver = get_neo4j_driver()
+        kg_repo = KGRepository(driver)
+        decision = await kg_repo.get_decision(decision_id)
+
+        if not decision:
+            logger.error(f"[process_mit_mention] Decision not found: {decision_id}")
+            return {"status": "error", "message": "Decision not found"}
+
+        # 2. mit-mention 워크플로우 실행
+        # TODO: LangGraph 워크플로우 구현 시 활성화
+        # from app.infrastructure.graph.workflows.mit_mention.graph import (
+        #     mit_mention_graph,
+        # )
+        #
+        # result = await mit_mention_graph.ainvoke({
+        #     "comment_content": content,
+        #     "decision_context": decision.content,
+        # })
+
+        # 임시: AI 응답 생성 (워크플로우 구현 전까지)
+        # MIT Agent 시스템 사용자로 대댓글 작성
+        agent_id = await kg_repo.get_or_create_system_agent()
+
+        # 임시 AI 응답 생성
+        decision_preview = decision.content[:100] if decision.content else ""
+        ai_response = (
+            f"안녕하세요, 부덕이입니다. "
+            f"'{content[:50]}...'에 대해 분석해보겠습니다.\n\n"
+            f"[Decision 컨텍스트: {decision_preview}...]\n\n"
+            f"(AI 워크플로우 구현 예정)"
+        )
+
+        # 대댓글 생성
+        reply = await kg_repo.create_reply(
+            comment_id=comment_id,
+            user_id=agent_id,
+            content=ai_response,
+            pending_agent_reply=False,
+        )
+
+        # 원본 comment의 pending_agent_reply 해제
+        await kg_repo.update_comment_pending_agent_reply(comment_id, False)
+
+        logger.info(f"[process_mit_mention] Reply created: {reply.id}")
+
+        return {
+            "status": "success",
+            "comment_id": comment_id,
+            "reply_id": reply.id,
+            "response": ai_response,
+        }
+
+    except Exception as e:
+        logger.exception(f"[process_mit_mention] Failed: comment={comment_id}")
+        # 실패 시에도 pending 상태 해제 (UI가 무한 대기하지 않도록)
+        try:
+            driver = get_neo4j_driver()
+            kg_repo = KGRepository(driver)
+            await kg_repo.update_comment_pending_agent_reply(comment_id, False)
+        except Exception:
+            pass  # Best effort
+        return {
+            "status": "failed",
+            "comment_id": comment_id,
+            "error": str(e),
+        }
+
+
 def _get_redis_settings() -> RedisSettings:
     """Redis 연결 설정 생성"""
     settings = get_settings()
@@ -160,6 +325,8 @@ class WorkerSettings:
     functions = [
         generate_pr_task,
         mit_action_task,
+        process_suggestion_task,
+        process_mit_mention,
     ]
 
     # Redis 연결 설정 (arq는 인스턴스를 기대)

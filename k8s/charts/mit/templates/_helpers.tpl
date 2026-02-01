@@ -4,20 +4,26 @@
 
 {{/*
 이미지 경로 생성
+사용법: {{ include "mit.image" (dict "Values" .Values "name" "backend") }}
 */}}
 {{- define "mit.image" -}}
+{{- $imageName := printf "mit-%s" .name -}}
+{{- $tag := index .Values.images .name "tag" | default "latest" -}}
 {{- if .Values.global.registry -}}
-{{ .Values.global.registry }}/{{ .image }}:{{ .tag | default "latest" }}
+{{ .Values.global.registry }}/{{ $imageName }}:{{ $tag }}
 {{- else -}}
-{{ .image }}:{{ .tag | default "latest" }}
+{{ $imageName }}:{{ $tag }}
 {{- end -}}
 {{- end -}}
 
 {{/*
-Database URL 생성
+imagePullSecrets 설정
 */}}
-{{- define "mit.databaseUrl" -}}
-postgresql+asyncpg://{{ .Values.database.user }}:{{ .Values.database.password }}@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}
+{{- define "mit.imagePullSecrets" -}}
+{{- if .Values.images.pullSecret }}
+imagePullSecrets:
+  - name: {{ .Values.images.pullSecret }}
+{{- end }}
 {{- end -}}
 
 {{/*
@@ -32,13 +38,6 @@ LiveKit 내부 URL 생성
 */}}
 {{- define "mit.livekitWsUrl" -}}
 ws://{{ .Values.livekit.host }}:{{ .Values.livekit.port }}
-{{- end -}}
-
-{{/*
-Neo4j Bolt URL 생성
-*/}}
-{{- define "mit.neo4jUri" -}}
-bolt://{{ .Values.neo4j.host }}:{{ .Values.neo4j.boltPort }}
 {{- end -}}
 
 {{/*

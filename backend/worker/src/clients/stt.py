@@ -57,6 +57,7 @@ class STTSegment:
     start_ms: int
     end_ms: int
     confidence: float
+    min_confidence: float
     is_final: bool
     timestamp: datetime
 
@@ -94,6 +95,7 @@ class ClovaSpeechSTTClient:
         self._end_timestamp: int = 0
         self._confidence_sum = 0.0
         self._confidence_count = 0
+        self._min_confidence = 1.0
 
     async def connect(self) -> None:
         """gRPC 채널 연결"""
@@ -180,6 +182,7 @@ class ClovaSpeechSTTClient:
         self._end_timestamp = 0
         self._confidence_sum = 0.0
         self._confidence_count = 0
+        self._min_confidence = 1.0
 
     async def _process_responses(self, responses) -> None:
         """gRPC 응답 처리
@@ -220,15 +223,29 @@ class ClovaSpeechSTTClient:
                                 self._start_timestamp = start_ts
                             self._end_timestamp = max(self._end_timestamp, end_ts)
 
-                            # confidence 평균 계산용
+                            # confidence 평균/최소 계산용
                             if confidence > 0:
                                 self._confidence_sum += confidence
                                 self._confidence_count += 1
+                                self._min_confidence = min(self._min_confidence, confidence)
 
                         logger.debug(
                             f"Transcript: '{text}' pos={position} -> "
                             f"full='{self._full_text}' (epFlag={is_final})"
                         )
+
+                        # 중간 결과도 콜백 전달 (wake word 조기 감지용)
+                        if not is_final and text.strip() and self.on_result:
+                            segment = STTSegment(
+                                text=self._full_text.strip(),
+                                start_ms=self._start_timestamp or 0,
+                                end_ms=self._end_timestamp,
+                                confidence=confidence,
+                                min_confidence=self._min_confidence if self._confidence_count > 0 else confidence,
+                                is_final=False,
+                                timestamp=timestamp,
+                            )
+                            self.on_result(segment)
 
                         # epFlag=True: 발화 종료, 누적된 전체 텍스트로 콜백
                         if is_final:
@@ -243,6 +260,7 @@ class ClovaSpeechSTTClient:
                                     start_ms=self._start_timestamp or 0,
                                     end_ms=self._end_timestamp,
                                     confidence=avg_confidence,
+                                    min_confidence=self._min_confidence if self._confidence_count > 0 else 0.0,
                                     is_final=True,
                                     timestamp=timestamp,
                                 )

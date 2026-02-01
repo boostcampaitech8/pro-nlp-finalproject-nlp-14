@@ -25,11 +25,12 @@ data:
   LIVEKIT_WS_URL: {{ include "mit.livekitWsUrl" . | quote }}
   LIVEKIT_EXTERNAL_URL: {{ .Values.livekit.externalUrl | quote }}
 
-  # Neo4j
-  NEO4J_URI: {{ include "mit.neo4jUri" . | quote }}
+  # Neo4j (외부 서버)
+  NEO4J_URI: {{ .Values.neo4j.uri | quote }}
 
   # Worker
   CLOVA_STT_ENDPOINT: {{ .Values.worker.clovaSttEndpoint | quote }}
   BACKEND_API_URL: {{ include "mit.backendUrl" . | quote }}
-  WORKER_IMAGE: {{ include "mit.image" (dict "Values" .Values "image" "mit-worker") | quote }}
+  WORKER_IMAGE: {{ include "mit.image" (dict "Values" .Values "name" "worker") | quote }}
+  IMAGE_PULL_SECRET: {{ .Values.images.pullSecret | quote }}
   KUBERNETES_NAMESPACE: {{ .Values.global.namespace | quote }}

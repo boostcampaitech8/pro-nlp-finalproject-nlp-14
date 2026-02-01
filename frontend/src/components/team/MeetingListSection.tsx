@@ -12,7 +12,7 @@ import {
   MEETING_STATUS_COLORS,
   MEETING_STATUS_LABELS,
 } from '@/constants';
-import { prReviewService } from '@/services/prReviewService';
+import { kgService } from '@/services/kgService';
 import type { Meeting, MeetingStatus } from '@/types';
 
 interface MeetingListSectionProps {
@@ -53,7 +53,7 @@ export function MeetingListSection({
         setDecisionsMap((prev) => ({ ...prev, [meeting.id]: null }));
 
         try {
-          const hasDecisions = await prReviewService.hasDecisions(meeting.id);
+          const hasDecisions = await kgService.hasDecisions(meeting.id);
           setDecisionsMap((prev) => ({ ...prev, [meeting.id]: hasDecisions }));
         } catch {
           setDecisionsMap((prev) => ({ ...prev, [meeting.id]: false }));
@@ -73,8 +73,8 @@ export function MeetingListSection({
 
     setGeneratingMap((prev) => ({ ...prev, [meetingId]: true }));
     try {
-      await prReviewService.generatePR(meetingId);
-      alert('PR 생성 작업이 시작되었습니다. 잠시 후 PR Review에서 확인하세요.');
+      await kgService.generatePR(meetingId);
+      alert('PR 생성 작업이 시작되었습니다. 잠시 후 회의록에서 확인하세요.');
     } catch (error) {
       console.error('Failed to generate PR:', error);
       alert('PR 생성에 실패했습니다.');
@@ -83,11 +83,11 @@ export function MeetingListSection({
     }
   };
 
-  // PR Review 페이지 이동
-  const handleGoToReview = (e: React.MouseEvent, meetingId: string) => {
+  // Minutes 페이지 이동
+  const handleGoToMinutes = (e: React.MouseEvent, meetingId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    navigate(`/dashboard/meetings/${meetingId}/review`);
+    navigate(`/dashboard/meetings/${meetingId}/minutes`);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -233,9 +233,9 @@ export function MeetingListSection({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={(e) => handleGoToReview(e, meeting.id)}
+                          onClick={(e) => handleGoToMinutes(e, meeting.id)}
                         >
-                          PR Review
+                          View Minutes
                         </Button>
                       ) : (
                         <Button

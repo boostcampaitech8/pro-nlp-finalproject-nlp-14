@@ -55,13 +55,13 @@ make k8s-setup
 # 2. infra 빌드 및 배포 (초기화 대기)
 make k8s-infra
 
-#3. realtime worker 빌드
+# 3. realtime worker 빌드
 make k8s-build-worker
 
-# 3. 포트 포워딩
+# 4. 포트 포워딩
 make k8s-pf
 
-# 6. fe / be 로컬 실행
+# 5. fe / be 로컬 실행
 make dev
 
 ```
@@ -91,33 +91,21 @@ kubectl -n mit logs job/realtime-worker-meeting-<meetingid> # 워커 로그
 make k8s-clean
 ```
 
-## 프로덕션 환경 (k3s)
+## 프로덕션 배포 (k3s)
 
-### 설정
-
-```bash
-# .env 파일 생성 및 시크릿 설정
-cp .env.prod.example .env
-# .env 파일에 실제 시크릿 값 입력
-
-# 배포
-make k8s-deploy-prod
-```
+[deploy-prod.sh](scripts/deploy-prod.sh) 참고.
 
 ## Makefile 타겟 요약
 
 | 타겟 | 설명 |
 |------|------|
 | `k8s-setup` | k3d 클러스터 생성 |
+| `k8s-infra` | 인프라 배포 (Redis, LiveKit) |
 | `k8s-deploy` | 로컬 배포 (빌드 + 배포) |
-| `k8s-deploy-prod` | 프로덕션 배포 |
 | `k8s-push` | 전체 빌드 & 재시작 |
 | `k8s-push-be` | Backend 빌드 & 재시작 |
 | `k8s-push-fe` | Frontend 빌드 & 재시작 |
 | `k8s-push-worker` | Worker 빌드 & 재시작 |
-| `k8s-migrate` | DB 마이그레이션 실행 |
-| `k8s-db-status` | DB 마이그레이션 상태 확인 |
-| `k8s-neo4j-update` | Neo4j 스키마 업데이트 (제약조건 + 인덱스) |
 | `k8s-pf` | 포트 포워딩 (백그라운드) |
 | `k8s-status` | Pod 상태 확인 |
 | `k8s-logs svc=X` | 로그 보기 |
@@ -130,14 +118,12 @@ make k8s-deploy-prod
                                                |
                                                +--> /api/*     --> backend:8000
                                                +--> /livekit/* --> lk-server:80
-                                               +--> /storage/* --> minio:9000
                                                +--> /*         --> static files
 
-backend:8000 --> postgres-postgresql:5432  (PostgreSQL)
-               --> redis-master:6379        (Redis)
-               --> minio:9000               (MinIO)
-               --> lk-server:80             (LiveKit)
-               --> neo4j:7687               (Neo4j Bolt)
+backend:8000 --> PostgreSQL (외부)
+               --> Neo4j (외부)
+               --> redis-master:6379  (k8s)
+               --> lk-server:80       (k8s)
 ```
 
 ## 디렉토리 구조
@@ -163,8 +149,5 @@ k8s/
 
 | 차트 | 용도 |
 |------|------|
-| bitnami/postgresql | PostgreSQL 15 |
 | bitnami/redis | Redis 7 |
-| minio/minio | 오브젝트 스토리지 |
 | livekit/livekit-server | WebRTC SFU |
-| neo4j/neo4j | Graph DB (Community Edition) |
