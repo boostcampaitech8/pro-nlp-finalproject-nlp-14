@@ -16,6 +16,11 @@ from app.core.database import get_db
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.models.transcript import Transcript
 from app.services.agent_service import AgentService
+from app.services.context_runtime import (
+    get_or_create_runtime,
+    get_transcript_start_ms,
+    update_runtime_from_db,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["Agent"])
@@ -87,10 +92,23 @@ async def update_agent_context(
         request.pre_transcript_id,
     )
 
-    # TODO: 이전 transcript 조회 후 context 저장 로직 구현
-    # 1. pre_transcript_id의 created_at 조회
-    # 2. 해당 시점 이전의 모든 transcript 조회
-    # 3. meeting 테이블에 agent_context 저장
+    cutoff_start_ms = await get_transcript_start_ms(db, request.pre_transcript_id)
+    if cutoff_start_ms is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    runtime = await get_or_create_runtime(str(request.meeting_id))
+    async with runtime.lock:
+        updated = await update_runtime_from_db(
+            runtime,
+            db,
+            str(request.meeting_id),
+            cutoff_start_ms,
+        )
+    logger.info(
+        "Agent context update 완료: meeting_id=%s, added=%d",
+        request.meeting_id,
+        updated,
+    )
 
     return Response(status_code=200)
 

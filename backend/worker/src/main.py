@@ -70,6 +70,8 @@ class RealtimeWorker:
         self._wake_word_pending: dict[str, bool] = {}
         # context 선준비 작업 (wake word 감지 시 시작, 단일 task)
         self._context_prep_task: asyncio.Task | None = None
+        # 발화별 context 업데이트 작업 (단일 task)
+        self._context_update_task: asyncio.Task | None = None
         # 현재 실행 중인 Agent 파이프라인 Task
         self._current_agent_task: asyncio.Task | None = None
 
@@ -290,6 +292,12 @@ class RealtimeWorker:
         response = await self.api_client.send_transcript_segment(request)
         if response:
             logger.debug(f"트랜스크립트 저장: id={response.id}")
+            if self._agent_enabled:
+                if self._context_update_task and not self._context_update_task.done():
+                    self._context_update_task.cancel()
+                self._context_update_task = asyncio.create_task(
+                    self._update_context_realtime(response.id)
+                )
 
         # wake word 처리: 중간 결과에서 이미 감지했거나 final에서 감지
         wake_word_triggered = self._wake_word_pending.pop(user_id, False)
@@ -338,6 +346,16 @@ class RealtimeWorker:
             logger.info("Context 선준비 완료")
         except Exception as e:
             logger.warning(f"Context 선준비 실패 (무시): {e}")
+
+    async def _update_context_realtime(self, transcript_id: str) -> None:
+        """발화 저장 직후 Context 업데이트 (실시간)"""
+        try:
+            await self.api_client.update_agent_context(
+                meeting_id=self.meeting_id,
+                pre_transcript_id=transcript_id,
+            )
+        except Exception as e:
+            logger.debug(f"Context 실시간 업데이트 실패 (무시): {e}")
 
     async def _run_agent_pipeline_with_prep(
         self,

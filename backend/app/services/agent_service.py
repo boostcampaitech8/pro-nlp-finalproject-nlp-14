@@ -19,6 +19,11 @@ from app.infrastructure.agent import ClovaStudioLLMClient
 from app.infrastructure.context import ContextBuilder, ContextManager
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.infrastructure.graph.orchestration.nodes.planning import create_plan
+from app.services.context_runtime import (
+    get_latest_start_ms,
+    get_or_create_runtime,
+    update_runtime_from_db,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +84,25 @@ class AgentService:
             user_input[:50] if user_input else "",
         )
 
-        # 1. ContextManager 초기화 및 DB에서 발화 로드 (L0/L1)
-        ctx_manager = ContextManager(meeting_id=meeting_id, db_session=db)
-        loaded = await ctx_manager.load_from_db()
-        logger.info("DB에서 %d개 발화 로드됨", loaded)
+        # 1. ContextManager runtime 갱신 (실시간 업데이트 반영)
+        runtime = await get_or_create_runtime(meeting_id)
+        async with runtime.lock:
+            latest_start_ms = await get_latest_start_ms(db, meeting_id)
+            if latest_start_ms is not None:
+                await update_runtime_from_db(
+                    runtime,
+                    db,
+                    meeting_id,
+                    latest_start_ms,
+                )
+            ctx_manager = runtime.manager
+            loaded = runtime.last_utterance_id
+        logger.info("Context runtime 로드됨: %d개 발화", loaded)
 
-        # 2. 대기 중인 L1 처리 완료 대기
-        if ctx_manager.has_pending_l1:
-            await ctx_manager.await_pending_l1()
+        # 2. 대기 중/실행 중인 L1 처리 완료 대기
+        l1_was_busy = ctx_manager.has_pending_l1 or ctx_manager.is_l1_running
+        await ctx_manager.await_l1_idle()
+        if l1_was_busy:
             logger.info("L1 처리 완료: %d개 세그먼트", len(ctx_manager.l1_segments))
 
         # 3. ContextBuilder로 planning context 구성 (질문 포함)
@@ -127,9 +143,14 @@ class AgentService:
                 logger.warning("토픽 매칭 실패: %s", missing)
 
             # 8. 최종 상태 구성 후 Orchestration 실행
+            orchestration_payload = {
+                key: value
+                for key, value in planning_result.items()
+                if key != "required_topics"
+            }
             full_state = {
                 **initial_state,
-                **planning_result,
+                **orchestration_payload,
                 "additional_context": additional_context,
                 "skip_planning": True,  # 이미 planning 완료
             }
