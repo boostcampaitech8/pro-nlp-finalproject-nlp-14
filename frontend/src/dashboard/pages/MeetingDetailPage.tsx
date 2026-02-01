@@ -16,7 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
 import type { MeetingStatus, ParticipantRole, TeamMember } from '@/types';
 import { teamService } from '@/services/teamService';
-import { prReviewService } from '@/services/prReviewService';
+import { kgService } from '@/services/kgService';
 import api from '@/services/api';
 
 export function MeetingDetailPage() {
@@ -59,7 +59,7 @@ export function MeetingDetailPage() {
   useEffect(() => {
     if (currentMeeting && currentMeeting.status !== 'scheduled') {
       setCheckingDecisions(true);
-      prReviewService.hasDecisions(currentMeeting.id)
+      kgService.hasDecisions(currentMeeting.id)
         .then(setHasDecisions)
         .finally(() => setCheckingDecisions(false));
     }
@@ -155,8 +155,8 @@ export function MeetingDetailPage() {
 
     setGeneratingPR(true);
     try {
-      await prReviewService.generatePR(meetingId);
-      alert('PR 생성 작업이 시작되었습니다. 잠시 후 PR Review에서 확인하세요.');
+      await kgService.generatePR(meetingId);
+      alert('PR 생성 작업이 시작되었습니다. 잠시 후 회의록에서 확인하세요.');
     } catch (error) {
       console.error('Failed to generate PR:', error);
       alert('PR 생성에 실패했습니다.');
@@ -278,9 +278,9 @@ export function MeetingDetailPage() {
                 ) : hasDecisions ? (
                   <Button
                     variant="primary"
-                    onClick={() => navigate(`/dashboard/meetings/${meetingId}/review`)}
+                    onClick={() => navigate(`/dashboard/meetings/${meetingId}/minutes`)}
                   >
-                    PR Review
+                    View Minutes
                   </Button>
                 ) : (
                   <Button
