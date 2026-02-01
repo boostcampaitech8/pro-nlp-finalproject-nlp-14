@@ -241,7 +241,7 @@ class UserGraphRepository(GraphRepository):
         MATCH (u:User {id: $user_id})-[:ASSIGNED_TO]->(ai:ActionItem)
         WHERE ai.status IN ['pending', 'in_progress']
         OPTIONAL MATCH (d:Decision)-[:TRIGGERS]->(ai)
-        RETURN ai.id AS id, ai.title AS title, ai.status AS status,
+        RETURN ai.id AS id, ai.content AS content, ai.status AS status,
                ai.due_date AS due_date, d.content AS from_decision
         ORDER BY ai.due_date
         """

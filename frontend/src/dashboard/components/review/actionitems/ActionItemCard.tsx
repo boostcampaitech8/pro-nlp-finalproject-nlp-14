@@ -141,26 +141,15 @@ export function ActionItemCard({
 
         {/* 내용 */}
         <div className="flex-1 min-w-0">
-          {/* 제목 */}
+          {/* 내용 */}
           <EditableText
-            value={item.title}
-            onSave={async (title) => onUpdate({ title })}
+            value={item.content}
+            onSave={async (content) => onUpdate({ content })}
             className={`font-medium ${
               item.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-900'
             }`}
             disabled={isLoading}
           />
-
-          {/* 설명 */}
-          {item.description && (
-            <p
-              className={`mt-1 text-sm ${
-                item.status === 'completed' ? 'text-gray-400' : 'text-gray-600'
-              }`}
-            >
-              {item.description}
-            </p>
-          )}
 
           {/* 메타 정보 */}
           <div className="flex items-center gap-4 mt-2">

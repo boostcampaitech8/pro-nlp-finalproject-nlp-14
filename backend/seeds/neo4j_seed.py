@@ -326,12 +326,10 @@ class DataGenerator:
 
         started = None
         ended = None
-        transcript = None
         summary = None
 
         if status in ["ongoing", "completed", "in_review", "confirmed"]:
             started = scheduled + timedelta(minutes=random.randint(0, 10))
-            transcript = f"회의 내용 기록... {fill_template(random.choice(MEETING_TITLES))}"
 
         if status in ["completed", "in_review", "confirmed"]:
             ended = started + timedelta(minutes=random.randint(30, 120))
@@ -342,7 +340,6 @@ class DataGenerator:
             "title": fill_template(random.choice(MEETING_TITLES)),
             "status": status,
             "description": f"{random.choice(TOPICS)} 관련 회의",
-            "transcript": transcript,
             "summary": summary,
             "scheduled_at": format_datetime(scheduled),
             "started_at": format_datetime(started) if started else None,
@@ -407,8 +404,7 @@ class DataGenerator:
         created = random_datetime()
         action_item = {
             "id": action_id,
-            "title": fill_template(random.choice(ACTION_ITEM_TITLES)),
-            "description": f"{random.choice(FEATURES)} 관련 작업",
+            "content": fill_template(random.choice(ACTION_ITEM_TITLES)),
             "due_date": format_datetime(created + timedelta(days=random.randint(7, 30))),
             "status": weighted_choice(ACTION_ITEM_STATUSES, ACTION_ITEM_STATUS_WEIGHTS),
             "created_at": format_datetime(created),
@@ -780,7 +776,7 @@ class Neo4jImporter:
                 UNWIND $items AS m
                 CREATE (:Meeting {
                     id: m.id, title: m.title, status: m.status, description: m.description,
-                    transcript: m.transcript, summary: m.summary,
+                    summary: m.summary,
                     scheduled_at: CASE WHEN m.scheduled_at IS NOT NULL THEN datetime(m.scheduled_at) ELSE null END,
                     started_at: CASE WHEN m.started_at IS NOT NULL THEN datetime(m.started_at) ELSE null END,
                     ended_at: CASE WHEN m.ended_at IS NOT NULL THEN datetime(m.ended_at) ELSE null END,
@@ -813,7 +809,7 @@ class Neo4jImporter:
             await session.run("""
                 UNWIND $items AS ai
                 CREATE (:ActionItem {
-                    id: ai.id, title: ai.title, description: ai.description,
+                    id: ai.id, content: ai.content,
                     due_date: CASE WHEN ai.due_date IS NOT NULL THEN datetime(ai.due_date) ELSE null END,
                     status: ai.status, created_at: datetime(ai.created_at)
                 })

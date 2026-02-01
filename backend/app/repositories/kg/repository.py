@@ -155,9 +155,9 @@ class KGRepository:
     async def get_agenda(self, meeting_id: str) -> list[KGAgenda]:
         """회의의 아젠다 목록 조회"""
         query = """
-        MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)
-        RETURN a
-        ORDER BY a.order
+        MATCH (m:Meeting {id: $meeting_id})-[rel:CONTAINS]->(a:Agenda)
+        RETURN a, rel.order AS order
+        ORDER BY rel.order
         """
         records = await self._execute_read(query, {"meeting_id": meeting_id})
         return [
@@ -165,7 +165,7 @@ class KGRepository:
                 id=dict(r["a"])["id"],
                 topic=dict(r["a"]).get("topic", ""),
                 description=dict(r["a"]).get("description"),
-                order=dict(r["a"]).get("order", 0),
+                order=r["order"] or 0,
                 meeting_id=meeting_id,
             )
             for r in records
@@ -212,10 +212,9 @@ class KGRepository:
             id: 'agenda-' + randomUUID(),
             topic: agenda_data.topic,
             description: coalesce(agenda_data.description, ''),
-            order: idx,
             created_at: datetime($created_at)
         })
-        CREATE (m)-[:CONTAINS]->(a)
+        CREATE (m)-[:CONTAINS {order: idx}]->(a)
 
         // 3. Decision 생성 (decision이 있는 경우만)
         // meeting_id 추가 + DECIDED_IN 관계 생성
@@ -269,8 +268,7 @@ class KGRepository:
                }) as decisions,
                collect(DISTINCT {
                    id: ai.id,
-                   title: ai.title,
-                   description: ai.description,
+                   content: ai.content,
                    assignee: assignee.name,
                    due_date: ai.due_date
                }) as action_items
@@ -310,7 +308,7 @@ class KGRepository:
     # --- 상태 변경 (승인/거절/머지) ---
 
     async def reject_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 거절 (REJECTED_BY 관계 생성)
+        """결정 거절 (REJECTS 관계 생성)
 
         Returns:
             bool: 거절 성공 여부 (decision과 user가 존재하면 True)
@@ -318,7 +316,7 @@ class KGRepository:
         query = """
         MATCH (d:Decision {id: $decision_id})
         MATCH (u:User {id: $user_id})
-        MERGE (u)-[:REJECTED_BY]->(d)
+        MERGE (u)-[:REJECTS]->(d)
         RETURN d.id as decision_id
         """
         records = await self._execute_write(
@@ -386,7 +384,7 @@ class KGRepository:
         MATCH (u:User {id: $user_id})
 
         // 1. 승인 관계 생성 (MERGE로 중복 방지)
-        MERGE (u)-[:APPROVED_BY]->(d)
+        MERGE (u)-[:APPROVES]->(d)
 
         // 2. 참여자 수와 승인자 수 계산
         WITH d
@@ -395,7 +393,7 @@ class KGRepository:
         OPTIONAL MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
         WITH d, a, [p IN collect(DISTINCT participant.id) WHERE p IS NOT NULL] as participants
 
-        OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
+        OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
         WITH d, a, participants, collect(DISTINCT approver.id) as approvers
 
         // 3. 전원 승인 시: 기존 latest -> outdated + OUTDATES 관계
@@ -456,8 +454,8 @@ class KGRepository:
         query = """
         MATCH (d:Decision {id: $decision_id})
         OPTIONAL MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
-        OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
-        OPTIONAL MATCH (rejector:User)-[:REJECTED_BY]->(d)
+        OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
+        OPTIONAL MATCH (rejector:User)-[:REJECTS]->(d)
         OPTIONAL MATCH (d)-[:SUPERSEDES]->(prev:Decision)
         RETURN d, a, m,
                collect(DISTINCT approver.id) as approvers,
@@ -496,7 +494,7 @@ class KGRepository:
               <-[:CONTAINS]-(m:Meeting)
         MATCH (u:User)-[:PARTICIPATED_IN]->(m)
         WITH d, collect(DISTINCT u.id) as participants
-        OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
+        OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
         WITH participants, collect(DISTINCT approver.id) as approvers
         RETURN size(participants) = size(approvers) as all_approved
         """
@@ -518,7 +516,7 @@ class KGRepository:
 
         Args:
             decision_id: 연결할 Decision ID
-            action_items: [{"id", "title", "description", "due_date", "assignee_id"}]
+            action_items: [{"id", "content", "due_date", "assignee_id"}]
 
         Returns:
             생성된 ActionItem ID 목록
@@ -539,8 +537,7 @@ class KGRepository:
         UNWIND $items AS item
         CREATE (ai:ActionItem {
             id: item.id,
-            title: item.title,
-            description: coalesce(item.description, ''),
+            content: item.content,
             due_date: CASE WHEN item.due_date IS NOT NULL
                            THEN datetime(item.due_date)
                            ELSE null END,
@@ -950,10 +947,10 @@ class KGRepository:
 
         query = f"""
         MATCH (a:Agenda {{id: $agenda_id}})
-        OPTIONAL MATCH (m:Meeting)-[:CONTAINS]->(a)
+        OPTIONAL MATCH (m:Meeting)-[rel:CONTAINS]->(a)
         SET {', '.join(set_clauses)}
         RETURN a.id as id, a.topic as topic, a.description as description,
-               a.order as order, m.id as meeting_id
+               rel.order as order, m.id as meeting_id
         """
         records = await self._execute_write(query, params)
 
@@ -1020,7 +1017,7 @@ class KGRepository:
         OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
         OPTIONAL MATCH (d:Decision)-[:TRIGGERS]->(ai)
         {where_clause}
-        RETURN ai.id as id, ai.title as title, ai.description as description,
+        RETURN ai.id as id, ai.content as content,
                ai.status as status, assignee.id as assignee_id,
                ai.due_date as due_date, d.id as decision_id
         """
@@ -1029,8 +1026,7 @@ class KGRepository:
         return [
             KGActionItem(
                 id=r["id"],
-                title=r["title"] or "",
-                description=r["description"],
+                content=r["content"] or "",
                 status=r["status"] or "pending",
                 assignee_id=r["assignee_id"],
                 due_date=_convert_neo4j_datetime(r["due_date"]) if r["due_date"] else None,
@@ -1049,7 +1045,7 @@ class KGRepository:
         params: dict[str, Any] = {"action_item_id": action_item_id}
 
         for key, value in data.items():
-            if key in ("title", "description", "status"):
+            if key in ("content", "status"):
                 set_clauses.append(f"ai.{key} = ${key}")
                 params[key] = value
             elif key == "due_date" and value:
@@ -1064,7 +1060,7 @@ class KGRepository:
         OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
         OPTIONAL MATCH (d:Decision)-[:TRIGGERS]->(ai)
         SET {', '.join(set_clauses)}
-        RETURN ai.id as id, ai.title as title, ai.description as description,
+        RETURN ai.id as id, ai.content as content,
                ai.status as status, assignee.id as assignee_id,
                ai.due_date as due_date, d.id as decision_id
         """
@@ -1076,8 +1072,7 @@ class KGRepository:
         r = records[0]
         return KGActionItem(
             id=r["id"],
-            title=r["title"] or "",
-            description=r["description"],
+            content=r["content"] or "",
             status=r["status"] or "pending",
             assignee_id=r["assignee_id"],
             due_date=_convert_neo4j_datetime(r["due_date"]) if r["due_date"] else None,
@@ -1113,9 +1108,9 @@ class KGRepository:
 
         # 2. Agendas 조회
         agenda_query = """
-        MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)
-        RETURN a.id as id, a.topic as topic, a.description as description, a.order as order
-        ORDER BY a.order
+        MATCH (m:Meeting {id: $meeting_id})-[rel:CONTAINS]->(a:Agenda)
+        RETURN a.id as id, a.topic as topic, a.description as description, rel.order as order
+        ORDER BY rel.order
         """
         agenda_records = await self._execute_read(agenda_query, {"meeting_id": meeting_id})
 
@@ -1126,8 +1121,8 @@ class KGRepository:
             decision_query = """
             MATCH (a:Agenda {id: $agenda_id})-[:HAS_DECISION]->(d:Decision)
             WHERE NOT (d.status IN ['superseded', 'outdated', 'rejected'])
-            OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
-            OPTIONAL MATCH (rejector:User)-[:REJECTED_BY]->(d)
+            OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
+            OPTIONAL MATCH (rejector:User)-[:REJECTS]->(d)
             // 이전 GT 조회 (OUTDATES 관계 - latest → outdated)
             OPTIONAL MATCH (d)-[:OUTDATES]->(prev:Decision)
             WHERE prev.status = 'outdated'
@@ -1264,14 +1259,14 @@ class KGRepository:
         action_item_query = """
         MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)-[:TRIGGERS]->(ai:ActionItem)
         OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
-        RETURN ai.id as id, ai.title as title, ai.status as status,
+        RETURN ai.id as id, ai.content as content, ai.status as status,
                assignee.id as assignee_id, ai.due_date as due_date
         """
         action_item_records = await self._execute_read(action_item_query, {"meeting_id": meeting_id})
         action_items = [
             {
                 "id": ai["id"],
-                "title": ai["title"] or "",
+                "content": ai["content"] or "",
                 "status": ai["status"] or "pending",
                 "assignee_id": ai["assignee_id"],
                 "due_date": _convert_neo4j_datetime(ai["due_date"]).isoformat() if ai["due_date"] else None,
