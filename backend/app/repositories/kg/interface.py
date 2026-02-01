@@ -115,7 +115,7 @@ class IKGRepository(Protocol):
         ...
 
     async def create_reply(
-        self, comment_id: str, user_id: str, content: str
+        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False
     ) -> KGComment:
         """대댓글 생성
 
@@ -200,5 +200,29 @@ class IKGRepository(Protocol):
                 }],
                 "action_items": [...]
             }
+        """
+        ...
+
+    # === MIT Agent System User (신규) ===
+
+    async def get_or_create_system_agent(self) -> str:
+        """MIT Agent 시스템 사용자 조회/생성
+
+        Returns:
+            str: mit-agent 사용자 ID
+        """
+        ...
+
+    async def update_comment_pending_agent_reply(
+        self, comment_id: str, pending: bool
+    ) -> bool:
+        """Comment의 pending_agent_reply 상태 업데이트
+
+        Args:
+            comment_id: Comment ID
+            pending: pending_agent_reply 상태
+
+        Returns:
+            bool: 업데이트 성공 여부
         """
         ...

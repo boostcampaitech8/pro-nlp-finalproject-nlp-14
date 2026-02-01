@@ -101,6 +101,7 @@ MOCK_DATA = {
             "context": "API 일관성 유지 및 클라이언트 개발 편의성을 위해",
             "status": "latest",
             "agenda_id": "agenda-1",
+            "meeting_id": "meeting-1",
             "created_at": "2026-01-20T10:00:00+00:00",
         },
         "decision-2": {
@@ -109,6 +110,7 @@ MOCK_DATA = {
             "context": "MVP 기능 완성 목표",
             "status": "latest",
             "agenda_id": "agenda-2",
+            "meeting_id": "meeting-1",
             "created_at": "2026-01-20T10:30:00+00:00",
         },
         "decision-3": {
@@ -117,6 +119,7 @@ MOCK_DATA = {
             "context": "마이크로서비스 확장성과 stateless 특성 고려",
             "status": "draft",
             "agenda_id": "agenda-3",
+            "meeting_id": "meeting-2",
             "created_at": "2026-01-22T14:00:00+00:00",
         },
     },
@@ -278,6 +281,7 @@ class MockKGRepository:
                     "context": decision_data.get("context", ""),
                     "status": "draft",
                     "agenda_id": agenda_id,
+                    "meeting_id": meeting_id,  # Meeting 스코프 추가
                     "created_at": now.isoformat(),
                 }
                 decision_ids.append(decision_id)
@@ -447,8 +451,20 @@ class MockKGRepository:
         # 전원 승인 시 머지
         merged = participants == approvers and len(participants) > 0
         if merged:
+            now = datetime.now(timezone.utc).isoformat()
+            agenda_id = decision.get("agenda_id")
+
+            # 기존 latest를 outdated로 변경 + outdates_id 설정
+            for did, d in self.data["decisions"].items():
+                if (d.get("agenda_id") == agenda_id and
+                    d.get("status") == "latest" and
+                    did != decision_id):
+                    d["status"] = "outdated"
+                    d["updated_at"] = now
+                    decision["outdates_id"] = did  # OUTDATES 관계
+
             decision["status"] = "latest"
-            decision["merged_at"] = datetime.now(timezone.utc).isoformat()
+            decision["merged_at"] = now
 
         return {
             "approved": True,
@@ -482,17 +498,24 @@ class MockKGRepository:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
 
+        updated_at = decision.get("updated_at")
+        if isinstance(updated_at, str):
+            updated_at = datetime.fromisoformat(updated_at)
+
         return KGDecision(
             id=decision["id"],
             content=decision.get("content", ""),
             status=decision.get("status", "draft"),
             context=decision.get("context"),
+            meeting_id=decision.get("meeting_id"),
             created_at=created_at or datetime.now(timezone.utc),
+            updated_at=updated_at,
             agenda_id=agenda.get("id") if agenda else None,
             agenda_topic=agenda.get("topic") if agenda else None,
             meeting_title=meeting.get("title") if meeting else None,
             approvers=approvers,
             rejectors=rejectors,
+            supersedes_id=decision.get("supersedes_id"),
         )
 
     async def is_all_participants_approved(self, decision_id: str) -> bool:
@@ -521,37 +544,57 @@ class MockKGRepository:
     # =========================================================================
 
     async def create_suggestion(
-        self, decision_id: str, user_id: str, content: str
+        self, decision_id: str, user_id: str, content: str, meeting_id: str
     ) -> KGSuggestion:
-        """Suggestion + 새 Decision 생성 (원자적)"""
+        """Suggestion 생성 + 즉시 draft Decision 생성
+
+        워크플로우:
+        1. Suggestion 노드 생성 (status: 'pending')
+        2. 새 draft Decision 즉시 생성
+        3. 기존 draft Decision → superseded
+        """
         if decision_id not in self.data["decisions"]:
             raise ValueError(f"Decision not found: {decision_id}")
         if user_id not in self.data["users"]:
             raise ValueError(f"User not found: {user_id}")
+        if meeting_id not in self.data["meetings"]:
+            raise ValueError(f"Meeting not found: {meeting_id}")
 
         now = datetime.now(timezone.utc)
         original_decision = self.data["decisions"][decision_id]
         agenda_id = original_decision.get("agenda_id")
 
-        # 새 Decision 생성
+        # 1. 새 draft Decision 생성
         new_decision_id = f"decision-{uuid4().hex[:8]}"
         self.data["decisions"][new_decision_id] = {
             "id": new_decision_id,
             "content": content,
-            "context": None,
+            "context": original_decision.get("context", ""),
             "status": "draft",
             "agenda_id": agenda_id,
-            "supersedes": decision_id,
+            "meeting_id": meeting_id,
+            "supersedes_id": decision_id,
             "created_at": now.isoformat(),
         }
 
-        # Suggestion 생성
+        # 2. 기존 draft → superseded (같은 Meeting 스코프)
+        for did, d in self.data["decisions"].items():
+            if (d.get("agenda_id") == agenda_id and
+                d.get("meeting_id") == meeting_id and
+                d.get("status") == "draft" and
+                did != new_decision_id):
+                d["status"] = "superseded"
+                d["updated_at"] = now.isoformat()
+
+        # 3. Suggestion 생성
         suggestion_id = f"suggestion-{uuid4().hex[:8]}"
         self.data["suggestions"][suggestion_id] = {
             "id": suggestion_id,
             "content": content,
             "author_id": user_id,
             "decision_id": decision_id,
+            "meeting_id": meeting_id,
+            "status": "pending",
             "created_decision_id": new_decision_id,
             "created_at": now.isoformat(),
         }
@@ -560,16 +603,70 @@ class MockKGRepository:
             id=suggestion_id,
             content=content,
             author_id=user_id,
+            status="pending",
+            decision_id=decision_id,
             created_decision_id=new_decision_id,
+            meeting_id=meeting_id,
             created_at=now,
         )
+
+    async def create_decision_from_suggestion(
+        self, suggestion_id: str, original_decision_id: str, content: str, meeting_id: str
+    ) -> "KGDecision":
+        """Suggestion에서 새 Decision 생성 (레거시 호환용)
+
+        NOTE: 새로운 설계에서는 create_suggestion이 즉시 draft Decision을 생성합니다.
+        """
+        from app.models.kg import KGDecision
+
+        if suggestion_id not in self.data["suggestions"]:
+            raise ValueError(f"Suggestion not found: {suggestion_id}")
+        if original_decision_id not in self.data["decisions"]:
+            raise ValueError(f"Decision not found: {original_decision_id}")
+
+        now = datetime.now(timezone.utc)
+        original_decision = self.data["decisions"][original_decision_id]
+        agenda_id = original_decision.get("agenda_id")
+
+        # 새 Decision 생성
+        new_decision_id = f"decision-{uuid4().hex[:8]}"
+        self.data["decisions"][new_decision_id] = {
+            "id": new_decision_id,
+            "content": content,
+            "context": original_decision.get("context", ""),
+            "status": "draft",
+            "agenda_id": agenda_id,
+            "meeting_id": meeting_id,
+            "supersedes_id": original_decision_id,
+            "created_at": now.isoformat(),
+        }
+
+        # Suggestion 업데이트
+        self.data["suggestions"][suggestion_id]["status"] = "accepted"
+        self.data["suggestions"][suggestion_id]["created_decision_id"] = new_decision_id
+
+        return KGDecision(
+            id=new_decision_id,
+            content=content,
+            context=original_decision.get("context"),
+            status="draft",
+            meeting_id=meeting_id,
+            created_at=now,
+        )
+
+    async def update_suggestion_status(self, suggestion_id: str, status: str) -> bool:
+        """Suggestion 상태 업데이트"""
+        if suggestion_id not in self.data["suggestions"]:
+            return False
+        self.data["suggestions"][suggestion_id]["status"] = status
+        return True
 
     # =========================================================================
     # Comment - 댓글
     # =========================================================================
 
     async def create_comment(
-        self, decision_id: str, user_id: str, content: str
+        self, decision_id: str, user_id: str, content: str, pending_agent_reply: bool = False
     ) -> KGComment:
         """Comment 생성"""
         if decision_id not in self.data["decisions"]:
@@ -586,6 +683,7 @@ class MockKGRepository:
             "author_id": user_id,
             "decision_id": decision_id,
             "parent_id": None,
+            "pending_agent_reply": pending_agent_reply,
             "created_at": now.isoformat(),
         }
 
@@ -599,7 +697,7 @@ class MockKGRepository:
         )
 
     async def create_reply(
-        self, comment_id: str, user_id: str, content: str
+        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False
     ) -> KGComment:
         """대댓글 생성"""
         if comment_id not in self.data["comments"]:
@@ -617,6 +715,7 @@ class MockKGRepository:
             "author_id": user_id,
             "decision_id": parent_comment["decision_id"],
             "parent_id": comment_id,
+            "pending_agent_reply": pending_agent_reply,
             "created_at": now.isoformat(),
         }
 
@@ -850,46 +949,108 @@ class MockKGRepository:
             [ag for ag in self.data["agendas"].values() if ag.get("meeting_id") == meeting_id],
             key=lambda x: x.get("order", 0),
         ):
-            # Decision 조회
+            # Decision 조회 (active Decision만: superseded, outdated, rejected 제외)
             decisions = []
             for d in self.data["decisions"].values():
                 if d.get("agenda_id") != a["id"]:
+                    continue
+                if d.get("status") in ["superseded", "outdated", "rejected"]:
                     continue
 
                 # Suggestion 조회
                 suggestions = []
                 for s in self.data["suggestions"].values():
                     if s.get("decision_id") == d["id"]:
+                        author = self.data["users"].get(s["author_id"], {})
                         suggestions.append({
                             "id": s["id"],
                             "content": s["content"],
-                            "author_id": s["author_id"],
-                            "created_decision_id": s.get("created_decision_id"),
+                            "author": {
+                                "id": s["author_id"],
+                                "name": author.get("name", ""),
+                                "email": author.get("email", ""),
+                            },
+                            "created_decision": {"id": s["created_decision_id"]} if s.get("created_decision_id") else None,
                             "created_at": s["created_at"],
                         })
 
-                # Comment 조회 (최상위만, 대댓글은 중첩)
+                # Comment 조회 (재귀적으로 모든 depth 지원)
+                def build_replies(parent_id: str) -> list:
+                    """재귀적으로 replies 조회"""
+                    replies = []
+                    for r in self.data["comments"].values():
+                        if r.get("parent_id") == parent_id:
+                            reply_author = self.data["users"].get(r["author_id"], {})
+                            replies.append({
+                                "id": r["id"],
+                                "content": r["content"],
+                                "author": {
+                                    "id": r["author_id"],
+                                    "name": reply_author.get("name", ""),
+                                    "email": reply_author.get("email", ""),
+                                },
+                                "pending_agent_reply": r.get("pending_agent_reply", False),
+                                "replies": build_replies(r["id"]),  # 재귀 호출
+                                "created_at": r["created_at"],
+                            })
+                    return replies
+
                 comments = []
                 for c in self.data["comments"].values():
                     if c.get("decision_id") == d["id"] and c.get("parent_id") is None:
-                        # 대댓글 조회
-                        replies = [
-                            {
-                                "id": r["id"],
-                                "content": r["content"],
-                                "author_id": r["author_id"],
-                                "created_at": r["created_at"],
-                            }
-                            for r in self.data["comments"].values()
-                            if r.get("parent_id") == c["id"]
-                        ]
+                        comment_author = self.data["users"].get(c["author_id"], {})
                         comments.append({
                             "id": c["id"],
                             "content": c["content"],
-                            "author_id": c["author_id"],
-                            "replies": replies,
+                            "author": {
+                                "id": c["author_id"],
+                                "name": comment_author.get("name", ""),
+                                "email": comment_author.get("email", ""),
+                            },
+                            "pending_agent_reply": c.get("pending_agent_reply", False),
+                            "replies": build_replies(c["id"]),  # 재귀 호출
                             "created_at": c["created_at"],
                         })
+
+                # 이전 GT 정보 (OUTDATES 관계 - latest → outdated)
+                outdates_id = d.get("outdates_id")
+                supersedes_info = None
+                if outdates_id:
+                    prev_decision = self.data["decisions"].get(outdates_id)
+                    if prev_decision and prev_decision.get("status") == "outdated":
+                        supersedes_info = {
+                            "id": outdates_id,
+                            "content": prev_decision.get("content", ""),
+                            "meeting_id": prev_decision.get("meeting_id"),
+                        }
+
+                # 히스토리: SUPERSEDES 체인을 따라 superseded된 Decision들 조회
+                # 같은 Meeting 스코프 내 + superseded 상태만 (Suggestion 히스토리)
+                def build_history(decision_id: str, target_meeting_id: str) -> list:
+                    """재귀적으로 supersedes 체인 조회 (superseded 상태만)"""
+                    history = []
+                    current_decision = self.data["decisions"].get(decision_id)
+                    if not current_decision:
+                        return history
+
+                    next_supersedes_id = current_decision.get("supersedes_id")
+                    if next_supersedes_id:
+                        prev = self.data["decisions"].get(next_supersedes_id)
+                        # superseded 상태만 포함 (outdated는 GT 변화이므로 제외)
+                        if (prev and
+                            prev.get("meeting_id") == target_meeting_id and
+                            prev.get("status") == "superseded"):
+                            history.append({
+                                "id": prev["id"],
+                                "content": prev.get("content", ""),
+                                "status": prev.get("status", "superseded"),
+                                "created_at": prev.get("created_at", ""),
+                            })
+                            # 재귀적으로 더 이전 버전 조회
+                            history.extend(build_history(next_supersedes_id, target_meeting_id))
+                    return history
+
+                history = build_history(d["id"], meeting_id)
 
                 created_at = d.get("created_at")
                 decisions.append({
@@ -897,9 +1058,16 @@ class MockKGRepository:
                     "content": d.get("content", ""),
                     "context": d.get("context"),
                     "status": d.get("status", "draft"),
+                    "meeting_id": d.get("meeting_id"),
+                    "approvers": d.get("approvers", []),
+                    "rejectors": d.get("rejectors", []),
                     "created_at": created_at,
+                    "updated_at": d.get("updated_at"),
                     "suggestions": suggestions,
                     "comments": comments,
+                    "supersedes": supersedes_info,
+                    # 히스토리: 같은 Meeting 스코프 내 superseded된 모든 이전 버전
+                    "history": history,
                 })
 
             agendas.append({
@@ -929,3 +1097,23 @@ class MockKGRepository:
             "agendas": agendas,
             "action_items": action_items,
         }
+
+    async def get_or_create_system_agent(self) -> str:
+        """MIT Agent 시스템 사용자 조회/생성"""
+        agent_id = "mit-agent"
+        if agent_id not in self.data["users"]:
+            self.data["users"][agent_id] = {
+                "id": agent_id,
+                "name": "MIT Agent",
+                "email": "mit-agent@system",
+            }
+        return agent_id
+
+    async def update_comment_pending_agent_reply(
+        self, comment_id: str, pending: bool
+    ) -> bool:
+        """Comment의 pending_agent_reply 상태 업데이트"""
+        if comment_id not in self.data["comments"]:
+            return False
+        self.data["comments"][comment_id]["pending_agent_reply"] = pending
+        return True

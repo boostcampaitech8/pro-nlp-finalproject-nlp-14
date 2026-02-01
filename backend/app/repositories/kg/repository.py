@@ -34,6 +34,38 @@ def _convert_neo4j_datetime(value: Any) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _build_comment_tree(flat_comments: list[dict]) -> list[dict]:
+    """Flat comment list를 nested tree로 변환 (무제한 depth 지원)
+
+    Args:
+        flat_comments: parent_id를 포함한 flat comment 리스트
+
+    Returns:
+        replies가 재귀적으로 중첩된 top-level comment 리스트
+    """
+    # 1. ID → comment dict 매핑 (replies 필드 초기화)
+    comment_map = {c["id"]: {**c, "replies": []} for c in flat_comments}
+
+    # 2. Tree 구성
+    root_comments = []
+    for c in flat_comments:
+        parent_id = c.get("parent_id")
+        comment = comment_map[c["id"]]
+
+        # parent_id는 응답에서 제거
+        if "parent_id" in comment:
+            del comment["parent_id"]
+
+        if parent_id is None:
+            # Top-level comment
+            root_comments.append(comment)
+        elif parent_id in comment_map:
+            # Reply - parent의 replies에 추가
+            comment_map[parent_id]["replies"].append(comment)
+
+    return root_comments
+
+
 class KGRepository:
     """Neo4j KG Repository - Raw Cypher"""
 
@@ -186,6 +218,7 @@ class KGRepository:
         CREATE (m)-[:CONTAINS]->(a)
 
         // 3. Decision 생성 (decision이 있는 경우만)
+        // meeting_id 추가 + DECIDED_IN 관계 생성
         WITH m, a, agenda_data
         WHERE agenda_data.decision IS NOT NULL
         CREATE (d:Decision {
@@ -193,9 +226,11 @@ class KGRepository:
             content: agenda_data.decision.content,
             context: coalesce(agenda_data.decision.context, ''),
             status: 'draft',
+            meeting_id: m.id,
             created_at: datetime($created_at)
         })
         CREATE (a)-[:HAS_DECISION]->(d)
+        CREATE (m)-[:DECIDED_IN]->(d)
 
         RETURN m.id AS meeting_id,
                collect(DISTINCT a.id) AS agenda_ids,
@@ -295,24 +330,34 @@ class KGRepository:
         """결정 승격 (draft -> latest)
 
         동일 Agenda의 기존 latest Decision은 outdated로 변경됨.
+        새 latest -[:SUPERSEDES]-> 기존 latest 관계 생성.
 
         Returns:
             bool: 승격 성공 여부 (decision이 존재하면 True)
         """
+        now = datetime.now(timezone.utc).isoformat()
+
         query = """
         MATCH (d:Decision {id: $decision_id})
 
-        // 1. 동일 Agenda의 기존 latest -> outdated
+        // 1. 동일 Agenda의 기존 latest -> outdated + OUTDATES 관계
         OPTIONAL MATCH (d)<-[:HAS_DECISION]-(a:Agenda)-[:HAS_DECISION]->(old:Decision)
         WHERE old.status = 'latest' AND old.id <> $decision_id
-        SET old.status = 'outdated'
+        SET old.status = 'outdated', old.updated_at = datetime($now)
+        // OUTDATES 관계가 없으면 생성 (GT 변화 추적)
+        FOREACH (_ IN CASE WHEN old IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (d)-[:OUTDATES]->(old)
+        )
 
         // 2. 현재 Decision -> latest
         WITH d
-        SET d.status = 'latest', d.approved_at = datetime()
+        SET d.status = 'latest', d.approved_at = datetime(), d.updated_at = datetime($now)
         RETURN d.id as decision_id
         """
-        records = await self._execute_write(query, {"decision_id": decision_id})
+        records = await self._execute_write(query, {
+            "decision_id": decision_id,
+            "now": now,
+        })
         return len(records) > 0
 
     async def approve_and_merge_if_complete(
@@ -323,6 +368,7 @@ class KGRepository:
         단일 Cypher 쿼리로 승인 관계 생성, 전원 승인 확인, latest 승격을 처리.
         Race condition 없이 원자적으로 처리됨.
         전원 승인 시 동일 Agenda의 기존 latest Decision은 outdated로 변경됨.
+        새 latest -[:SUPERSEDES]-> 기존 latest 관계 생성.
 
         Returns:
             {
@@ -333,6 +379,8 @@ class KGRepository:
                 "participants_count": int,
             }
         """
+        now = datetime.now(timezone.utc).isoformat()
+
         query = """
         MATCH (d:Decision {id: $decision_id})
         MATCH (u:User {id: $user_id})
@@ -343,39 +391,50 @@ class KGRepository:
         // 2. 참여자 수와 승인자 수 계산
         WITH d
         MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
-        MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
-        WITH d, a, collect(DISTINCT participant.id) as participants
+        // 참여자가 Neo4j에 동기화되지 않았을 수 있으므로 OPTIONAL MATCH 사용
+        OPTIONAL MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
+        WITH d, a, [p IN collect(DISTINCT participant.id) WHERE p IS NOT NULL] as participants
 
         OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
         WITH d, a, participants, collect(DISTINCT approver.id) as approvers
 
-        // 3. 전원 승인 시: 기존 latest -> outdated
+        // 3. 전원 승인 시: 기존 latest -> outdated + OUTDATES 관계
+        // 참여자가 없으면 (p_count = 0) 자동 승격하지 않음 (데이터 동기화 필요)
         WITH d, a, participants, approvers,
              size(participants) as p_count,
              size(approvers) as a_count
         OPTIONAL MATCH (a)-[:HAS_DECISION]->(old:Decision)
-        WHERE old.status = 'latest' AND old.id <> d.id AND p_count = a_count
-        SET old.status = 'outdated'
+        WHERE old.status = 'latest' AND old.id <> d.id AND p_count > 0 AND p_count = a_count
+        SET old.status = 'outdated', old.updated_at = datetime($now)
+        // OUTDATES 관계 생성 (GT 변화 추적)
+        FOREACH (_ IN CASE WHEN old IS NOT NULL AND p_count > 0 AND p_count = a_count THEN [1] ELSE [] END |
+            MERGE (d)-[:OUTDATES]->(old)
+        )
 
         // 4. 전원 승인 시: 현재 Decision -> latest
+        // 참여자가 없으면 자동 승격하지 않음
         WITH d, participants, approvers, p_count, a_count
         SET d.status = CASE
-            WHEN p_count = a_count THEN 'latest'
+            WHEN p_count > 0 AND p_count = a_count THEN 'latest'
             ELSE d.status
         END,
         d.approved_at = CASE
-            WHEN p_count = a_count THEN datetime()
+            WHEN p_count > 0 AND p_count = a_count THEN datetime()
             ELSE d.approved_at
+        END,
+        d.updated_at = CASE
+            WHEN p_count > 0 AND p_count = a_count THEN datetime($now)
+            ELSE d.updated_at
         END
 
         RETURN d.id as decision_id,
                d.status as status,
                p_count as participants_count,
                a_count as approvers_count,
-               p_count = a_count as merged
+               p_count > 0 AND p_count = a_count as merged
         """
         records = await self._execute_write(
-            query, {"decision_id": decision_id, "user_id": user_id}
+            query, {"decision_id": decision_id, "user_id": user_id, "now": now}
         )
 
         if not records:
@@ -399,9 +458,11 @@ class KGRepository:
         OPTIONAL MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
         OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
         OPTIONAL MATCH (rejector:User)-[:REJECTED_BY]->(d)
+        OPTIONAL MATCH (d)-[:SUPERSEDES]->(prev:Decision)
         RETURN d, a, m,
                collect(DISTINCT approver.id) as approvers,
-               collect(DISTINCT rejector.id) as rejectors
+               collect(DISTINCT rejector.id) as rejectors,
+               prev.id as supersedes_id
         """
         records = await self._execute_read(query, {"decision_id": decision_id})
         if not records:
@@ -417,12 +478,15 @@ class KGRepository:
             content=d.get("content", ""),
             status=d.get("status", "draft"),
             context=d.get("context"),
+            meeting_id=d.get("meeting_id"),
             created_at=_convert_neo4j_datetime(d.get("created_at")),
+            updated_at=_convert_neo4j_datetime(d.get("updated_at")) if d.get("updated_at") else None,
             agenda_id=a.get("id"),
             agenda_topic=a.get("topic"),
             meeting_title=m.get("title"),
             approvers=[aid for aid in record["approvers"] if aid],
             rejectors=[rid for rid in record["rejectors"] if rid],
+            supersedes_id=record["supersedes_id"],
         )
 
     async def is_all_participants_approved(self, decision_id: str) -> bool:
@@ -514,9 +578,22 @@ class KGRepository:
     # =========================================================================
 
     async def create_suggestion(
-        self, decision_id: str, user_id: str, content: str
+        self, decision_id: str, user_id: str, content: str, meeting_id: str
     ) -> "KGSuggestion":
-        """Suggestion + 새 Decision 생성 (원자적)"""
+        """Suggestion 생성 + 즉시 draft Decision 생성
+
+        워크플로우:
+        1. Suggestion 노드 생성 (status: 'pending')
+        2. 새 draft Decision 즉시 생성
+        3. 기존 draft Decision → superseded
+        4. 새 Decision -[:SUPERSEDES]-> 기존 Decision
+
+        Args:
+            decision_id: 원본 Decision ID
+            user_id: 작성자 ID
+            content: Suggestion 내용
+            meeting_id: Suggestion이 생성되는 Meeting ID (스코프)
+        """
         from app.models.kg import KGSuggestion
 
         now = datetime.now(timezone.utc).isoformat()
@@ -524,60 +601,161 @@ class KGRepository:
         new_decision_id = f"decision-{uuid4()}"
 
         query = """
-        MATCH (d:Decision {id: $decision_id})
+        MATCH (original:Decision {id: $decision_id})
         MATCH (u:User {id: $user_id})
-        MATCH (d)<-[:HAS_DECISION]-(a:Agenda)
+        MATCH (m:Meeting {id: $meeting_id})
+        MATCH (a:Agenda)-[:HAS_DECISION]->(original)
 
-        // 새 Decision 생성 (draft)
-        CREATE (nd:Decision {
-            id: $new_decision_id,
-            content: $content,
-            context: '',
-            status: 'draft',
-            created_at: datetime($created_at)
-        })
-        CREATE (a)-[:HAS_DECISION]->(nd)
-        CREATE (d)-[:SUPERSEDED_BY]->(nd)
-
-        // Suggestion 생성
+        // 1. Suggestion 노드 생성
         CREATE (s:Suggestion {
             id: $suggestion_id,
             content: $content,
+            status: 'pending',
+            meeting_id: $meeting_id,
             created_at: datetime($created_at)
         })
         CREATE (u)-[:SUGGESTS]->(s)
+        CREATE (s)-[:ON]->(original)
+
+        // 2. 새 draft Decision 즉시 생성
+        CREATE (nd:Decision {
+            id: $new_decision_id,
+            content: $content,
+            context: coalesce(original.context, ''),
+            status: 'draft',
+            meeting_id: $meeting_id,
+            created_at: datetime($created_at)
+        })
+        CREATE (a)-[:HAS_DECISION]->(nd)
+        CREATE (m)-[:DECIDED_IN]->(nd)
         CREATE (s)-[:CREATES]->(nd)
+        CREATE (nd)-[:SUPERSEDES]->(original)
+
+        // 3. 같은 Meeting 스코프의 기존 draft → superseded
+        WITH s, nd, original, a
+        OPTIONAL MATCH (a)-[:HAS_DECISION]->(old_draft:Decision)
+        WHERE old_draft.status = 'draft'
+          AND old_draft.meeting_id = $meeting_id
+          AND old_draft.id <> nd.id
+        SET old_draft.status = 'superseded', old_draft.updated_at = datetime($created_at)
 
         RETURN s.id as id, $content as content, $user_id as author_id,
-               nd.id as created_decision_id, s.created_at as created_at
+               s.status as status, nd.id as created_decision_id,
+               $decision_id as decision_id, $meeting_id as meeting_id,
+               s.created_at as created_at
         """
         records = await self._execute_write(query, {
             "decision_id": decision_id,
             "user_id": user_id,
             "content": content,
+            "meeting_id": meeting_id,
             "suggestion_id": suggestion_id,
             "new_decision_id": new_decision_id,
             "created_at": now,
         })
 
         if not records:
-            raise ValueError(f"Decision not found: {decision_id}")
+            raise ValueError(f"Decision or Meeting not found: {decision_id}, {meeting_id}")
 
         r = records[0]
         return KGSuggestion(
             id=r["id"],
             content=r["content"],
             author_id=r["author_id"],
+            status=r["status"],
+            decision_id=r["decision_id"],
             created_decision_id=r["created_decision_id"],
+            meeting_id=r["meeting_id"],
             created_at=_convert_neo4j_datetime(r["created_at"]),
         )
+
+    async def create_decision_from_suggestion(
+        self, suggestion_id: str, original_decision_id: str, content: str, meeting_id: str
+    ) -> "KGDecision":
+        """Suggestion에서 새 Decision 생성 (레거시 호환용)
+
+        NOTE: 새로운 설계에서는 create_suggestion이 즉시 draft Decision을 생성합니다.
+        이 메서드는 기존 API 호환성을 위해 유지됩니다.
+
+        워크플로우:
+        1. 새 Decision 노드 생성 (status: 'draft')
+        2. 새 Decision -[:SUPERSEDES]-> 원본 Decision
+        3. Suggestion → CREATES → 새 Decision
+        4. Suggestion status를 'accepted'로 변경
+        """
+        from app.models.kg import KGDecision
+
+        now = datetime.now(timezone.utc).isoformat()
+        new_decision_id = f"decision-{uuid4()}"
+
+        query = """
+        MATCH (s:Suggestion {id: $suggestion_id})
+        MATCH (d:Decision {id: $original_decision_id})
+        MATCH (d)<-[:HAS_DECISION]-(a:Agenda)
+        MATCH (m:Meeting {id: $meeting_id})
+
+        // 새 Decision 생성
+        CREATE (nd:Decision {
+            id: $new_decision_id,
+            content: $content,
+            context: coalesce(d.context, ''),
+            status: 'draft',
+            meeting_id: $meeting_id,
+            created_at: datetime($created_at)
+        })
+        CREATE (a)-[:HAS_DECISION]->(nd)
+        CREATE (m)-[:DECIDED_IN]->(nd)
+        CREATE (nd)-[:SUPERSEDES]->(d)
+        CREATE (s)-[:CREATES]->(nd)
+
+        // Suggestion 상태 업데이트
+        SET s.status = 'accepted'
+
+        RETURN nd.id as id, nd.content as content, nd.context as context,
+               nd.status as status, nd.meeting_id as meeting_id,
+               nd.created_at as created_at
+        """
+        records = await self._execute_write(query, {
+            "suggestion_id": suggestion_id,
+            "original_decision_id": original_decision_id,
+            "content": content,
+            "meeting_id": meeting_id,
+            "new_decision_id": new_decision_id,
+            "created_at": now,
+        })
+
+        if not records:
+            raise ValueError(f"Suggestion or Decision not found")
+
+        r = records[0]
+        return KGDecision(
+            id=r["id"],
+            content=r["content"],
+            context=r["context"],
+            status=r["status"],
+            meeting_id=r["meeting_id"],
+            created_at=_convert_neo4j_datetime(r["created_at"]),
+        )
+
+    async def update_suggestion_status(self, suggestion_id: str, status: str) -> bool:
+        """Suggestion 상태 업데이트"""
+        query = """
+        MATCH (s:Suggestion {id: $suggestion_id})
+        SET s.status = $status
+        RETURN s.id as id
+        """
+        records = await self._execute_write(query, {
+            "suggestion_id": suggestion_id,
+            "status": status,
+        })
+        return len(records) > 0
 
     # =========================================================================
     # Comment - 댓글
     # =========================================================================
 
     async def create_comment(
-        self, decision_id: str, user_id: str, content: str
+        self, decision_id: str, user_id: str, content: str, pending_agent_reply: bool = False
     ) -> "KGComment":
         """Comment 생성"""
         from app.models.kg import KGComment
@@ -592,19 +770,22 @@ class KGRepository:
         CREATE (c:Comment {
             id: $comment_id,
             content: $content,
+            pending_agent_reply: $pending_agent_reply,
             created_at: datetime($created_at)
         })
         CREATE (u)-[:COMMENTS]->(c)
         CREATE (c)-[:ON]->(d)
 
         RETURN c.id as id, $content as content, $user_id as author_id,
-               $decision_id as decision_id, c.created_at as created_at
+               $decision_id as decision_id, c.pending_agent_reply as pending_agent_reply,
+               c.created_at as created_at
         """
         records = await self._execute_write(query, {
             "decision_id": decision_id,
             "user_id": user_id,
             "content": content,
             "comment_id": comment_id,
+            "pending_agent_reply": pending_agent_reply,
             "created_at": now,
         })
 
@@ -618,11 +799,12 @@ class KGRepository:
             author_id=r["author_id"],
             decision_id=r["decision_id"],
             parent_id=None,
+            pending_agent_reply=r["pending_agent_reply"] or False,
             created_at=_convert_neo4j_datetime(r["created_at"]),
         )
 
     async def create_reply(
-        self, comment_id: str, user_id: str, content: str
+        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False
     ) -> "KGComment":
         """대댓글 생성"""
         from app.models.kg import KGComment
@@ -638,6 +820,7 @@ class KGRepository:
         CREATE (r:Comment {
             id: $reply_id,
             content: $content,
+            pending_agent_reply: $pending_agent_reply,
             created_at: datetime($created_at)
         })
         CREATE (u)-[:COMMENTS]->(r)
@@ -645,13 +828,15 @@ class KGRepository:
         CREATE (r)-[:ON]->(d)
 
         RETURN r.id as id, $content as content, $user_id as author_id,
-               d.id as decision_id, $comment_id as parent_id, r.created_at as created_at
+               d.id as decision_id, $comment_id as parent_id,
+               r.pending_agent_reply as pending_agent_reply, r.created_at as created_at
         """
         records = await self._execute_write(query, {
             "comment_id": comment_id,
             "user_id": user_id,
             "content": content,
             "reply_id": reply_id,
+            "pending_agent_reply": pending_agent_reply,
             "created_at": now,
         })
 
@@ -665,6 +850,7 @@ class KGRepository:
             author_id=r["author_id"],
             decision_id=r["decision_id"],
             parent_id=r["parent_id"],
+            pending_agent_reply=r["pending_agent_reply"] or False,
             created_at=_convert_neo4j_datetime(r["created_at"]),
         )
 
@@ -935,77 +1121,135 @@ class KGRepository:
 
         agendas = []
         for a in agenda_records:
-            # 3. Decisions per Agenda
+            # 3. Decisions per Agenda (with approvers/rejectors)
+            # active Decision만 조회 (superseded, outdated, rejected 제외)
             decision_query = """
             MATCH (a:Agenda {id: $agenda_id})-[:HAS_DECISION]->(d:Decision)
+            WHERE NOT (d.status IN ['superseded', 'outdated', 'rejected'])
+            OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
+            OPTIONAL MATCH (rejector:User)-[:REJECTED_BY]->(d)
+            // 이전 GT 조회 (OUTDATES 관계 - latest → outdated)
+            OPTIONAL MATCH (d)-[:OUTDATES]->(prev:Decision)
+            WHERE prev.status = 'outdated'
             RETURN d.id as id, d.content as content, d.context as context,
-                   d.status as status, d.created_at as created_at
+                   d.status as status, d.meeting_id as meeting_id,
+                   d.created_at as created_at, d.updated_at as updated_at,
+                   [x IN collect(DISTINCT approver.id) WHERE x IS NOT NULL] as approvers,
+                   [x IN collect(DISTINCT rejector.id) WHERE x IS NOT NULL] as rejectors,
+                   prev.id as supersedes_id, prev.content as supersedes_content,
+                   prev.meeting_id as supersedes_meeting_id
             """
             decision_records = await self._execute_read(decision_query, {"agenda_id": a["id"]})
 
             decisions = []
             for d in decision_records:
-                # 4. Suggestions per Decision
+                # 4. Suggestions per Decision ([:ON] 관계로 조회 - AI 분석 전 Suggestion도 포함)
                 suggestion_query = """
-                MATCH (s:Suggestion)-[:CREATES]->(nd:Decision)
-                MATCH (d:Decision {id: $decision_id})-[:SUPERSEDED_BY]->(nd)
+                MATCH (s:Suggestion)-[:ON]->(d:Decision {id: $decision_id})
                 MATCH (u:User)-[:SUGGESTS]->(s)
-                RETURN s.id as id, s.content as content, u.id as author_id,
-                       nd.id as created_decision_id, s.created_at as created_at
+                OPTIONAL MATCH (s)-[:CREATES]->(cd:Decision)
+                RETURN s.id as id, s.content as content,
+                       u.id as author_id, u.name as author_name, u.email as author_email,
+                       s.status as status,
+                       cd.id as cd_id, cd.content as cd_content, cd.status as cd_status,
+                       s.created_at as created_at
                 """
                 suggestion_records = await self._execute_read(suggestion_query, {"decision_id": d["id"]})
                 suggestions = [
                     {
                         "id": s["id"],
                         "content": s["content"],
-                        "author_id": s["author_id"],
-                        "created_decision_id": s["created_decision_id"],
+                        "author": {
+                            "id": s["author_id"],
+                            "name": s["author_name"] or "",
+                            "email": s["author_email"] or "",
+                        },
+                        "created_decision": {
+                            "id": s["cd_id"],
+                            "content": s["cd_content"] or "",
+                            "status": s["cd_status"] or "draft",
+                        } if s["cd_id"] else None,
                         "created_at": _convert_neo4j_datetime(s["created_at"]).isoformat(),
                     }
                     for s in suggestion_records
                 ]
 
-                # 5. Comments per Decision (top-level only)
+                # 5. Comments per Decision (모든 depth를 단일 쿼리로 조회)
                 comment_query = """
                 MATCH (u:User)-[:COMMENTS]->(c:Comment)-[:ON]->(d:Decision {id: $decision_id})
-                WHERE NOT (c)-[:REPLY_TO]->()
-                RETURN c.id as id, c.content as content, u.id as author_id, c.created_at as created_at
+                OPTIONAL MATCH (c)-[:REPLY_TO]->(parent:Comment)
+                RETURN c.id as id, c.content as content,
+                       u.id as author_id, u.name as author_name, u.email as author_email,
+                       c.pending_agent_reply as pending_agent_reply,
+                       c.created_at as created_at,
+                       parent.id as parent_id
+                ORDER BY c.created_at
                 """
                 comment_records = await self._execute_read(comment_query, {"decision_id": d["id"]})
 
-                comments = []
-                for c in comment_records:
-                    # 6. Replies per Comment
-                    reply_query = """
-                    MATCH (u:User)-[:COMMENTS]->(r:Comment)-[:REPLY_TO]->(c:Comment {id: $comment_id})
-                    RETURN r.id as id, r.content as content, u.id as author_id, r.created_at as created_at
-                    """
-                    reply_records = await self._execute_read(reply_query, {"comment_id": c["id"]})
-                    replies = [
-                        {
-                            "id": r["id"],
-                            "content": r["content"],
-                            "author_id": r["author_id"],
-                            "created_at": _convert_neo4j_datetime(r["created_at"]).isoformat(),
-                        }
-                        for r in reply_records
-                    ]
-                    comments.append({
+                # 6. History: SUPERSEDES 체인을 따라 superseded된 Decision들 조회
+                # 같은 Meeting 스코프 내 + superseded 상태만 (Suggestion 히스토리)
+                # OUTDATES 관계(GT 변화)는 제외
+                history_query = """
+                MATCH (current:Decision {id: $decision_id})-[:SUPERSEDES*]->(prev:Decision)
+                WHERE prev.meeting_id = $meeting_id AND prev.status = 'superseded'
+                RETURN prev.id as id, prev.content as content, prev.status as status,
+                       prev.created_at as created_at
+                ORDER BY prev.created_at DESC
+                """
+                history_records = await self._execute_read(
+                    history_query, {"decision_id": d["id"], "meeting_id": meeting_id}
+                )
+                history = [
+                    {
+                        "id": h["id"],
+                        "content": h["content"] or "",
+                        "status": h["status"] or "superseded",
+                        "created_at": _convert_neo4j_datetime(h["created_at"]).isoformat(),
+                    }
+                    for h in history_records
+                ]
+
+                # Flat list 생성
+                flat_comments = [
+                    {
                         "id": c["id"],
                         "content": c["content"],
-                        "author_id": c["author_id"],
-                        "replies": replies,
+                        "author": {
+                            "id": c["author_id"],
+                            "name": c["author_name"] or "",
+                            "email": c["author_email"] or "",
+                        },
+                        "pending_agent_reply": c["pending_agent_reply"] or False,
                         "created_at": _convert_neo4j_datetime(c["created_at"]).isoformat(),
-                    })
+                        "parent_id": c["parent_id"],
+                    }
+                    for c in comment_records
+                ]
+
+                # Tree 구조로 변환 (무제한 depth 지원)
+                comments = _build_comment_tree(flat_comments)
 
                 decisions.append({
                     "id": d["id"],
                     "content": d["content"] or "",
                     "context": d["context"],
                     "status": d["status"] or "draft",
+                    "meeting_id": d["meeting_id"],
+                    "approvers": d["approvers"] or [],
+                    "rejectors": d["rejectors"] or [],
                     "created_at": _convert_neo4j_datetime(d["created_at"]).isoformat(),
+                    "updated_at": _convert_neo4j_datetime(d["updated_at"]).isoformat() if d.get("updated_at") else None,
                     "suggestions": suggestions,
                     "comments": comments,
+                    # 이전 버전 정보 (GT 표시용)
+                    "supersedes": {
+                        "id": d["supersedes_id"],
+                        "content": d["supersedes_content"] or "",
+                        "meeting_id": d["supersedes_meeting_id"],
+                    } if d.get("supersedes_id") else None,
+                    # 히스토리: 같은 Meeting 스코프 내 superseded된 모든 이전 버전
+                    "history": history,
                 })
 
             agendas.append({
@@ -1041,3 +1285,44 @@ class KGRepository:
             "agendas": agendas,
             "action_items": action_items,
         }
+
+    async def get_or_create_system_agent(self) -> str:
+        """MIT Agent 시스템 사용자 조회/생성
+
+        Returns:
+            str: mit-agent 사용자 ID
+        """
+        agent_id = "mit-agent"
+        agent_name = "MIT Agent"
+
+        query = """
+        MERGE (u:User {id: $agent_id})
+        ON CREATE SET u.name = $agent_name, u.created_at = datetime()
+        RETURN u.id as id
+        """
+        records = await self._execute_write(
+            query, {"agent_id": agent_id, "agent_name": agent_name}
+        )
+        return records[0]["id"] if records else agent_id
+
+    async def update_comment_pending_agent_reply(
+        self, comment_id: str, pending: bool
+    ) -> bool:
+        """Comment의 pending_agent_reply 상태 업데이트
+
+        Args:
+            comment_id: Comment ID
+            pending: pending_agent_reply 상태
+
+        Returns:
+            bool: 업데이트 성공 여부
+        """
+        query = """
+        MATCH (c:Comment {id: $comment_id})
+        SET c.pending_agent_reply = $pending
+        RETURN c.id as id
+        """
+        records = await self._execute_write(
+            query, {"comment_id": comment_id, "pending": pending}
+        )
+        return len(records) > 0
