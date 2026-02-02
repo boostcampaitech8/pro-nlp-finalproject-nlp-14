@@ -1,13 +1,19 @@
-"""Realtime Worker 메인 진입점
+"""Realtime Worker 메인 진입점 (OTel 계측 포함)
 
 현재: LiveKit 오디오 구독 → Clova Speech STT → Backend API 전송
 향후: Backend RAG 응답 → TTS 변환 → LiveKit 오디오 발화
+
+메트릭 측정:
+- VAD speech_end → STT final 결과 레이턴시
+- Wake word 감지 → Agent 첫 토큰 레이턴시
+- Wake word 감지 → TTS 첫 발화 레이턴시
 """
 
 import asyncio
 import logging
 import signal
 import sys
+import time
 from contextlib import suppress
 from datetime import datetime, timezone
 
@@ -16,6 +22,11 @@ from src.clients.stt import ClovaSpeechSTTClient, STTSegment
 from src.clients.tts import TTSClient
 from src.config import get_config
 from src.livekit import LiveKitBot
+from src.telemetry import (
+    RealtimeWorkerMetrics,
+    get_realtime_metrics,
+    init_realtime_telemetry,
+)
 
 # 로깅 설정
 logging.basicConfig(
@@ -47,6 +58,15 @@ class RealtimeWorker:
         """
         self.meeting_id = meeting_id
         self.config = get_config()
+
+        # Telemetry 초기화
+        self._metrics: RealtimeWorkerMetrics | None = init_realtime_telemetry(meeting_id)
+        # Wake word 감지 사용자 추적 (레이턴시 측정용)
+        self._wakeword_user_id: str | None = None
+        # Agent 첫 토큰 기록 여부
+        self._agent_first_token_recorded: bool = False
+        # TTS 첫 발화 기록 여부
+        self._tts_first_audio_recorded: bool = False
 
         # 컴포넌트 초기화
         self.api_client = BackendAPIClient()
@@ -214,6 +234,10 @@ class RealtimeWorker:
                     self._clear_tts_queue()
 
         elif event_type == "speech_end":
+            # VAD speech_end 타임스탬프 기록
+            if self._metrics:
+                self._metrics.mark_vad_speech_end(user_id)
+
             # STT에 발화 종료 알림
             if user_id in self._stt_clients:
                 stt_client = self._stt_clients[user_id]
@@ -260,6 +284,13 @@ class RealtimeWorker:
                 )
                 self._wake_word_pending[user_id] = True
 
+                # Wake word 감지 타임스탬프 기록
+                if self._metrics:
+                    self._metrics.mark_wakeword_detected(user_id)
+                    self._wakeword_user_id = user_id
+                    self._agent_first_token_recorded = False
+                    self._tts_first_audio_recorded = False
+
                 # context 선준비 (pre_transcript_id 기준으로 업데이트)
                 # 기존 task가 있으면 취소 후 새로 시작
                 if self._pre_transcript_id:
@@ -274,6 +305,10 @@ class RealtimeWorker:
             f"STT 결과: [{participant_name}] '{segment.text}' "
             f"({segment.start_ms}~{segment.end_ms}ms, conf={segment.confidence:.2f})"
         )
+
+        # STT final 결과 수신 타임스탬프 기록 (VAD→STT 레이턴시)
+        if self._metrics:
+            self._metrics.mark_stt_final_received(user_id)
 
         # Backend API로 전송
         request = TranscriptSegmentRequest(
@@ -296,6 +331,12 @@ class RealtimeWorker:
         if not wake_word_triggered and self._agent_enabled:
             # final 결과에서도 wake word 확인 (중간 결과에서 놓친 경우)
             wake_word_triggered = self.config.agent_wake_word in segment.text
+            if wake_word_triggered and self._metrics:
+                # final에서 감지한 경우에도 타임스탬프 기록
+                self._metrics.mark_wakeword_detected(user_id)
+                self._wakeword_user_id = user_id
+                self._agent_first_token_recorded = False
+                self._tts_first_audio_recorded = False
 
         if wake_word_triggered:
             logger.info(f"Wake word 최종 처리: '{segment.text}'")
@@ -402,12 +443,22 @@ class RealtimeWorker:
 
             # 2. LLM 스트리밍 호출
             buffer = ""
+            agent_start_time = time.perf_counter()
             async for token in self.api_client.stream_agent_response(
                 meeting_id=self.meeting_id,
                 transcript_id=transcript_id,
             ):
                 if not token:
                     continue
+
+                # Agent 첫 토큰 시점 기록
+                if (
+                    not self._agent_first_token_recorded
+                    and self._metrics
+                    and self._wakeword_user_id
+                ):
+                    self._metrics.mark_agent_first_token(self._wakeword_user_id)
+                    self._agent_first_token_recorded = True
 
                 buffer += token
                 sentences, buffer = self._extract_sentences(buffer)
@@ -419,6 +470,11 @@ class RealtimeWorker:
             if tail:
                 await self.bot.send_chat_message(tail)
                 self._enqueue_tts(tail)
+
+            # Agent 전체 응답 시간 기록
+            if self._metrics:
+                agent_duration = time.perf_counter() - agent_start_time
+                self._metrics.record_agent_duration(agent_duration)
 
         except asyncio.CancelledError:
             logger.info("Agent 파이프라인 취소됨")
@@ -447,13 +503,29 @@ class RealtimeWorker:
                 continue
 
             try:
+                tts_start_time = time.perf_counter()
                 audio_bytes = await self._tts_client.synthesize(sentence)
                 if audio_bytes:
+                    # TTS 합성 시간 기록
+                    if self._metrics:
+                        tts_duration = time.perf_counter() - tts_start_time
+                        self._metrics.record_tts_duration(tts_duration)
+
                     # 재생 직전 인터럽트 체크 (합성 중 인터럽트 발생한 경우)
                     if self._tts_interrupt_event.is_set():
                         logger.info("TTS 합성 후 인터럽트 감지, 재생 스킵")
                         self._tts_queue.task_done()
                         continue
+
+                    # TTS 첫 발화 시점 기록 (WakeWord→TTS 레이턴시)
+                    if (
+                        not self._tts_first_audio_recorded
+                        and self._metrics
+                        and self._wakeword_user_id
+                    ):
+                        self._metrics.mark_tts_first_audio(self._wakeword_user_id)
+                        self._tts_first_audio_recorded = True
+                        self._wakeword_user_id = None  # 초기화
 
                     # 재생 시작 직전에 이벤트 클리어 및 재생 중 플래그 설정
                     self._tts_interrupt_event.clear()

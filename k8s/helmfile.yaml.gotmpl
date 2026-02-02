@@ -6,6 +6,10 @@ repositories:
     url: https://charts.bitnami.com/bitnami
   - name: livekit
     url: https://helm.livekit.io
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
 
 environments:
   local:
@@ -42,6 +46,7 @@ releases:
         ncp: {{ .Values.ncp | toYaml | nindent 10 }}
         oauth: {{ .Values.oauth | toYaml | nindent 10 }}
         ingress: {{ .Values.ingress | toYaml | nindent 10 }}
+        cloudflare: {{ .Values.cloudflare | toYaml | nindent 10 }}
         resources:
           backend: {{ .Values.resources.backend | toYaml | nindent 12 }}
           frontend: {{ .Values.resources.frontend | toYaml | nindent 12 }}
@@ -89,6 +94,8 @@ releases:
     values:
       # 한 곳에서만 쓰이는 값 - 하드코딩
       - fullnameOverride: lk-server  # 'livekit'은 K8s 환경변수 LIVEKIT_PORT와 충돌
+        deploymentStrategy:
+          type: Recreate  # hostPort 사용으로 RollingUpdate 불가
         livekit:
           key_file: keys.yaml
           rtc:
@@ -125,4 +132,143 @@ releases:
         resources:
           requests: {{ .Values.resources.livekit.requests | toYaml | nindent 12 }}
           limits: {{ .Values.resources.livekit.limits | toYaml | nindent 12 }}
+
+  # ===========================================
+  # Prometheus (Metrics 저장소)
+  # ===========================================
+  - name: prometheus
+    labels:
+      type: observability
+      svc: prometheus
+    chart: prometheus-community/prometheus
+    namespace: {{ .Values.global.namespace }}
+    values:
+      - server:
+          extraFlags:
+            - web.enable-remote-write-receiver
+          persistentVolume:
+            enabled: true
+            size: {{ .Values.observability.prometheus.storage | default "10Gi" }}
+          resources:
+            requests: {{ .Values.resources.prometheus.requests | toYaml | nindent 14 }}
+            limits: {{ .Values.resources.prometheus.limits | toYaml | nindent 14 }}
+        alertmanager:
+          enabled: false
+        prometheus-pushgateway:
+          enabled: false
+        kube-state-metrics:
+          enabled: true
+        prometheus-node-exporter:
+          enabled: false
+
+  # ===========================================
+  # Loki (Logs 저장소)
+  # ===========================================
+  - name: loki
+    labels:
+      type: observability
+      svc: loki
+    chart: grafana/loki
+    namespace: {{ .Values.global.namespace }}
+    values:
+      - deploymentMode: SingleBinary
+        loki:
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          storage:
+            type: filesystem
+          schemaConfig:
+            configs:
+              - from: "2024-01-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+        # SimpleScalable 모드 컴포넌트 비활성화 (SingleBinary와 충돌 방지)
+        read:
+          replicas: 0
+        write:
+          replicas: 0
+        backend:
+          replicas: 0
+        singleBinary:
+          replicas: 1
+          persistence:
+            enabled: true
+            size: {{ .Values.observability.loki.storage | default "10Gi" }}
+          resources:
+            requests: {{ .Values.resources.loki.requests | toYaml | nindent 14 }}
+            limits: {{ .Values.resources.loki.limits | toYaml | nindent 14 }}
+
+  # ===========================================
+  # Grafana Alloy (OpenTelemetry Collector + Log Collection)
+  # ===========================================
+  - name: alloy
+    labels:
+      type: observability
+      svc: alloy
+    chart: grafana/alloy
+    namespace: {{ .Values.global.namespace }}
+    needs:
+      - prometheus
+      - loki
+    values:
+      - alloy:
+          configMap:
+            create: false
+            name: alloy-config
+          extraPorts:
+            - name: otlp-grpc
+              port: 4317
+              targetPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              port: 4318
+              targetPort: 4318
+              protocol: TCP
+          mounts:
+            # Pod 로그 수집을 위한 hostPath 마운트
+            varlog: true
+            dockercontainers: true
+        controller:
+          type: daemonset
+        resources:
+          requests: {{ .Values.resources.alloy.requests | toYaml | nindent 12 }}
+          limits: {{ .Values.resources.alloy.limits | toYaml | nindent 12 }}
+
+  # ===========================================
+  # Grafana (Visualization)
+  # ===========================================
+  - name: grafana
+    labels:
+      type: observability
+      svc: grafana
+    chart: grafana/grafana
+    namespace: {{ .Values.global.namespace }}
+    needs:
+      - prometheus
+      - loki
+    values:
+      - persistence:
+          enabled: true
+          size: {{ .Values.observability.grafana.storage | default "5Gi" }}
+        adminUser: admin
+        adminPassword: {{ .Values.observability.grafana.adminPassword | default "admin" }}
+        datasources:
+          datasources.yaml:
+            apiVersion: 1
+            datasources:
+              - name: Prometheus
+                type: prometheus
+                url: http://prometheus-server:80
+                isDefault: true
+              - name: Loki
+                type: loki
+                url: http://loki:3100
+        resources:
+          requests: {{ .Values.resources.grafana.requests | toYaml | nindent 12 }}
+          limits: {{ .Values.resources.grafana.limits | toYaml | nindent 12 }}
 

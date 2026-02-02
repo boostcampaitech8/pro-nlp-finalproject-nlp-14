@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.telemetry import instrument_fastapi, setup_telemetry
 
 # 로깅 설정
 logging.basicConfig(
@@ -21,7 +22,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """애플리케이션 라이프사이클"""
-    # 시작 시
+    # 시작 시: Telemetry 초기화
+    setup_telemetry("mit-backend", "0.1.0")
     yield
     # 종료 시
     await engine.dispose()
@@ -33,6 +35,9 @@ app = FastAPI(
     description="Mit - Collaborative organization knowledge system API",
     lifespan=lifespan,
 )
+
+# OpenTelemetry FastAPI 계측
+instrument_fastapi(app)
 
 # CORS 설정
 app.add_middleware(

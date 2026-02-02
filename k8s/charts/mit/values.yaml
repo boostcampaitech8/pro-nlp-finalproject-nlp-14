@@ -86,6 +86,11 @@ ingress:
   tlsSecretName: ""
   annotations: {}
 
+# Cloudflare Tunnel (Grafana 접근용)
+cloudflare:
+  enabled: false
+  tunnelToken: ""
+
 resources:
   backend:
     requests: { memory: "256Mi", cpu: "100m" }
