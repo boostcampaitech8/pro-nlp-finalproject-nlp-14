@@ -1,13 +1,18 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    action_items,
+    agendas,
     agent,
     auth,
     chat,
+    comments,
     decisions,
     livekit_webhooks,
     meeting_participants,
     meetings,
+    minutes,
+    suggestions,
     team_members,
     teams,
     transcripts,
@@ -29,3 +34,11 @@ api_router.include_router(chat.router)
 api_router.include_router(livekit_webhooks.router)
 api_router.include_router(decisions.router)
 api_router.include_router(decisions.meetings_decisions_router)
+
+# KG CRUD API - Phase 4
+api_router.include_router(comments.router)
+api_router.include_router(comments.decisions_comments_router)
+api_router.include_router(suggestions.decisions_suggestions_router)
+api_router.include_router(agendas.router)
+api_router.include_router(action_items.router)
+api_router.include_router(minutes.meetings_minutes_router)

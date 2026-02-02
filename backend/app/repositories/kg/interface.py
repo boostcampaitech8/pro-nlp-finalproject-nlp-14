@@ -5,7 +5,15 @@ Protocol 기반 인터페이스로 구조적 서브타이핑 지원
 
 from typing import Protocol
 
-from app.models.kg import KGAgenda, KGDecision, KGMeeting, KGMinutes
+from app.models.kg import (
+    KGActionItem,
+    KGAgenda,
+    KGComment,
+    KGDecision,
+    KGMeeting,
+    KGMinutes,
+    KGSuggestion,
+)
 
 
 class IKGRepository(Protocol):
@@ -80,5 +88,141 @@ class IKGRepository(Protocol):
                 "approvers_count": int,
                 "participants_count": int,
             }
+        """
+        ...
+
+    # === Suggestion 관련 (신규) ===
+
+    async def create_suggestion(
+        self, decision_id: str, user_id: str, content: str
+    ) -> KGSuggestion:
+        """Suggestion + 새 Decision 생성 (원자적)
+
+        Suggestion 생성 시 새 Decision도 함께 생성되며,
+        원본 Decision의 Agenda에 연결됨.
+        """
+        ...
+
+    # === Comment 관련 (신규) ===
+
+    async def create_comment(
+        self, decision_id: str, user_id: str, content: str
+    ) -> KGComment:
+        """Comment 생성
+
+        (User)-[:COMMENTS]->(Comment) 관계로 생성됨.
+        """
+        ...
+
+    async def create_reply(
+        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False
+    ) -> KGComment:
+        """대댓글 생성
+
+        (Reply)-[:REPLY_TO]->(ParentComment) 관계로 생성됨.
+        """
+        ...
+
+    async def delete_comment(self, comment_id: str, user_id: str) -> bool:
+        """Comment 삭제 (작성자 확인 + CASCADE)
+
+        작성자만 삭제 가능. 대댓글도 함께 삭제됨.
+        """
+        ...
+
+    # === Decision CRUD 확장 (신규) ===
+
+    async def update_decision(
+        self, decision_id: str, user_id: str, data: dict
+    ) -> KGDecision:
+        """Decision 수정 (작성자 확인)"""
+        ...
+
+    async def delete_decision(self, decision_id: str, user_id: str) -> bool:
+        """Decision 삭제 (작성자 확인 + 전체 CASCADE)
+
+        REPLY_TO, TRIGGERS, CREATES, HAS_COMMENT 관계 모두 삭제.
+        """
+        ...
+
+    # === Agenda CRUD (신규) ===
+
+    async def update_agenda(
+        self, agenda_id: str, user_id: str, data: dict
+    ) -> KGAgenda:
+        """Agenda 수정"""
+        ...
+
+    async def delete_agenda(self, agenda_id: str, user_id: str) -> bool:
+        """Agenda 삭제 (전체 CASCADE)
+
+        Agenda 하위의 모든 Decision, Comment, Suggestion 등 삭제.
+        """
+        ...
+
+    # === ActionItem CRUD 확장 (신규) ===
+
+    async def get_action_items(
+        self, user_id: str | None = None, status: str | None = None
+    ) -> list[KGActionItem]:
+        """ActionItem 목록 조회 (필터링)"""
+        ...
+
+    async def update_action_item(
+        self, action_item_id: str, user_id: str, data: dict
+    ) -> KGActionItem:
+        """ActionItem 수정"""
+        ...
+
+    async def delete_action_item(self, action_item_id: str, user_id: str) -> bool:
+        """ActionItem 삭제"""
+        ...
+
+    # === Minutes View (신규) ===
+
+    async def get_minutes_view(self, meeting_id: str) -> dict:
+        """Minutes 전체 View 조회 (중첩 구조)
+
+        Returns:
+            {
+                "meeting_id": str,
+                "summary": str,
+                "agendas": [{
+                    "id": str,
+                    "topic": str,
+                    "description": str | None,
+                    "order": int,
+                    "decisions": [{
+                        ...decision fields...,
+                        "suggestions": [...],
+                        "comments": [...]
+                    }]
+                }],
+                "action_items": [...]
+            }
+        """
+        ...
+
+    # === MIT Agent System User (신규) ===
+
+    async def get_or_create_system_agent(self) -> str:
+        """MIT Agent 시스템 사용자 조회/생성
+
+        Returns:
+            str: mit-agent 사용자 ID
+        """
+        ...
+
+    async def update_comment_pending_agent_reply(
+        self, comment_id: str, pending: bool
+    ) -> bool:
+        """Comment의 pending_agent_reply 상태 업데이트
+
+        Args:
+            comment_id: Comment ID
+            pending: pending_agent_reply 상태
+
+        Returns:
+            bool: 업데이트 성공 여부
         """
         ...

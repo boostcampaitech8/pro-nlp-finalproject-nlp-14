@@ -174,7 +174,8 @@ class LiveKitBot:
         *,
         target_sample_rate: int | None = None,
         frame_duration_ms: int = 20,
-    ) -> None:
+        interrupt_event: asyncio.Event | None = None,
+    ) -> bool:
         """PCM16LE 바이트를 LiveKit 오디오로 재생
 
         Args:
@@ -183,9 +184,13 @@ class LiveKitBot:
             num_channels: 채널 수 (기본 1=mono)
             target_sample_rate: 출력 sample rate (None이면 입력과 동일)
             frame_duration_ms: 프레임 길이 (ms)
+            interrupt_event: 설정 시 이 이벤트가 set되면 재생 중단
+
+        Returns:
+            True if playback completed, False if interrupted
         """
         if not pcm_bytes:
-            return
+            return True
 
         pcm = pcm_bytes
 
@@ -206,12 +211,20 @@ class LiveKitBot:
             async for frame in self._resample_and_chunk(
                 resampler, pcm, sample_rate, num_channels, frame_duration_ms
             ):
+                if interrupt_event and interrupt_event.is_set():
+                    logger.info("TTS 재생 인터럽트 감지됨 (resample)")
+                    return False
                 await self._tts_source.capture_frame(frame)
         else:
             async for frame in self._chunk_pcm_frames(
                 pcm, sample_rate, num_channels, frame_duration_ms
             ):
+                if interrupt_event and interrupt_event.is_set():
+                    logger.info("TTS 재생 인터럽트 감지됨")
+                    return False
                 await self._tts_source.capture_frame(frame)
+
+        return True
 
     @staticmethod
     def _stereo_to_mono_int16(pcm_data: bytes) -> bytes:

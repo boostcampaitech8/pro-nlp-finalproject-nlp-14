@@ -60,3 +60,21 @@ export type {
   PRMinutes,
   PRStatus,
 } from './pr-review';
+
+// KG CRUD types (local)
+export type {
+  UserBrief,
+  DecisionBrief,
+  Comment,
+  CreateCommentRequest,
+  Suggestion,
+  CreateSuggestionRequest,
+  ActionItem,
+  ActionItemStatus,
+  UpdateActionItemRequest,
+  Agenda,
+  UpdateAgendaRequest,
+  DecisionWithReview,
+  AgendaWithDecisions,
+  MinutesResponse,
+} from './kg';
