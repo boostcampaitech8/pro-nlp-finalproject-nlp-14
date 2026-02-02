@@ -21,10 +21,10 @@ class AIAgent:
 # 멘션 가능한 AI 에이전트 목록
 AI_AGENTS: list[AIAgent] = [
     AIAgent(
-        id="mit-agent",
-        name="MIT Agent",
-        display_name="MIT 에이전트",
-        mention="@mit",
+        id="11111111-1111-1111-1111-111111111111",  # PR #62 AGENT_USER_ID와 동일
+        name="부덕이",
+        display_name="부덕이",
+        mention="@부덕이",
         description="이 결정 사항에 대해 궁금한 점이 있으면 언제든지 물어보세요!",
     ),
 ]

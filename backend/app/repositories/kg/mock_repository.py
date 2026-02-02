@@ -7,6 +7,7 @@ import copy
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from app.constants.agents import DEFAULT_AI_AGENT
 from app.models.kg import (
     KGActionItem,
     KGAgenda,
@@ -1095,11 +1096,11 @@ class MockKGRepository:
 
     async def get_or_create_system_agent(self) -> str:
         """MIT Agent 시스템 사용자 조회/생성"""
-        agent_id = "mit-agent"
+        agent_id = DEFAULT_AI_AGENT.id
         if agent_id not in self.data["users"]:
             self.data["users"][agent_id] = {
                 "id": agent_id,
-                "name": "MIT Agent",
+                "name": DEFAULT_AI_AGENT.name,
                 "email": "mit-agent@system",
             }
         return agent_id

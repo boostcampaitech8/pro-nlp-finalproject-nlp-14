@@ -10,6 +10,7 @@ from uuid import uuid4
 from neo4j import AsyncDriver, READ_ACCESS
 from neo4j.time import DateTime as Neo4jDateTime
 
+from app.constants.agents import DEFAULT_AI_AGENT
 from app.models.kg import (
     KGActionItem,
     KGAgenda,
@@ -1319,10 +1320,10 @@ class KGRepository:
         """MIT Agent 시스템 사용자 조회/생성
 
         Returns:
-            str: mit-agent 사용자 ID
+            str: Agent 사용자 ID (UUID)
         """
-        agent_id = "mit-agent"
-        agent_name = "MIT Agent"
+        agent_id = DEFAULT_AI_AGENT.id
+        agent_name = DEFAULT_AI_AGENT.name
 
         query = """
         MERGE (u:User {id: $agent_id})
