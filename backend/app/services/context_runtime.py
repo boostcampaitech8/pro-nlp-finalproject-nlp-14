@@ -1,4 +1,9 @@
-"""ContextManager runtime cache for real-time updates."""
+"""ContextManager runtime cache for real-time updates.
+
+TTL Cache를 사용하여 메모리 누수 방지:
+- 최대 500개 회의 동시 캐시
+- 1시간 미접근 시 자동 삭제
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
+from cachetools import TTLCache
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +31,11 @@ class ContextRuntimeState:
     last_utterance_id: int = 0
 
 
-_runtime_cache: dict[str, ContextRuntimeState] = {}
+# TTL Cache: 동시 최대 500개 회의, 1시간 미접근 시 자동 삭제
+_runtime_cache: TTLCache[str, ContextRuntimeState] = TTLCache(
+    maxsize=10,
+    ttl=3600,  # 1시간
+)
 _runtime_lock = asyncio.Lock()
 
 
