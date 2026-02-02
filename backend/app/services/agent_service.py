@@ -131,23 +131,16 @@ class AgentService:
         try:
             # 6. Planning 실행 (1단계: 컨텍스트 기반 계획 수립)
             planning_result = await create_plan(initial_state)
-            required_topics = planning_result.get("required_topics", [])
-
-            logger.info("Planning 완료: required_topics=%s", required_topics)
-
-            # 7. 추가 토픽 컨텍스트 구성 (2단계)
-            additional_context, missing = builder.build_required_topic_context(
-                ctx_manager, required_topics
+            # 7. Semantic Search 기반 추가 컨텍스트 구성 (비동기 배치 임베딩)
+            additional_context = await builder.build_additional_context_with_search_async(
+                ctx_manager,
+                user_input,
+                top_k=ctx_manager.config.topic_search_top_k,
+                threshold=ctx_manager.config.topic_search_threshold,
             )
-            if missing:
-                logger.warning("토픽 매칭 실패: %s", missing)
 
             # 8. 최종 상태 구성 후 Orchestration 실행
-            orchestration_payload = {
-                key: value
-                for key, value in planning_result.items()
-                if key != "required_topics"
-            }
+            orchestration_payload = dict(planning_result)
             full_state = {
                 **initial_state,
                 **orchestration_payload,

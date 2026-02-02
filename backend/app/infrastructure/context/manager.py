@@ -206,6 +206,9 @@ class ContextManager:
         chunks = self._pending_l1_chunks.copy()
         self._pending_l1_chunks.clear()
 
+        # 새로 생성된 세그먼트 수집 (배치 임베딩용)
+        new_segments: list[TopicSegment] = []
+
         for chunk_idx, chunk in enumerate(chunks):
             is_first = len(self.l1_segments) == 0 and chunk_idx == 0
 
@@ -218,14 +221,19 @@ class ContextManager:
             for seg in segments:
                 if not self._find_segment_by_name(seg.name):
                     self.l1_segments.append(seg)
-
-                # 임베딩 생성 및 저장
-                self._embed_topic(seg)
+                    new_segments.append(seg)
+                elif seg.id not in self._topic_embeddings:
+                    # 업데이트된 세그먼트도 임베딩 필요
+                    new_segments.append(seg)
 
             logger.info(
                 f"Chunk {chunk_idx + 1}: {len(segments)} topics from "
                 f"turn {chunk[0].id}~{chunk[-1].id}"
             )
+
+        # 배치 임베딩 (병렬 API 호출)
+        if new_segments:
+            await self._embed_topics_batch_async(new_segments)
 
         # 토픽 수 초과 시 유사 토픽 병합
         await self._check_and_merge_topics()
@@ -300,21 +308,28 @@ class ContextManager:
             f"시작: {first[:80]} / 마지막: {last[:80]}"
         )
 
-    async def _call_llm(self, prompt: str, max_tokens: int | None = None) -> str | None:
-        """LLM 호출 (실패 시 None 반환)"""
+    async def _call_llm(self, prompt: str) -> str | None:
+        """LLM 호출 (실패 시 None 반환)
+
+        Args:
+            prompt: LLM에 전달할 프롬프트
+
+        Note:
+            HCX-DASH-002 모델 사용 (실시간 처리 + 빠른 응답)
+            max_tokens=2048 (정보 손실 최소화)
+        """
         if not self._llm_enabled:
             return None
 
         try:
-            from app.infrastructure.graph.integration.llm import get_base_llm
+            from app.infrastructure.graph.integration.llm import get_context_summarizer_llm
         except Exception as e:
             logger.debug(f"Failed to import LLM client: {e}")
             return None
 
         try:
-            llm = get_base_llm()
-            runnable = llm.bind(max_tokens=max_tokens) if max_tokens else llm
-            response = await runnable.ainvoke(prompt)
+            llm = get_context_summarizer_llm()
+            response = await llm.ainvoke(prompt)
             return response.content if hasattr(response, "content") else str(response)
         except Exception as e:
             logger.warning(f"Context summarization LLM call failed: {e}")
@@ -388,7 +403,7 @@ class ContextManager:
             )
 
         # LLM 호출
-        response = await self._call_llm(prompt, max_tokens=1500)
+        response = await self._call_llm(prompt)
         if not response:
             # fallback: 단일 토픽 생성
             return [self._create_fallback_segment(utterances, start_turn, end_turn)]
@@ -554,8 +569,49 @@ class ContextManager:
 
     # === 인메모리 임베딩 & 시맨틱 서치 ===
 
+    async def _embed_topics_batch_async(self, segments: list[TopicSegment]) -> int:
+        """여러 토픽을 배치로 임베딩 (비동기, 병렬 API 호출).
+
+        Args:
+            segments: 임베딩할 토픽 세그먼트 리스트
+
+        Returns:
+            int: 성공적으로 임베딩된 토픽 수
+        """
+        if not self._embedder or not self._embedder.is_available:
+            return 0
+
+        # 이미 임베딩된 토픽 제외
+        to_embed = [
+            (seg, seg.summary)
+            for seg in segments
+            if seg.id not in self._topic_embeddings and seg.summary.strip()
+        ]
+
+        if not to_embed:
+            return 0
+
+        texts = [summary for _, summary in to_embed]
+        embeddings = await self._embedder.embed_batch_async(texts)
+
+        embedded_count = 0
+        for (seg, _), emb in zip(to_embed, embeddings):
+            # 영벡터(실패)가 아닌 경우만 저장
+            if emb is not None and not np.all(emb == 0):
+                self._topic_embeddings[seg.id] = emb.tolist()
+                embedded_count += 1
+
+        if embedded_count > 0:
+            logger.info(f"Batch embedded {embedded_count}/{len(to_embed)} topics")
+
+        return embedded_count
+
     def _embed_topic(self, segment: TopicSegment) -> None:
-        """토픽 요약을 임베딩하여 메모리에 저장."""
+        """토픽 요약을 임베딩하여 메모리에 저장.
+
+        Note:
+            Deprecated: _embed_topics_batch_async() 사용 권장
+        """
         if not self._embedder or not self._embedder.is_available:
             return
 
@@ -668,7 +724,7 @@ class ContextManager:
             summary_2=seg2.summary,
         )
 
-        response = await self._call_llm(prompt, max_tokens=800)
+        response = await self._call_llm(prompt)
         if not response:
             return None
 
@@ -726,13 +782,67 @@ class ContextManager:
             participants=list(set(seg1.participants + seg2.participants)),
         )
 
+    async def search_similar_topics_async(
+        self,
+        query: str,
+        top_k: int = 5,
+        threshold: float = 0.3,
+    ) -> list[TopicSegment]:
+        """쿼리와 유사한 토픽을 비동기 시맨틱 서치.
+
+        Args:
+            query: 검색 쿼리
+            top_k: 최대 반환 개수
+            threshold: 최소 유사도 임계값
+
+        Returns:
+            유사도 순으로 정렬된 TopicSegment 리스트
+        """
+        if not self._embedder or not self._embedder.is_available:
+            logger.debug("Embedder not available, returning recent topics")
+            return self.l1_segments[:top_k]
+
+        if not self._topic_embeddings:
+            return self.l1_segments[:top_k]
+
+        # 비동기 쿼리 임베딩 생성
+        query_embedding = await self._embedder.embed_text_async(query)
+        if query_embedding is None:
+            return self.l1_segments[:top_k]
+
+        # 유사도 계산
+        similarities: list[tuple[TopicSegment, float]] = []
+        for seg in self.l1_segments:
+            if seg.id not in self._topic_embeddings:
+                continue
+
+            topic_embedding = np.array(self._topic_embeddings[seg.id], dtype=np.float32)
+            similarity = self._embedder.cosine_similarity(query_embedding, topic_embedding)
+
+            if similarity >= threshold:
+                similarities.append((seg, similarity))
+
+        # 유사도 내림차순 정렬
+        similarities.sort(key=lambda x: x[1], reverse=True)
+
+        # Top-K 반환
+        results = [seg for seg, _ in similarities[:top_k]]
+        logger.debug(
+            f"Async semantic search for '{query[:30]}...': "
+            f"found {len(results)} topics (top_k={top_k}, threshold={threshold})"
+        )
+        return results
+
     def search_similar_topics(
         self,
         query: str,
         top_k: int = 5,
         threshold: float = 0.3,
     ) -> list[TopicSegment]:
-        """쿼리와 유사한 토픽을 시맨틱 서치.
+        """쿼리와 유사한 토픽을 시맨틱 서치 (동기, 하위 호환성).
+
+        Note:
+            search_similar_topics_async() 사용 권장
 
         Args:
             query: 검색 쿼리
