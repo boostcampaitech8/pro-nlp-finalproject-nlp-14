@@ -138,10 +138,8 @@ export function ActionItemCard({
             </>
           )}
         </div>
-
         {/* 내용 */}
         <div className="flex-1 min-w-0">
-          {/* 내용 */}
           <EditableText
             value={item.content}
             onSave={async (content) => onUpdate({ content })}
