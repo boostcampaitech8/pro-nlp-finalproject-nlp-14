@@ -4,5 +4,6 @@
 """
 
 from app.infrastructure.graph.workflows.mit_action.graph import mit_action_graph
+from app.infrastructure.graph.workflows.mit_mention.graph import mit_mention_graph
 
-__all__ = ["mit_action_graph"]
+__all__ = ["mit_action_graph", "mit_mention_graph"]
