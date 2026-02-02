@@ -6,11 +6,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveKit } from '@/hooks/useLiveKit';
 import { useMultiAudioLevels } from '@/hooks/useAudioLevel';
+import { useMeetingTopics } from '@/hooks/useMeetingTopics';
 import { AudioControls } from './AudioControls';
 import { ParticipantList } from './ParticipantList';
 import { ScreenShareView } from './ScreenShareView';
 import { ChatPanel } from './ChatPanel';
 import { RemoteAudio } from './RemoteAudio';
+import { TopicSidebar } from './TopicSidebar';
 import logger from '@/utils/logger';
 
 interface MeetingRoomProps {
@@ -67,6 +69,15 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
 
   // 오디오 레벨 분석 (발화 인디케이터용)
   const audioLevels = useMultiAudioLevels(remoteStreams, localStream, userId);
+
+  // 실시간 토픽 스트리밍 - 연결됐을 때만 활성화
+  const {
+    topics,
+    isL1Running,
+    pendingChunks,
+  } = useMeetingTopics(meetingId, {
+    enabled: connectionState === 'connected',
+  });
 
   // 화면공유 토글
   const handleToggleScreenShare = useCallback(() => {
@@ -202,8 +213,16 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
 
       {/* 메인 컨텐츠 */}
       <main className="flex-1 min-h-0 flex">
+        {/* 왼쪽 토픽 사이드바 */}
+        <TopicSidebar
+          topics={topics}
+          isL1Running={isL1Running}
+          pendingChunks={pendingChunks}
+        />
+
         {/* 중앙 영역 - 화면공유 또는 오디오 시각화 */}
-        <div className="flex-1 flex items-center justify-center p-8">
+        <div className="flex-1 min-h-0 flex items-center justify-center p-8 relative">
+
           {hasActiveScreenShare ? (
             <ScreenShareView
               localScreenStream={screenStream}
