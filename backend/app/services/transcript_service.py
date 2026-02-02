@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.meeting import Meeting
 from app.models.transcript import Transcript
-from app.models.user import User
+from app.models.user import AuthProvider, User
 from app.schemas.transcript import (
     CreateTranscriptRequest,
     CreateTranscriptResponse,
@@ -63,6 +63,7 @@ class TranscriptService:
             agent_call=request.agent_call,
             agent_call_keyword=request.agent_call_keyword,
             agent_call_confidence=request.agent_call_confidence,
+            status=request.status,
         )
 
         self.db.add(transcript)
@@ -118,13 +119,16 @@ class TranscriptService:
 
         # 4. utterances 생성
         utterances: list[UtteranceItem] = []
-        speaker_ids: set[UUID] = set()
+        human_speaker_ids: set[UUID] = set()  # system user 제외한 실제 참여자
         max_end_ms = 0
 
         for transcript, user in rows:
             speaker_name = user.name if user else "Unknown"
-            speaker_ids.add(transcript.user_id)
             max_end_ms = max(max_end_ms, transcript.end_ms)
+
+            # speaker_count 계산 시 system user (agent) 제외
+            if user and user.auth_provider != AuthProvider.SYSTEM.value:
+                human_speaker_ids.add(transcript.user_id)
 
             utterances.append(
                 UtteranceItem(
@@ -135,6 +139,7 @@ class TranscriptService:
                     end_ms=transcript.end_ms,
                     text=transcript.transcript_text,
                     timestamp=transcript.created_at,
+                    status=transcript.status,
                 )
             )
 
@@ -151,7 +156,7 @@ class TranscriptService:
             full_text=full_text,
             utterances=utterances,
             total_duration_ms=max_end_ms,
-            speaker_count=len(speaker_ids),
+            speaker_count=len(human_speaker_ids),  # system user 제외
             meeting_start=None,  # 현재 단계에서는 null
             meeting_end=None,    # 현재 단계에서는 null
             created_at=rows[0][0].created_at,  # 첫 번째 transcript의 생성 시간

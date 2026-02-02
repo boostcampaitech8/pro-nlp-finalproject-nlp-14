@@ -15,6 +15,7 @@ class AuthProvider(str, Enum):
     NAVER = "naver"
     GOOGLE = "google"
     GITHUB = "github"
+    SYSTEM = "system"  # 시스템 사용자 (AI Agent 등)
 
 
 class User(Base):

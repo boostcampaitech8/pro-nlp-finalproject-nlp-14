@@ -198,7 +198,7 @@ class ClovaSpeechSTTClient:
 
                 try:
                     data = json.loads(response.contents)
-                    logger.info(f"STT 응답: {data}")
+                    logger.debug(f"STT 응답: {data}")
 
                     # transcription 결과 파싱
                     if "transcription" in data:
