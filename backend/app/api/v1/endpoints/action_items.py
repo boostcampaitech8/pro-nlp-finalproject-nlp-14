@@ -41,8 +41,7 @@ async def get_action_items(
     return [
         ActionItemResponse(
             id=item.id,
-            title=item.title,
-            description=item.description,
+            content=item.content,
             status=item.status,
             assignee_id=item.assignee_id,
             due_date=item.due_date,
@@ -71,8 +70,7 @@ async def update_action_item(
         item = await repo.update_action_item(action_item_id, str(current_user.id), data)
         return ActionItemResponse(
             id=item.id,
-            title=item.title,
-            description=item.description,
+            content=item.content,
             status=item.status,
             assignee_id=item.assignee_id,
             due_date=item.due_date,

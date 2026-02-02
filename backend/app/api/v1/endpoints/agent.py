@@ -16,6 +16,11 @@ from app.core.database import get_db
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.models.transcript import Transcript
 from app.services.agent_service import AgentService
+from app.services.context_runtime import (
+    get_or_create_runtime,
+    get_transcript_start_ms,
+    update_runtime_from_db,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["Agent"])
@@ -87,20 +92,33 @@ async def update_agent_context(
         request.pre_transcript_id,
     )
 
-    # TODO: 이전 transcript 조회 후 context 저장 로직 구현
-    # 1. pre_transcript_id의 created_at 조회
-    # 2. 해당 시점 이전의 모든 transcript 조회
-    # 3. meeting 테이블에 agent_context 저장
+    cutoff_start_ms = await get_transcript_start_ms(db, request.pre_transcript_id)
+    if cutoff_start_ms is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    runtime = await get_or_create_runtime(str(request.meeting_id))
+    async with runtime.lock:
+        updated = await update_runtime_from_db(
+            runtime,
+            db,
+            str(request.meeting_id),
+            cutoff_start_ms,
+        )
+    logger.info(
+        "Agent context update 완료: meeting_id=%s, added=%d",
+        request.meeting_id,
+        updated,
+    )
 
     return Response(status_code=200)
 
 
 @router.post(
     "/meeting",
-    summary="Agent 실행 (스트리밍)",
-    description="transcript ID를 기반으로 LLM을 실행하고 스트리밍 응답을 반환합니다.",
+    summary="Agent 실행 (Context Engineering + Orchestration)",
+    description="transcript ID를 기반으로 Context Engineering과 Orchestration Graph를 사용하여 응답을 생성합니다.",
 )
-async def run_agent_streaming(
+async def run_agent_with_context(
     request: AgentMeetingRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     agent_service: Annotated[AgentService, Depends(get_agent_service)],
@@ -118,7 +136,7 @@ async def run_agent_streaming(
     user_input = _strip_wake_word(raw_text, settings.agent_wake_word)
 
     logger.info(
-        "Agent 스트리밍 요청: meeting_id=%s, transcript_id=%s, raw='%s', cleaned='%s'",
+        "Agent Context 요청: meeting_id=%s, transcript_id=%s, raw='%s', cleaned='%s'",
         request.meeting_id,
         request.transcript_id,
         raw_text[:50] if raw_text else "",
@@ -127,13 +145,21 @@ async def run_agent_streaming(
 
     async def event_generator():
         try:
-            async for token in agent_service.process_streaming(
+            # Context Engineering + Orchestration Graph 사용
+            response = await agent_service.process_with_context(
                 user_input=user_input,
-            ):
-                yield f"data: {token}\n\n"
+                meeting_id=str(request.meeting_id),
+                user_id=str(transcript.user_id),
+                db=db,
+            )
+            # SSE는 data 필드가 줄마다 분리되어야 하므로 줄 단위로 전송
+            response_text = "" if response is None else str(response)
+            for line in response_text.splitlines():
+                if line:  # 빈 줄 스킵
+                    yield f"data: {line}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
-            logger.error("Agent 스트리밍 오류: %s", e, exc_info=True)
+            logger.error("Agent Context 오류: %s", e, exc_info=True)
             yield f"data: [ERROR] {str(e)}\n\n"
 
     return StreamingResponse(

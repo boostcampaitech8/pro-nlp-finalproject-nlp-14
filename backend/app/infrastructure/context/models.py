@@ -40,6 +40,18 @@ class TopicSegment(BaseModel):
     participants: list[str] = Field(default_factory=list)
 
 
+class TopicSummary(BaseModel):
+    """시맨틱 서치 결과용 토픽 요약"""
+
+    topic_id: str
+    topic_name: str
+    summary: str
+    similarity: float | None = None
+    turn_start: int | None = None
+    turn_end: int | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+
 class Participant(BaseModel):
     """참여자 정보"""
 

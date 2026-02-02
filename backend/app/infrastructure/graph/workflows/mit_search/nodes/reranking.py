@@ -1,66 +1,99 @@
-"""BGE Reranker를 사용한 결과 품질 향상을 위한 리랭킹 노드."""
+"""Clova Studio Reranker API를 사용한 결과 품질 향상을 위한 리랭킹 노드."""
 
 import asyncio
 import logging
-from typing import Any, Optional
+import uuid
+from typing import Any
+
+import httpx
+
+from app.core.config import get_settings
 
 from ..state import MitSearchState
-from ..utils.score_calculator import ScoreCalculator
 
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# Reranking Configuration (로컬 정의)
+# Reranking Configuration
 # ============================================================================
 
-RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-RERANKER_USE_FP16 = True
+CLOVA_RERANKER_ENDPOINT = "https://clovastudio.stream.ntruss.com/v1/api-tools/reranker"
 FULLTEXT_WEIGHT = 0.6
 SEMANTIC_WEIGHT = 0.4
 
-# BGE Reranker 싱글톤 (한 번만 로드)
-_reranker_model: Optional[Any] = None
-_reranker_load_attempted: bool = False
 
+async def _call_clova_reranker(
+    query: str, documents: list[dict[str, str]]
+) -> list[dict[str, Any]] | None:
+    """Clova Studio Reranker API 호출.
 
-def _get_reranker_model():
-    """BGE Reranker 모델을 싱글톤으로 로드."""
-    global _reranker_model, _reranker_load_attempted
+    Args:
+        query: 검색 쿼리
+        documents: [{"id": "...", "doc": "..."}] 형식의 문서 리스트
 
-    if _reranker_load_attempted:
-        return _reranker_model
+    Returns:
+        API 응답 결과 또는 None (실패 시)
+    """
+    settings = get_settings()
+    api_key = settings.ncp_clovastudio_api_key
 
-    _reranker_load_attempted = True
+    if not api_key:
+        logger.warning("NCP_CLOVASTUDIO_API_KEY not configured")
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "X-NCP-CLOVASTUDIO-REQUEST-ID": str(uuid.uuid4()),
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "query": query,
+        "documents": documents,
+    }
 
     try:
-        from FlagEmbedding import FlagReranker
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                CLOVA_RERANKER_ENDPOINT,
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            result = response.json()
 
-        _reranker_model = FlagReranker(
-            model_name_or_path=RERANKER_MODEL,
-            use_fp16=RERANKER_USE_FP16
-        )
-        logger.info(f"BGE Reranker model '{RERANKER_MODEL}' loaded successfully (singleton)")
-        return _reranker_model
-    except ImportError:
-        logger.warning("FlagEmbedding not installed. Install: pip install FlagEmbedding")
+            # API 응답에서 결과 추출
+            # Clova Reranker는 result.data.rankedResults 형태로 반환
+            if "result" in result and "rankedResults" in result.get("result", {}):
+                return result["result"]["rankedResults"]
+            elif "rankedResults" in result:
+                return result["rankedResults"]
+            elif "data" in result:
+                return result["data"]
+            else:
+                logger.warning(f"Unexpected Clova Reranker response format: {result}")
+                return None
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Clova Reranker API HTTP error: {e.response.status_code}")
         return None
-    except Exception:
-        logger.error("Failed to load BGE Reranker model")
+    except Exception as e:
+        logger.error(f"Clova Reranker API error: {e}")
         return None
 
 
 async def reranker_async(state: MitSearchState) -> dict[str, Any]:
-    """BGE Reranker v2-m3 모델(싱글톤 로드)을 사용하여 원시 결과 재순위화.
+    """Clova Studio Reranker API를 사용하여 원시 결과 재순위화.
 
     Contract:
         reads: mit_search_raw_results, mit_search_query, mit_search_query_intent
         writes: mit_search_ranked_results (final_score 포함)
-        side-effects: BGE 모델 추론, 의도 기반 가중치 적응
-        failures: 모델 미설치 → FULLTEXT만 사용하여 폴백
+        side-effects: Clova Reranker API 호출, 의도 기반 가중치 적응
+        failures: API 미설정/오류 → FULLTEXT만 사용하여 폴백
 
     쿼리 의도(intent)와 포커스(focus)를 반영한 적응형 가중치로 재순위화.
     """
-    logger.info("Starting reranking with intent-aware weighting")
+    logger.info("Starting reranking with Clova Studio Reranker API")
 
     try:
         raw_results = state.get("mit_search_raw_results", [])
@@ -89,10 +122,22 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
             extra={"focus": search_focus, "intent": intent_type},
         )
 
-        # BGE Reranker 모델 로드 (싱글톤)
-        reranker_model = _get_reranker_model()
+        # Clova Reranker API용 문서 준비
+        documents = []
+        for i, result in enumerate(raw_results):
+            # 결과 텍스트 준비 - graph_context 우선 사용
+            result_text = result.get('graph_context') or f"{result.get('title', '')} {result.get('content', '')}"
+            result_text = result_text[:4096]  # API 제한 고려
 
-        if reranker_model is None:
+            documents.append({
+                "id": str(i),
+                "doc": result_text,
+            })
+
+        # Clova Reranker API 호출
+        rerank_results = await _call_clova_reranker(query, documents)
+
+        if rerank_results is None:
             logger.warning("Falling back to FULLTEXT scores only")
             # FULLTEXT 점수로만 정렬
             ranked_results = sorted(
@@ -113,35 +158,38 @@ async def reranker_async(state: MitSearchState) -> dict[str, Any]:
         if intent_type == "entity_search" and primary_entity:
             semantic_weight = 0.9
             fulltext_weight = 0.1
-            logger.info(f"[Reranking] Entity search mode: semantic 90% / fulltext 10%")
+            logger.info("[Reranking] Entity search mode: semantic 90% / fulltext 10%")
         else:
             semantic_weight = 0.4
             fulltext_weight = 0.6
-            logger.info(f"[Reranking] General search mode: semantic 40% / fulltext 60%")
+            logger.info("[Reranking] General search mode: semantic 40% / fulltext 60%")
+
+        # API 결과를 점수 맵으로 변환
+        rerank_score_map = {}
+        for item in rerank_results:
+            doc_id = str(item.get("id", item.get("index", "")))
+            # Clova API 응답 형식에 따라 score 필드명이 다를 수 있음
+            score = item.get("score", item.get("relevance_score", item.get("rank_score", 0)))
+            rerank_score_map[doc_id] = score
 
         # 재순위화 점수 계산
         ranked_results = []
 
-        for result in raw_results:
+        for i, result in enumerate(raw_results):
             try:
-                # 결과 텍스트 준비 - graph_context 우선 사용
-                result_text = result.get('graph_context') or f"{result.get('title', '')} {result.get('content', '')}"
-                result_text = result_text[:512]
-
-                # BGE Reranker로 의미론적 관련도 점수
-                rerank_scores = reranker_model.compute_score([query, result_text])
-                rerank_score = rerank_scores[0] if isinstance(rerank_scores, list) else rerank_scores
-
-                # 정규화 (BGE: -15~+15 → 0~1)
-                rerank_score_normalized = max(0, min(1, (rerank_score + 15) / 30))
+                # Clova Reranker 점수 (0~1 범위로 정규화)
+                rerank_score = rerank_score_map.get(str(i), 0)
+                # 점수가 0~1 범위가 아니면 정규화
+                if rerank_score > 1:
+                    rerank_score = min(1, rerank_score / 100)
 
                 # 최종 점수 = FULLTEXT(의도 무관) + Semantic(의도 반영)
                 fulltext_score = result.get("score", 0.5)
-                final_score = fulltext_weight * fulltext_score + semantic_weight * rerank_score_normalized
+                final_score = fulltext_weight * fulltext_score + semantic_weight * rerank_score
 
                 ranked_results.append({
                     **result,
-                    "rerank_score": rerank_score_normalized,
+                    "rerank_score": rerank_score,
                     "final_score": final_score
                 })
 

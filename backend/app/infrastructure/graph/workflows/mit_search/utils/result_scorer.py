@@ -218,12 +218,9 @@ class SearchResultRelevanceScorer:
 
     def _calculate_semantic_similarity(self, result: Dict[str, Any], query: str) -> float:
         """쿼리와 결과의 의미적 유사도 계산 (임베딩 기반)
-
-        Note: embedding_model이 없으면 키워드 기반 대체 점수 사용
         """
         if not self.embedding_model:
-            # Fallback: 키워드 기반 유사도
-            return self._keyword_overlap_score(result.get("content", ""), query)
+            return 0.0
 
         try:
             # 쿼리 임베딩
@@ -241,7 +238,7 @@ class SearchResultRelevanceScorer:
             return float(similarity)
         except Exception as e:
             logger.warning(f"Semantic similarity calculation failed: {e}")
-            return self._keyword_overlap_score(result.get("content", ""), query)
+            return 0.0
 
     def _cosine_similarity(self, vec1, vec2) -> float:
         """코사인 유사도 계산"""
@@ -250,20 +247,6 @@ class SearchResultRelevanceScorer:
         if norm1 == 0 or norm2 == 0:
             return 0.0
         return float(np.dot(vec1, vec2) / (norm1 * norm2))
-
-    def _keyword_overlap_score(self, content: str, query: str) -> float:
-        """키워드 중첩도 기반 유사도 (임베딩 실패 시 대체)"""
-        if not query or not content:
-            return 0.0
-
-        query_words = set(query.lower().split())
-        content_words = set(content.lower().split())
-
-        if not query_words:
-            return 0.5
-
-        overlap = len(query_words & content_words)
-        return min(overlap / len(query_words), 1.0) * 0.7  # 0.7 이하로 상한 제한
 
     def _calculate_recency(self, result: Dict[str, Any]) -> float:
         """문서의 최신성 계산

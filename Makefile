@@ -81,7 +81,7 @@ dev-arq:
 # Graph
 # ===================
 graph:
-	cd backend && PYTHONPATH=$(shell pwd)/backend:$$PYTHONPATH uv run python app/infrastructure/graph/main.py
+	cd backend && PYTHONPATH="$(shell pwd)/backend:$$PYTHONPATH" uv run python app/infrastructure/graph/main.py
 
 # ===================
 # Test & Build

@@ -211,15 +211,16 @@ class QueryValidator:
         if search_focus in ["user_search", "person_search", "Decision", "Meeting", "Agenda", "Action", "Composite"]:
             known_users = self._get_or_load_entities("users")
             return entity in known_users
-        elif search_focus in ["team_search", "team_member_search"]:
+        if search_focus in ["Team", "team_search", "team_member_search", "TeamMember"]:
+            known_users = self._get_or_load_entities("users")
             known_teams = self._get_or_load_entities("teams")
-            return entity in known_teams
-        elif search_focus in ["meta_search", "entity_search"]:
+            return entity in known_users or entity in known_teams
+        if search_focus in ["meta_search", "entity_search"]:
             # Meta/entity search는 엔티티가 없어도 됨
             return True
-        else:
-            # 알 수 없는 focus 타입
-            return False
+
+        # 알 수 없는 focus 타입
+        return False
 
     def _contains_temporal_expression(self, query: str) -> bool:
         """시간 표현 포함 여부"""

@@ -41,8 +41,8 @@ async def execute_mit_tools(state: OrchestrationState) -> OrchestrationState:
             "user_id": user_id,
         })
 
-        # 검색 결과 추출 (selection 노드의 최종 결과)
-        final_results = search_result.get("mit_search_results", [])
+        # 검색 결과 추출
+        final_results = search_result.get("mit_search_raw_results", [])
         
         # 결과를 tool_results에 추가
         if final_results:
@@ -55,22 +55,9 @@ async def execute_mit_tools(state: OrchestrationState) -> OrchestrationState:
             logger.info(f"✓ MIT Search 성공: {len(final_results)}개 결과 반환")
             print(f"\n[MIT Tools] ✓ {len(final_results)}개 결과 → tool_results 설정 완료\n")
             return OrchestrationState(tool_results=result_summary)
-        else:
-            # selection 결과가 없을 때 raw 결과로 폴백
-            raw_results = search_result.get("mit_search_raw_results", [])
-            if raw_results:
-                result_summary = f"\n[MIT Search 결과]\n"
-                for idx, item in enumerate(raw_results[:10], 1):
-                    title = item.get("title") or item.get("content") or item.get("meeting_title") or "제목 없음"
-                    score = item.get("final_score", item.get("score", 0))
-                    result_summary += f"{idx}. {title} (점수: {score:.2f})\n"
-                logger.info(f"✓ MIT Search 폴백: {len(raw_results)}개 결과 반환")
-                print(f"\n[MIT Tools] ✓ {len(raw_results)}개 결과 (폴백) → tool_results 설정 완료\n")
-                return OrchestrationState(tool_results=result_summary)
-
-            logger.warning("✗ MIT Search 결과 없음")
-            print(f"\n[MIT Tools] ✗ 검색 결과 없음\n")
-            return OrchestrationState(tool_results="\n[MIT Search 결과] 검색 결과가 없습니다\n")
+        logger.warning("✗ MIT Search 결과 없음")
+        print("\n[MIT Tools] ✗ 검색 결과 없음\n")
+        return OrchestrationState(tool_results="\n[MIT Search 결과] 검색 결과가 없습니다\n")
 
     except Exception as e:
         logger.error(f"MIT-Tools 실행 중 오류: {e}", exc_info=True)

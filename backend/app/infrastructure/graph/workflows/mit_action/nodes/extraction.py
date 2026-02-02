@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 class ActionItemOutput(BaseModel):
     """추출된 Action Item"""
 
-    title: str = Field(description="할 일 내용 (간결하게)")
-    description: str | None = Field(default=None, description="상세 설명")
+    content: str = Field(description="할 일 내용 (간결하게)")
     due_date: str | None = Field(default=None, description="기한 (YYYY-MM-DD 형식)")
     assignee_name: str | None = Field(default=None, description="담당자 이름 (언급된 경우)")
 
@@ -79,7 +78,7 @@ async def extract_actions(state: MitActionState) -> MitActionState:
         "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
         "{format_instructions}\n\n"
         "예시:\n"
-        '{{"action_items": [{{"title": "API 문서 작성", "description": "OpenAPI 스펙 기반으로 문서화", '
+        '{{"action_items": [{{"content": "API 문서 작성", '
         '"due_date": "2026-02-01", "assignee_name": "김철수"}}]}}'
     )
 
@@ -98,8 +97,7 @@ async def extract_actions(state: MitActionState) -> MitActionState:
         # Pydantic 모델을 dict로 변환
         raw_actions = [
             {
-                "title": item.title,
-                "description": item.description,
+                "content": item.content,
                 "due_date": item.due_date,
                 "assignee_name": item.assignee_name,
                 "assignee_id": None,  # 이름만 추출, ID는 나중에 매칭

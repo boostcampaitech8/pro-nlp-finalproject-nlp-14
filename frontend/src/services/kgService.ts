@@ -40,8 +40,7 @@ interface SuggestionRaw {
 
 interface ActionItemRaw {
   id: string;
-  title: string;
-  description: string | null;
+  content: string;
   status: 'pending' | 'in_progress' | 'completed';
   assigneeId: string | null;
   dueDate: string | null;
@@ -131,8 +130,7 @@ function transformSuggestion(raw: SuggestionRaw): Suggestion {
 function transformActionItem(raw: ActionItemRaw): ActionItem {
   return {
     id: raw.id,
-    title: raw.title,
-    description: raw.description,
+    content: raw.content,
     status: raw.status,
     assigneeId: raw.assigneeId,
     dueDate: raw.dueDate,
