@@ -1,6 +1,6 @@
 .PHONY: help install dev dev-fe dev-be dev-worker dev-arq build clean test-fe graph
 .PHONY: db-migrate db-upgrade db-downgrade neo4j-init neo4j-seed
-.PHONY: k8s-setup k8s-infra k8s-deploy
+.PHONY: k8s-setup k8s-infra k8s-observe k8s-deploy
 .PHONY: k8s-push k8s-push-be k8s-push-fe k8s-build-worker k8s-push-worker
 .PHONY: k8s-pf k8s-clean k8s-status k8s-logs
 
@@ -134,6 +134,10 @@ k8s-infra:
 	@echo "=== 2/2: 인프라 배포 ==="
 	@./$(K8S_DIR)/scripts/deploy.sh local --selector type=infra
 
+k8s-observe:
+	@echo "=== Observability 스택 배포 (Prometheus, Loki, Alloy, Grafana) ==="
+	@./$(K8S_DIR)/scripts/deploy.sh local --selector type=observability
+
 k8s-deploy:
 	@if [ -z "$(svc)" ] || [ "$(svc)" = "mit" ]; then \
 		./$(K8S_DIR)/scripts/build.sh local; \
@@ -165,8 +169,10 @@ k8s-pf:
 	@echo "포트 포워딩 시작 (백그라운드)..."
 	@nohup kubectl port-forward -n mit svc/redis-master 6379:6379 >/dev/null 2>&1 &
 	@nohup kubectl port-forward -n mit svc/lk-server 7880:80 >/dev/null 2>&1 &
+	@nohup kubectl port-forward -n mit svc/grafana 3001:80 >/dev/null 2>&1 &
 	@echo "  redis:    localhost:6379"
 	@echo "  livekit:  localhost:7880"
+	@echo "  grafana:  localhost:3001"
 	@echo ""
 	@echo "  (PostgreSQL, Neo4j는 외부 서버 사용)"
 
