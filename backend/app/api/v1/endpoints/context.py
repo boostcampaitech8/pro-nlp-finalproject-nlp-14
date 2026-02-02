@@ -151,13 +151,16 @@ async def stream_meeting_topics(
     """
     meeting_id = str(meeting.id)
 
+    # DB 세션은 초기 데이터 조회에만 사용하고 즉시 반환
+    # (SSE 스트림 동안 DB 커넥션 점유 방지)
+    initial_data = await _build_topic_response(meeting_id, db)
+
     async def event_generator():
         try:
             # 1. 초기 데이터 전송
-            initial_data = await _build_topic_response(meeting_id, db)
             yield f"event: init\ndata: {json.dumps(initial_data, ensure_ascii=False)}\n\n"
 
-            # 2. Redis pub/sub 구독
+            # 2. Redis pub/sub 구독 (DB 불필요)
             async for message in subscribe_topic_updates(meeting_id):
                 # 클라이언트 연결 확인
                 if await request.is_disconnected():
