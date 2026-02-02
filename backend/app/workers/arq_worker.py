@@ -1,7 +1,4 @@
-"""ARQ Worker 설정 및 태스크 정의
-
-# TODO: 태스크가 늘어나면 도메인별로 분리 (stt_tasks.py, pr_tasks.py)
-"""
+"""ARQ Worker 설정 및 태스크 정의"""
 
 import logging
 from urllib.parse import urlparse
@@ -13,236 +10,10 @@ from app.core.config import get_settings
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
 from app.repositories.kg.repository import KGRepository
-from app.schemas.transcript_ import GetMeetingTranscriptsResponse
-from app.services.stt_service import STTService
-from app.services.transcript_service_ import TranscriptService
+from app.schemas.transcript import GetMeetingTranscriptsResponse
+from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
-
-
-async def transcribe_recording_task(ctx: dict, recording_id: str, language: str = "ko") -> dict:
-    """개별 녹음 STT 변환 태스크
-
-    Args:
-        ctx: ARQ 컨텍스트
-        recording_id: 녹음 ID
-        language: 우선 언어 코드
-
-    Returns:
-        dict: 작업 결과
-    """
-    recording_uuid = UUID(recording_id)
-    meeting_id = None
-
-    async with async_session_maker() as db:
-        stt_service = STTService(db)
-        transcript_service = TranscriptService(db)
-
-        try:
-            # 녹음 조회
-            recording = await stt_service.get_recording(recording_uuid)
-
-            if not recording:
-                raise ValueError("RECORDING_NOT_FOUND")
-
-            meeting_id = recording.meeting_id
-            logger.info(f"Starting transcription task: recording={recording_id}")
-
-            # STT 수행
-            result = await stt_service.transcribe_recording(
-                recording,
-                language=language,
-                use_vad=True,
-            )
-
-            # 완료 처리
-            await stt_service.complete_transcription(recording_uuid, result)
-
-            # 모든 녹음 STT 완료 확인 후 자동 병합
-            all_processed = await transcript_service.check_all_recordings_processed(meeting_id)
-            if all_processed:
-                logger.info(f"All recordings processed, merging utterances: meeting={meeting_id}")
-                try:
-                    transcript = await transcript_service.get_or_create_transcript(meeting_id)
-                    await transcript_service.merge_utterances(meeting_id)
-                    logger.info(f"Utterances merged successfully: meeting={meeting_id}")
-
-                    # PR 생성은 수동 트리거로 변경 (POST /meetings/{meeting_id}/generate-pr)
-                    # 자동 트리거 시 race condition으로 중복 실행 가능성 있음
-
-                except Exception as merge_error:
-                    logger.error(f"Failed to merge utterances: meeting={meeting_id}, error={merge_error}")
-
-            return {
-                "status": "success",
-                "recording_id": recording_id,
-                "text_length": len(result.text),
-                "segments_count": len(result.segments),
-            }
-
-        except Exception as e:
-            logger.exception(f"Transcription task failed: recording={recording_id}")
-            await stt_service.fail_transcription(recording_uuid, str(e))
-
-            # 실패해도 다른 녹음이 모두 처리되었으면 병합 시도
-            if meeting_id:
-                try:
-                    all_processed = await transcript_service.check_all_recordings_processed(meeting_id)
-                    if all_processed:
-                        logger.info(f"All recordings processed (with failures), attempting merge: meeting={meeting_id}")
-                        await transcript_service.get_or_create_transcript(meeting_id)
-                        await transcript_service.merge_utterances(meeting_id)
-                        # PR 생성은 수동 트리거로 변경 (POST /meetings/{meeting_id}/generate-pr)
-                except Exception as merge_error:
-                    logger.error(f"Failed to merge utterances after failure: meeting={meeting_id}, error={merge_error}")
-
-            return {
-                "status": "failed",
-                "recording_id": recording_id,
-                "error": str(e),
-            }
-
-
-async def transcribe_meeting_task(ctx: dict, meeting_id: str, language: str = "ko") -> dict:
-    """회의 전체 STT 변환 태스크
-
-    모든 녹음을 순차적으로 STT 처리하고 화자별 발화 병합
-
-    Args:
-        ctx: ARQ 컨텍스트
-        meeting_id: 회의 ID
-        language: 우선 언어 코드
-
-    Returns:
-        dict: 작업 결과
-    """
-    meeting_uuid = UUID(meeting_id)
-
-    async with async_session_maker() as db:
-        transcript_service = TranscriptService(db)
-        stt_service = STTService(db)
-
-        try:
-            # 회의 및 녹음 조회
-            meeting = await transcript_service.get_meeting_with_recordings(meeting_uuid)
-
-            if not meeting:
-                raise ValueError("MEETING_NOT_FOUND")
-
-            # 완료된 녹음 필터링
-            from app.models.recording import RecordingStatus
-            completed_recordings = [
-                r for r in meeting.recordings
-                if r.status == RecordingStatus.COMPLETED.value
-            ]
-
-            if not completed_recordings:
-                raise ValueError("NO_COMPLETED_RECORDINGS")
-
-            logger.info(
-                f"Starting meeting transcription: meeting={meeting_id}, "
-                f"recordings={len(completed_recordings)}"
-            )
-
-            # 각 녹음 STT 처리
-            success_count = 0
-            fail_count = 0
-
-            for recording in completed_recordings:
-                try:
-                    # 상태 변경
-                    await stt_service.start_transcription(recording.id)
-
-                    # STT 수행
-                    result = await stt_service.transcribe_recording(
-                        recording,
-                        language=language,
-                        use_vad=True,
-                    )
-
-                    # 완료 처리
-                    await stt_service.complete_transcription(recording.id, result)
-                    success_count += 1
-
-                except Exception as e:
-                    logger.error(
-                        f"Failed to transcribe recording {recording.id}: {e}"
-                    )
-                    await stt_service.fail_transcription(recording.id, str(e))
-                    fail_count += 1
-
-            # 화자별 발화 병합
-            if success_count > 0:
-                transcript = await transcript_service.merge_utterances(meeting_uuid)
-                logger.info(
-                    f"Meeting transcription completed: meeting={meeting_id}, "
-                    f"success={success_count}, failed={fail_count}"
-                )
-                return {
-                    "status": "success",
-                    "meeting_id": meeting_id,
-                    "transcript_id": str(transcript.id),
-                    "success_count": success_count,
-                    "fail_count": fail_count,
-                }
-            else:
-                await transcript_service.fail_transcription(
-                    meeting_uuid,
-                    "All recordings failed to transcribe"
-                )
-                return {
-                    "status": "failed",
-                    "meeting_id": meeting_id,
-                    "error": "All recordings failed to transcribe",
-                }
-
-        except Exception as e:
-            logger.exception(f"Meeting transcription task failed: meeting={meeting_id}")
-            try:
-                await transcript_service.fail_transcription(meeting_uuid, str(e))
-            except Exception:
-                pass
-            return {
-                "status": "failed",
-                "meeting_id": meeting_id,
-                "error": str(e),
-            }
-
-
-async def merge_utterances_task(ctx: dict, meeting_id: str) -> dict:
-    """화자별 발화 병합 태스크
-
-    모든 녹음 STT 완료 후 호출
-
-    Args:
-        ctx: ARQ 컨텍스트
-        meeting_id: 회의 ID
-
-    Returns:
-        dict: 작업 결과
-    """
-    meeting_uuid = UUID(meeting_id)
-
-    async with async_session_maker() as db:
-        transcript_service = TranscriptService(db)
-
-        try:
-            transcript = await transcript_service.merge_utterances(meeting_uuid)
-
-            return {
-                "status": "success",
-                "meeting_id": meeting_id,
-                "transcript_id": str(transcript.id),
-                "utterances_count": len(transcript.utterances or []),
-            }
-
-        except Exception as e:
-            logger.exception(f"Merge utterances task failed: meeting={meeting_id}")
-            return {
-                "status": "failed",
-                "meeting_id": meeting_id,
-                "error": str(e),
-            }
 
 
 async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
@@ -369,6 +140,171 @@ async def mit_action_task(ctx: dict, decision_id: str) -> dict:
         }
 
 
+async def process_suggestion_task(
+    ctx: dict, suggestion_id: str, decision_id: str, content: str
+) -> dict:
+    """Suggestion AI 분석 태스크
+
+    NOTE: 새로운 설계에서는 Suggestion 생성 시 즉시 draft Decision이 생성됩니다.
+    이 태스크는 AI 분석 후 Suggestion 상태 업데이트만 수행합니다.
+
+    워크플로우:
+    1. Decision 컨텍스트 조회
+    2. LangGraph mit-suggestion 워크플로우 실행 (선택적)
+    3. Suggestion 상태 업데이트 (accepted/rejected)
+
+    Args:
+        ctx: ARQ 컨텍스트
+        suggestion_id: Suggestion ID
+        decision_id: 원본 Decision ID
+        content: Suggestion 내용
+
+    Returns:
+        dict: 작업 결과
+    """
+    logger.info(f"[process_suggestion_task] Starting: suggestion={suggestion_id}")
+
+    try:
+        # 1. Decision 컨텍스트 조회
+        driver = get_neo4j_driver()
+        kg_repo = KGRepository(driver)
+        decision = await kg_repo.get_decision(decision_id)
+
+        if not decision:
+            logger.error(f"[process_suggestion_task] Decision not found: {decision_id}")
+            await kg_repo.update_suggestion_status(suggestion_id, "rejected")
+            return {"status": "error", "message": "Decision not found"}
+
+        # 2. mit-suggestion 워크플로우 실행 (선택적)
+        # TODO: LangGraph 워크플로우 구현 시 활성화
+        # from app.infrastructure.graph.workflows.mit_suggestion.graph import (
+        #     mit_suggestion_graph,
+        # )
+        #
+        # result = await mit_suggestion_graph.ainvoke({
+        #     "suggestion_content": content,
+        #     "decision_context": decision.content,
+        # })
+
+        # 3. Suggestion 상태 업데이트 (새 Decision은 이미 생성됨)
+        # AI 분석 결과에 따라 accepted/rejected로 업데이트
+        # 현재는 임시로 accepted로 설정
+        await kg_repo.update_suggestion_status(suggestion_id, "accepted")
+
+        logger.info(
+            f"[process_suggestion_task] Completed: suggestion={suggestion_id}"
+        )
+
+        return {
+            "status": "success",
+            "suggestion_id": suggestion_id,
+        }
+
+    except Exception as e:
+        logger.exception(f"[process_suggestion_task] Failed: suggestion={suggestion_id}")
+        # 실패 시 rejected로 변경
+        try:
+            driver = get_neo4j_driver()
+            kg_repo = KGRepository(driver)
+            await kg_repo.update_suggestion_status(suggestion_id, "rejected")
+        except Exception:
+            pass
+        return {
+            "status": "failed",
+            "suggestion_id": suggestion_id,
+            "error": str(e),
+        }
+
+
+async def process_mit_mention(
+    ctx: dict, comment_id: str, decision_id: str, content: str
+) -> dict:
+    """@mit 멘션 처리 태스크
+
+    Comment에서 @mit 멘션 시 Agent가 Decision 컨텍스트를 바탕으로
+    응답을 생성하고 대댓글로 작성합니다.
+
+    Args:
+        ctx: ARQ 컨텍스트
+        comment_id: 원본 Comment ID
+        decision_id: Decision ID
+        content: Comment 내용
+
+    Returns:
+        dict: 작업 결과
+    """
+    logger.info(f"[process_mit_mention] Starting: comment={comment_id}")
+
+    try:
+        # 1. Decision 컨텍스트 조회
+        driver = get_neo4j_driver()
+        kg_repo = KGRepository(driver)
+        decision = await kg_repo.get_decision(decision_id)
+
+        if not decision:
+            logger.error(f"[process_mit_mention] Decision not found: {decision_id}")
+            return {"status": "error", "message": "Decision not found"}
+
+        # 2. mit-mention 워크플로우 실행
+        # TODO: LangGraph 워크플로우 구현 시 활성화
+        # from app.infrastructure.graph.workflows.mit_mention.graph import (
+        #     mit_mention_graph,
+        # )
+        #
+        # result = await mit_mention_graph.ainvoke({
+        #     "comment_content": content,
+        #     "decision_context": decision.content,
+        # })
+
+        # 임시: AI 응답 생성 (워크플로우 구현 전까지)
+        # MIT Agent 시스템 사용자로 대댓글 작성
+        agent_id = await kg_repo.get_or_create_system_agent()
+
+        # 임시 AI 응답 생성
+        decision_preview = decision.content[:100] if decision.content else ""
+        ai_response = (
+            f"안녕하세요, 부덕이입니다. "
+            f"'{content[:50]}...'에 대해 분석해보겠습니다.\n\n"
+            f"[Decision 컨텍스트: {decision_preview}...]\n\n"
+            f"(AI 워크플로우 구현 예정)"
+        )
+
+        # 대댓글 생성
+        reply = await kg_repo.create_reply(
+            comment_id=comment_id,
+            user_id=agent_id,
+            content=ai_response,
+            pending_agent_reply=False,
+        )
+
+        # 원본 comment의 pending_agent_reply 해제
+        await kg_repo.update_comment_pending_agent_reply(comment_id, False)
+
+        logger.info(f"[process_mit_mention] Reply created: {reply.id}")
+
+        return {
+            "status": "success",
+            "comment_id": comment_id,
+            "reply_id": reply.id,
+            "response": ai_response,
+        }
+
+    except Exception as e:
+        logger.exception(f"[process_mit_mention] Failed: comment={comment_id}")
+        # 실패 시에도 pending 상태 해제 (UI가 무한 대기하지 않도록)
+        try:
+            driver = get_neo4j_driver()
+            kg_repo = KGRepository(driver)
+            await kg_repo.update_comment_pending_agent_reply(comment_id, False)
+        except Exception:
+            pass  # Best effort
+        return {
+            "status": "failed",
+            "comment_id": comment_id,
+            "error": str(e),
+        }
+
+
 def _get_redis_settings() -> RedisSettings:
     """Redis 연결 설정 생성"""
     settings = get_settings()
@@ -387,11 +323,10 @@ class WorkerSettings:
 
     # 등록된 태스크 함수
     functions = [
-        transcribe_recording_task,
-        transcribe_meeting_task,
-        merge_utterances_task,
         generate_pr_task,
         mit_action_task,
+        process_suggestion_task,
+        process_mit_mention,
     ]
 
     # Redis 연결 설정 (arq는 인스턴스를 기대)

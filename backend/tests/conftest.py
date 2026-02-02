@@ -3,7 +3,7 @@
 테스트 인프라:
 - 테스트 DB 세션
 - FastAPI TestClient
-- Mock 서비스 (MinIO, Redis)
+- Mock 서비스 (Redis)
 - 테스트 데이터 fixture
 """
 
@@ -11,7 +11,7 @@ import asyncio
 import os
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -48,10 +48,6 @@ def test_settings() -> Settings:
         database_url=test_db_url,
         redis_url="redis://localhost:6379/1",  # 테스트용 DB 1 사용
         jwt_secret_key="test-secret-key",
-        minio_endpoint="localhost:9000",
-        minio_access_key="minioadmin",
-        minio_secret_key="minioadmin",
-        minio_secure=False,
     )
 
 
@@ -161,45 +157,6 @@ async def async_client(override_get_db) -> AsyncGenerator[AsyncClient, None]:
 
 
 # ===== Mock Services =====
-
-
-@pytest.fixture
-def mock_storage_service():
-    """MinIO 스토리지 서비스 Mock"""
-    with patch("app.core.storage.storage_service") as mock:
-        # upload 메서드
-        mock.upload_file.return_value = "recordings/test-meeting/test-file.webm"
-        mock.upload_recording.return_value = "recordings/test-meeting/test-file.webm"
-        mock.upload_recording_file.return_value = "recordings/test-meeting/test-file.webm"
-
-        # presigned URL 메서드
-        mock.get_presigned_url.return_value = "https://minio.test/presigned-download-url"
-        mock.get_presigned_upload_url.return_value = (
-            "https://minio.test/presigned-upload-url",
-            "recordings/test-meeting/test-file.webm",
-        )
-        mock.get_recording_url.return_value = "https://minio.test/presigned-download-url"
-        mock.get_recording_upload_url.return_value = (
-            "https://minio.test/presigned-upload-url",
-            "recordings/test-meeting/test-file.webm",
-        )
-
-        # 파일 정보 메서드
-        mock.get_file_info.return_value = {
-            "size": 1024 * 1024,  # 1MB
-            "etag": "test-etag",
-            "last_modified": "2026-01-08T12:00:00Z",
-        }
-
-        # 파일 다운로드
-        mock.get_file.return_value = b"test file content"
-        mock.get_recording_file.return_value = b"test recording content"
-
-        # 삭제
-        mock.delete_file.return_value = None
-        mock.delete_recording.return_value = None
-
-        yield mock
 
 
 @pytest.fixture

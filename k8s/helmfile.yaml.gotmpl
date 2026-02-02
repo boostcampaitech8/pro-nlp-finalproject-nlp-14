@@ -6,8 +6,6 @@ repositories:
     url: https://charts.bitnami.com/bitnami
   - name: livekit
     url: https://helm.livekit.io
-  - name: neo4j
-    url: https://helm.neo4j.com/neo4j
 
 environments:
   local:
@@ -31,6 +29,7 @@ releases:
     createNamespace: true
     values:
       - global: {{ .Values.global | toYaml | nindent 10 }}
+        images: {{ .Values.images | toYaml | nindent 10 }}
         backend: {{ .Values.backend | toYaml | nindent 10 }}
         frontend: {{ .Values.frontend | toYaml | nindent 10 }}
         database: {{ .Values.database | toYaml | nindent 10 }}
@@ -47,41 +46,7 @@ releases:
           backend: {{ .Values.resources.backend | toYaml | nindent 12 }}
           frontend: {{ .Values.resources.frontend | toYaml | nindent 12 }}
           worker: {{ .Values.resources.worker | toYaml | nindent 12 }}
-
-  # ===========================================
-  # PostgreSQL
-  # ===========================================
-  - name: postgres
-    labels:
-      type: db
-      svc: postgres
-    chart: bitnami/postgresql
-    namespace: {{ .Values.global.namespace }}
-    values:
-      # 한 곳에서만 쓰이는 값 - 하드코딩
-      - architecture: standalone
-        metrics:
-          enabled: false
-        # 공유 값 - values에서 참조
-        global:
-          postgresql:
-            auth:
-              password: {{ .Values.database.password }}
-              postgresPassword: {{ .Values.database.password }}
-        auth:
-          password: {{ .Values.database.password }}
-          postgresPassword: {{ .Values.database.password }}
-          database: {{ .Values.database.name }}
-          username: {{ .Values.database.user }}
-        primary:
-          persistence:
-            enabled: true
-            size: {{ .Values.resources.postgres.storage }}
-          resources:
-            requests: {{ .Values.resources.postgres.requests | toYaml | nindent 14 }}
-            limits: {{ .Values.resources.postgres.limits | toYaml | nindent 14 }}
-          service:
-            type: ClusterIP
+          arqWorker: {{ .Values.resources.arqWorker | toYaml | nindent 12 }}
 
   # ===========================================
   # Redis
@@ -161,50 +126,3 @@ releases:
           requests: {{ .Values.resources.livekit.requests | toYaml | nindent 12 }}
           limits: {{ .Values.resources.livekit.limits | toYaml | nindent 12 }}
 
-  # ===========================================
-  # Neo4j (Graph DB)
-  # ===========================================
-  - name: neo4j
-    labels:
-      type: db
-      svc: neo4j
-    chart: neo4j/neo4j
-    namespace: {{ .Values.global.namespace }}
-    values:
-      - fullnameOverride: neo4j  # 서비스 이름을 'neo4j'로 고정 (bolt://neo4j:7687)
-        neo4j:
-          name: "neo4j"
-          edition: "community"
-          password: {{ .Values.neo4j.password }}
-          resources:
-            cpu: {{ .Values.resources.neo4j.requests.cpu | quote }}
-            memory: {{ .Values.resources.neo4j.memory | quote }}
-        # Neo4j 메모리 설정 (docker-compose 동일)
-        config:
-          server.memory.heap.initial_size: "256m"
-          server.memory.heap.max_size: "1g"
-          server.memory.pagecache.size: "512m"
-        services:
-          neo4j:
-            enabled: true
-            spec:
-              type: ClusterIP
-            ports:
-              http:
-                enabled: true
-              https:
-                enabled: false
-              bolt:
-                enabled: true
-              backup:
-                enabled: false
-          admin:
-            enabled: true
-            spec:
-              type: ClusterIP
-        volumes:
-          data:
-            mode: "defaultStorageClass"
-            defaultStorageClass:
-              requests:
-                storage: {{ .Values.resources.neo4j.storage }}

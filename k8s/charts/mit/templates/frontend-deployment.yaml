@@ -13,9 +13,10 @@ spec:
       labels:
         app: frontend
     spec:
+      {{- include "mit.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: frontend
-          image: {{ include "mit.image" (dict "Values" .Values "image" "mit-frontend") }}
+          image: {{ include "mit.image" (dict "Values" .Values "name" "frontend") }}
           imagePullPolicy: Always
           ports:
             - containerPort: {{ .Values.frontend.port }}

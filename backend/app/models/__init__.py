@@ -1,9 +1,7 @@
 from app.models.chat import ChatMessage
 from app.models.meeting import Meeting, MeetingParticipant, MeetingStatus, ParticipantRole
-from app.models.recording import MeetingRecording, RecordingStatus
 from app.models.team import Team, TeamMember, TeamRole
-from app.models.transcript import MeetingTranscript, TranscriptStatus
-from app.models.transcript_ import Transcript
+from app.models.transcript import Transcript
 from app.models.user import User
 
 __all__ = [
@@ -15,10 +13,6 @@ __all__ = [
     "MeetingParticipant",
     "MeetingStatus",
     "ParticipantRole",
-    "MeetingRecording",
-    "RecordingStatus",
-    "MeetingTranscript",
-    "TranscriptStatus",
     "Transcript",
     "ChatMessage",
 ]

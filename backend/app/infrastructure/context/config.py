@@ -16,7 +16,6 @@ class ContextConfig(BaseSettings):
     환경변수 예시:
     - CONTEXT_L0_MAX_TURNS=25
     - CONTEXT_L1_UPDATE_TURN_THRESHOLD=25
-    - CONTEXT_TOPIC_QUICK_CHECK_ENABLED=true
     """
 
     # === L0 설정 (Raw Window) ===
@@ -29,25 +28,23 @@ class ContextConfig(BaseSettings):
     l0_topic_buffer_max_tokens: int = 10000  # 토픽 내 최대 토큰
 
     # === L1 설정 (Topic-Segmented) ===
-    l1_topic_check_interval_turns: int = 5  # 토픽 전환 체크 주기 (턴 단위)
-    l1_update_interval_minutes: int = 15  # 시간 기반 업데이트 주기 (분)
     l1_update_turn_threshold: int = 25  # 턴 기반 업데이트 임계값
-    l1_summary_max_tokens: int = 500  # 요약 최대 토큰 (HCX-003 기준)
-    l1_min_new_utterances_for_time_trigger: int = 5  # 시간 트리거를 위한 최소 새 발화 수
-
-    # === 토픽 감지 설정 ===
-    topic_quick_check_enabled: bool = True  # 키워드 기반 빠른 감지 활성화
-
-    # === LLM 설정 (HCX-003 기준) ===
-    summary_model_name: str = "HCX-007"  # 요약용
-    topic_detection_model_name: str = "HCX-003"  # 토픽 감지용
-
-    # === DB 동기화 설정 ===
-    db_sync_interval_seconds: int = 5  # DB 동기화 주기 (초)
-    db_sync_utterance_threshold: int = 10  # 발화 N개마다 DB 동기화
 
     # === 화자 컨텍스트 설정 ===
     speaker_buffer_max_per_speaker: int = 25  # 화자별 최대 발화 버퍼 크기
+
+    # === 토픽 메모리 설정 (L1 + Semantic Search) ===
+    max_topics: int = 30  # 최대 토픽 수
+    topic_merge_threshold: float = 0.80  # 유사 토픽 병합 임계값
+    topic_similarity_threshold: float = 0.85  # 재귀 병합 임계값
+
+    # === 임베딩 설정 (CLOVA Studio API) ===
+    embedding_model: str = "bge-m3"  # CLOVA Studio 지원 모델
+    embedding_dimension: int = 1024
+
+    # === 시맨틱 서치 설정 ===
+    topic_search_top_k: int = 5
+    topic_search_threshold: float = 0.30
 
     class Config:
         env_prefix = "CONTEXT_"

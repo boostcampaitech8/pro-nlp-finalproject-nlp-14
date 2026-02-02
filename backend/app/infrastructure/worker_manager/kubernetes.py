@@ -28,11 +28,13 @@ class K8sWorkerManager:
         self,
         namespace: str | None = None,
         worker_image: str | None = None,
+        image_pull_secret: str | None = None,
     ):
         """
         Args:
             namespace: K8s 네임스페이스 (기본값: KUBERNETES_NAMESPACE 환경변수 또는 'mit')
             worker_image: 워커 컨테이너 이미지 (기본값: WORKER_IMAGE 환경변수)
+            image_pull_secret: Private 레지스트리 인증용 시크릿 (기본값: IMAGE_PULL_SECRET 환경변수)
         """
         # 로컬 개발 환경 지원: in-cluster 실패 시 kubeconfig 사용
         try:
@@ -48,8 +50,31 @@ class K8sWorkerManager:
         self.batch_v1 = client.BatchV1Api()
         self.core_v1 = client.CoreV1Api()
         self.namespace = namespace or os.getenv("KUBERNETES_NAMESPACE", "mit")
-        self.worker_image = worker_image or os.getenv("WORKER_IMAGE", "mit-registry:5000/mit-worker:latest")
+        self.worker_image = worker_image or os.getenv("WORKER_IMAGE") or self._get_default_worker_image()
+        self.image_pull_secret = image_pull_secret or os.getenv("IMAGE_PULL_SECRET") or self._get_default_pull_secret()
         self._worker_prefix = "realtime-worker"
+
+    def _is_running_in_k8s(self) -> bool:
+        """현재 프로세스가 k8s Pod 내부에서 실행 중인지 확인"""
+        return "KUBERNETES_SERVICE_HOST" in os.environ
+
+    def _get_default_worker_image(self) -> str:
+        """환경에 따른 기본 Worker 이미지"""
+        if self._is_running_in_k8s():
+            # k8s Pod: GHCR (ConfigMap에서 오버라이드됨)
+            return "ghcr.io/teamatoi/mit-worker:latest"
+        else:
+            # 로컬 프로세스: k3d 로컬 레지스트리
+            return "mit-registry:5000/mit-worker:latest"
+
+    def _get_default_pull_secret(self) -> str:
+        """환경에 따른 기본 imagePullSecret"""
+        if self._is_running_in_k8s():
+            # k8s Pod: GHCR 인증 필요
+            return "ghcr-secret"
+        else:
+            # 로컬 프로세스: 로컬 레지스트리는 인증 불필요
+            return ""
 
     def _get_job_name(self, meeting_id: str) -> str:
         """meeting_id로 Job 이름 생성"""
@@ -99,6 +124,9 @@ class K8sWorkerManager:
                         },
                     ),
                     spec=client.V1PodSpec(
+                        image_pull_secrets=[
+                            client.V1LocalObjectReference(name=self.image_pull_secret)
+                        ] if self.image_pull_secret else None,
                         containers=[
                             client.V1Container(
                                 name="worker",

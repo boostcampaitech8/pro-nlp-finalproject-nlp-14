@@ -301,17 +301,18 @@ class KGSyncRepository:
             "MATCH ()-[r:PARTICIPATED_IN]->() DELETE r", {}
         )
 
-        # GT 관계가 없는 노드만 삭제
+        # GT 관계가 없는 노드만 삭제 (DETACH DELETE로 남은 관계도 삭제)
         await self._execute_write(
             """
             MATCH (u:User)
             WHERE NOT (u)-[:APPROVED_BY]->() AND NOT (u)-[:REJECTED_BY]->()
                   AND NOT (u)-[:ASSIGNED_TO]->()
-            DELETE u
+                  AND NOT (u)<-[:CREATED_BY]-()
+            DETACH DELETE u
             """,
             {},
         )
-        await self._execute_write("MATCH (t:Team) DELETE t", {})
+        await self._execute_write("MATCH (t:Team) DETACH DELETE t", {})
         await self._execute_write(
             """
             MATCH (m:Meeting)

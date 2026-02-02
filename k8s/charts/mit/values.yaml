@@ -4,7 +4,17 @@
 global:
   namespace: mit
   environment: development
-  registry: ""
+  registry: "ghcr.io/teamatoi"
+
+# 이미지 태그 설정 (CI에서 SHA 기반 태그 사용)
+images:
+  backend:
+    tag: "latest"
+  frontend:
+    tag: "latest"
+  worker:
+    tag: "latest"
+  pullSecret: "ghcr-secret"  # GHCR 인증용 시크릿
 
 # 앱 포트
 backend:
@@ -85,4 +95,7 @@ resources:
     limits: { memory: "128Mi", cpu: "200m" }
   worker:
     requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "512Mi", cpu: "500m" }
+  arqWorker:
+    requests: { memory: "256Mi", cpu: "100m" }
     limits: { memory: "512Mi", cpu: "500m" }

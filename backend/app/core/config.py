@@ -44,18 +44,8 @@ class Settings(BaseSettings):
     # CORS - JSON 배열 형식
     cors_origins: list[str] = ["http://localhost:3000"]
 
-    # MinIO (Object Storage)
-    minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
-    minio_secure: bool = False
-    # 외부에서 접근 가능한 스토리지 URL (nginx 프록시 경로)
-    # 예: https://www.mit-hub.com/storage
-    storage_external_url: str = "http://localhost:3000/storage"
-
-    # STT (Speech-to-Text) 설정
+    # OpenAI API (Realtime STT 등)
     openai_api_key: str = ""
-    stt_provider: str = "openai"  # openai, local, self_hosted
 
     # LLM (Clova Studio) 설정
     ncp_clovastudio_api_key: str = ""
@@ -93,6 +83,15 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def checkpointer_database_url(self) -> str:
+        """AsyncPostgresSaver용 psycopg URL
+
+        SQLAlchemy의 asyncpg 드라이버 URL을 psycopg 형식으로 변환.
+        postgresql+asyncpg:// -> postgresql://
+        """
+        return self.database_url.replace("+asyncpg", "")
 
 
 @lru_cache

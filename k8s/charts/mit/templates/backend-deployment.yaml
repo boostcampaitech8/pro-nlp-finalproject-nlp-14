@@ -17,9 +17,10 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: backend
+      {{- include "mit.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: backend
-          image: {{ include "mit.image" (dict "Values" .Values "image" "mit-backend") }}
+          image: {{ include "mit.image" (dict "Values" .Values "name" "backend") }}
           imagePullPolicy: Always
           ports:
             - containerPort: {{ .Values.backend.port }}
