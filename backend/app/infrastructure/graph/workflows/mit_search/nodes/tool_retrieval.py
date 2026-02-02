@@ -149,16 +149,16 @@ LIMIT 20"""
         return cypher
 
     elif strategy == "action_search":
-        # Action Item 검색: 제목으로 검색하고 담당자(assignee) 정보 포함
+        # Action Item 검색: 내용으로 검색하고 담당자(assignee) 정보 포함
         # 관계: User -[:ASSIGNED_TO]-> ActionItem
         cypher = f"""MATCH (ai:ActionItem)
-WHERE ($query = "*" OR ai.title CONTAINS $query OR ai.description CONTAINS $query)
+WHERE ($query = "*" OR ai.content CONTAINS $query)
 {date_filter}
 OPTIONAL MATCH (u:User)-[:ASSIGNED_TO]->(ai)
-RETURN ai.id AS id, ai.title AS title, ai.description AS content, ai.status AS status,
+RETURN ai.id AS id, ai.content AS title, ai.content AS content, ai.status AS status,
        CASE WHEN ai.due_date IS NOT NULL THEN ai.due_date ELSE null END AS created_at,
        coalesce(u.name, "미배정") AS assignee, u.id AS assignee_id, 1.0 AS score,
-       'Action Item: ' + ai.title + ' (담당자: ' + coalesce(u.name, '미배정') + ', 상태: ' + ai.status + ')' AS graph_context
+       'Action Item: ' + ai.content + ' (담당자: ' + coalesce(u.name, '미배정') + ', 상태: ' + ai.status + ')' AS graph_context
 ORDER BY ai.due_date DESC
 LIMIT 20"""
         return cypher
@@ -167,12 +167,12 @@ LIMIT 20"""
         # 복합 검색: Action Item 담당자 + 그 담당자의 팀원
         # Multi-hop: User -[:ASSIGNED_TO]-> ActionItem, User -[:MEMBER_OF]-> Team <-[:MEMBER_OF]- User
         cypher = f"""MATCH (ai:ActionItem)
-WHERE ($query = "*" OR ai.title CONTAINS $query OR ai.description CONTAINS $query)
+WHERE ($query = "*" OR ai.content CONTAINS $query)
 {date_filter}
 OPTIONAL MATCH (u:User)-[:ASSIGNED_TO]->(ai)
 OPTIONAL MATCH (u)-[:MEMBER_OF]->(t:Team)<-[:MEMBER_OF]-(team_member:User)
 WHERE team_member <> u
-RETURN DISTINCT ai.id AS action_id, ai.title AS action_title, coalesce(u.name, "미배정") AS assignee,
+RETURN DISTINCT ai.id AS action_id, ai.content AS action_title, coalesce(u.name, "미배정") AS assignee,
        team_member.id AS team_member_id, team_member.name AS team_member_name,
        t.name AS team_name, u.id AS assignee_id, 1.0 AS score
 ORDER BY ai.due_date DESC, team_member.name ASC
@@ -193,7 +193,7 @@ RETURN DISTINCT
     d.id AS decision_id,
     d.content AS decision_content,
     ai.id AS action_id,
-    ai.title AS action_title,
+    ai.content AS action_title,
     assignee.name AS assignee_name,
     assignee.id AS assignee_id,
     teammate.id AS teammate_id,
