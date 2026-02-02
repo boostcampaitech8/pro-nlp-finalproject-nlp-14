@@ -1515,6 +1515,20 @@ wheels = [
 ]
 
 [[package]]
+name = "langchain-naver"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx-sse" },
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e6/9d/feefc085884d953b4a0dd3133b87e0e516b7b6fbc595ee09cc1b6136959d/langchain_naver-0.1.1.tar.gz", hash = "sha256:ad0fc27f091dc252d046f23e67c6d0412574514358258a0f19235d8b3f47dcad", size = 9344, upload-time = "2025-08-07T11:49:35.247Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/b3/41ac6be6e9ebfc2d147d3d079afa0c7dec3b3c6b4f6bacd3094028d089f0/langchain_naver-0.1.1-py3-none-any.whl", hash = "sha256:914418c7ab01c43aa103e4349393ee080ffa033eab2a8444bf0e98ad8f8e256d", size = 9927, upload-time = "2025-08-07T11:49:34.506Z" },
+]
+
+[[package]]
 name = "langchain-openai"
 version = "1.1.7"
 source = { registry = "https://pypi.org/simple" }
@@ -1782,6 +1796,7 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-core" },
+    { name = "langchain-naver" },
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "livekit-api" },
@@ -1828,6 +1843,7 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.2.6" },
     { name = "langchain-community", specifier = ">=0.4.1" },
     { name = "langchain-core", specifier = ">=1.2.7" },
+    { name = "langchain-naver", specifier = ">=0.1.1" },
     { name = "langchain-openai", specifier = ">=1.1.7" },
     { name = "langgraph", specifier = ">=1.0.6" },
     { name = "livekit-api", specifier = ">=0.7.0" },

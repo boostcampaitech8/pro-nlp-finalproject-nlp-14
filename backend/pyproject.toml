@@ -48,6 +48,7 @@ dependencies = [
     "flagembedding>=1.1.0",  # For BGE reranker
     # Kubernetes (K8s WorkerManager용) 지우면 동현이에게 혼남.
     "kubernetes>=31.0.0",
+    "langchain-naver>=0.1.1",
 ]
 
 [dependency-groups]

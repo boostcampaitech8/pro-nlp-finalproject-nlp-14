@@ -41,8 +41,8 @@ async def execute_mit_tools(state: OrchestrationState) -> OrchestrationState:
             "user_id": user_id,
         })
 
-        # 검색 결과 추출 (selection 제거: merged_results 사용)
-        final_results = search_result.get("merged_results", [])
+        # 검색 결과 추출
+        final_results = search_result.get("mit_search_raw_results", [])
         
         # 결과를 tool_results에 추가
         if final_results:

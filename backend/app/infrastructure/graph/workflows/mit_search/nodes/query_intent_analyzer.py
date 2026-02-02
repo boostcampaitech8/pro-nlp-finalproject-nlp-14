@@ -38,8 +38,8 @@ async def query_intent_analyzer_async(state: MitSearchState) -> dict:
     """LLM을 사용하여 쿼리의 의도를 분석합니다.
 
     Contract:
-        reads: mit_search_query
-        writes: mit_search_query_intent (intent_type, primary_entity, search_focus)
+        reads: mit_search_query, messages, message
+        writes: mit_search_query, mit_search_query_intent
         side-effects: LLM API 호출 + Intent 검증
         failures: LLM 오류 → 기본값 반환
 
@@ -164,6 +164,7 @@ async def _analyze_intent_with_llm(query: str) -> dict:
     "intent_type": "entity_search|temporal_search|general_search|meta_search",
     "primary_entity": "실제 사람이름 또는 팀명 (예: '신수효', '프로덕션팀') 또는 null",
     "search_focus": "Decision|Meeting|Agenda|Action|Team|Composite|null",
+    "keywords": ["추가 검색 키워드들"] 또는 null,
     "date_range": {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"} 또는 null,
     "entity_types": ["Decision", "Meeting", "Agenda", "Action", "Team"] 또는 null,
     "confidence": 0.0~1.0,
@@ -204,6 +205,11 @@ search_focus 분류:
 - "신수효 관련", "신수효가 맡은", "신수효 담당" → 무조건 primary_entity: "신수효"
 
 **필터 추출 규칙**:
+- keywords: primary_entity와 search_focus 외에 추가로 필터링할 키워드
+  * "신수효랑 관련된 회의 중에 회고 관련된 회의" → keywords: ["회고"]
+  * "AI팀 지난주 스프린트 회의" → keywords: ["스프린트"]
+  * 키워드가 없으면 null
+  * primary_entity는 keywords에 포함하지 않음
 - date_range: "지난주" → {"start": "2026-01-24", "end": "2026-01-31"}, "이번달" → {"start": "2026-01-01", "end": "2026-01-31"}
   * 시간 표현이 없으면 null
   * YYYY-MM-DD 형식으로 반환
@@ -218,19 +224,22 @@ search_focus 분류:
 - 출력은 JSON만 반환
 
 예1: "신수효랑 같은 팀인 사람은 누구야?"
-→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Team", date_range: null, entity_types: ["Team"], confidence: 0.95
+→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Team", keywords: null, date_range: null, entity_types: ["Team"], confidence: 0.95
 
 예2: "지난주 결정사항"
-→ intent_type: "temporal_search", primary_entity: null, search_focus: "Decision", date_range: {"start": "2026-01-24", "end": "2026-01-31"}, entity_types: ["Decision"], confidence: 0.9
+→ intent_type: "temporal_search", primary_entity: null, search_focus: "Decision", keywords: null, date_range: {"start": "2026-01-24", "end": "2026-01-31"}, entity_types: ["Decision"], confidence: 0.9
 
 예3: "교육 프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?"
-→ intent_type: "meta_search", search_focus: "Composite", date_range: {"start": "2026-01-01", "end": "2026-06-30"}, entity_types: null, confidence: 0.7
+→ intent_type: "meta_search", search_focus: "Composite", keywords: ["교육 프로그램"], date_range: {"start": "2026-01-01", "end": "2026-06-30"}, entity_types: null, confidence: 0.7
 
 예4: "신수효가 맡은 일 뭐가 있어?"
-→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Action", date_range: null, entity_types: ["Action"], confidence: 0.95
+→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Action", keywords: null, date_range: null, entity_types: ["Action"], confidence: 0.95
 
 예5: "신수효 팀원 누구 있어?"
-→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Team", date_range: null, entity_types: ["Team"], confidence: 0.95
+→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Team", keywords: null, date_range: null, entity_types: ["Team"], confidence: 0.95
+
+예6: "신수효랑 관련된 회의 중에 회고 관련된 회의 있는지 확인해봐"
+→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Meeting", keywords: ["회고"], date_range: null, entity_types: ["Meeting"], confidence: 0.9
 
 출력은 JSON만 반환하세요."""
 

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.infrastructure.graph.integration.llm import get_cypher_generator_llm
-from ..nodes.tool_retrieval import _generate_cypher_by_strategy, _normalize_query
+from ..nodes.tool_retrieval import generate_cypher_by_strategy, normalize_query
 from ..state import MitSearchState
 from ..utils.search_strategy_router import SearchStrategyRouter
 from ..utils.template_cypher import generate_template_cypher
@@ -119,7 +119,6 @@ async def _generate_text_to_cypher_raw(
                             - No UNION/UNION ALL. Single query only.
 
         [Few-Shot Examples]
-        
         Q: "민수랑 했던 예산 회의 찾아줘"
         ```thought
         1. Intent: Find meetings with '민수' containing keyword '예산'.
@@ -285,7 +284,7 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
     """SearchStrategyRouter 기반 Cypher 쿼리 생성 (Template Fallback 포함).
 
     Contract:
-        reads: mit_search_query, mit_search_filters, mit_search_query_intent, user_id
+        reads: mit_search_query, mit_search_query_intent, user_id
         writes: mit_search_cypher, mit_search_strategy
     """
     start_time = time.time()
@@ -309,7 +308,7 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
             return {"mit_search_cypher": "", "mit_search_strategy": {}}
 
         # 정규화
-        normalized_keywords = _normalize_query(query)
+        normalized_keywords = normalize_query(query)
         logger.info(f"[Cypher Generator] 정규화: '{query}' → '{normalized_keywords}'")
 
         # 전략 결정
@@ -335,7 +334,7 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
                 intent_type=query_intent.get("intent_type"),
                 search_focus=query_intent.get("search_focus"),
                 primary_entity=query_intent.get("primary_entity"),
-                search_term=normalized_keywords,
+                keywords=query_intent.get("keywords"),
                 user_id=user_id,
                 date_filter=filters.get("date_range"),
             )
@@ -369,7 +368,7 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
                     intent_type=query_intent.get("intent_type"),
                     search_focus=query_intent.get("search_focus"),
                     primary_entity=query_intent.get("primary_entity"),
-                    search_term=normalized_keywords,
+                    keywords=query_intent.get("keywords"),
                     user_id=user_id,
                     date_filter=filters.get("date_range"),
                 )
@@ -392,7 +391,7 @@ async def cypher_generator_async(state: MitSearchState) -> Dict[str, Any]:
 
         else:
             # 기타 전략
-            cypher = _generate_cypher_by_strategy(
+            cypher = generate_cypher_by_strategy(
                 strategy=strategy["strategy"],
                 query_intent=query_intent,
                 entity_types=entity_types,

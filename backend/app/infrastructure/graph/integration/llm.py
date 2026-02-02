@@ -1,19 +1,19 @@
 """LangChain LLM 통합 및 용도별 인스턴스 관리.
 
 모델 선택 전략 (실용적 접근):
-- HCX-003: 주력 모델 (Cypher 생성, 답변 생성, Planning, 의도 분석 등)
+- HCX-007: 주력 모델 (Cypher 생성, 답변 생성, Planning, 의도 분석 등)
+  * v3 API 사용 (langchain-naver 패키지 필요)
+  * thinking 파라미터 필수 (effort: 'none', 'low', 'medium', 'high')
   * temperature로 작업별 차별화: 0.05 (Cypher) ~ 0.6 (답변 생성)
   * max_tokens로 출력량 조절: 256 ~ 2048
 - DASH: 단순 패턴 변환 전용 (쿼리 정규화, 필터 추출)
   * 빠른 처리 속도 + 비용 효율성
   * temperature 조절로 창의성/정확성 균형
-
-참고: HCX-007은 API 미지원으로 제외
 """
 
 from functools import lru_cache
 
-from langchain_community.chat_models import ChatClovaX
+from langchain_naver import ChatClovaX
 
 from app.infrastructure.graph.config import NCP_CLOVASTUDIO_API_KEY
 
@@ -40,7 +40,8 @@ def get_base_llm(model: str = "HCX-003", **kwargs) -> ChatClovaX:
         "temperature": 0.5,
         "max_tokens": 256,
         "model": model,
-        "ncp_clovastudio_api_key": NCP_CLOVASTUDIO_API_KEY,
+        "api_key": NCP_CLOVASTUDIO_API_KEY,
+        "thinking": {"effort": "low"},
     }
 
     # kwargs로 덮어쓰기
@@ -58,10 +59,11 @@ def get_planner_llm() -> ChatClovaX:
     max_tokens: 1024 (계획 단계별 설명)
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.3,
         max_tokens=1024,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "medium"},
     )
 
 
@@ -74,10 +76,11 @@ def get_generator_llm() -> ChatClovaX:
     max_tokens: 512
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.5,
         max_tokens=512,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 
@@ -90,10 +93,11 @@ def get_evaluator_llm() -> ChatClovaX:
     max_tokens: 512
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.2,
         max_tokens=512,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 
@@ -116,10 +120,11 @@ def get_cypher_generator_llm() -> ChatClovaX:
     - 유동적인 쿼리에 대응하려면 결정론적 패턴 필수
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.05,
         max_tokens=1024,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 
@@ -137,10 +142,11 @@ def get_answer_generator_llm() -> ChatClovaX:
     - 한국어 자연스러움 극대화
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.6,
         max_tokens=2048,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "medium"},
     )
 
 
@@ -162,10 +168,11 @@ def get_query_intent_analyzer_llm() -> ChatClovaX:
     - Cost 효율성 + 정확도 > 95% 유지
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.3,
         max_tokens=512,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 
@@ -178,10 +185,11 @@ def get_result_scorer_llm() -> ChatClovaX:
     max_tokens: 256 (점수 + 간단한 이유)
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.2,
         max_tokens=256,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 
@@ -194,10 +202,11 @@ def get_reranker_llm() -> ChatClovaX:
     max_tokens: 512
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.2,
         max_tokens=512,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 
@@ -210,10 +219,11 @@ def get_selector_llm() -> ChatClovaX:
     max_tokens: 256
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.1,
         max_tokens=256,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 
@@ -236,10 +246,11 @@ def get_llm() -> ChatClovaX:
         ChatClovaX: Configured LLM instance
     """
     return ChatClovaX(
-        model="HCX-003",
+        model="HCX-007",
         temperature=0.5,
         max_tokens=512,
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
 
 

@@ -23,9 +23,10 @@ def generate_template_cypher(
     intent_type: str,
     search_focus: str,
     primary_entity: str,
-    search_term: str,
-    user_id: str,
-    date_filter: dict = None
+    keywords: list = None,
+    user_id: str = None,
+    date_filter: dict = None,
+    search_term: str = None  # 하위 호환성을 위해 유지
 ) -> str | None:
     """단순 패턴을 위한 Template Cypher 생성.
 
@@ -33,6 +34,10 @@ def generate_template_cypher(
     1. Entity + Decision (옵션: 키워드, 날짜)
     2. Entity + Meeting (옵션: 키워드, 날짜)
     3. Temporal + Decision (옵션: 키워드)
+
+    Args:
+        keywords: 추가 검색 키워드 리스트 (primary_entity 제외)
+        search_term: (deprecated) keywords 우선 사용
 
     Returns:
         Cypher 쿼리 또는 None (템플릿 없음)
@@ -46,14 +51,18 @@ def generate_template_cypher(
         # n은 쿼리 본문에서 대상 노드(Meeting 또는 Decision)로 alias 되어야 함
         date_clause = "AND target.created_at >= datetime($start_date) AND target.created_at <= datetime($end_date)"
 
-    # 키워드 검색 필터 (엔티티 외에 추가 검색어가 있을 경우)
+    # 키워드 검색 필터 (keywords 리스트 사용)
     keyword_clause = ""
     team_keyword_clause = ""
 
-    # [CRITICAL FIX] entity_search인 경우 검색어에서 엔티티를 제거한 순수 키워드만 사용
-    effective_search_term = search_term
-    if intent_type == "entity_search" and primary_entity:
-        effective_search_term = _clean_search_term(search_term, primary_entity)
+    # keywords 리스트를 search_term으로 변환 (첫 번째 키워드 사용)
+    effective_search_term = None
+    if keywords and len(keywords) > 0:
+        effective_search_term = keywords[0]
+    elif search_term:  # 하위 호환성
+        effective_search_term = search_term
+        if intent_type == "entity_search" and primary_entity:
+            effective_search_term = _clean_search_term(search_term, primary_entity)
 
     if effective_search_term and effective_search_term.strip():
         # 제목이나 내용에 키워드가 포함되어야 함
@@ -63,11 +72,16 @@ def generate_template_cypher(
 
     # Pattern 1: 특정 인물의 결정사항 (User -> Meeting -> Agenda -> Decision)
     if intent_type == "entity_search" and search_focus == "Decision" and primary_entity:
+        # Decision 노드는 title이 없고 content만 있으므로, content만 검색
+        keyword_clause_fixed = ""
+        if effective_search_term and effective_search_term.strip():
+            keyword_clause_fixed = "AND target.content CONTAINS $search_term"
+        
         cypher = f"""
         MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(target:Decision)
         WHERE u.name CONTAINS $entity_name
           {date_clause}
-          {keyword_clause}
+          {keyword_clause_fixed}
         RETURN target.id AS id,
                target.content AS content,
                target.status AS status,
@@ -79,26 +93,31 @@ def generate_template_cypher(
         ORDER BY target.created_at DESC
         LIMIT 20
         """
-        logger.info(f"[Template] Pattern 1: Entity Decision (Entity={primary_entity}, Keyword={bool(search_term)})")
+        logger.info(f"[Template] Pattern 1: Entity Decision (Entity={primary_entity}, Keyword={bool(effective_search_term)})")
         return cypher.strip()
 
     # Pattern 2: 특정 인물의 회의 (User -> Meeting)
     if intent_type == "entity_search" and search_focus == "Meeting" and primary_entity:
+        # Meeting 노드는 created_at 대신 scheduled_at 사용
+        date_clause_meeting = ""
+        if date_filter and date_filter.get("start") and date_filter.get("end"):
+            date_clause_meeting = "AND target.scheduled_at >= datetime($start_date) AND target.scheduled_at <= datetime($end_date)"
+
         cypher = f"""
                 MATCH (u:User)-[:PARTICIPATED_IN]->(target:Meeting)
                 WHERE u.name CONTAINS $entity_name
-                    {date_clause}
+                    {date_clause_meeting}
                     {keyword_clause}
         RETURN target.id AS id,
                target.title AS title,
                target.title AS content,
                target.status AS status,
-               target.created_at AS created_at,
+               target.scheduled_at AS created_at,
                target.id AS meeting_id,
                target.title AS meeting_title,
                1.0 AS score,
                '회의: ' + target.title + ' (참여자: ' + u.name + ')' AS graph_context
-        ORDER BY target.created_at DESC
+        ORDER BY target.scheduled_at DESC
         LIMIT 20
         """
         logger.info(f"[Template] Pattern 2: Entity Meeting (Entity={primary_entity}, Keyword={bool(search_term)})")
@@ -123,33 +142,38 @@ def generate_template_cypher(
         logger.info(f"[Template] Pattern 3: Entity Team (Entity={primary_entity}, Keyword={bool(search_term)})")
         return cypher.strip()
 
-        # Pattern 4: 복합 메타 검색 (담당자와 같은 팀원)
-        if intent_type == "meta_search" and search_focus == "Composite" and search_term:
-                cypher = """
-                MATCH (m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_ACTION]->(ai:ActionItem)<-[:ASSIGNED_TO]-(owner:User)
-                MATCH (owner)-[:MEMBER_OF]->(team:Team)<-[:MEMBER_OF]-(member:User)
-                WHERE (ai.title CONTAINS $search_term OR a.title CONTAINS $search_term OR m.title CONTAINS $search_term)
-                    AND member.id <> owner.id
-                    AND (team)<-[:MEMBER_OF]-(:User {{id: $user_id}})
-                RETURN member.id AS id,
-                             member.name AS title,
-                             member.email AS content,
-                             1.0 AS score,
-                             member.name + '님은 ' + team.name + ' 팀의 멤버 (담당자: ' + owner.name + ')' AS graph_context
-                ORDER BY member.name ASC
-                LIMIT 20
-                """
-                logger.info("[Template] Pattern 4: Composite Team Members")
-                return cypher.strip()
+    # Pattern 4: 복합 메타 검색 (담당자와 같은 팀원)
+    if intent_type == "meta_search" and search_focus == "Composite" and effective_search_term:
+        cypher = f"""
+        MATCH (m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_ACTION]->(ai:ActionItem)<-[:ASSIGNED_TO]-(owner:User)
+        MATCH (owner)-[:MEMBER_OF]->(team:Team)<-[:MEMBER_OF]-(member:User)
+        WHERE (ai.title CONTAINS $search_term OR a.title CONTAINS $search_term OR m.title CONTAINS $search_term)
+          AND member.id <> owner.id
+          AND (team)<-[:MEMBER_OF]-(:User {{id: $user_id}})
+        RETURN member.id AS id,
+               member.name AS title,
+               member.email AS content,
+               1.0 AS score,
+               member.name + '님은 ' + team.name + ' 팀의 멤버 (담당자: ' + owner.name + ')' AS graph_context
+        ORDER BY member.name ASC
+        LIMIT 20
+        """
+        logger.info("[Template] Pattern 4: Composite Team Members")
+        return cypher.strip()
 
-        # Pattern 5: 시간 기반 결정사항 (User -> Meeting ... -> Decision)
+    # Pattern 5: 시간 기반 결정사항 (User -> Meeting ... -> Decision)
     # 주의: Temporal Search는 primary_entity가 없을 때 주로 사용됨
     if intent_type == "temporal_search" and search_focus == "Decision" and date_filter:
+        # Decision 노드는 title이 없고 content만 있으므로, content만 검색
+        keyword_clause_temporal = ""
+        if effective_search_term and effective_search_term.strip():
+            keyword_clause_temporal = "AND target.content CONTAINS $search_term"
+        
         cypher = f"""
         MATCH (u:User {{id: $user_id}})-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(target:Decision)
         WHERE target.created_at >= datetime($start_date)
           AND target.created_at <= datetime($end_date)
-          {keyword_clause}
+          {keyword_clause_temporal}
         RETURN target.id AS id,
                target.content AS content,
                target.status AS status,
@@ -172,21 +196,26 @@ def generate_template_cypher(
 def get_template_parameters(
     intent_type: str,
     primary_entity: str,
-    search_term: str,
-    user_id: str,
-    date_filter: dict = None
+    keywords: list = None,
+    user_id: str = None,
+    date_filter: dict = None,
+    search_term: str = None  # 하위 호환성
 ) -> dict:
     """Template Cypher용 파라미터 생성 (일관성 유지)."""
 
-    # [CRITICAL FIX] entity_search인 경우 검색어에서 엔티티를 제거한 순수 키워드만 사용
-    final_search_term = search_term
-    if intent_type == "entity_search" and primary_entity:
-        final_search_term = _clean_search_term(search_term, primary_entity)
+    # keywords 리스트를 search_term으로 변환
+    final_search_term = ""
+    if keywords and len(keywords) > 0:
+        final_search_term = keywords[0]
+    elif search_term:  # 하위 호환성
+        final_search_term = search_term
+        if intent_type == "entity_search" and primary_entity:
+            final_search_term = _clean_search_term(search_term, primary_entity)
 
     # 기본 파라미터
     params = {
-        "user_id": user_id,
-        "search_term": final_search_term,  # 정제된 키워드 전달
+        "user_id": user_id or "",
+        "search_term": final_search_term,  # 첫 번째 키워드 전달
     }
 
     # 엔티티 검색용
