@@ -38,8 +38,8 @@ class ContextConfig(BaseSettings):
     topic_merge_threshold: float = 0.80  # 유사 토픽 병합 임계값
     topic_similarity_threshold: float = 0.85  # 재귀 병합 임계값
 
-    # === 임베딩 설정 ===
-    embedding_model: str = "BAAI/bge-m3"
+    # === 임베딩 설정 (CLOVA Studio API) ===
+    embedding_model: str = "bge-m3"  # CLOVA Studio 지원 모델
     embedding_dimension: int = 1024
 
     # === 시맨틱 서치 설정 ===
