@@ -115,9 +115,58 @@ FIRST_NAMES = [
 ]
 
 LAST_NAMES = [
-    "윤성", "동현", "도훈", "수효", "미란", "예찬", "성욱", "하윤",
-    "주원", "지민", "지호", "수아", "지훈", "다은", "준서", "채원",
-    "현우", "지원", "건우", "소율", "우진", "예은", "승현", "수빈",
+    # 남성 이름 (200개)
+    "민준", "서준", "도윤", "예준", "시우", "하준", "주원", "지호",
+    "지후", "준서", "준우", "현우", "도현", "지훈", "건우", "우진",
+    "선우", "서진", "민재", "현준", "연우", "유준", "정우", "승우",
+    "승현", "시윤", "준혁", "은우", "지환", "승민", "지우", "유찬",
+    "윤우", "민성", "준영", "시후", "진우", "지원", "수호", "재윤",
+    "시현", "동현", "수현", "태윤", "민우", "재원", "한결", "지안",
+    "윤호", "민규", "태민", "규민", "성민", "성준", "성현", "민호",
+    "재민", "재현", "준호", "지성", "태현", "정민", "현성", "승준",
+    "동윤", "상현", "재호", "민혁", "진호", "태양", "성훈", "지완",
+    "동혁", "상윤", "재혁", "민석", "진영", "태호", "성진", "지수",
+    "동건", "상준", "재영", "민수", "진혁", "태준", "성호", "지혁",
+    "동민", "상훈", "재준", "민찬", "진수", "태영", "성원", "지현",
+    "윤성", "도훈", "예찬", "성욱", "건호", "영준", "영민", "영호",
+    "영진", "영훈", "영석", "영수", "세준", "세현", "세민", "세훈",
+    "기현", "기훈", "기민", "기석", "인호", "인성", "인우", "인혁",
+    "용준", "용현", "용민", "용호", "경민", "경훈", "경호", "경석",
+    "종현", "종민", "종훈", "종호", "원준", "원호", "원석", "원영",
+    "창민", "창훈", "창호", "창현", "익준", "익현", "익호", "익수",
+    "찬영", "찬호", "찬우", "찬혁", "대현", "대호", "대민", "대영",
+    "형준", "형민", "형호", "형석", "광민", "광호", "광현", "광석",
+    "정훈", "정호", "정현", "정석", "상민", "상호", "상석", "상진",
+    "철민", "철호", "철현", "철수", "호준", "호민", "호영", "호진",
+    "태성", "태훈", "태석", "태수", "진성", "진민", "진석", "진환",
+    "병준", "병민", "병호", "병현", "한솔", "한빈", "한울", "한별",
+    "강민", "강호", "강현", "강준", "혁준", "혁민", "혁진", "혁수",
+    # 여성 이름 (200개)
+    "서연", "서윤", "지유", "서현", "민서", "하은", "하윤", "윤서",
+    "채원", "수아", "지아", "지윤", "은서", "다은", "예은", "예서",
+    "수빈", "소율", "소윤", "지은", "채은", "유진", "윤아", "유나",
+    "지현", "수연", "예진", "민지", "하린", "시은", "서은", "은지",
+    "연우", "소연", "민아", "지연", "하영", "유빈", "연서", "은채",
+    "소민", "민영", "지수", "하나", "유리", "연주", "유림", "은빈",
+    "소영", "민정", "지민", "하늘", "유라", "연지", "유미", "은하",
+    "소정", "민주", "지영", "하율", "유정", "미란", "예린", "다인",
+    "서영", "연희", "은비", "소희", "미연", "하진", "예빈", "다연",
+    "서정", "연아", "은정", "소현", "미정", "하선", "예나", "다현",
+    "서희", "연수", "은영", "소은", "미영", "하경", "예원", "다영",
+    "서인", "연정", "은주", "소진", "가은", "가영", "가연", "가인",
+    "나연", "나영", "나은", "나인", "다솔", "다희", "다정", "다솜",
+    "라희", "라연", "라은", "라인", "마리", "마음", "마야", "마린",
+    "바다", "바람", "바른", "바롬", "사랑", "사빈", "사현", "사윤",
+    "아름", "아인", "아린", "아영", "자은", "자영", "자연", "자인",
+    "차은", "차영", "차연", "차인", "세아", "세연", "세은", "세인",
+    "혜원", "혜진", "혜린", "혜은", "보라", "보미", "보연", "보은",
+    "주아", "주연", "주은", "주인", "초아", "초연", "초은", "초롱",
+    "효진", "효연", "효은", "효린", "별이", "별님", "봄이", "봄솔",
+    "빛나", "빛솔", "슬아", "슬기", "슬비", "슬희", "아라", "아리",
+    "아미", "아현", "이슬", "이솔", "이랑", "이안", "해나", "해린",
+    "해원", "해은", "새봄", "새별", "새롬", "새미", "푸름", "푸른",
+    "하람", "하랑", "하솔", "하음", "해솔", "해오름", "햇살", "희망",
+    "달빛", "단비", "담비", "도담", "라온", "루다", "루리", "루비",
 ]
 
 ROLES = ["개발", "기획", "디자인", "마케팅", "데이터", "인프라", "QA", "PM"]
@@ -157,42 +206,390 @@ QUARTERS = ["Q1", "Q2", "Q3", "Q4", "상반기", "하반기", "1월", "2월", "3
 MEETING_STATUSES = ["scheduled", "ongoing", "completed", "in_review", "confirmed", "cancelled"]
 
 AGENDA_TOPICS = [
-    "{feature} 스펙 확정",
-    "{feature} 일정 논의",
-    "{topic} 방안 검토",
-    "{topic} 우선순위 결정",
-    "리소스 배분",
-    "마일스톤 설정",
-    "기술적 의사결정",
-    "디자인 리뷰",
-    "테스트 전략",
-    "배포 계획",
-    "모니터링 방안",
-    "문서화 계획",
+    # 기능/개발 관련 (25개)
+    "{feature} 스펙 확정", "{feature} 일정 논의", "{feature} 요구사항 분석",
+    "{feature} 기술 검토", "{feature} 구현 방안", "{feature} API 설계",
+    "{feature} DB 스키마 설계", "{feature} UI/UX 설계", "{feature} 보안 검토",
+    "{feature} 성능 요구사항", "{feature} 테스트 케이스 정의", "{feature} 릴리즈 계획",
+    "{feature} 롤백 전략", "{feature} A/B 테스트 설계", "{feature} 피처 플래그 전략",
+    "{feature} 의존성 분석", "{feature} 마이그레이션 계획", "{feature} 호환성 검토",
+    "{feature} 문서화 범위", "{feature} 데모 준비", "{feature} 코드 리뷰 기준",
+    "{feature} 모니터링 지표", "{feature} 알림 설정", "{feature} SLA 정의",
+    "{feature} 운영 가이드 작성",
+    # 주제/이슈 관련 (25개)
+    "{topic} 방안 검토", "{topic} 우선순위 결정", "{topic} 현황 분석",
+    "{topic} 개선 방향", "{topic} 리스크 평가", "{topic} 대응 전략",
+    "{topic} 비용 분석", "{topic} ROI 검토", "{topic} 벤치마킹",
+    "{topic} 경쟁사 분석", "{topic} 사용자 피드백 검토", "{topic} 데이터 분석",
+    "{topic} 트렌드 분석", "{topic} 기술 조사", "{topic} 도구 비교",
+    "{topic} 프로세스 개선", "{topic} 자동화 방안", "{topic} 효율화 전략",
+    "{topic} 품질 개선", "{topic} 장애 대응", "{topic} 보안 강화",
+    "{topic} 확장성 검토", "{topic} 유지보수 전략", "{topic} 기술 부채 해소",
+    "{topic} 레거시 전환",
+    # 프로젝트 관리 (20개)
+    "리소스 배분", "마일스톤 설정", "일정 조율", "진행 상황 점검",
+    "블로커 해결", "리스크 관리", "이해관계자 커뮤니케이션", "스코프 조정",
+    "우선순위 재검토", "팀 역량 평가", "외부 협력 논의", "예산 검토",
+    "KPI 설정", "성과 측정 방안", "회고 및 개선점", "다음 스프린트 계획",
+    "릴리즈 일정 확정", "핫픽스 대응", "긴급 이슈 논의", "크로스팀 협업",
+    # 기술적 의사결정 (15개)
+    "기술적 의사결정", "아키텍처 리뷰", "기술 스택 선정", "인프라 구성",
+    "CI/CD 파이프라인", "테스트 자동화", "코드 품질 기준", "보안 정책",
+    "데이터 거버넌스", "API 버저닝 전략", "캐싱 전략", "로깅 표준",
+    "에러 핸들링", "성능 최적화", "스케일링 전략",
+    # 디자인/UX (10개)
+    "디자인 리뷰", "UI 컴포넌트 정의", "디자인 시스템 업데이트", "접근성 검토",
+    "사용성 테스트 결과", "프로토타입 피드백", "브랜드 가이드라인", "반응형 설계",
+    "다크모드 지원", "국제화/지역화",
+    # 운영/배포 (5개)
+    "테스트 전략", "배포 계획", "모니터링 방안", "문서화 계획", "운영 이관",
 ]
 
 DECISION_TEMPLATES = [
+    # 기술 구현 결정 (25개)
     "{feature}은(는) {tech}로 구현",
+    "{feature} 백엔드는 {tech} 기반으로 개발",
+    "{feature} 프론트엔드는 {tech} 사용",
+    "{feature} 데이터 저장소는 {tech} 선정",
+    "{feature} 캐싱 레이어에 {tech} 도입",
+    "{feature} 메시지 큐는 {tech} 활용",
+    "{feature} 검색 엔진은 {tech} 적용",
+    "{feature} 인증 시스템은 {tech} 기반 구축",
+    "{feature} API 게이트웨이는 {tech} 사용",
+    "{feature} 컨테이너 오케스트레이션은 {tech} 채택",
+    "{feature} CI/CD 파이프라인은 {tech} 구성",
+    "{feature} 모니터링은 {tech} 스택 사용",
+    "{feature} 로깅 시스템은 {tech} 통합",
+    "{feature} 테스트 프레임워크는 {tech} 선정",
+    "{feature} 상태 관리는 {tech} 패턴 적용",
+    "{feature} ORM은 {tech} 사용",
+    "{feature} 빌드 도구는 {tech} 채택",
+    "{feature} 패키지 매니저는 {tech} 통일",
+    "{feature} 코드 포맷터는 {tech} 적용",
+    "{feature} 린터는 {tech} 설정",
+    "{feature} 문서화 도구는 {tech} 사용",
+    "{feature} API 문서는 {tech} 자동 생성",
+    "{feature} E2E 테스트는 {tech} 프레임워크 사용",
+    "{feature} 성능 테스트는 {tech} 도구 활용",
+    "{feature} 보안 스캐닝은 {tech} 도입",
+    # 일정/기간 결정 (20개)
     "{topic} {duration} 내 완료 목표",
+    "{feature} 개발은 {duration} 소요 예상",
+    "{topic} 마이그레이션 {duration} 내 완료",
+    "{feature} MVP는 {duration} 내 출시",
+    "{topic} 리팩토링 {duration} 계획",
+    "{feature} 베타 테스트 {duration} 진행",
+    "{topic} 파일럿 운영 {duration} 실시",
+    "{feature} 성능 최적화 {duration} 내 달성",
+    "{topic} 기술 부채 해소 {duration} 목표",
+    "{feature} 보안 강화 {duration} 내 적용",
+    "{topic} 문서화 {duration} 내 완료",
+    "{feature} 교육 자료 {duration} 내 준비",
+    "{topic} 인수인계 {duration} 내 완료",
+    "{feature} 안정화 기간 {duration} 설정",
+    "{topic} 모니터링 기간 {duration} 운영",
+    "{feature} A/B 테스트 {duration} 진행",
+    "{topic} 데이터 수집 {duration} 실시",
+    "{feature} 사용자 피드백 {duration} 수렴",
+    "{topic} 개선 사항 {duration} 내 반영",
+    "{feature} 정식 출시 {duration} 후 예정",
+    # 리소스 배정 결정 (20개)
     "{resource} {amount} 배정",
+    "{feature} 전담 {resource} {amount} 투입",
+    "{topic} 지원을 위해 {resource} {amount} 할당",
+    "{feature} 초기 개발에 {resource} {amount} 집중",
+    "{topic} 해결을 위해 {resource} {amount} 긴급 배치",
+    "{feature} 유지보수에 {resource} {amount} 상시 배치",
+    "{topic} 개선에 {resource} {amount} 추가 투입",
+    "{feature} QA에 {resource} {amount} 배정",
+    "{topic} 연구에 {resource} {amount} 할당",
+    "{feature} 운영에 {resource} {amount} 전환",
+    "{topic} 자동화에 {resource} {amount} 투자",
+    "{feature} 인프라에 {resource} {amount} 증설",
+    "{topic} 보안에 {resource} {amount} 배정",
+    "{feature} 성능 개선에 {resource} {amount} 투입",
+    "{topic} 교육에 {resource} {amount} 할당",
+    "{feature} 문서화에 {resource} {amount} 배정",
+    "{topic} 컨설팅에 {resource} {amount} 투입",
+    "{feature} 외주 개발에 {resource} {amount} 책정",
+    "{topic} 파트너십에 {resource} {amount} 배정",
+    "{feature} 클라우드 비용 {resource} {amount} 증액",
+    # 프로세스/방법론 결정 (20개)
     "{approach} 방식으로 진행",
+    "{feature} 개발은 {approach} 방법론 적용",
+    "{topic} 프로젝트는 {approach} 프로세스 채택",
+    "{feature} 팀은 {approach} 문화 도입",
+    "{topic} 관리는 {approach} 체계 구축",
+    "스프린트 주기 2주로 고정하고 {approach} 운영",
+    "데일리 스탠드업 15분 이내로 {approach} 진행",
+    "코드 리뷰 필수화하고 {approach} 기준 적용",
+    "페어 프로그래밍 {approach} 방식 도입",
+    "TDD {approach} 방식으로 개발 진행",
+    "BDD {approach} 기반 테스트 작성",
+    "DevOps {approach} 문화 정착",
+    "GitFlow {approach} 브랜치 전략 사용",
+    "트렁크 기반 개발 {approach} 방식 전환",
+    "마이크로서비스 {approach} 아키텍처 채택",
+    "모놀리식 우선 {approach} 전략 유지",
+    "점진적 마이그레이션 {approach} 접근",
+    "빅뱅 방식 대신 {approach} 단계적 전환",
+    "카나리 배포 {approach} 전략 적용",
+    "블루그린 배포 {approach} 방식 채택",
+    # 도구/시스템 도입 결정 (15개)
     "{tool} 도입 확정",
+    "{feature} 관리에 {tool} 사용",
+    "{topic} 추적에 {tool} 도입",
+    "{feature} 협업에 {tool} 활용",
+    "{topic} 분석에 {tool} 적용",
+    "{feature} 자동화에 {tool} 연동",
+    "{tool}과 {tool} 통합 진행",
+    "{tool} 기반 워크플로우 구축",
+    "{tool} 플러그인 개발 진행",
+    "{tool} API 연동 구현",
+    "{tool} 대시보드 구성",
+    "{tool} 알림 설정 완료",
+    "{tool} 권한 체계 수립",
+    "{tool} 백업 정책 수립",
+    "{tool} 마이그레이션 계획 수립",
+    # 정기 활동 결정 (15개)
     "매주 {day}에 {activity} 진행",
+    "격주 {day}에 {activity} 실시",
+    "매월 첫째 주 {day}에 {activity} 개최",
+    "분기별 {activity} 정례화",
+    "매일 오전 {activity} 진행",
+    "매일 오후 {activity} 실시",
+    "주 2회 {activity} 운영",
+    "필요시 {activity} 수시 진행",
+    "{activity} 참여 필수화",
+    "{activity} 결과 문서화 의무화",
+    "{activity} 녹화 및 공유",
+    "{activity} 템플릿 표준화",
+    "{activity} 시간 30분 제한",
+    "{activity} 사전 준비 필수",
+    "{activity} 후속 액션 추적",
+    # 목표/지표 설정 결정 (20개)
     "{metric} {target} 목표 설정",
+    "{feature} {metric} {target} 달성 목표",
+    "{topic} 개선으로 {metric} {target} 기대",
+    "SLA {metric} {target} 보장",
+    "SLO {metric} {target} 설정",
+    "에러 버짓 {metric} {target} 허용",
+    "가용성 {metric} {target} 유지",
+    "응답 시간 P99 {metric} {target} 목표",
+    "처리량 {metric} {target} 확보",
+    "동시 접속자 {metric} {target} 지원",
+    "데이터 정합성 {metric} {target} 보장",
+    "배포 빈도 {metric} {target} 목표",
+    "리드 타임 {metric} {target} 단축",
+    "MTTR {metric} {target} 달성",
+    "변경 실패율 {metric} {target} 유지",
+    "고객 만족도 {metric} {target} 목표",
+    "NPS {metric} {target} 달성",
+    "사용자 리텐션 {metric} {target} 유지",
+    "전환율 {metric} {target} 개선",
+    "이탈률 {metric} {target} 감소",
+    # 단계적 진행 결정 (15개)
     "{phase} 단계로 나눠서 진행",
+    "{feature} 출시 {phase} 단계 계획",
+    "{topic} 전환 {phase} 단계 실행",
+    "Phase 1에서 핵심 기능만 {phase} 구현",
+    "Phase 2에서 부가 기능 {phase} 추가",
+    "Phase 3에서 최적화 {phase} 진행",
+    "1차 오픈 후 피드백 반영하여 {phase} 개선",
+    "MVP 출시 후 {phase} 단계 확장",
+    "파일럿 성공 시 {phase} 단계 전사 확대",
+    "내부 테스트 → 베타 → 정식 {phase} 순서",
+    "개발 → QA → 스테이징 → 프로덕션 {phase} 배포",
+    "설계 → 구현 → 테스트 → 배포 {phase} 사이클",
+    "분석 → 설계 → 개발 → 검증 {phase} 프로세스",
+    "AS-IS → TO-BE → 갭 분석 → 실행 {phase} 진행",
+    "현황 파악 → 개선안 도출 → 적용 → 모니터링 {phase} 순환",
 ]
 
-TECHS = ["React", "Vue", "Next.js", "FastAPI", "Django", "Spring", "Go", "Rust", "Kafka", "Redis", "PostgreSQL", "MongoDB"]
-DURATIONS = ["1주", "2주", "1개월", "2개월", "분기 내", "상반기 내"]
-RESOURCES = ["개발 인력", "예산", "서버 리소스", "디자인 리소스"]
-AMOUNTS = ["2명", "3명", "5명", "1000만원", "3000만원", "5000만원", "10대", "20대"]
-APPROACHES = ["애자일", "워터폴", "하이브리드", "린", "스크럼"]
-TOOLS = ["Jira", "Notion", "Slack", "Figma", "GitHub", "GitLab", "Datadog", "Sentry"]
-DAYS = ["월요일", "화요일", "수요일", "목요일", "금요일"]
-ACTIVITIES = ["스탠드업", "코드 리뷰", "디자인 크리틱", "회고", "데모"]
-METRICS = ["테스트 커버리지", "응답 시간", "에러율", "DAU", "전환율"]
-TARGETS = ["80% 이상", "90% 이상", "100ms 이하", "1% 이하", "10% 증가", "20% 개선"]
-PHASES = ["3", "4", "5", "알파/베타/정식", "POC/MVP/정식"]
+TECHS = [
+    # Frontend (25개)
+    "React", "Vue", "Next.js", "Nuxt.js", "Angular", "Svelte", "SvelteKit", "Solid.js",
+    "Remix", "Astro", "Qwik", "Preact", "Alpine.js", "HTMX", "Lit", "Stencil",
+    "React Native", "Flutter", "Ionic", "Capacitor", "Expo", "Tauri", "Electron",
+    "TypeScript", "JavaScript",
+    # Backend (30개)
+    "FastAPI", "Django", "Flask", "Spring Boot", "Spring Cloud", "Quarkus", "Micronaut",
+    "Express.js", "NestJS", "Fastify", "Koa", "Hono", "Elysia", "Bun",
+    "Go", "Gin", "Echo", "Fiber", "Chi", "Rust", "Axum", "Actix", "Rocket",
+    "Ruby on Rails", "Laravel", "Symfony", "ASP.NET Core", "Ktor", "Vert.x", "Helidon",
+    # Database (25개)
+    "PostgreSQL", "MySQL", "MariaDB", "Oracle", "SQL Server", "SQLite",
+    "MongoDB", "Cassandra", "ScyllaDB", "CouchDB", "DynamoDB", "CosmosDB",
+    "Redis", "Memcached", "Valkey", "KeyDB", "Dragonfly",
+    "Elasticsearch", "OpenSearch", "Meilisearch", "Typesense", "Algolia",
+    "Neo4j", "ArangoDB", "TigerGraph", "Dgraph", "JanusGraph",
+    # Message Queue / Streaming (15개)
+    "Kafka", "RabbitMQ", "Apache Pulsar", "NATS", "Redis Streams",
+    "Amazon SQS", "Google Pub/Sub", "Azure Service Bus", "ActiveMQ", "ZeroMQ",
+    "Apache Flink", "Apache Spark", "Apache Storm", "Apache Beam", "Redpanda",
+    # Infrastructure / DevOps (25개)
+    "Kubernetes", "Docker", "Podman", "Helm", "Kustomize", "ArgoCD", "Flux",
+    "Terraform", "Pulumi", "Ansible", "Chef", "Puppet", "SaltStack",
+    "AWS", "GCP", "Azure", "Cloudflare", "Vercel", "Netlify", "Railway",
+    "Nginx", "HAProxy", "Traefik", "Envoy", "Istio", "Linkerd",
+    # Monitoring / Observability (15개)
+    "Prometheus", "Grafana", "Datadog", "New Relic", "Dynatrace", "Splunk",
+    "Jaeger", "Zipkin", "OpenTelemetry", "Sentry", "PagerDuty", "OpsGenie",
+    "ELK Stack", "Loki", "Tempo",
+    # AI/ML (15개)
+    "TensorFlow", "PyTorch", "JAX", "scikit-learn", "XGBoost", "LightGBM",
+    "Hugging Face", "LangChain", "LlamaIndex", "OpenAI API", "Anthropic API",
+    "MLflow", "Kubeflow", "Ray", "Weights & Biases",
+]
+
+DURATIONS = [
+    # 단기 (10개)
+    "1일", "2일", "3일", "1주", "2주", "3주", "1개월", "5주", "6주", "2개월",
+    # 중기 (10개)
+    "3개월", "1분기", "4개월", "5개월", "6개월", "상반기", "하반기", "2분기", "3분기", "4분기",
+    # 장기 (10개)
+    "1년", "1년 반", "2년", "3년", "5년", "올해 내", "내년까지", "연말까지", "연내", "차기 버전까지",
+    # 상대적 (10개)
+    "즉시", "ASAP", "가능한 빨리", "다음 스프린트", "다음 릴리즈",
+    "다음 마일스톤", "베타 전까지", "정식 출시 전", "연말 정산 전", "감사 전까지",
+]
+
+RESOURCES = [
+    # 인력 (15개)
+    "개발 인력", "프론트엔드 개발자", "백엔드 개발자", "풀스택 개발자", "DevOps 엔지니어",
+    "데이터 엔지니어", "ML 엔지니어", "QA 엔지니어", "보안 전문가", "DBA",
+    "디자인 리소스", "UX 디자이너", "UI 디자이너", "프로덕트 디자이너", "테크니컬 라이터",
+    # 예산 (10개)
+    "예산", "개발 예산", "인프라 예산", "라이선스 비용", "외주 비용",
+    "클라우드 비용", "마케팅 예산", "교육 예산", "도구 구매 비용", "컨설팅 비용",
+    # 인프라 (15개)
+    "서버 리소스", "컴퓨팅 인스턴스", "GPU 서버", "스토리지", "네트워크 대역폭",
+    "CDN 용량", "데이터베이스 인스턴스", "캐시 서버", "로드밸런서", "컨테이너 클러스터",
+    "CI/CD 러너", "테스트 환경", "스테이징 환경", "DR 환경", "모니터링 인프라",
+]
+
+AMOUNTS = [
+    # 인원 (15개)
+    "1명", "2명", "3명", "4명", "5명", "6명", "7명", "8명", "10명",
+    "1팀", "2팀", "소규모 TF", "전담팀", "크로스팀", "외부 인력 포함",
+    # 금액 (20개)
+    "100만원", "300만원", "500만원", "1000만원", "2000만원", "3000만원", "5000만원",
+    "1억원", "2억원", "3억원", "5억원", "10억원",
+    "$1,000", "$5,000", "$10,000", "$50,000", "$100,000",
+    "월 100만원", "월 500만원", "연 1억원",
+    # 수량/용량 (15개)
+    "10대", "20대", "50대", "100대", "500대",
+    "100GB", "500GB", "1TB", "5TB", "10TB",
+    "1000 vCPU", "5000 vCPU", "10000 RPS", "50000 RPS", "100만 MAU",
+]
+
+APPROACHES = [
+    # 방법론 (15개)
+    "애자일", "스크럼", "칸반", "XP", "린", "워터폴", "하이브리드", "SAFe",
+    "LeSS", "Nexus", "Crystal", "DSDM", "FDD", "RAD", "스파이럴",
+    # 개발 방식 (15개)
+    "TDD", "BDD", "DDD", "클린 아키텍처", "헥사고날 아키텍처", "이벤트 소싱",
+    "CQRS", "마이크로서비스", "모놀리식", "서버리스", "JAMstack", "모듈러 모놀리스",
+    "페어 프로그래밍", "몹 프로그래밍", "트렁크 기반 개발",
+    # 배포 방식 (10개)
+    "블루그린 배포", "카나리 배포", "롤링 배포", "A/B 배포", "피처 플래그",
+    "GitOps", "지속적 배포", "점진적 롤아웃", "섀도우 배포", "다크 런칭",
+]
+
+TOOLS = [
+    # 프로젝트 관리 (15개)
+    "Jira", "Linear", "Asana", "Monday.com", "ClickUp", "Shortcut", "Trello",
+    "Notion", "Confluence", "Coda", "Slite", "Outline", "GitBook", "Docusaurus", "Mintlify",
+    # 커뮤니케이션 (10개)
+    "Slack", "Discord", "Microsoft Teams", "Zoom", "Google Meet",
+    "Gather", "Loom", "Miro", "FigJam", "Whimsical",
+    # 디자인 (10개)
+    "Figma", "Sketch", "Adobe XD", "Framer", "Principle",
+    "Zeplin", "Abstract", "InVision", "Origami", "ProtoPie",
+    # 개발 도구 (20개)
+    "GitHub", "GitLab", "Bitbucket", "Azure DevOps", "Gitea",
+    "VS Code", "JetBrains IDE", "Neovim", "Cursor", "Windsurf",
+    "Postman", "Insomnia", "Bruno", "Hoppscotch", "Thunder Client",
+    "Docker Desktop", "Rancher Desktop", "Lens", "k9s", "Portainer",
+    # 모니터링/분석 (15개)
+    "Datadog", "Sentry", "New Relic", "Grafana Cloud", "LogRocket",
+    "FullStory", "Hotjar", "Amplitude", "Mixpanel", "Segment",
+    "Google Analytics", "Posthog", "Plausible", "Heap", "Pendo",
+]
+
+DAYS = [
+    "월요일", "화요일", "수요일", "목요일", "금요일",
+    "월요일 오전", "월요일 오후", "화요일 오전", "화요일 오후",
+    "수요일 오전", "수요일 오후", "목요일 오전", "목요일 오후",
+    "금요일 오전", "금요일 오후", "주초", "주중", "주말 전",
+    "매일 오전 10시", "매일 오후 2시", "격주 월요일", "격주 금요일",
+]
+
+ACTIVITIES = [
+    # 정기 미팅 (15개)
+    "스탠드업", "데일리 싱크", "위클리 싱크", "팀 미팅", "올핸즈",
+    "1:1 미팅", "스킵 레벨", "타운홀", "AMA 세션", "브라운백",
+    "런치앤런", "티타임", "커피챗", "워크샵", "오프사이트",
+    # 개발 활동 (15개)
+    "코드 리뷰", "아키텍처 리뷰", "디자인 리뷰", "PR 리뷰", "시큐리티 리뷰",
+    "페어 프로그래밍", "몹 프로그래밍", "기술 세미나", "테크 토크", "해커톤",
+    "버그 바쉬", "리팩토링 데이", "문서화 데이", "기술 부채 해소", "디버깅 세션",
+    # 회고/계획 (10개)
+    "회고", "스프린트 회고", "프로젝트 회고", "포스트모템", "레슨런드",
+    "플래닝", "스프린트 플래닝", "백로그 그루밍", "로드맵 리뷰", "OKR 체크인",
+    # 데모/공유 (10개)
+    "데모", "스프린트 데모", "프로덕트 데모", "기술 데모", "POC 발표",
+    "지식 공유", "온보딩 세션", "핸즈온 랩", "쇼케이스", "성과 공유",
+]
+
+METRICS = [
+    # 코드 품질 (10개)
+    "테스트 커버리지", "코드 커버리지", "브랜치 커버리지", "뮤테이션 스코어",
+    "코드 중복률", "기술 부채 지수", "코드 복잡도", "린트 에러 수",
+    "보안 취약점 수", "의존성 업데이트율",
+    # 성능 (15개)
+    "응답 시간", "P50 레이턴시", "P95 레이턴시", "P99 레이턴시", "TTFB",
+    "TPS", "RPS", "QPS", "동시 접속자 수", "처리량",
+    "CPU 사용률", "메모리 사용률", "디스크 I/O", "네트워크 대역폭", "캐시 히트율",
+    # 안정성 (10개)
+    "에러율", "실패율", "가용성", "업타임", "MTBF",
+    "MTTR", "장애 발생 건수", "롤백 빈도", "인시던트 수", "알림 노이즈율",
+    # 비즈니스 (15개)
+    "DAU", "WAU", "MAU", "전환율", "리텐션율",
+    "이탈률", "세션 시간", "페이지뷰", "바운스율", "NPS",
+    "CSAT", "CES", "LTV", "CAC", "ARR",
+    # 개발 생산성 (10개)
+    "배포 빈도", "리드 타임", "변경 실패율", "복구 시간", "PR 머지 시간",
+    "리뷰 대기 시간", "빌드 시간", "테스트 실행 시간", "배포 시간", "온보딩 시간",
+]
+
+TARGETS = [
+    # 퍼센트 (20개)
+    "80% 이상", "85% 이상", "90% 이상", "95% 이상", "99% 이상", "99.9% 이상",
+    "50% 개선", "30% 개선", "20% 개선", "10% 개선", "5% 개선",
+    "50% 감소", "30% 감소", "20% 감소", "10% 감소", "5% 감소",
+    "2배 향상", "3배 향상", "5배 향상", "10배 향상",
+    # 시간 (15개)
+    "100ms 이하", "200ms 이하", "500ms 이하", "1초 이하", "3초 이하",
+    "1분 이내", "5분 이내", "15분 이내", "30분 이내", "1시간 이내",
+    "당일 내", "24시간 이내", "48시간 이내", "1주일 이내", "즉시",
+    # 수량 (15개)
+    "0건", "1건 이하", "5건 이하", "10건 이하", "제로",
+    "100명", "1000명", "1만명", "10만명", "100만명",
+    "월 1회", "주 1회", "일 1회", "시간당 1회", "무제한",
+]
+
+PHASES = [
+    # 숫자 단계 (10개)
+    "2", "3", "4", "5", "6", "7", "8", "10", "12", "여러",
+    # 명명된 단계 (20개)
+    "알파/베타/정식", "POC/MVP/정식", "설계/개발/테스트", "분석/구현/검증",
+    "파일럿/확산/정착", "도입/성장/성숙", "계획/실행/평가", "준비/실행/마무리",
+    "1차/2차/3차", "Phase 1/2/3", "v1/v2/v3", "초기/중기/후기",
+    "단기/중기/장기", "MVP/MLP/MMP", "내부/베타/퍼블릭", "소프트/하드 런칭",
+    "개발/QA/프로덕션", "로컬/스테이징/프로덕션", "샌드박스/테스트/라이브",
+    "PoC/파일럿/전사확대",
+]
 
 DECISION_STATUSES = ["draft", "latest", "outdated", "rejected"]
 DECISION_STATUS_WEIGHTS = [0.2, 0.5, 0.2, 0.1]
