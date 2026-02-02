@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     # Agent 설정
     agent_wake_word: str = "부덕"
 
+    # Langfuse (LLM Observability)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_enabled: bool = True
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):

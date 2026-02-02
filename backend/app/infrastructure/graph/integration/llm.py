@@ -64,7 +64,7 @@ def get_planner_llm() -> ChatClovaX:
         max_tokens=1024,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "medium"},
-    )
+    ).with_config(run_name="planner")
 
 
 def get_generator_llm() -> ChatClovaX:
@@ -81,7 +81,7 @@ def get_generator_llm() -> ChatClovaX:
         max_tokens=512,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
-    )
+    ).with_config(run_name="generator")
 
 
 def get_evaluator_llm() -> ChatClovaX:
@@ -98,7 +98,7 @@ def get_evaluator_llm() -> ChatClovaX:
         max_tokens=512,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
-    )
+    ).with_config(run_name="evaluator")
 
 
 # ============================================================================
@@ -125,7 +125,7 @@ def get_cypher_generator_llm() -> ChatClovaX:
         max_tokens=1024,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
-    )
+    ).with_config(run_name="cypher_generator")
 
 
 def get_answer_generator_llm() -> ChatClovaX:
@@ -147,7 +147,7 @@ def get_answer_generator_llm() -> ChatClovaX:
         max_tokens=2048,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "medium"},
-    )
+    ).with_config(run_name="answer_generator")
 
 
 # ============================================================================
@@ -173,7 +173,7 @@ def get_query_intent_analyzer_llm() -> ChatClovaX:
         max_tokens=512,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
-    )
+    ).with_config(run_name="query_intent_analyzer")
 
 
 def get_result_scorer_llm() -> ChatClovaX:
@@ -190,7 +190,7 @@ def get_result_scorer_llm() -> ChatClovaX:
         max_tokens=256,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
-    )
+    ).with_config(run_name="result_scorer")
 
 
 def get_reranker_llm() -> ChatClovaX:
@@ -207,7 +207,7 @@ def get_reranker_llm() -> ChatClovaX:
         max_tokens=512,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
-    )
+    ).with_config(run_name="reranker")
 
 
 def get_selector_llm() -> ChatClovaX:
@@ -224,7 +224,7 @@ def get_selector_llm() -> ChatClovaX:
         max_tokens=256,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
-    )
+    ).with_config(run_name="selector")
 
 
 # ============================================================================

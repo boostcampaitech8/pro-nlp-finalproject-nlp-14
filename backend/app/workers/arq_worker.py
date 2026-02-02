@@ -7,6 +7,7 @@ from uuid import UUID
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
+from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
 from app.repositories.kg.repository import KGRepository
@@ -51,10 +52,16 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
 
             logger.info(f"Starting generate_pr workflow: meeting={meeting_id}")
 
-            result = await generate_pr_graph.ainvoke({
-                "generate_pr_meeting_id": meeting_id,
-                "generate_pr_transcript_text": transcript_response.full_text,
-            })
+            result = await generate_pr_graph.ainvoke(
+                {
+                    "generate_pr_meeting_id": meeting_id,
+                    "generate_pr_transcript_text": transcript_response.full_text,
+                },
+                config=get_runnable_config(
+                    trace_name="generate_pr",
+                    metadata={"meeting_id": meeting_id},
+                ),
+            )
 
             agenda_count = len(result.get("generate_pr_agenda_ids", []))
             decision_count = len(result.get("generate_pr_decision_ids", []))
@@ -110,14 +117,20 @@ async def mit_action_task(ctx: dict, decision_id: str) -> dict:
             mit_action_graph,
         )
 
-        result = await mit_action_graph.ainvoke({
-            "mit_action_decision": {
-                "id": decision.id,
-                "content": decision.content,
-                "context": decision.context,
+        result = await mit_action_graph.ainvoke(
+            {
+                "mit_action_decision": {
+                    "id": decision.id,
+                    "content": decision.content,
+                    "context": decision.context,
+                },
+                "mit_action_meeting_id": "",  # Decision에서 meeting_id 필요시 별도 조회
             },
-            "mit_action_meeting_id": "",  # Decision에서 meeting_id 필요시 별도 조회
-        })
+            config=get_runnable_config(
+                trace_name=f"mit_action:{decision_id}",
+                metadata={"decision_id": decision_id},
+            ),
+        )
 
         action_count = len(result.get("mit_action_actions", []))
         logger.info(
