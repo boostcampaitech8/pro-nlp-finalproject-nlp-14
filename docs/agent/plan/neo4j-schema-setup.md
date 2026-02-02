@@ -70,7 +70,7 @@ MIT 그래프 데이터베이스 스키마 정의 및 데이터 구축
 |-----------|------|-----------|-------------|-------------|------|------|
 | User | MEMBER_OF | Team | role | string (enum) | O | owner / admin / member |
 | Team | HOSTS | Meeting | - | - | - | 팀이 회의를 주최 |
-| User | PARTICIPATES_IN | Meeting | role | string (enum) | O | host / participant |
+| User | PARTICIPATED_IN | Meeting | role | string (enum) | O | host / participant |
 | Meeting | CONTAINS | Agenda | order | integer | O | 해당 회의에서의 안건 순서 |
 | Meeting | DECIDED_IN | Decision | - | - | - | 결정이 생성된 회의 스코프 |
 | Agenda | HAS_DECISION | Decision | - | - | - | 안건이 결정사항을 가짐 |
@@ -186,7 +186,6 @@ CREATE (m:Meeting {
   title: row.title,
   status: row.status,
   description: row.description,
-  transcript: row.transcript,
   summary: row.summary,
   team_id: row.team_id,
   scheduled_at: CASE WHEN row.scheduled_at IS NOT NULL THEN datetime(row.scheduled_at) ELSE null END,
@@ -249,7 +248,7 @@ SHOW INDEXES;
 flowchart LR
     U((User)) -- "MEMBER_OF [role]" --> T((Team))
     T -- "HOSTS" --> M((Meeting))
-    U -- "PARTICIPATES_IN [role]" --> M
+    U -- "PARTICIPATED_IN [role]" --> M
 
     M -- "CONTAINS [order]" --> A((Agenda))
     A -- "HAS_DECISION" --> D((Decision))
