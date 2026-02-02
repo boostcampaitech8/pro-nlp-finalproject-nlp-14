@@ -37,5 +37,4 @@ class OrchestrationState(TypedDict):
     # Context Engineering (optional)
     planning_context: NotRequired[str]
     additional_context: NotRequired[str]
-    required_topics: NotRequired[list[str]]
     skip_planning: NotRequired[bool]
