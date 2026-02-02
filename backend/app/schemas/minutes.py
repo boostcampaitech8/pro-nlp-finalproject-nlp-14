@@ -63,7 +63,7 @@ class ActionItemBriefResponse(BaseModel):
     """ActionItem 간략 응답 (Minutes 내 표시용)"""
 
     id: str
-    title: str
+    content: str
     status: str
     assignee_id: str | None = Field(default=None, serialization_alias="assigneeId")
     due_date: datetime | None = Field(default=None, serialization_alias="dueDate")

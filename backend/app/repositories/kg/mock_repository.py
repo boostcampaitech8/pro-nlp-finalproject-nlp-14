@@ -126,8 +126,7 @@ MOCK_DATA = {
     "action_items": {
         "action-1": {
             "id": "action-1",
-            "title": "API 문서 작성",
-            "description": "OpenAPI 스펙 기반 API 문서화",
+            "content": "API 문서 작성",
             "status": "pending",
             "due_date": "2026-02-01",
             "assignee_id": "user-1",
@@ -135,8 +134,7 @@ MOCK_DATA = {
         },
         "action-2": {
             "id": "action-2",
-            "title": "JWT 라이브러리 선정",
-            "description": "Python JWT 라이브러리 비교 및 선정",
+            "content": "JWT 라이브러리 선정",
             "status": "in_progress",
             "due_date": "2026-01-28",
             "assignee_id": "user-2",
@@ -344,8 +342,7 @@ class MockKGRepository:
                 action_items.append(
                     KGMinutesActionItem(
                         id=ai["id"],
-                        title=ai.get("title", ""),
-                        description=ai.get("description"),
+                        content=ai.get("content", ""),
                         assignee=assignee.get("name") if assignee else None,
                         due_date=ai.get("due_date"),
                     )
@@ -883,8 +880,7 @@ class MockKGRepository:
             items.append(
                 KGActionItem(
                     id=ai["id"],
-                    title=ai.get("title", ""),
-                    description=ai.get("description"),
+                    content=ai.get("content", ""),
                     status=ai.get("status", "pending"),
                     assignee_id=ai.get("assignee_id"),
                     due_date=due_date,
@@ -901,7 +897,7 @@ class MockKGRepository:
             raise ValueError(f"ActionItem not found: {action_item_id}")
 
         ai = self.data["action_items"][action_item_id]
-        for key in ["title", "description", "status", "assignee_id", "due_date"]:
+        for key in ["content", "status", "assignee_id", "due_date"]:
             if key in data:
                 ai[key] = data[key]
 
@@ -911,8 +907,7 @@ class MockKGRepository:
 
         return KGActionItem(
             id=ai["id"],
-            title=ai.get("title", ""),
-            description=ai.get("description"),
+            content=ai.get("content", ""),
             status=ai.get("status", "pending"),
             assignee_id=ai.get("assignee_id"),
             due_date=due_date,
@@ -1085,7 +1080,7 @@ class MockKGRepository:
             if ai.get("decision_id") in decision_ids:
                 action_items.append({
                     "id": ai["id"],
-                    "title": ai.get("title", ""),
+                    "content": ai.get("content", ""),
                     "status": ai.get("status", "pending"),
                     "assignee_id": ai.get("assignee_id"),
                     "due_date": ai.get("due_date"),

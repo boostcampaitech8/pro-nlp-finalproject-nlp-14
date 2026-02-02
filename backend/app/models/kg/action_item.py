@@ -9,8 +9,7 @@ class KGActionItem(BaseModel):
     """KG ActionItem 엔티티"""
 
     id: str
-    title: str
-    description: str | None = None
+    content: str
     status: str  # pending, in_progress, completed
     due_date: date | None = None
 
