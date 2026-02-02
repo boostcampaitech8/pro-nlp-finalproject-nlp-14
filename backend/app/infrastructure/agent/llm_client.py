@@ -3,7 +3,7 @@
 import logging
 from collections.abc import AsyncGenerator
 
-from langchain_community.chat_models import ChatClovaX
+from langchain_naver import ChatClovaX
 from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)

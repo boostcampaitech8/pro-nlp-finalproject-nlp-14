@@ -84,6 +84,15 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env == "production"
 
+    @property
+    def checkpointer_database_url(self) -> str:
+        """AsyncPostgresSaver용 psycopg URL
+
+        SQLAlchemy의 asyncpg 드라이버 URL을 psycopg 형식으로 변환.
+        postgresql+asyncpg:// -> postgresql://
+        """
+        return self.database_url.replace("+asyncpg", "")
+
 
 @lru_cache
 def get_settings() -> Settings:

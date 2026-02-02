@@ -83,16 +83,14 @@ export type ActionItemStatus = 'pending' | 'in_progress' | 'completed';
 
 export interface ActionItem {
   id: string;
-  title: string;
-  description: string | null;
+  content: string;
   status: ActionItemStatus;
   assigneeId: string | null;
   dueDate: string | null;
 }
 
 export interface UpdateActionItemRequest {
-  title?: string;
-  description?: string | null;
+  content?: string;
   assigneeId?: string | null;
   dueDate?: string | null;
   status?: ActionItemStatus;

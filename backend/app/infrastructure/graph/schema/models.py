@@ -12,8 +12,7 @@ class ActionItemData(BaseModel):
     KGActionItem과 필드명 통일 (변환 로직 단순화)
     """
 
-    title: str = Field(..., description="할 일 내용")
-    description: str | None = Field(None, description="상세 설명")
+    content: str = Field(..., description="할 일 내용")
     due_date: str | None = Field(None, description="기한 (ISO 8601)")
     assignee_id: str | None = Field(None, description="담당자 ID")
     assignee_name: str | None = Field(None, description="담당자 이름 (추론된)")

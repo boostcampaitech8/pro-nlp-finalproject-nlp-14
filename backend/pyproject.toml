@@ -27,13 +27,19 @@ dependencies = [
     "arq>=0.26.0",
     # LangGraph
     "langgraph>=1.0.6",
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "psycopg[binary,pool]>=3.1.0",
+    "typing>=3.10.0.0",
+    "logging>=0.4.9.6",
     "langchain-core>=1.2.7",
     "langchain>=1.2.6",
-    "langchain-community>=0.4.1",
     # Neo4j
     "neo4j>=6.1.0",
+    # TTL Cache for runtime memory management
+    "cachetools>=5.3.0",
     # Kubernetes (K8s WorkerManager용) 지우면 동현이에게 혼남.
     "kubernetes>=31.0.0",
+    "langchain-naver>=0.1.1",
     # HTTP client for Clova Reranker API
     "httpx>=0.27.0",
     # OpenTelemetry

@@ -8,6 +8,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import engine
 from app.core.telemetry import instrument_fastapi, setup_telemetry
+from app.infrastructure.graph.checkpointer import close_checkpointer
 
 # 로깅 설정
 logging.basicConfig(
@@ -27,6 +28,7 @@ async def lifespan(_app: FastAPI):
     yield
     # 종료 시
     await engine.dispose()
+    await close_checkpointer()  # LangGraph checkpointer 연결 정리
 
 
 app = FastAPI(

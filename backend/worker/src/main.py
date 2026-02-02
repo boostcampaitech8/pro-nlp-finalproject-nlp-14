@@ -71,9 +71,7 @@ class RealtimeWorker:
 
         # 컴포넌트 초기화
         self.api_client = BackendAPIClient()
-        self._agent_enabled = bool(
-            self.config.agent_enabled and self.config.backend_api_url
-        )
+        self._agent_enabled = bool(self.config.agent_enabled and self.config.backend_api_url)
         self._tts_enabled = bool(self.config.tts_server_url)
         self._tts_client = TTSClient() if self._tts_enabled else None
         self._tts_queue: asyncio.Queue[str] | None = (
@@ -89,8 +87,12 @@ class RealtimeWorker:
 
         # 참여자별 wake word 감지 플래그 (중간 결과에서 감지 시 True)
         self._wake_word_pending: dict[str, bool] = {}
+        # 참여자별 wake word 감지 시 confidence 저장
+        self._wake_word_confidence: dict[str, float] = {}
         # context 선준비 작업 (wake word 감지 시 시작, 단일 task)
         self._context_prep_task: asyncio.Task | None = None
+        # 발화별 context 업데이트 작업 (단일 task)
+        self._context_update_task: asyncio.Task | None = None
         # 현재 실행 중인 Agent 파이프라인 Task
         self._current_agent_task: asyncio.Task | None = None
 
@@ -205,8 +207,9 @@ class RealtimeWorker:
 
     def _on_participant_left(self, user_id: str) -> None:
         """참여자 퇴장 처리 - STT 클라이언트 종료"""
-        # wake word 플래그 정리
+        # wake word 플래그/confidence 정리
         self._wake_word_pending.pop(user_id, None)
+        self._wake_word_confidence.pop(user_id, None)
 
         if user_id not in self._stt_clients:
             return
@@ -223,17 +226,9 @@ class RealtimeWorker:
         )
 
         if event_type == "speech_start":
-            # speech_start + (Agent 실행 중 OR TTS 재생 중) → 인터럽트
-            agent_running = (
-                self._current_agent_task is not None
-                and not self._current_agent_task.done()
-            )
-            if agent_running or (self._tts_enabled and self._tts_playing):
-                logger.info(f"VAD speech_start 인터럽트: user={user_id}")
-                asyncio.create_task(self._cancel_current_agent())
-                if self._tts_enabled:
-                    self._tts_interrupt_event.set()
-                    self._clear_tts_queue()
+            # Wake word 기반 인터럽트로 변경됨
+            # VAD speech_start에서는 인터럽트하지 않음
+            logger.debug(f"VAD speech_start: user={user_id}")
 
         elif event_type == "speech_end":
             # VAD speech_end 타임스탬프 기록
@@ -270,9 +265,7 @@ class RealtimeWorker:
 
         # 중간 결과 처리: wake word 감지
         if not segment.is_final:
-            logger.debug(
-                f"STT 중간 결과: [{participant_name}] text='{segment.text}'"
-            )
+            logger.debug(f"STT 중간 결과: [{participant_name}] text='{segment.text}'")
 
             # 누적된 텍스트에서 wake word 감지
             if (
@@ -282,9 +275,17 @@ class RealtimeWorker:
             ):
                 logger.info(
                     f"Wake word 조기 감지 (중간 결과): '{self.config.agent_wake_word}' "
-                    f"in '{segment.text}'"
+                    f"in '{segment.text}', confidence={segment.confidence:.3f}"
                 )
                 self._wake_word_pending[user_id] = True
+                self._wake_word_confidence[user_id] = segment.confidence
+
+                # Wake word 감지 즉시 TTS 인터럽트
+                await self._cancel_current_agent()
+                if self._tts_enabled:
+                    self._tts_interrupt_event.set()
+                    self._clear_tts_queue()
+                logger.info(f"Wake word 인터럽트 발동: user={user_id}")
 
                 # Wake word 감지 타임스탬프 기록
                 if self._metrics:
@@ -313,6 +314,22 @@ class RealtimeWorker:
             self._metrics.mark_stt_final_received(user_id)
             self._metrics.increment_stt_segment(user_id)
 
+        # wake word 처리: 중간 결과에서 이미 감지했거나 final에서 감지
+        wake_word_triggered = self._wake_word_pending.pop(user_id, False)
+        wake_word_confidence = self._wake_word_confidence.pop(user_id, None)
+
+        if not wake_word_triggered and self._agent_enabled:
+            # final 결과에서도 wake word 확인 (중간 결과에서 놓친 경우)
+            if self.config.agent_wake_word in segment.text:
+                wake_word_triggered = True
+                wake_word_confidence = segment.confidence  # final에서 감지된 경우
+                # final에서 감지한 경우에도 타임스탬프 기록
+                if self._metrics:
+                    self._metrics.mark_wakeword_detected(user_id)
+                    self._wakeword_user_id = user_id
+                    self._agent_first_token_recorded = False
+                    self._tts_first_audio_recorded = False
+
         # Backend API로 전송
         request = TranscriptSegmentRequest(
             meeting_id=self.meeting_id,
@@ -322,36 +339,35 @@ class RealtimeWorker:
             text=segment.text,
             confidence=segment.confidence,
             min_confidence=segment.min_confidence,
-            agent_call=False,
+            agent_call=wake_word_triggered,
+            agent_call_keyword=self.config.agent_wake_word if wake_word_triggered else None,
+            agent_call_confidence=wake_word_confidence,
         )
 
         response = await self.api_client.send_transcript_segment(request)
         if response:
             logger.debug(f"트랜스크립트 저장: id={response.id}")
-
-        # wake word 처리: 중간 결과에서 이미 감지했거나 final에서 감지
-        wake_word_triggered = self._wake_word_pending.pop(user_id, False)
-        if not wake_word_triggered and self._agent_enabled:
-            # final 결과에서도 wake word 확인 (중간 결과에서 놓친 경우)
-            wake_word_triggered = self.config.agent_wake_word in segment.text
-            if wake_word_triggered and self._metrics:
-                # final에서 감지한 경우에도 타임스탬프 기록
-                self._metrics.mark_wakeword_detected(user_id)
-                self._wakeword_user_id = user_id
-                self._agent_first_token_recorded = False
-                self._tts_first_audio_recorded = False
+            # 발화 저장 직후 Context 업데이트 (실시간)
+            if self._agent_enabled:
+                if self._context_update_task and not self._context_update_task.done():
+                    self._context_update_task.cancel()
+                self._context_update_task = asyncio.create_task(
+                    self._update_context_realtime(response.id)
+                )
 
         if wake_word_triggered:
             logger.info(f"Wake word 최종 처리: '{segment.text}'")
             if response:
                 # 기존 Agent 취소 (즉시 실행 + 취소 방식)
                 await self._cancel_current_agent()
+                # TTS만 재생 중인 경우도 인터럽트 (중간 결과에서 놓쳤을 때)
+                if self._tts_enabled:
+                    self._tts_interrupt_event.set()
+                    self._clear_tts_queue()
 
                 # 새 Agent 시작
                 self._current_agent_task = asyncio.create_task(
-                    self._run_agent_pipeline_with_prep(
-                        response.id, self._pre_transcript_id
-                    )
+                    self._run_agent_pipeline_with_prep(response.id, self._pre_transcript_id)
                 )
 
         # preTranscriptId 최신화 (agent 파이프라인 태스크 생성 직후, 완료 전)
@@ -382,6 +398,16 @@ class RealtimeWorker:
             logger.info("Context 선준비 완료")
         except Exception as e:
             logger.warning(f"Context 선준비 실패 (무시): {e}")
+
+    async def _update_context_realtime(self, transcript_id: str) -> None:
+        """발화 저장 직후 Context 업데이트 (실시간)"""
+        try:
+            await self.api_client.update_agent_context(
+                meeting_id=self.meeting_id,
+                pre_transcript_id=transcript_id,
+            )
+        except Exception as e:
+            logger.debug(f"Context 실시간 업데이트 실패 (무시): {e}")
 
     async def _run_agent_pipeline_with_prep(
         self,
@@ -601,12 +627,12 @@ class RealtimeWorker:
 
     @staticmethod
     def _extract_sentences(text: str) -> tuple[list[str], str]:
-        """마침표/종결부호 기준으로 문장 분리"""
+        """마침표/종결부호 또는 줄바꿈 기준으로 문장 분리"""
         if not text:
             return [], ""
 
         endings = {".", "!", "?", "。", "！", "？"}
-        closing = {'"', "'", "”", "’", ")", "]", "}", "」", "』", "】"}
+        closing = {'"', "'", "\u201c", "\u201d", ")", "]", "}", "」", "』", "】"}
 
         sentences: list[str] = []
         start = 0
@@ -614,6 +640,16 @@ class RealtimeWorker:
 
         while i < len(text):
             ch = text[i]
+
+            # 줄바꿈도 문장 경계로 처리
+            if ch == "\n":
+                sentence = text[start:i].strip()
+                if sentence:
+                    sentences.append(sentence)
+                start = i + 1
+                i = start
+                continue
+
             if ch in endings:
                 end = i + 1
                 while end < len(text) and (text[end] in endings or text[end] in closing):

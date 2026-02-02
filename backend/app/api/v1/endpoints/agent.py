@@ -2,6 +2,7 @@
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -12,10 +13,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.constants import AGENT_USER_ID
 from app.core.database import get_db
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.models.transcript import Transcript
+from app.schemas.transcript import CreateTranscriptRequest
 from app.services.agent_service import AgentService
+from app.services.context_runtime import (
+    get_or_create_runtime,
+    get_transcript_start_ms,
+    update_runtime_from_db,
+)
+from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["Agent"])
@@ -43,7 +52,9 @@ class AgentMeetingCallRequest(BaseModel):
     """Agent Context Update 요청"""
 
     meeting_id: UUID = Field(..., alias="meetingId", description="회의 ID")
-    pre_transcript_id: UUID = Field(..., alias="preTranscriptId", description="이전 transcript 기준 ID")
+    pre_transcript_id: UUID = Field(
+        ..., alias="preTranscriptId", description="이전 transcript 기준 ID"
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -87,10 +98,23 @@ async def update_agent_context(
         request.pre_transcript_id,
     )
 
-    # TODO: 이전 transcript 조회 후 context 저장 로직 구현
-    # 1. pre_transcript_id의 created_at 조회
-    # 2. 해당 시점 이전의 모든 transcript 조회
-    # 3. meeting 테이블에 agent_context 저장
+    cutoff_start_ms = await get_transcript_start_ms(db, request.pre_transcript_id)
+    if cutoff_start_ms is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    runtime = await get_or_create_runtime(str(request.meeting_id))
+    async with runtime.lock:
+        updated = await update_runtime_from_db(
+            runtime,
+            db,
+            str(request.meeting_id),
+            cutoff_start_ms,
+        )
+    logger.info(
+        "Agent context update 완료: meeting_id=%s, added=%d",
+        request.meeting_id,
+        updated,
+    )
 
     return Response(status_code=200)
 
@@ -125,7 +149,20 @@ async def run_agent_with_context(
         user_input[:50] if user_input else "",
     )
 
+    # 응답 저장용 변수
+    full_response = ""
+    is_completed = False
+    response_start_time = datetime.now(timezone.utc)
+
+    # 호출한 STT의 end_ms를 기준으로 타임스탬프 설정
+    # STT 발화 직후부터 LLM 응답이 시작되는 것으로 처리
+    response_start_ms = transcript.end_ms
+
+    transcript_service = TranscriptService(db)
+
     async def event_generator():
+        nonlocal full_response, is_completed
+
         try:
             # Context Engineering + Orchestration Graph 사용
             response = await agent_service.process_with_context(
@@ -134,12 +171,55 @@ async def run_agent_with_context(
                 user_id=str(transcript.user_id),
                 db=db,
             )
-            # 응답을 스트리밍 형태로 전달 (호환성 유지)
-            yield f"data: {response}\n\n"
+            # SSE는 data 필드가 줄마다 분리되어야 하므로 줄 단위로 전송
+            response_text = "" if response is None else str(response)
+            full_response = response_text  # 응답 저장용 변수에 누적
+            for line in response_text.splitlines():
+                if line:  # 빈 줄 스킵
+                    yield f"data: {line}\n\n"
             yield "data: [DONE]\n\n"
+            is_completed = True  # 정상 완료 표시
         except Exception as e:
             logger.error("Agent Context 오류: %s", e, exc_info=True)
             yield f"data: [ERROR] {str(e)}\n\n"
+        finally:
+            # 응답이 있거나 인터럽트 시 저장
+            if full_response.strip() or not is_completed:
+                response_end_time = datetime.now(timezone.utc)
+                # 응답 생성에 소요된 시간 계산
+                elapsed_ms = int((response_end_time - response_start_time).total_seconds() * 1000)
+                elapsed_ms = max(1, elapsed_ms)  # 최소 1ms 보장
+                response_end_ms = response_start_ms + elapsed_ms
+
+                # 빈 응답인 경우 플레이스홀더 텍스트 사용
+                text_to_save = (
+                    full_response.strip() if full_response.strip() else "[응답 생성 중 중단됨]"
+                )
+
+                try:
+                    await transcript_service.create_transcript(
+                        meeting_id=request.meeting_id,
+                        request=CreateTranscriptRequest(
+                            meeting_id=request.meeting_id,
+                            user_id=AGENT_USER_ID,
+                            start_ms=response_start_ms,
+                            end_ms=response_end_ms,
+                            text=text_to_save,
+                            confidence=1.0,
+                            min_confidence=1.0,
+                            status="completed" if is_completed else "interrupted",
+                        ),
+                    )
+                    await db.commit()
+                    logger.info(
+                        "Agent 응답 저장 완료: meeting_id=%s, status=%s, length=%d",
+                        request.meeting_id,
+                        "completed" if is_completed else "interrupted",
+                        len(text_to_save),
+                    )
+                except Exception as save_error:
+                    await db.rollback()
+                    logger.error("Agent 응답 저장 실패: %s", save_error, exc_info=True)
 
     return StreamingResponse(
         event_generator(),

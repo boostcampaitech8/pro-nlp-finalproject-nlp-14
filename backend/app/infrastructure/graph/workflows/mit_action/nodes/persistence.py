@@ -45,8 +45,7 @@ async def save_actions(state: MitActionState) -> MitActionState:
         for raw in raw_actions:
             items_to_create.append({
                 "id": f"action-{uuid4()}",
-                "title": raw.get("title", ""),
-                "description": raw.get("description"),
+                "content": raw.get("content", ""),
                 "due_date": raw.get("due_date"),
                 "assignee_id": raw.get("assignee_id"),
             })
@@ -61,8 +60,7 @@ async def save_actions(state: MitActionState) -> MitActionState:
         actions: list[ActionItemData] = []
         for raw in raw_actions:
             action = ActionItemData(
-                title=raw.get("title", ""),
-                description=raw.get("description"),
+                content=raw.get("content", ""),
                 due_date=raw.get("due_date"),
                 assignee_id=raw.get("assignee_id"),
                 assignee_name=raw.get("assignee_name"),
