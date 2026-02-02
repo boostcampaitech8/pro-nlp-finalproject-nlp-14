@@ -68,6 +68,8 @@ class RealtimeWorker:
 
         # 참여자별 wake word 감지 플래그 (중간 결과에서 감지 시 True)
         self._wake_word_pending: dict[str, bool] = {}
+        # 참여자별 wake word 감지 시 confidence 저장
+        self._wake_word_confidence: dict[str, float] = {}
         # context 선준비 작업 (wake word 감지 시 시작, 단일 task)
         self._context_prep_task: asyncio.Task | None = None
         # 현재 실행 중인 Agent 파이프라인 Task
@@ -183,8 +185,9 @@ class RealtimeWorker:
 
     def _on_participant_left(self, user_id: str) -> None:
         """참여자 퇴장 처리 - STT 클라이언트 종료"""
-        # wake word 플래그 정리
+        # wake word 플래그/confidence 정리
         self._wake_word_pending.pop(user_id, None)
+        self._wake_word_confidence.pop(user_id, None)
 
         if user_id not in self._stt_clients:
             return
@@ -256,9 +259,10 @@ class RealtimeWorker:
             ):
                 logger.info(
                     f"Wake word 조기 감지 (중간 결과): '{self.config.agent_wake_word}' "
-                    f"in '{segment.text}'"
+                    f"in '{segment.text}', confidence={segment.confidence:.3f}"
                 )
                 self._wake_word_pending[user_id] = True
+                self._wake_word_confidence[user_id] = segment.confidence
 
                 # context 선준비 (pre_transcript_id 기준으로 업데이트)
                 # 기존 task가 있으면 취소 후 새로 시작
@@ -275,6 +279,16 @@ class RealtimeWorker:
             f"({segment.start_ms}~{segment.end_ms}ms, conf={segment.confidence:.2f})"
         )
 
+        # wake word 처리: 중간 결과에서 이미 감지했거나 final에서 감지
+        wake_word_triggered = self._wake_word_pending.pop(user_id, False)
+        wake_word_confidence = self._wake_word_confidence.pop(user_id, None)
+
+        if not wake_word_triggered and self._agent_enabled:
+            # final 결과에서도 wake word 확인 (중간 결과에서 놓친 경우)
+            if self.config.agent_wake_word in segment.text:
+                wake_word_triggered = True
+                wake_word_confidence = segment.confidence  # final에서 감지된 경우
+
         # Backend API로 전송
         request = TranscriptSegmentRequest(
             meeting_id=self.meeting_id,
@@ -284,18 +298,14 @@ class RealtimeWorker:
             text=segment.text,
             confidence=segment.confidence,
             min_confidence=segment.min_confidence,
-            agent_call=False,
+            agent_call=wake_word_triggered,
+            agent_call_keyword=self.config.agent_wake_word if wake_word_triggered else None,
+            agent_call_confidence=wake_word_confidence,
         )
 
         response = await self.api_client.send_transcript_segment(request)
         if response:
             logger.debug(f"트랜스크립트 저장: id={response.id}")
-
-        # wake word 처리: 중간 결과에서 이미 감지했거나 final에서 감지
-        wake_word_triggered = self._wake_word_pending.pop(user_id, False)
-        if not wake_word_triggered and self._agent_enabled:
-            # final 결과에서도 wake word 확인 (중간 결과에서 놓친 경우)
-            wake_word_triggered = self.config.agent_wake_word in segment.text
 
         if wake_word_triggered:
             logger.info(f"Wake word 최종 처리: '{segment.text}'")
