@@ -111,9 +111,12 @@ async def _generate_text_to_cypher_raw(
                             - Use the schema paths only (User → Meeting → Agenda → Decision, etc.).
                             - Team/Composite intent must follow Member/Assigned relationships.
 
-                    4. **Formatting**:
+                    4. **Formatting (CRITICAL - String Operations)**:
                             - Must return: id, title/content, created_at, score, graph_context.
-                            - `graph_context` must be a human-readable string built with `+`.
+                            - `graph_context` must be a human-readable string built with `+` operator.
+                            - **NEVER use CONCAT() function - Neo4j does NOT support it!**
+                            - **ONLY use + operator for string concatenation**
+                            - Example: `u.name + '님이 참여한 회의: ' + m.title AS graph_context`
                             - Alias MUST be `AS graph_context`.
                             - ALWAYS end with `LIMIT 20`.
                             - No UNION/UNION ALL. Single query only.
@@ -125,6 +128,7 @@ async def _generate_text_to_cypher_raw(
         2. Strategy: User -> Participated -> Meeting
         3. Entities: Name='민수'
         4. Keywords: Topic='예산' (Add to WHERE!)
+        5. Composite Filter: User name AND Meeting title (both required)
         ```
         ```cypher
         MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
@@ -132,6 +136,24 @@ async def _generate_text_to_cypher_raw(
           AND m.title CONTAINS '예산'
         RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
                u.name + '님과 함께한 예산(Budget) 회의: ' + m.title AS graph_context
+        ORDER BY m.created_at DESC
+        LIMIT 20
+        ```
+
+        Q: "조우진이랑 UX 관련한 회의 찾아줘"
+        ```thought
+        1. Intent: Find meetings with '조우진' containing keyword 'UX'.
+        2. Strategy: User -> Participated -> Meeting
+        3. Entities: Name='조우진'
+        4. Keywords: Topic='UX'
+        5. Composite Filter: User name AND Meeting title (both required)
+        ```
+        ```cypher
+        MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
+        WHERE u.name CONTAINS '조우진'
+          AND m.title CONTAINS 'UX'
+        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
+               u.name + '님이 참여한 UX 관련 회의: ' + m.title AS graph_context
         ORDER BY m.created_at DESC
         LIMIT 20
         ```
@@ -144,7 +166,7 @@ async def _generate_text_to_cypher_raw(
         4. Keywords: Topic='회고'
         ```
         ```cypher
-         MATCH (m:Meeting)
+        MATCH (m:Meeting)
         WHERE m.title CONTAINS '회고'
         RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
                '회고 관련 회의: ' + m.title AS graph_context
@@ -169,6 +191,7 @@ async def _generate_text_to_cypher_raw(
     ).strip()
 
     # 의도 정보 주입
+    keywords = query_intent.get('keywords', None)
     user_context = textwrap.dedent(
         f"""
         [Context]
@@ -177,8 +200,13 @@ async def _generate_text_to_cypher_raw(
         - Analyzed Intent: {query_intent.get('intent_type', 'Unknown')}
         - Focus Entity: {query_intent.get('primary_entity', 'None')}
         - Target Node: {query_intent.get('search_focus', 'Any')}
+        - Additional Keywords: {keywords if keywords else 'None'}
         - Date Range: {query_intent.get('date_range', None)}
         - Entity Types: {query_intent.get('entity_types', None)}
+
+        [IMPORTANT]
+        - If Focus Entity exists AND Additional Keywords exist: Use BOTH in WHERE clause
+        - Example: WHERE u.name CONTAINS 'Entity' AND m.title CONTAINS 'Keyword'
         """
     ).strip()
 

@@ -123,33 +123,68 @@ def generate_template_cypher(
         logger.info(f"[Template] Pattern 2: Entity Meeting (Entity={primary_entity}, Keyword={bool(search_term)})")
         return cypher.strip()
 
-    # Pattern 3: 특정 인물의 팀원 (User -> Team -> Members)
-    if intent_type == "entity_search" and search_focus == "Team" and primary_entity:
+    # Pattern 3: 사용자가 속한 팀 자체 검색 (Membership)
+    if intent_type == "entity_search" and search_focus == "Membership" and primary_entity:
         cypher = f"""
-        MATCH (u:User)-[:MEMBER_OF]->(team:Team)<-[:MEMBER_OF]-(member:User)
+        MATCH (u:User)-[:MEMBER_OF]->(team:Team)
         WHERE u.name CONTAINS $entity_name
-          AND member.id <> u.id
-          AND (team)<-[:MEMBER_OF]-(:User {{id: $user_id}})
-          {team_keyword_clause}
-        RETURN member.id AS id,
-               member.name AS title,
-               member.email AS content,
+        RETURN team.id AS id,
+               team.name AS title,
+               team.name AS content,
                1.0 AS score,
-               member.name + '님은 ' + team.name + ' 팀의 멤버 (같은 팀: ' + u.name + ')' AS graph_context
-        ORDER BY member.name ASC
+               u.name + '님이 속한 팀: ' + team.name AS graph_context
+        ORDER BY team.name ASC
         LIMIT 20
         """
-        logger.info(f"[Template] Pattern 3: Entity Team (Entity={primary_entity}, Keyword={bool(search_term)})")
+        logger.info(f"[Template] Pattern 3: Membership (User={primary_entity})")
         return cypher.strip()
 
-    # Pattern 4: 복합 메타 검색 (담당자와 같은 팀원)
+    # Pattern 4: 팀원 검색 (팀 이름 또는 사용자 이름)
+    if intent_type == "entity_search" and search_focus == "TeamMembers" and primary_entity:
+        # 팀 이름 패턴 감지 (하이픈, "팀" 문자열 포함 등)
+        is_team_name = "-" in primary_entity or "팀" in primary_entity or "Team" in primary_entity
+
+        if is_team_name:
+            # Pattern 4a: 팀 이름으로 직접 검색 (Team -> Members)
+            cypher = f"""
+            MATCH (team:Team)<-[:MEMBER_OF]-(member:User)
+            WHERE team.name CONTAINS $entity_name
+              {team_keyword_clause}
+            RETURN member.id AS id,
+                   member.name AS title,
+                   member.email AS content,
+                   1.0 AS score,
+                   member.name + '님은 ' + team.name + ' 팀의 멤버' AS graph_context
+            ORDER BY member.name ASC
+            LIMIT 20
+            """
+            logger.info(f"[Template] Pattern 4a: TeamMembers by Team Name (Team={primary_entity})")
+        else:
+            # Pattern 4b: 사용자 이름으로 팀 찾기 (User -> Team -> Members)
+            cypher = f"""
+            MATCH (u:User)-[:MEMBER_OF]->(team:Team)<-[:MEMBER_OF]-(member:User)
+            WHERE u.name CONTAINS $entity_name
+              AND member.id <> u.id
+              {team_keyword_clause}
+            RETURN member.id AS id,
+                   member.name AS title,
+                   member.email AS content,
+                   1.0 AS score,
+                   member.name + '님은 ' + team.name + ' 팀의 멤버 (같은 팀: ' + u.name + ')' AS graph_context
+            ORDER BY member.name ASC
+            LIMIT 20
+            """
+            logger.info(f"[Template] Pattern 4b: TeamMembers by User Name (User={primary_entity})")
+
+        return cypher.strip()
+
+    # Pattern 5: 복합 메타 검색 (담당자와 같은 팀원)
     if intent_type == "meta_search" and search_focus == "Composite" and effective_search_term:
         cypher = f"""
         MATCH (m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_ACTION]->(ai:ActionItem)<-[:ASSIGNED_TO]-(owner:User)
         MATCH (owner)-[:MEMBER_OF]->(team:Team)<-[:MEMBER_OF]-(member:User)
         WHERE (ai.title CONTAINS $search_term OR a.title CONTAINS $search_term OR m.title CONTAINS $search_term)
           AND member.id <> owner.id
-          AND (team)<-[:MEMBER_OF]-(:User {{id: $user_id}})
         RETURN member.id AS id,
                member.name AS title,
                member.email AS content,
@@ -158,10 +193,10 @@ def generate_template_cypher(
         ORDER BY member.name ASC
         LIMIT 20
         """
-        logger.info("[Template] Pattern 4: Composite Team Members")
+        logger.info("[Template] Pattern 5: Composite Team Members")
         return cypher.strip()
 
-    # Pattern 5: 시간 기반 결정사항 (User -> Meeting ... -> Decision)
+    # Pattern 6: 시간 기반 결정사항 (User -> Meeting ... -> Decision)
     # 주의: Temporal Search는 primary_entity가 없을 때 주로 사용됨
     if intent_type == "temporal_search" and search_focus == "Decision" and date_filter:
         # Decision 노드는 title이 없고 content만 있으므로, content만 검색
@@ -185,7 +220,7 @@ def generate_template_cypher(
         ORDER BY target.created_at DESC
         LIMIT 20
         """
-        logger.info("[Template] Pattern 5: Temporal Decision")
+        logger.info("[Template] Pattern 6: Temporal Decision")
         return cypher.strip()
 
     # 템플릿 없음

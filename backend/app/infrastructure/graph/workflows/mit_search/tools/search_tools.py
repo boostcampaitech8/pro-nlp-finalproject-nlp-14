@@ -26,6 +26,9 @@ async def execute_cypher_search_async(cypher_query: str, parameters: dict[str, A
         쿼리 결과 리스트
     """
     logger.info(f"Executing Cypher search with params: {list(parameters.keys())}")
+    print(f"\n[DEBUG] 전체 파라미터: {parameters}")
+    print(f"[DEBUG] entity_name 값: '{parameters.get('entity_name')}'")
+    print(f"[DEBUG] user_id 값: '{parameters.get('user_id')}'")
 
     try:
         # Validate query safety - 단어 경계를 포함하여 검사
@@ -43,9 +46,24 @@ async def execute_cypher_search_async(cypher_query: str, parameters: dict[str, A
 
         driver = get_neo4j_driver()
 
+        print(f"[DEBUG] Neo4j 실행 직전 - 쿼리 길이: {len(cypher_query)}, 파라미터 키: {list(parameters.keys())}")
+        print(f"[DEBUG] Neo4j 실행 직전 - 파라미터 타입 확인:")
+        for key, value in parameters.items():
+            print(f"  - {key}: {type(value).__name__} = {repr(value)}")
+
         async with driver.session(default_access_mode=READ_ACCESS) as session:
-            result = await session.run(cypher_query, parameters)
-            records = await result.data()
+            print(f"[DEBUG] session.run() 호출 중...")
+            try:
+                result = await session.run(cypher_query, parameters)
+                print(f"[DEBUG] session.run() 성공")
+                records = await result.data()
+                print(f"[DEBUG] result.data() 완료: {len(records)}개 레코드")
+            except Exception as neo_error:
+                print(f"\n[NEO4J ERROR] 타입: {type(neo_error).__name__}")
+                print(f"[NEO4J ERROR] 메시지: {neo_error}")
+                print(f"[NEO4J ERROR] 실행 시도한 쿼리:\n{cypher_query}")
+                print(f"[NEO4J ERROR] 전달한 파라미터: {parameters}")
+                raise
 
         logger.info(f"Cypher search returned {len(records)} results")
         return records
@@ -56,6 +74,9 @@ async def execute_cypher_search_async(cypher_query: str, parameters: dict[str, A
         return []
     except Exception as e:
         logger.error(f"Cypher search failed: {e}", exc_info=True)
+        print(f"\n[ERROR] Cypher 실행 실패: {type(e).__name__}: {e}")
+        print(f"[ERROR] 사용된 파라미터: {parameters}")
+        print(f"[ERROR] 사용된 쿼리:\n{cypher_query}")
         return []
 
 

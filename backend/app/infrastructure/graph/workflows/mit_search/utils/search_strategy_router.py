@@ -77,20 +77,17 @@ class SearchStrategyRouter:
 
 
 def _is_simple_pattern(intent_type: str, search_focus: str, primary_entity: str) -> bool:
-    """단순 패턴 감지 (Template으로 충분한 경우)"""
-    # 명확한 엔티티 검색
+    """단순 패턴 감지 (Template으로 충분한 경우)
+
+    Text-to-Cypher LLM을 주력으로 사용하기 위해 Template은 최소한만 사용.
+    복잡한 케이스(복합 조건, 키워드 포함 등)는 모두 LLM이 처리.
+    """
+    # Template 사용: Membership, TeamMembers만 (명확한 패턴)
     if intent_type == "entity_search" and primary_entity:
-        if search_focus in ["Decision", "Meeting", "Action", "Team"]:
+        if search_focus in ["Membership", "TeamMembers"]:
             return True
 
-    # 복합 메타 검색 (템플릿 처리 가능)
-    if intent_type == "meta_search" and search_focus == "Composite":
-        return True
-
-    # 시간 기반 검색
-    if intent_type == "temporal_search" and search_focus in ["Meeting", "Decision"]:
-        return True
-
+    # 나머지는 모두 Text-to-Cypher LLM 사용
     return False
 
 
