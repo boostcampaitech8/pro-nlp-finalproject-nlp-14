@@ -26,6 +26,7 @@ interface CommentRaw {
   author: { id: string; name: string };
   replies: CommentRaw[];
   pendingAgentReply: boolean;
+  isErrorResponse: boolean;
   createdAt: string;
 }
 
@@ -108,6 +109,7 @@ function transformComment(raw: CommentRaw): Comment {
     author: raw.author,
     replies: raw.replies.map(transformComment),
     pendingAgentReply: raw.pendingAgentReply,
+    isErrorResponse: raw.isErrorResponse,
     createdAt: raw.createdAt,
   };
 }
