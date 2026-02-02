@@ -46,6 +46,7 @@ releases:
           backend: {{ .Values.resources.backend | toYaml | nindent 12 }}
           frontend: {{ .Values.resources.frontend | toYaml | nindent 12 }}
           worker: {{ .Values.resources.worker | toYaml | nindent 12 }}
+          arqWorker: {{ .Values.resources.arqWorker | toYaml | nindent 12 }}
 
   # ===========================================
   # Redis
