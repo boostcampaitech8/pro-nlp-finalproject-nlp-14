@@ -41,8 +41,6 @@ from app.infrastructure.graph.checkpointer import get_checkpointer
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.infrastructure.graph.orchestration.nodes.planning import create_plan
 
-MAX_AGENT_CALLS = 2
-
 
 def print_header(title: str) -> None:
     """섹션 헤더 출력"""
@@ -81,15 +79,15 @@ def print_context_status(manager: ContextManager) -> None:
         print("  Topic Segments:")
         for seg in segments:
             print(f"    - {seg.name}: {seg.summary}")
-            if seg.key_points:
+            if hasattr(seg, "key_points") and seg.key_points:
                 print(f"      Key Points: {', '.join(seg.key_points)}")
-            if seg.key_decisions:
+            if hasattr(seg, "key_decisions") and seg.key_decisions:
                 print(f"      Decisions: {', '.join(seg.key_decisions)}")
-            if seg.pending_items:
+            if hasattr(seg, "pending_items") and seg.pending_items:
                 print(f"      Pending: {', '.join(seg.pending_items)}")
-            if seg.participants:
+            if hasattr(seg, "participants") and seg.participants:
                 print(f"      Participants: {', '.join(seg.participants)}")
-            if seg.keywords:
+            if hasattr(seg, "keywords") and seg.keywords:
                 print(f"      Keywords: {', '.join(seg.keywords)}")
 
     print()
@@ -232,10 +230,7 @@ async def run_option7() -> None:
     print_header("Context Engineering Full Pipeline Test (Temp DB + Checkpointer)")
 
     scenario = get_full_meeting_scenario()
-    expected_count = len(scenario)
-    print(f"시나리오 발화 수(기준): {expected_count}개")
-    if expected_count != 106:
-        print("[주의] 시나리오 발화 수가 106개가 아닙니다.")
+    print(f"시나리오 발화 수: {len(scenario)}개")
 
     fd, db_path = tempfile.mkstemp(prefix="context_test_", suffix=".db")
     os.close(fd)
@@ -426,16 +421,19 @@ async def run_option7() -> None:
             text_preview = (
                 utterance.text[:60] + ("..." if len(utterance.text) > 60 else "")
             )
-            print(f"[{utterance.id:03d}] {utterance.speaker_name}: {text_preview}")
+            print(
+                f"[{utterance.id:03d}] {utterance.speaker_name}: {text_preview}",
+                flush=True,
+            )
 
-        if item.get("is_agent_trigger") and agent_call_count < MAX_AGENT_CALLS:
-            agent_call_count += 1
-            question = text_value.replace("부덕아 ", "", 1).strip()
-            print()
-            print(f"★ Wake word 감지 (#{agent_call_count}): {question}")
-            await run_agent_call(question)
-
-            await asyncio.sleep(0.5)
+            # 에이전트 트리거 체크 (루프 내에서 처리)
+            if item.get("is_agent_trigger"):
+                agent_call_count += 1
+                question = text_value.replace("부덕아 ", "", 1).strip()
+                print()
+                print(f"★ Wake word 감지 (#{agent_call_count}/{4}): {question}")
+                await run_agent_call(question)
+                await asyncio.sleep(0.5)
 
         l1_was_busy = manager.has_pending_l1 or manager.is_l1_running
         if l1_was_busy:
@@ -484,7 +482,10 @@ async def run_option7() -> None:
 
     finally:
         conn.close()
-        os.remove(db_path)
+        try:
+            os.remove(db_path)
+        except OSError:
+            pass
 
 
 def main() -> None:

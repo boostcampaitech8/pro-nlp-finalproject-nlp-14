@@ -16,11 +16,11 @@
 | **ContextManager** | `backend/app/infrastructure/context/manager.py` | 완료 | L0/L1 메모리, L1 백그라운드 처리, L1 토픽 분할 |
 | **ContextBuilder** | `backend/app/infrastructure/context/builder.py` | 완료 | 호출 유형별 컨텍스트 조합 + 시맨틱 서치 |
 | **SpeakerContext** | `backend/app/infrastructure/context/speaker_context.py` | 완료 | 화자별 통계 및 역할 추론 |
-| **In-memory Embedding** | `backend/app/infrastructure/context/embedding.py` | 완료 | BGE-M3 임베딩 생성/검색 |
+| **Embedding (API)** | `backend/app/infrastructure/context/embedding.py` | 완료 | CLOVA Studio Embedding API (bge-m3) |
 | **토픽 분할 프롬프트** | `backend/app/infrastructure/context/prompts/topic_separation.py` | 완료 | 초기/재귀 토픽 분할 |
 | **테스트 스크립트** | `backend/app/infrastructure/context/run_test.py` | 완료 | 옵션7 전용 통합 테스트 |
 | **Checkpointer(그래프)** | `backend/app/infrastructure/graph/checkpointer.py` | 완료 | 멀티턴 그래프 상태 영속화 |
-| **Context Runtime Cache** | `backend/app/services/context_runtime.py` | 완료 | 실시간 ContextManager 캐시/증분 업데이트 |
+| **Context Runtime Cache** | `backend/app/services/context_runtime.py` | 완료 | TTL Cache 기반 실시간 ContextManager 캐시 (maxsize=500, ttl=1h) |
 
 ### 0.2 미구현/제약
 
@@ -83,10 +83,11 @@
 
 ---
 
-## 4. 인메모리 임베딩 & 시맨틱 서치
+## 4. 임베딩 & 시맨틱 서치
 
 ### 4.1 임베딩
-- 모델: BGE-M3 (`BAAI/bge-m3`)
+- **CLOVA Studio Embedding API v2** 사용 (bge-m3 모델)
+- 로컬 모델 대신 API 호출로 서버 메모리 부담 없음
 - 요약(`segment.summary`)에 대해 임베딩 생성 후 메모리에 저장
 
 ### 4.2 검색
@@ -224,12 +225,23 @@ l1_update_turn_threshold = 25
 speaker_buffer_max_per_speaker = 25
 
 max_topics = 30
+topic_merge_threshold = 0.80
+topic_similarity_threshold = 0.85
 
-embedding_model = "BAAI/bge-m3"
+# CLOVA Studio API 사용
+embedding_model = "bge-m3"
 embedding_dimension = 1024
 
 topic_search_top_k = 5
 topic_search_threshold = 0.30
+```
+
+### 7.1 Context Runtime Cache 설정
+
+```python
+# TTL Cache: 메모리 누수 방지
+maxsize = 500    # 동시 최대 500개 회의
+ttl = 3600       # 1시간 미접근 시 자동 삭제
 ```
 
 ---
@@ -241,8 +253,8 @@ topic_search_threshold = 0.30
 | JSON 깨짐 | HCX-003 구조화 출력 미지원 | 프롬프트 강화 + 파서 보정으로 완화 |
 | 토픽 섞임 | 토픽 전환 감지 없음 | 25턴 배치 기준으로만 분리 |
 | L1 영속화 없음 | 메모리 기반 | 재로드 시 L1 재생성 필요 |
-| 임베딩 의존성 | FlagEmbedding 설치 필요 | 미설치 시 fallback |
-| 실시간 캐시 유실 | 서버 재시작 시 캐시 초기화 | 재시작 후 DB 재적재 필요 |
+| 임베딩 API 의존 | CLOVA Studio API 필요 | API 키 미설정 시 fallback |
+| 실시간 캐시 유실 | 서버 재시작 시 캐시 초기화 | TTL Cache로 메모리 관리 (1시간 미접근 시 삭제) |
 
 ---
 
@@ -255,7 +267,7 @@ backend/app/infrastructure/context/
 ├── models.py
 ├── manager.py          # L0/L1 메모리, 백그라운드 L1, 임베딩/검색, 토픽 병합
 ├── builder.py          # 호출 유형별 컨텍스트 조합
-├── embedding.py        # BGE-M3 임베딩
+├── embedding.py        # CLOVA Studio Embedding API (bge-m3)
 ├── speaker_context.py  # 화자별 통계
 ├── run_test.py         # 옵션7 전용 통합 테스트
 └── prompts/
@@ -264,7 +276,7 @@ backend/app/infrastructure/context/
     └── topic_merging.py      # 유사 토픽 병합 프롬프트
 
 backend/app/services/
-└── context_runtime.py  # 실시간 ContextManager 캐시/증분 업데이트
+└── context_runtime.py  # TTL Cache 기반 실시간 ContextManager 캐시
 
 backend/app/api/v1/endpoints/
 └── agent.py            # /agent/meeting/call, /agent/meeting
@@ -276,5 +288,6 @@ backend/app/api/v1/endpoints/
 
 - **L0/L1 메모리 구조**는 25턴 배치 기반으로 안정적 운용
 - **LLM 토픽 분할 + 파서 보정**으로 JSON 실패율 최소화
-- **임베딩 기반 시맨틱 서치**는 인메모리로 제공
+- **CLOVA Studio Embedding API** 사용으로 서버 메모리 부담 없음
+- **TTL Cache** 적용으로 런타임 메모리 누수 방지
 - **checkpointer는 그래프 상태 영속화**에만 사용, 컨텍스트는 별개
