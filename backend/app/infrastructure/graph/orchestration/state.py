@@ -18,6 +18,8 @@ class OrchestrationState(TypedDict):
     # Planning 관련
     plan: Annotated[str, "current plan"]  # 현재 계획
     need_tools: Annotated[bool, "tools needed"]  # 도구 필요 여부
+    can_answer: NotRequired[bool]  # 현재 도구/로직으로 답변 가능 여부
+    missing_requirements: NotRequired[list[str]]  # 부족한 도구/정보 목록
 
     # Tool execution 관련
     tool_results: Annotated[str, operator.add]  # mit-Tools 실행 결과 (누적) - mit_search 결과 포함

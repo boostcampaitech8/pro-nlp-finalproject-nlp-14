@@ -12,6 +12,8 @@
     app = await get_compiled_app(with_checkpointer=False)
     result = await app.ainvoke(state)
 """
+import logging
+
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -23,7 +25,9 @@ from .nodes.mit_tools import execute_mit_tools
 from .nodes.planning import create_plan
 from .state import OrchestrationState
 
+logger = logging.getLogger(__name__)
 
+# Planning -> 도구 필요 여부에 따라 라우팅
 def route_by_tool_need(state: OrchestrationState) -> str:
     """도구 필요 여부에 따라 라우팅"""
     return "mit_tools" if state.get("need_tools", False) else "generator"

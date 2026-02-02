@@ -3,7 +3,7 @@ import logging
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.infrastructure.graph.integration.llm import get_generator_llm
+from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger("AgentLogger")
@@ -43,6 +43,8 @@ async def generate_answer(state: OrchestrationState):
     query = messages[-1].content if messages else ""
     conversation_history = build_conversation_history(messages)
     plan = state.get("plan", "")
+    can_answer = state.get("can_answer")
+    missing_requirements = state.get("missing_requirements", [])
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     
@@ -52,6 +54,21 @@ async def generate_answer(state: OrchestrationState):
     print("답변:")
     print("=" * 50)
     
+    # planner가 답변 불가로 판단한 경우
+    if can_answer is False:
+        missing_text = (
+            "\n필요한 요소: " + ", ".join(missing_requirements)
+            if missing_requirements
+            else ""
+        )
+        response_text = (
+            "현재 워크플로우의 도구( mit_search )로는 요청을 처리할 수 없습니다."
+            + missing_text
+        )
+        print(response_text, flush=True)
+        print("=" * 50)
+        return OrchestrationState(response=response_text)
+
     # tool_results가 있으면 추가 context로 활용
     if tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
@@ -67,9 +84,14 @@ async def generate_answer(state: OrchestrationState):
             [
                 (
                     "system",
-                    "당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 정확하게 답변하는 AI 비서입니다."
-                    " 이전 대화 맥락을 참고하여 일관된 답변을 제공하세요."
-                    " 도구 결과에 없는 사실을 추측하거나 외부 출처(웹/검색엔진)를 언급하지 마세요.",
+                    """당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 정확하게 답변하는 AI 비서입니다.
+중요 규칙:
+1. 도구 결과에 없는 사실을 추측하거나 외부 출처(웹/검색엔진)를 언급하지 마세요.
+2. 검색 결과가 없으면 명확하게 "정보를 찾을 수 없습니다"라고 답변하세요.
+3. 특정 사람이름 검색 후 결과가 없으면: "신수효에 대한 정보를 찾을 수 없습니다. 혹시 이름을 다시 확인해주시겠어요?"
+4. 일반 지식이나 추측으로 답변하지 마세요. 도구 결과만 신뢰하세요.
+5.  이전 대화 맥락을 참고하여 일관된 답변을 제공하세요.
+6.  도구 결과에 없는 사실을 추측하거나 외부 출처(웹/검색엔진)를 언급하지 마세요.""",
                 ),
                 (
                     "human",
@@ -80,7 +102,7 @@ async def generate_answer(state: OrchestrationState):
                         "## 계획\n{plan}\n\n"
                         "## 도구 실행 결과\n{tool_results}\n\n"
                         "## 추가 컨텍스트\n{additional_context}\n\n"
-                        "이전 대화 맥락과 도구 실행 결과를 활용하여 사용자 질문에 정확하게 답변해주세요."
+                        "도구 실행 결과를 정확하게 활용하여 사용자 질문에 답변해주세요. 결과가 없으면 명확하게 '정보를 찾을 수 없습니다'라고 답변하세요."
                     ),
                 ),
             ]
@@ -108,7 +130,7 @@ async def generate_answer(state: OrchestrationState):
             ]
         )
 
-    chain = prompt | get_generator_llm()
+    chain = prompt | get_answer_generator_llm()
 
     # 멀티턴 로깅
     if conversation_history:
@@ -128,12 +150,12 @@ async def generate_answer(state: OrchestrationState):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
         response_chunks.append(chunk_text)
         print(chunk_text, end="", flush=True)
-    
+
     print()  # 줄바꿈
     print("=" * 50)
-    
+
     response_text = "".join(response_chunks)
     logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
-    
+
     return OrchestrationState(response=response_text)
 

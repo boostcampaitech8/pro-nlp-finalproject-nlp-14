@@ -5,7 +5,7 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.infrastructure.graph.integration.llm import get_generator_llm
+from app.infrastructure.graph.integration.llm import get_query_intent_analyzer_llm
 
 from ..state import MitSearchState
 from ..utils.confidence_calibrator import CalibratedIntentValidator
@@ -38,21 +38,32 @@ async def query_intent_analyzer_async(state: MitSearchState) -> dict:
     """LLM을 사용하여 쿼리의 의도를 분석합니다.
 
     Contract:
-        reads: mit_search_query
-        writes: mit_search_query_intent (intent_type, primary_entity, search_focus)
+        reads: mit_search_query, messages, message
+        writes: mit_search_query, mit_search_query_intent
         side-effects: LLM API 호출 + Intent 검증
         failures: LLM 오류 → 기본값 반환
 
     의도 분류:
-        - entity_search: 특정 엔티티 검색 ("신수효 관련 결정사항")
-        - temporal_search: 시간 기반 검색 ("지난주 회의")
-        - general_search: 일반 키워드 검색 ("팀 있어")
-        - meta_search: 메타데이터 검색 ("누가, 누구, 담당자")
+        - entity_search: 특정 엔티티 검색
+        - temporal_search: 시간 기반 검색
+        - general_search: 일반 키워드 검색
+        - meta_search: 메타데이터 검색
     """
     logger.info("Starting query intent analysis")
 
     try:
         query = state.get("mit_search_query", "")
+        if not query:
+            messages = state.get("messages", [])
+            message = state.get("message", "")
+            if messages:
+                last_message = messages[-1]
+                query = (
+                    last_message.content if hasattr(last_message, "content") else str(last_message)
+                )
+            elif message:
+                query = message
+
         if not query:
             return {
                 "mit_search_query_intent": {
@@ -121,28 +132,43 @@ async def query_intent_analyzer_async(state: MitSearchState) -> dict:
         )
         print(f"[의도분석] 검증: {'✓ 통과' if validation_report['is_valid'] else '⚠ 경고'}")
 
-        return {"mit_search_query_intent": intent}
+        return {
+            "mit_search_query": query,
+            "mit_search_query_intent": intent,
+        }
 
     except Exception as e:
         logger.error(f"Query intent analysis failed: {e}")
-        query = state.get("mit_search_query", "")
-        result = _analyze_intent_with_rules(query)
-        # Fallback 사용 표시
-        result["fallback_used"] = True
-        return {"mit_search_query_intent": result}
-
-
+        return {
+            "mit_search_query_intent": {
+                "intent_type": "general_search",
+                "primary_entity": None,
+                "search_focus": None,
+                "date_range": None,
+                "entity_types": None,
+                "confidence": 0.1,
+                "reasoning": "LLM intent analysis failed",
+                "fallback_used": False,
+            }
+        }
 async def _analyze_intent_with_llm(query: str) -> dict:
     """LLM으로 쿼리의 의도를 분석합니다."""
-    llm = get_generator_llm()
+    llm = get_query_intent_analyzer_llm()
 
-    system_prompt = """당신은 검색 쿼리의 의도를 분석하는 AI입니다.
-사용자의 쿼리를 분석하여 다음 JSON을 반환하세요:
+    system_prompt = """당신은 mit_search를 위한 쿼리 의도/필터 분석기입니다.
+목표: 검색 대상과 조건을 명확히 추출하여 mit_search가 정확한 결과를 반환하도록 돕습니다.
+
+**중요**: 반드시 유효한 JSON만 출력하세요. 설명이나 추가 텍스트는 포함하지 마세요!
+
+사용자의 쿼리를 분석하여 다음 형식의 JSON을 반환하세요:
 
 {
     "intent_type": "entity_search|temporal_search|general_search|meta_search",
     "primary_entity": "실제 사람이름 또는 팀명 (예: '신수효', '프로덕션팀') 또는 null",
-    "search_focus": "Decision|Meeting|Agenda|Action|Team|null",
+    "search_focus": "Decision|Meeting|Agenda|Action|Team|Composite|null",
+    "keywords": ["추가 검색 키워드들"] 또는 null,
+    "date_range": {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"} 또는 null,
+    "entity_types": ["Decision", "Meeting", "Agenda", "Action", "Team"] 또는 null,
     "confidence": 0.0~1.0,
     "reasoning": "분석 이유 간단히"
 }
@@ -158,28 +184,137 @@ search_focus 분류:
 - Meeting: "회의", "미팅"
 - Agenda: "아젠다", "안건"
 - Action: "액션", "과제", "담당", "책임", "맡다" (담당자 검색용)
-- Team: "팀", "팀원"
+- Membership: "속한 팀", "소속 팀", "팀이 어디", "무슨 팀" (사용자가 속한 팀 자체를 찾기)
+- TeamMembers: "같은 팀인 사람", "팀원", "팀 멤버" (같은 팀의 다른 사람들 찾기)
 - Composite: "담당자와 같은 팀원", "맡고 있는 사람과 팀원" (복합 검색 - 한 번에 처리)
 
 **중요 1**: 메타 질문("누가", "누구", "담당자")이 있으면 meta_search로 분류합니다.
+**중요 1-1**: mit_search는 읽기 전용 검색입니다. 실행/수정/외부 웹 요청은 검색 의도로 보지 마세요.
 
-**중요 2 - 복합 쿼리**: "같은 팀원"이나 "팀원인 누구"는 두 단계 검색이 필요할 수 있습니다:
-- 단순 팀원 검색: "신수효랑 같은 팀인 사람은?" → entity_search + Team (단일 Cypher)
+**중요 2 - Membership vs TeamMembers 구분** (CRITICAL):
+- "조우진이 속한 팀이 어디야?" → entity_search + Membership (팀 자체 반환)
+- "조우진이랑 같은 팀인 사람은?" → entity_search + TeamMembers (팀원들 반환)
+- "데이터팀-3810 팀 멤버가 누구야?" → entity_search + TeamMembers (팀 이름으로 검색)
+
+**중요 3 - 복합 쿼리**:
 - 복합 검색: "교육 프로그램 담당자와 같은 팀원은?" → meta_search + Composite (multi-hop Cypher로 한 번에 처리)
-
-**판별 기준**:
-- 명확한 사람 이름 + "같은 팀" → entity_search + Team
-- "맡고 있는/담당하는" + "같은 팀" → meta_search + Composite
 
 **중요 3**: "상반기", "1월" 등의 시간 정보가 있으면 temporal_search로 분류하되, search_focus는 시간이 가리키는 대상으로 설정합니다.
 
-예1: "신수효랑 같은 팀인 사람은 누구야?"
-→ intent_type: "entity_search", primary_entity: "신수효", search_focus: "Team"
+**중요 4 - 한국 이름 명확 인식**:
+- "신수효", "김철수", "박영희" 같은 2-3글자 한국 이름은 반드시 개인명(primary_entity)으로 추출
+- "신수"가 나와도 뒤에 글자가 더 있으면 한국 이름 우선 (신수효 ≠ 신수(신화의 동물))
+- 이름 뒤에 "가", "이", "가 맡은", "이 담당" 등이 있으면 더욱 확실한 사람 이름
+- "신수효 관련", "신수효가 맡은", "신수효 담당" → 무조건 primary_entity: "신수효"
 
-예2: "교육 프로그램 상반기 내 완료 목표를 맡고 있는 사람과 같은 팀원인 사람이 누구야?"
-→ intent_type: "meta_search", search_focus: "Composite" (한 번에 multi-hop Cypher로 처리)
+**필터 추출 규칙**:
+- keywords: primary_entity와 search_focus 외에 추가로 필터링할 키워드
+  * "신수효랑 관련된 회의 중에 회고 관련된 회의" → keywords: ["회고"]
+  * "AI팀 지난주 스프린트 회의" → keywords: ["스프린트"]
+  * 키워드가 없으면 null
+  * primary_entity는 keywords에 포함하지 않음
+- date_range: "지난주" → {"start": "2026-01-24", "end": "2026-01-31"}, "이번달" → {"start": "2026-01-01", "end": "2026-01-31"}
+  * 시간 표현이 없으면 null
+  * YYYY-MM-DD 형식으로 반환
+- entity_types: search_focus에 해당하는 엔티티 타입 리스트
+  * "결정사항" → ["Decision"]
+  * "회의" → ["Meeting"]
+  * search_focus가 null이면 entity_types도 null
 
-출력은 JSON만 반환하세요."""
+**출력 규칙 (CRITICAL)**:
+- 검색 대상(search_focus)과 제약(primary_entity/date_range)을 최대한 명확히 지정
+- 확신이 낮으면 confidence를 낮게 설정
+- **반드시 유효한 JSON만 출력할 것!**
+- **코드펜스(```) 사용 시 반드시 json 태그 포함**: ```json\n{ ... }\n```
+- **설명이나 추가 텍스트 금지! JSON만 출력!**
+
+[출력 예시]
+
+예1: "조우진이 속한 팀이 어디야?"
+```json
+{
+    "intent_type": "entity_search",
+    "primary_entity": "조우진",
+    "search_focus": "Membership",
+    "keywords": null,
+    "date_range": null,
+    "entity_types": ["Team"],
+    "confidence": 0.95,
+    "reasoning": "사용자가 속한 팀 자체를 찾는 질문"
+}
+```
+
+예1-1: "신수효랑 같은 팀인 사람은 누구야?"
+```json
+{
+    "intent_type": "entity_search",
+    "primary_entity": "신수효",
+    "search_focus": "TeamMembers",
+    "keywords": null,
+    "date_range": null,
+    "entity_types": ["User"],
+    "confidence": 0.95,
+    "reasoning": "같은 팀의 다른 멤버들을 찾는 질문"
+}
+```
+
+예2: "지난주 결정사항"
+```json
+{
+    "intent_type": "temporal_search",
+    "primary_entity": null,
+    "search_focus": "Decision",
+    "keywords": null,
+    "date_range": {"start": "2026-01-24", "end": "2026-01-31"},
+    "entity_types": ["Decision"],
+    "confidence": 0.9,
+    "reasoning": "시간 기반 결정사항 검색"
+}
+```
+
+예3: "조우진이랑 UX 관련한 회의 찾아줘"
+```json
+{
+    "intent_type": "entity_search",
+    "primary_entity": "조우진",
+    "search_focus": "Meeting",
+    "keywords": ["UX"],
+    "date_range": null,
+    "entity_types": ["Meeting"],
+    "confidence": 0.9,
+    "reasoning": "사람+주제 복합 조건 회의 검색"
+}
+```
+
+예4: "신수효가 맡은 일 뭐가 있어?"
+```json
+{
+    "intent_type": "entity_search",
+    "primary_entity": "신수효",
+    "search_focus": "Action",
+    "keywords": null,
+    "date_range": null,
+    "entity_types": ["Action"],
+    "confidence": 0.95,
+    "reasoning": "담당 액션 아이템 검색"
+}
+```
+
+예5: "신수효랑 관련된 회의 중에 회고 관련된 회의 있는지 확인해봐"
+```json
+{
+    "intent_type": "entity_search",
+    "primary_entity": "신수효",
+    "search_focus": "Meeting",
+    "keywords": ["회고"],
+    "date_range": null,
+    "entity_types": ["Meeting"],
+    "confidence": 0.9,
+    "reasoning": "사람+주제 복합 조건 회의 검색"
+}
+```
+
+**중요**: 반드시 위 형식의 유효한 JSON만 출력하세요. 설명이나 추가 텍스트는 절대 포함하지 마세요!"""
 
     user_message = f"쿼리: {query}"
 
@@ -203,109 +338,24 @@ search_focus 분류:
             if match:
                 content = match.group(0)
 
-        return json.loads(content)
+        parsed = json.loads(content)
+
+        # entity_types 검증: search_focus와 일치하도록
+        if parsed.get("search_focus") and not parsed.get("entity_types"):
+            parsed["entity_types"] = [parsed["search_focus"]]
+
+        return parsed
     except json.JSONDecodeError:
         logger.warning(f"Failed to parse LLM response: {content}")
-        return _analyze_intent_with_rules(query)
-
-
-def _analyze_intent_with_rules(query: str) -> dict:
-    """규칙 기반 쿼리 의도 분석."""
-    query_lower = query.lower()
-
-    # 사람 이름 감지 (한글 2-3글자) - 기본 규칙
-    has_person_name = False
-    person_name = None
-    words = query.split()
-
-    # 알려진 이름 목록 (프로젝트 관련자들)
-    known_names = {"신수효", "박준서", "윤성욱", "이수빈", "이준서", "정성욱", "김효진", "이혜인", "김준호", "정우진", "오서현"}
-
-    # 쿼리 전체에서 알려진 이름 찾기 (첫 단어이든 어디든)
-    for name in known_names:
-        if name in query:
-            has_person_name = True
-            person_name = name
-            break
-
-    # 찾지 못했으면 첫 단어 확인 (2-3글자 한글)
-    if not has_person_name and words and 2 <= len(words[0]) <= 3:
-        first = words[0]
-        if all('\uac00' <= c <= '\ud7a3' for c in first):
-            # 제외할 단어들
-            excluded = {"교육", "안건", "회의", "프로", "프로그", "완료", "프로젝트", "작업", "내용", "계획"}
-            if first not in excluded:
-                has_person_name = True
-                person_name = first
-
-    # 시간 표현 감지
-    has_temporal = any(
-        t in query
-        for t in ["지난주", "이번주", "금주", "지난달", "이번달", "금월", "오늘", "어제", "언제", "상반기", "하반기", "내"]
-    )
-
-    # 메타데이터 질문 감지 (누가, 누구, 담당자, 책임자 등)
-    # 주의: "팀인 누구야?" 같은 경우는 meta_question이 아니라 entity_search로 처리해야 함
-    has_meta_question = any(
-        q in query for q in ["누가", "누구", "언제", "어디", "왜", "뭐", "뭔", "하는 사람"]
-    )
-
-    # 특별한 경우: 사람 이름 있고 "팀인 누구야?" → entity_search로 처리
-    if has_person_name and "팀" in query and ("누가" in query or "누구" in query):
-        has_meta_question = False  # 이 경우 meta_question이 아니라 entity_search
-
-    # 검색 포커스 감지
-    search_focus = None
-    if "결정" in query or "decision" in query_lower:
-        search_focus = "Decision"
-    elif "회의" in query or "meeting" in query_lower:
-        search_focus = "Meeting"
-    elif "아젠다" in query or "안건" in query or "agenda" in query_lower:
-        search_focus = "Agenda"
-    elif "액션" in query or "action" in query_lower or "과제" in query or "담당" in query or "책임" in query or "맡" in query:
-        search_focus = "Action"
-    elif "팀" in query or "team" in query_lower:
-        search_focus = "Team"
-
-    # 복합 쿼리 감지: "맡고 있는/담당" + "팀원/같은 팀" 패턴
-    is_composite_query = False
-    if ("같은 팀원" in query or "같은 팀" in query) and ("담당" in query or "맡" in query):
-        # "교육 프로그램 담당자와 같은 팀원" → 한 번에 처리
-        is_composite_query = True
-    elif has_person_name and ("같은 팀" in query or "팀원" in query):
-        # "신수효랑 같은 팀"은 단순 팀원 검색
-        is_composite_query = False
-
-    # 의도 결정 (사람 이름 우선, 그다음 복합 쿼리)
-    if has_person_name:
-        # 사람 이름이 있으면 entity_search
-        intent_type = "entity_search"
-        primary_entity = person_name
-    elif is_composite_query:
-        # 복합 쿼리: 한 번에 multi-hop Cypher로 처리
-        intent_type = "meta_search"
-        primary_entity = None
-        search_focus = "Composite"  # 새로운 focus: composite_search 전략 사용
-    elif has_meta_question and has_temporal:
-        intent_type = "meta_search"
-        primary_entity = None
-    elif has_temporal:
-        intent_type = "temporal_search"
-        primary_entity = None
-    elif has_meta_question:
-        intent_type = "meta_search"
-        primary_entity = None
-    else:
-        intent_type = "general_search"
-        primary_entity = None
-
-    return {
-        "intent_type": intent_type,
-        "primary_entity": primary_entity,
-        "search_focus": search_focus,
-        "confidence": 0.7,
-        "reasoning": f"규칙기반 분석: {intent_type}"
-    }
+        return {
+            "intent_type": "general_search",
+            "primary_entity": None,
+            "search_focus": None,
+            "date_range": None,
+            "entity_types": None,
+            "confidence": 0.1,
+            "reasoning": "LLM response not JSON",
+        }
 
 
 def query_intent_analyzer(state: MitSearchState) -> dict:
