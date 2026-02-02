@@ -1,9 +1,13 @@
 """새 Transcript Service용 Pydantic 스키마 (임시)"""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+# Transcript 상태 타입 (completed: 정상 완료, interrupted: 중단됨)
+TranscriptStatus = Literal["completed", "interrupted"]
 
 # ===== POST /meetings/{meeting_id}/transcripts =====
 
@@ -33,6 +37,7 @@ class CreateTranscriptRequest(BaseModel):
         serialization_alias="agentCallConfidence",
         validation_alias="agentCallConfidence",
     )
+    status: TranscriptStatus = Field(default="completed")
 
     class Config:
         populate_by_name = True
@@ -60,6 +65,7 @@ class UtteranceItem(BaseModel):
     end_ms: int = Field(serialization_alias="endMs")
     text: str
     timestamp: datetime
+    status: TranscriptStatus = Field(default="completed")
 
     class Config:
         populate_by_name = True

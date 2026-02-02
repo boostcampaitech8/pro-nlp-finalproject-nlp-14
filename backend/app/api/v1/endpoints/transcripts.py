@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_arq_pool, require_meeting_participant
+from app.core.constants import AGENT_USER_ID
 from app.core.database import get_db
 from app.models.meeting import Meeting
 from app.schemas.transcript import (
@@ -57,8 +58,19 @@ async def create_transcript(
     Raises:
         HTTPException:
             - 400: path meeting_id와 body meetingId 불일치, startMs/endMs 유효하지 않음
+            - 403: system user ID 사용 시도
             - 404: meeting 존재하지 않음
     """
+    # System user ID 사용 차단 (agent endpoint에서만 사용 가능)
+    if request.user_id == AGENT_USER_ID:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "FORBIDDEN_USER_ID",
+                "message": "System user ID는 사용할 수 없습니다.",
+            },
+        )
+
     try:
         return await transcript_service.create_transcript(meeting_id, request)
     except ValueError as e:
