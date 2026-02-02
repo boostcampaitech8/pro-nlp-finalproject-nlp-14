@@ -291,7 +291,7 @@ async def run_option7() -> None:
 
             print_header("Topic Search (Agent Query)")
             print(f"Embedding available: {'예' if manager.embedding_available else '아니오'}")
-            results = manager.search_similar_topics(
+            results = await manager.search_similar_topics_async(
                 user_query,
                 top_k=manager.config.topic_search_top_k,
                 threshold=manager.config.topic_search_threshold,
@@ -328,21 +328,16 @@ async def run_option7() -> None:
                 print(f"❌ Planning 실패: {e}")
                 return
 
-            required_topics = planning_result.get("required_topics", [])
-            additional_context, missing = builder.build_required_topic_context(
-                manager, required_topics
+            additional_context = await builder.build_additional_context_with_search_async(
+                manager,
+                user_query,
+                top_k=manager.config.topic_search_top_k,
+                threshold=manager.config.topic_search_threshold,
             )
 
-            print(f"요청 토픽: {required_topics}")
-            if missing:
-                print(f"매칭 실패 토픽: {missing}")
             print(f"추가 컨텍스트 길이: {len(additional_context)}")
 
-            orchestration_payload = {
-                key: value
-                for key, value in planning_result.items()
-                if key != "required_topics"
-            }
+            orchestration_payload = dict(planning_result)
             full_state = {
                 **state,
                 **orchestration_payload,
@@ -459,7 +454,7 @@ async def run_option7() -> None:
         if not query_text:
             query_text = "속도 이슈 해결책"
 
-        results = manager.search_similar_topics(
+        results = await manager.search_similar_topics_async(
             query_text,
             top_k=manager.config.topic_search_top_k,
             threshold=manager.config.topic_search_threshold,

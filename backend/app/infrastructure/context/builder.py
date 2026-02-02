@@ -92,10 +92,7 @@ class ContextBuilder:
         segments = ctx.get_l1_segments()
         if segments:
             for seg in segments:
-                summary_preview = seg.summary[:100] + "..." if len(seg.summary) > 100 else seg.summary
-                lines.append(
-                    f"- **{seg.name}** (발화 {seg.start_utterance_id}~{seg.end_utterance_id}): {summary_preview}"
-                )
+                lines.append(f"- {seg.name}")
         else:
             lines.append("- 없음")
 
@@ -138,9 +135,9 @@ class ContextBuilder:
             lines.append(f"**\"{query}\"**")
             lines.append("")
 
-        # 인메모리 시맨틱 서치 사용
+        # 비동기 시맨틱 서치 사용
         topic_limit = topic_limit or ctx.config.topic_search_top_k
-        topic_results: list[TopicSegment] = ctx.search_similar_topics(
+        topic_results: list[TopicSegment] = await ctx.search_similar_topics_async(
             query, top_k=topic_limit
         )
 
@@ -204,6 +201,110 @@ class ContextBuilder:
             return "", missing
 
         return "\n".join(lines).strip(), missing
+
+    async def build_additional_context_with_search_async(
+        self,
+        ctx: ContextManager,
+        query: str | None,
+        top_k: int | None = None,
+        threshold: float | None = None,
+    ) -> str:
+        """비동기 시맨틱 서치 기반 추가 컨텍스트 (L1 토픽 상세).
+
+        Args:
+            ctx: ContextManager 인스턴스
+            query: 사용자 쿼리
+            top_k: Top-K 토픽 개수 (None이면 config 사용)
+            threshold: 최소 유사도 임계값 (None이면 config 사용)
+
+        Returns:
+            str: L1 토픽 상세 컨텍스트
+        """
+        if not query:
+            return ""
+
+        top_k = top_k or ctx.config.topic_search_top_k
+        if threshold is None:
+            threshold = ctx.config.topic_search_threshold
+
+        # 비동기 시맨틱 서치
+        topic_results: list[TopicSegment] = await ctx.search_similar_topics_async(
+            query, top_k=top_k, threshold=threshold
+        )
+
+        if not topic_results:
+            return ""
+
+        lines: list[str] = ["## L1 토픽 상세 (Semantic Search)"]
+        for segment in topic_results:
+            lines.append(f"### {segment.name}")
+            lines.append(segment.summary)
+            if segment.key_points:
+                lines.append(f"Key Points: {', '.join(segment.key_points)}")
+            if segment.key_decisions:
+                lines.append(f"Decisions: {', '.join(segment.key_decisions)}")
+            if segment.pending_items:
+                lines.append(f"Pending: {', '.join(segment.pending_items)}")
+            if segment.participants:
+                lines.append(f"Participants: {', '.join(segment.participants)}")
+            if segment.keywords:
+                lines.append(f"Keywords: {', '.join(segment.keywords)}")
+            lines.append("")
+
+        return "\n".join(lines).strip()
+
+    def build_additional_context_with_search(
+        self,
+        ctx: ContextManager,
+        query: str | None,
+        top_k: int | None = None,
+        threshold: float | None = None,
+    ) -> str:
+        """시맨틱 서치 기반 추가 컨텍스트 (동기, 하위 호환성).
+
+        Note:
+            build_additional_context_with_search_async() 사용 권장
+
+        Args:
+            ctx: ContextManager 인스턴스
+            query: 사용자 쿼리
+            top_k: Top-K 토픽 개수 (None이면 config 사용)
+            threshold: 최소 유사도 임계값 (None이면 config 사용)
+
+        Returns:
+            str: L1 토픽 상세 컨텍스트
+        """
+        if not query:
+            return ""
+
+        top_k = top_k or ctx.config.topic_search_top_k
+        if threshold is None:
+            threshold = ctx.config.topic_search_threshold
+
+        topic_results: list[TopicSegment] = ctx.search_similar_topics(
+            query, top_k=top_k, threshold=threshold
+        )
+
+        if not topic_results:
+            return ""
+
+        lines: list[str] = ["## L1 토픽 상세 (Semantic Search)"]
+        for segment in topic_results:
+            lines.append(f"### {segment.name}")
+            lines.append(segment.summary)
+            if segment.key_points:
+                lines.append(f"Key Points: {', '.join(segment.key_points)}")
+            if segment.key_decisions:
+                lines.append(f"Decisions: {', '.join(segment.key_decisions)}")
+            if segment.pending_items:
+                lines.append(f"Pending: {', '.join(segment.pending_items)}")
+            if segment.participants:
+                lines.append(f"Participants: {', '.join(segment.participants)}")
+            if segment.keywords:
+                lines.append(f"Keywords: {', '.join(segment.keywords)}")
+            lines.append("")
+
+        return "\n".join(lines).strip()
 
     def _build_immediate_context(
         self,
