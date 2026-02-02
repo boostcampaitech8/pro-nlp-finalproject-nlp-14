@@ -12,8 +12,9 @@
     app = await get_compiled_app(with_checkpointer=False)
     result = await app.ainvoke(state)
 """
-from langgraph.graph import END, StateGraph
 import logging
+
+from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.infrastructure.graph.checkpointer import get_checkpointer

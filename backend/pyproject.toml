@@ -33,7 +33,6 @@ dependencies = [
     "logging>=0.4.9.6",
     "langchain-core>=1.2.7",
     "langchain>=1.2.6",
-    "langchain-community>=0.4.1",
     # Neo4j
     "neo4j>=6.1.0",
     # TTL Cache for runtime memory management
