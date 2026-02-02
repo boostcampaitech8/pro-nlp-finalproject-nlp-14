@@ -52,7 +52,9 @@ class AgentMeetingCallRequest(BaseModel):
     """Agent Context Update 요청"""
 
     meeting_id: UUID = Field(..., alias="meetingId", description="회의 ID")
-    pre_transcript_id: UUID = Field(..., alias="preTranscriptId", description="이전 transcript 기준 ID")
+    pre_transcript_id: UUID = Field(
+        ..., alias="preTranscriptId", description="이전 transcript 기준 ID"
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -169,10 +171,14 @@ async def run_agent_with_context(
                 user_id=str(transcript.user_id),
                 db=db,
             )
-            full_response = response
-            is_completed = True
-            yield f"data: {response}\n\n"
+            # SSE는 data 필드가 줄마다 분리되어야 하므로 줄 단위로 전송
+            response_text = "" if response is None else str(response)
+            full_response = response_text  # 응답 저장용 변수에 누적
+            for line in response_text.splitlines():
+                if line:  # 빈 줄 스킵
+                    yield f"data: {line}\n\n"
             yield "data: [DONE]\n\n"
+            is_completed = True  # 정상 완료 표시
         except Exception as e:
             logger.error("Agent Context 오류: %s", e, exc_info=True)
             yield f"data: [ERROR] {str(e)}\n\n"
@@ -186,7 +192,9 @@ async def run_agent_with_context(
                 response_end_ms = response_start_ms + elapsed_ms
 
                 # 빈 응답인 경우 플레이스홀더 텍스트 사용
-                text_to_save = full_response.strip() if full_response.strip() else "[응답 생성 중 중단됨]"
+                text_to_save = (
+                    full_response.strip() if full_response.strip() else "[응답 생성 중 중단됨]"
+                )
 
                 try:
                     await transcript_service.create_transcript(
