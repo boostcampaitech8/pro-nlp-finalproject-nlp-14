@@ -306,9 +306,10 @@ class RealtimeWorker:
             f"({segment.start_ms}~{segment.end_ms}ms, conf={segment.confidence:.2f})"
         )
 
-        # STT final 결과 수신 타임스탬프 기록 (VAD→STT 레이턴시)
+        # STT final 결과 수신 타임스탬프 기록 (VAD→STT 레이턴시) + 세그먼트 카운트
         if self._metrics:
             self._metrics.mark_stt_final_received(user_id)
+            self._metrics.increment_stt_segment(user_id)
 
         # Backend API로 전송
         request = TranscriptSegmentRequest(

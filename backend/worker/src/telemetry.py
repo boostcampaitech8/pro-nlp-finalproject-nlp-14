@@ -108,6 +108,12 @@ class RealtimeWorkerMetrics:
             unit="s",
         )
 
+        # STT 세그먼트 카운터
+        self.stt_segment_count = meter.create_counter(
+            name="mit_stt_segment_total",
+            description="STT 최종 결과 세그먼트 수",
+        )
+
     def get_timestamps(self, user_id: str) -> PipelineTimestamps:
         """사용자별 타임스탬프 가져오기 (없으면 생성)"""
         if user_id not in self._timestamps:
@@ -202,6 +208,13 @@ class RealtimeWorkerMetrics:
         self.agent_response_duration.record(
             duration,
             {"meeting_id": self.meeting_id},
+        )
+
+    def increment_stt_segment(self, user_id: str) -> None:
+        """STT 최종 결과 세그먼트 카운트 증가"""
+        self.stt_segment_count.add(
+            1,
+            {"meeting_id": self.meeting_id, "user_id": user_id},
         )
 
 
