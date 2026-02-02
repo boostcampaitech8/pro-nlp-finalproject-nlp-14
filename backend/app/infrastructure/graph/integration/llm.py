@@ -256,6 +256,15 @@ def get_selector_llm() -> ChatClovaX:
 # 하위 호환성 함수
 # ============================================================================
 
+def get_mention_generator_llm() -> ChatClovaX:
+    """멘션 응답 생성 LLM (자연스러운 대화체).
+
+    temperature: 0.6 (자연스러운 대화)
+    max_tokens: 512 (응답 길이 제한)
+    """
+    return get_base_llm().bind(temperature=0.6, max_tokens=512)
+
+
 def get_llm() -> ChatClovaX:
     """기본 LLM (하위호환성 전용).
 

@@ -55,6 +55,7 @@ export interface Comment {
   author: UserBrief;
   replies: Comment[];
   pendingAgentReply: boolean;
+  isErrorResponse: boolean;
   createdAt: string;
 }
 
