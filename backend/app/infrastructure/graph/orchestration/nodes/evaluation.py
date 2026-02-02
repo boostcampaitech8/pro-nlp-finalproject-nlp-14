@@ -12,6 +12,19 @@ logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
 
 
+class EvaluationOutput(BaseModel):
+    """도구 실행 결과 평가 출력 모델.
+
+    Attributes:
+        evaluation: 평가 요약 (한 줄 설명)
+        status: 평가 상태 (success, retry, replanning 중 하나)
+        reason: 평가 이유 및 상세 설명
+    """
+    evaluation: str = Field(description="평가 요약 (예: '검색 결과 충분', '계획 재수립 필요')")
+    status: str = Field(description="평가 상태: 'success', 'retry', 'replanning' 중 하나")
+    reason: str = Field(description="평가 이유 및 상세 설명")
+
+
 def _detect_composite_query(query: str, tool_results: str) -> bool:
     """복합 쿼리(여러 단계의 검색이 필요한 쿼리) 감지
     
