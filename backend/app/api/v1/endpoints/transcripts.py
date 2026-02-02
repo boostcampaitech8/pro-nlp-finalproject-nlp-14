@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_arq_pool, require_meeting_participant
 from app.core.constants import AGENT_USER_ID
 from app.core.database import get_db
+from app.core.telemetry import get_mit_metrics
 from app.models.meeting import Meeting
 from app.schemas.transcript import (
     CreateTranscriptRequest,
@@ -192,6 +193,11 @@ async def generate_pr(
             _job_id=f"generate_pr:{meeting.id}",
         )
         await pool.close()
+
+        # 메트릭 기록
+        metrics = get_mit_metrics()
+        if metrics:
+            metrics.arq_task_enqueue_total.add(1, {"task_name": "generate_pr_task"})
 
         return {
             "status": "queued",
