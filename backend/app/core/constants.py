@@ -1,5 +1,10 @@
 """Application constants and configuration values"""
 
+from uuid import UUID
+
+# System User (Agent)
+AGENT_USER_ID = UUID("11111111-1111-1111-1111-111111111111")
+
 # File upload limits
 MAX_RECORDING_FILE_SIZE = 500 * 1024 * 1024  # 500MB
 

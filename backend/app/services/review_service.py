@@ -9,6 +9,7 @@ import re
 from typing import Literal
 
 from app.api.dependencies import get_arq_pool
+from app.core.telemetry import get_mit_metrics
 from app.models.kg import KGComment, KGSuggestion
 from app.repositories.kg.repository import KGRepository
 from app.schemas.review import (
@@ -95,6 +96,12 @@ class ReviewService:
             pool = await get_arq_pool()
             await pool.enqueue_job("mit_action_task", decision_id)
             await pool.close()
+
+            # 메트릭 기록
+            metrics = get_mit_metrics()
+            if metrics:
+                metrics.arq_task_enqueue_total.add(1, {"task_name": "mit_action_task"})
+
             logger.info(f"mit_action_task enqueued: decision={decision_id}")
         except Exception as e:
             # 큐잉 실패해도 approve/merge는 성공으로 처리
@@ -190,6 +197,12 @@ class ReviewService:
                 content=content,
             )
             await pool.close()
+
+            # 메트릭 기록
+            metrics = get_mit_metrics()
+            if metrics:
+                metrics.arq_task_enqueue_total.add(1, {"task_name": "process_suggestion_task"})
+
             logger.info(f"process_suggestion_task enqueued: suggestion={suggestion_id}")
         except Exception as e:
             logger.error(f"Failed to enqueue process_suggestion_task: {e}")
@@ -256,6 +269,12 @@ class ReviewService:
                 content=content,
             )
             await pool.close()
+
+            # 메트릭 기록
+            metrics = get_mit_metrics()
+            if metrics:
+                metrics.arq_task_enqueue_total.add(1, {"task_name": "process_mit_mention"})
+
             logger.info(f"mit_mention_task enqueued: comment={comment_id}")
         except Exception as e:
             # 큐잉 실패해도 Comment 생성은 성공으로 처리 (best-effort)

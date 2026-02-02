@@ -93,7 +93,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     joinRoom(userId).catch((err) => {
       logger.error('Failed to join room:', err);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // 녹음 시작 알림 (녹음이 false -> true로 변경될 때만)

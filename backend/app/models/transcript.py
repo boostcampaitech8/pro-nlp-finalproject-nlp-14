@@ -78,6 +78,12 @@ class Transcript(Base):
         nullable=True,
         comment="에이전트 호출 키워드 신뢰도",
     )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="completed",
+        nullable=False,
+        comment="응답 상태 (completed/interrupted)",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
