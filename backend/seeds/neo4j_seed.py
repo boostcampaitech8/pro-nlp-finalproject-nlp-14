@@ -226,6 +226,27 @@ PARTICIPANT_ROLE_WEIGHTS = [0.2, 0.8]
 APPROVAL_STATUSES = ["pending", "approved", "rejected"]
 APPROVAL_STATUS_WEIGHTS = [0.2, 0.7, 0.1]
 
+SUGGESTION_STATUSES = ["pending", "accepted", "rejected"]
+SUGGESTION_STATUS_WEIGHTS = [0.4, 0.4, 0.2]
+
+SUGGESTION_TEMPLATES = [
+    "{feature} 예산 {amount}로 조정",
+    "{topic} 일정 {duration}로 변경",
+    "{tech} 대신 {tech} 사용 제안",
+    "{metric} 목표치 {target}로 상향",
+    "{resource} {amount}로 증액",
+]
+
+COMMENT_TEMPLATES = [
+    "이 결정에 동의합니다",
+    "{topic} 관점에서 재검토 필요",
+    "{feature} 영향도 고려 부탁드립니다",
+    "좋은 방향인 것 같습니다",
+    "추가 논의가 필요할 것 같습니다",
+    "{tech} 호환성 검증 필요",
+    "@mit {topic} 관련 데이터 분석 부탁드립니다",
+]
+
 
 # ============================================
 # 유틸리티 함수
@@ -281,6 +302,8 @@ class DataGenerator:
         self.agendas: list[dict] = []
         self.decisions: list[dict] = []
         self.action_items: list[dict] = []
+        self.suggestions: list[dict] = []
+        self.comments: list[dict] = []
 
         self.member_of: list[dict] = []
         self.hosts: list[dict] = []
@@ -291,6 +314,16 @@ class DataGenerator:
         self.supersedes: list[dict] = []
         self.triggers: list[dict] = []
         self.assigned_to: list[dict] = []
+        self.decided_in: list[dict] = []
+        self.approves: list[dict] = []
+        self.rejects: list[dict] = []
+        self.outdates: list[dict] = []
+        self.suggests: list[dict] = []
+        self.creates: list[dict] = []
+        self.suggestion_on: list[dict] = []
+        self.user_comments: list[dict] = []
+        self.comment_on: list[dict] = []
+        self.reply_to: list[dict] = []
 
         self.record_count = 0
 
@@ -341,6 +374,7 @@ class DataGenerator:
             "status": status,
             "description": f"{random.choice(TOPICS)} 관련 회의",
             "summary": summary,
+            "team_id": team_id,
             "scheduled_at": format_datetime(scheduled),
             "started_at": format_datetime(started) if started else None,
             "ended_at": format_datetime(ended) if ended else None,
@@ -355,28 +389,31 @@ class DataGenerator:
 
         return meeting
 
-    def generate_agenda(self, meeting_id: str) -> dict:
+    def generate_agenda(self, meeting_id: str, team_id: str, order: int) -> dict:
         agenda_id = f"agenda-{generate_uuid()}"
         agenda = {
             "id": agenda_id,
             "topic": fill_template(random.choice(AGENDA_TOPICS)),
             "description": f"{random.choice(TOPICS)} 관련 안건",
+            "team_id": team_id,
             "created_at": format_datetime(random_datetime()),
         }
         self.agendas.append(agenda)
         self.record_count += 1
 
-        # CONTAINS 관계
-        self.contains.append({"from_id": meeting_id, "to_id": agenda_id})
+        # CONTAINS 관계 (order 추가)
+        self.contains.append({"from_id": meeting_id, "to_id": agenda_id, "order": order})
         self.record_count += 1
 
         return agenda
 
-    def generate_decision(self, agenda_id: str, status: str = None) -> dict:
+    def generate_decision(self, agenda_id: str, meeting_id: str, team_id: str, status: str = None) -> dict:
         """결정사항 생성
 
         Args:
             agenda_id: 안건 ID
+            meeting_id: 회의 ID
+            team_id: 팀 ID
             status: 결정 상태 (None이면 weighted_choice로 선택)
         """
         decision_id = f"decision-{generate_uuid()}"
@@ -388,6 +425,8 @@ class DataGenerator:
             "content": fill_template(random.choice(DECISION_TEMPLATES)),
             "status": status,
             "context": f"{random.choice(TOPICS)} 기반 결정",
+            "meeting_id": meeting_id,
+            "team_id": team_id,
             "created_at": format_datetime(random_datetime()),
         }
         self.decisions.append(decision)
@@ -399,7 +438,7 @@ class DataGenerator:
 
         return decision
 
-    def generate_action_item(self, decision_id: str) -> dict:
+    def generate_action_item(self, decision_id: str, meeting_id: str, team_id: str) -> dict:
         action_id = f"action-{generate_uuid()}"
         created = random_datetime()
         action_item = {
@@ -407,6 +446,8 @@ class DataGenerator:
             "content": fill_template(random.choice(ACTION_ITEM_TITLES)),
             "due_date": format_datetime(created + timedelta(days=random.randint(7, 30))),
             "status": weighted_choice(ACTION_ITEM_STATUSES, ACTION_ITEM_STATUS_WEIGHTS),
+            "meeting_id": meeting_id,
+            "team_id": team_id,
             "created_at": format_datetime(created),
         }
         self.action_items.append(action_item)
@@ -468,6 +509,96 @@ class DataGenerator:
         })
         self.record_count += 1
 
+    def generate_suggestion(self, user_id: str, decision_id: str, meeting_id: str, team_id: str, status: str = None) -> dict:
+        """수정 제안 생성"""
+        suggestion_id = f"suggestion-{generate_uuid()}"
+        if status is None:
+            status = weighted_choice(SUGGESTION_STATUSES, SUGGESTION_STATUS_WEIGHTS)
+
+        suggestion = {
+            "id": suggestion_id,
+            "content": fill_template(random.choice(SUGGESTION_TEMPLATES)),
+            "status": status,
+            "author_id": user_id,
+            "decision_id": decision_id,
+            "meeting_id": meeting_id,
+            "team_id": team_id,
+            "created_at": format_datetime(random_datetime()),
+        }
+        self.suggestions.append(suggestion)
+        self.record_count += 1
+
+        # SUGGESTS 관계
+        self.suggests.append({"from_id": user_id, "to_id": suggestion_id})
+        self.record_count += 1
+
+        # ON 관계
+        self.suggestion_on.append({"from_id": suggestion_id, "to_id": decision_id})
+        self.record_count += 1
+
+        return suggestion
+
+    def generate_comment(self, user_id: str, decision_id: str, team_id: str, parent_id: str = None) -> dict:
+        """댓글 생성"""
+        comment_id = f"comment-{generate_uuid()}"
+        content = fill_template(random.choice(COMMENT_TEMPLATES))
+
+        # @mit 멘션 포함 여부 (10% 확률)
+        pending_agent_reply = "@mit" in content
+
+        comment = {
+            "id": comment_id,
+            "content": content,
+            "author_id": user_id,
+            "decision_id": decision_id,
+            "parent_id": parent_id,
+            "pending_agent_reply": pending_agent_reply,
+            "team_id": team_id,
+            "created_at": format_datetime(random_datetime()),
+        }
+        self.comments.append(comment)
+        self.record_count += 1
+
+        # COMMENTS 관계
+        self.user_comments.append({"from_id": user_id, "to_id": comment_id})
+        self.record_count += 1
+
+        # ON 관계
+        self.comment_on.append({"from_id": comment_id, "to_id": decision_id})
+        self.record_count += 1
+
+        # REPLY_TO 관계 (대댓글인 경우)
+        if parent_id:
+            self.reply_to.append({"from_id": comment_id, "to_id": parent_id})
+            self.record_count += 1
+
+        return comment
+
+    def add_decided_in(self, meeting_id: str, decision_id: str):
+        """DECIDED_IN 관계 추가"""
+        self.decided_in.append({"from_id": meeting_id, "to_id": decision_id})
+        self.record_count += 1
+
+    def add_approves(self, user_id: str, decision_id: str):
+        """APPROVES 관계 추가"""
+        self.approves.append({"from_id": user_id, "to_id": decision_id})
+        self.record_count += 1
+
+    def add_rejects(self, user_id: str, decision_id: str):
+        """REJECTS 관계 추가"""
+        self.rejects.append({"from_id": user_id, "to_id": decision_id})
+        self.record_count += 1
+
+    def add_outdates(self, new_decision_id: str, old_decision_id: str):
+        """OUTDATES 관계 추가 (new_decision이 old_decision을 대체)"""
+        self.outdates.append({"from_id": new_decision_id, "to_id": old_decision_id})
+        self.record_count += 1
+
+    def add_creates(self, suggestion_id: str, decision_id: str):
+        """CREATES 관계 추가 (Suggestion이 새 Decision 생성)"""
+        self.creates.append({"from_id": suggestion_id, "to_id": decision_id})
+        self.record_count += 1
+
     def generate_batch(self, target_count: int = 500):
         """하나의 배치 데이터 생성
 
@@ -498,8 +629,9 @@ class DataGenerator:
                     self.add_participated_in(user["id"], meeting["id"])
 
                 # 안건 1-4개 생성
-                for _ in range(random.randint(1, 4)):
-                    agenda = self.generate_agenda(meeting["id"])
+                num_agendas = random.randint(1, 4)
+                for order in range(1, num_agendas + 1):
+                    agenda = self.generate_agenda(meeting["id"], team["id"], order)
 
                     # 결정사항 1-2개 생성 (Agenda당 최대 1개만 latest)
                     num_decisions = random.randint(1, 2)
@@ -519,32 +651,81 @@ class DataGenerator:
                             else:
                                 status = random.choice(["draft", "rejected"])
 
-                        decision = self.generate_decision(agenda["id"], status)
+                        decision = self.generate_decision(agenda["id"], meeting["id"], team["id"], status)
                         agenda_decisions.append(decision)
 
-                        # 승인 관계 추가
-                        approvers = random.sample(participants, min(len(participants), random.randint(1, 3)))
-                        for user in approvers:
+                        # DECIDED_IN 관계 추가
+                        self.add_decided_in(meeting["id"], decision["id"])
+
+                        # 승인/거절 관계 추가 (APPROVES/REJECTS)
+                        reviewers = random.sample(participants, min(len(participants), random.randint(1, 3)))
+                        for user in reviewers:
+                            # 70% 확률로 승인, 30% 확률로 거절
+                            if random.random() < 0.7:
+                                self.add_approves(user["id"], decision["id"])
+                            else:
+                                self.add_rejects(user["id"], decision["id"])
+                            # 기존 REVIEWED 관계도 유지 (호환성)
                             self.add_reviewed(user["id"], decision["id"])
 
                         # 액션아이템 생성 (50% 확률)
                         if random.random() > 0.5:
-                            action_item = self.generate_action_item(decision["id"])
+                            action_item = self.generate_action_item(decision["id"], meeting["id"], team["id"])
 
                             # 담당자 배정
                             assignee = random.choice(team_users)
                             self.add_assigned_to(assignee["id"], action_item["id"])
 
-                    # SUPERSEDES 관계 (latest -> outdated 전이 반영)
-                    # latest Decision이 outdated Decision을 대체
-                    if len(agenda_decisions) >= 2:
-                        latest_decisions = [d for d in agenda_decisions if d["status"] == "latest"]
-                        outdated_decisions = [d for d in agenda_decisions if d["status"] == "outdated"]
+                        # Suggestion 생성 (30% 확률, draft Decision에만)
+                        if decision["status"] == "draft" and random.random() < 0.3:
+                            suggester = random.choice(participants)
+                            suggestion = self.generate_suggestion(
+                                suggester["id"], decision["id"], meeting["id"], team["id"]
+                            )
 
-                        if latest_decisions and outdated_decisions:
-                            # latest가 outdated를 대체
-                            for old_d in outdated_decisions:
-                                self.add_supersedes(latest_decisions[0]["id"], old_d["id"])
+                            # accepted인 경우 새 Decision 생성 (CREATES 관계)
+                            if suggestion["status"] == "accepted":
+                                new_decision = self.generate_decision(
+                                    agenda["id"], meeting["id"], team["id"], status="draft"
+                                )
+                                self.add_creates(suggestion["id"], new_decision["id"])
+                                # 기존 decision을 superseded로 변경
+                                decision["status"] = "superseded"
+
+                        # Comment 생성 (40% 확률)
+                        if random.random() < 0.4:
+                            num_comments = random.randint(1, 3)
+                            comments = []
+                            for _ in range(num_comments):
+                                commenter = random.choice(participants)
+                                comment = self.generate_comment(
+                                    commenter["id"], decision["id"], team["id"]
+                                )
+                                comments.append(comment)
+
+                            # 대댓글 생성 (20% 확률)
+                            if comments and random.random() < 0.2:
+                                parent_comment = random.choice(comments)
+                                replier = random.choice(participants)
+                                self.generate_comment(
+                                    replier["id"], decision["id"], team["id"], parent_id=parent_comment["id"]
+                                )
+
+                    # SUPERSEDES 관계 (draft -> superseded 전이)
+                    # 새 draft가 기존 superseded를 대체
+                    draft_decisions = [d for d in agenda_decisions if d["status"] == "draft"]
+                    superseded_decisions = [d for d in agenda_decisions if d["status"] == "superseded"]
+                    if draft_decisions and superseded_decisions:
+                        for old_d in superseded_decisions:
+                            self.add_supersedes(draft_decisions[0]["id"], old_d["id"])
+
+                    # OUTDATES 관계 (latest -> outdated 전이)
+                    # 새 latest가 기존 outdated를 대체
+                    latest_decisions = [d for d in agenda_decisions if d["status"] == "latest"]
+                    outdated_decisions = [d for d in agenda_decisions if d["status"] == "outdated"]
+                    if latest_decisions and outdated_decisions:
+                        for old_d in outdated_decisions:
+                            self.add_outdates(latest_decisions[0]["id"], old_d["id"])
 
     def to_flat_data(self) -> dict:
         """노드/관계별 평면화된 데이터 반환
@@ -563,6 +744,8 @@ class DataGenerator:
                 "agendas": self.agendas,
                 "decisions": self.decisions,
                 "action_items": self.action_items,
+                "suggestions": self.suggestions,
+                "comments": self.comments,
             },
             "relationships": {
                 "member_of": self.member_of,
@@ -574,6 +757,16 @@ class DataGenerator:
                 "supersedes": self.supersedes,
                 "triggers": self.triggers,
                 "assigned_to": self.assigned_to,
+                "decided_in": self.decided_in,
+                "approves": self.approves,
+                "rejects": self.rejects,
+                "outdates": self.outdates,
+                "suggests": self.suggests,
+                "creates": self.creates,
+                "suggestion_on": self.suggestion_on,
+                "user_comments": self.user_comments,
+                "comment_on": self.comment_on,
+                "reply_to": self.reply_to,
             },
         }
 
@@ -585,6 +778,8 @@ class DataGenerator:
         self.agendas.clear()
         self.decisions.clear()
         self.action_items.clear()
+        self.suggestions.clear()
+        self.comments.clear()
         self.member_of.clear()
         self.hosts.clear()
         self.participated_in.clear()
@@ -594,6 +789,16 @@ class DataGenerator:
         self.supersedes.clear()
         self.triggers.clear()
         self.assigned_to.clear()
+        self.decided_in.clear()
+        self.approves.clear()
+        self.rejects.clear()
+        self.outdates.clear()
+        self.suggests.clear()
+        self.creates.clear()
+        self.suggestion_on.clear()
+        self.user_comments.clear()
+        self.comment_on.clear()
+        self.reply_to.clear()
         self.record_count = 0
 
 
@@ -698,15 +903,25 @@ class Neo4jImporter:
             "CREATE CONSTRAINT agenda_id_unique IF NOT EXISTS FOR (a:Agenda) REQUIRE a.id IS UNIQUE",
             "CREATE CONSTRAINT decision_id_unique IF NOT EXISTS FOR (d:Decision) REQUIRE d.id IS UNIQUE",
             "CREATE CONSTRAINT actionitem_id_unique IF NOT EXISTS FOR (ai:ActionItem) REQUIRE ai.id IS UNIQUE",
+            "CREATE CONSTRAINT suggestion_id_unique IF NOT EXISTS FOR (s:Suggestion) REQUIRE s.id IS UNIQUE",
+            "CREATE CONSTRAINT comment_id_unique IF NOT EXISTS FOR (c:Comment) REQUIRE c.id IS UNIQUE",
         ]
         indexes = [
             "CREATE INDEX team_name_idx IF NOT EXISTS FOR (t:Team) ON (t.name)",
             "CREATE INDEX user_name_idx IF NOT EXISTS FOR (u:User) ON (u.name)",
             "CREATE INDEX meeting_status_idx IF NOT EXISTS FOR (m:Meeting) ON (m.status)",
             "CREATE INDEX meeting_scheduled_idx IF NOT EXISTS FOR (m:Meeting) ON (m.scheduled_at)",
+            "CREATE INDEX meeting_team_idx IF NOT EXISTS FOR (m:Meeting) ON (m.team_id)",
+            "CREATE INDEX agenda_team_idx IF NOT EXISTS FOR (a:Agenda) ON (a.team_id)",
             "CREATE INDEX decision_status_idx IF NOT EXISTS FOR (d:Decision) ON (d.status)",
+            "CREATE INDEX decision_team_idx IF NOT EXISTS FOR (d:Decision) ON (d.team_id)",
             "CREATE INDEX actionitem_status_idx IF NOT EXISTS FOR (ai:ActionItem) ON (ai.status)",
             "CREATE INDEX actionitem_due_idx IF NOT EXISTS FOR (ai:ActionItem) ON (ai.due_date)",
+            "CREATE INDEX actionitem_team_idx IF NOT EXISTS FOR (ai:ActionItem) ON (ai.team_id)",
+            "CREATE INDEX suggestion_created_idx IF NOT EXISTS FOR (s:Suggestion) ON (s.created_at)",
+            "CREATE INDEX suggestion_team_idx IF NOT EXISTS FOR (s:Suggestion) ON (s.team_id)",
+            "CREATE INDEX comment_created_idx IF NOT EXISTS FOR (c:Comment) ON (c.created_at)",
+            "CREATE INDEX comment_team_idx IF NOT EXISTS FOR (c:Comment) ON (c.team_id)",
         ]
 
         async with self.driver.session(database=self.database) as session:
@@ -734,6 +949,8 @@ class Neo4jImporter:
             self._create_agendas(generator.agendas),
             self._create_decisions(generator.decisions),
             self._create_action_items(generator.action_items),
+            self._create_suggestions(generator.suggestions),
+            self._create_comments(generator.comments),
         )
 
         # 2단계: 관계 생성 (노드 생성 완료 후, 병렬)
@@ -747,6 +964,16 @@ class Neo4jImporter:
             self._create_supersedes(generator.supersedes),
             self._create_triggers(generator.triggers),
             self._create_assigned_to(generator.assigned_to),
+            self._create_decided_in(generator.decided_in),
+            self._create_approves(generator.approves),
+            self._create_rejects(generator.rejects),
+            self._create_outdates(generator.outdates),
+            self._create_suggests(generator.suggests),
+            self._create_creates(generator.creates),
+            self._create_suggestion_on(generator.suggestion_on),
+            self._create_user_comments(generator.user_comments),
+            self._create_comment_on(generator.comment_on),
+            self._create_reply_to(generator.reply_to),
         )
 
     # ---- 노드 생성 (UNWIND, 각각 별도 세션) ----
@@ -776,7 +1003,7 @@ class Neo4jImporter:
                 UNWIND $items AS m
                 CREATE (:Meeting {
                     id: m.id, title: m.title, status: m.status, description: m.description,
-                    summary: m.summary,
+                    summary: m.summary, team_id: m.team_id,
                     scheduled_at: CASE WHEN m.scheduled_at IS NOT NULL THEN datetime(m.scheduled_at) ELSE null END,
                     started_at: CASE WHEN m.started_at IS NOT NULL THEN datetime(m.started_at) ELSE null END,
                     ended_at: CASE WHEN m.ended_at IS NOT NULL THEN datetime(m.ended_at) ELSE null END,
@@ -790,7 +1017,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS a
-                CREATE (:Agenda {id: a.id, topic: a.topic, description: a.description, created_at: datetime(a.created_at)})
+                CREATE (:Agenda {id: a.id, topic: a.topic, description: a.description, team_id: a.team_id, created_at: datetime(a.created_at)})
             """, items=agendas)
 
     async def _create_decisions(self, decisions: list):
@@ -799,7 +1026,7 @@ class Neo4jImporter:
         async with self.driver.session(database=self.database) as session:
             await session.run("""
                 UNWIND $items AS d
-                CREATE (:Decision {id: d.id, content: d.content, status: d.status, context: d.context, created_at: datetime(d.created_at)})
+                CREATE (:Decision {id: d.id, content: d.content, status: d.status, context: d.context, meeting_id: d.meeting_id, team_id: d.team_id, created_at: datetime(d.created_at)})
             """, items=decisions)
 
     async def _create_action_items(self, action_items: list):
@@ -811,9 +1038,37 @@ class Neo4jImporter:
                 CREATE (:ActionItem {
                     id: ai.id, content: ai.content,
                     due_date: CASE WHEN ai.due_date IS NOT NULL THEN datetime(ai.due_date) ELSE null END,
-                    status: ai.status, created_at: datetime(ai.created_at)
+                    status: ai.status, meeting_id: ai.meeting_id, team_id: ai.team_id, created_at: datetime(ai.created_at)
                 })
             """, items=action_items)
+
+    async def _create_suggestions(self, suggestions: list):
+        if not suggestions:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS s
+                CREATE (:Suggestion {
+                    id: s.id, content: s.content, status: s.status,
+                    author_id: s.author_id, decision_id: s.decision_id,
+                    meeting_id: s.meeting_id, team_id: s.team_id,
+                    created_at: datetime(s.created_at)
+                })
+            """, items=suggestions)
+
+    async def _create_comments(self, comments: list):
+        if not comments:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS c
+                CREATE (:Comment {
+                    id: c.id, content: c.content, author_id: c.author_id,
+                    decision_id: c.decision_id, parent_id: c.parent_id,
+                    pending_agent_reply: c.pending_agent_reply, team_id: c.team_id,
+                    created_at: datetime(c.created_at)
+                })
+            """, items=comments)
 
     # ---- 관계 생성 (UNWIND, 각각 별도 세션) ----
     async def _create_member_of(self, rels: list):
@@ -853,7 +1108,7 @@ class Neo4jImporter:
             await session.run("""
                 UNWIND $items AS r
                 MATCH (m:Meeting {id: r.from_id}), (a:Agenda {id: r.to_id})
-                CREATE (m)-[:CONTAINS]->(a)
+                CREATE (m)-[:CONTAINS {order: r.order}]->(a)
             """, items=rels)
 
     async def _create_has_decision(self, rels: list):
@@ -907,6 +1162,106 @@ class Neo4jImporter:
                 UNWIND $items AS r
                 MATCH (u:User {id: r.from_id}), (ai:ActionItem {id: r.to_id})
                 CREATE (u)-[:ASSIGNED_TO {assigned_at: datetime(r.assigned_at)}]->(ai)
+            """, items=rels)
+
+    async def _create_decided_in(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (m:Meeting {id: r.from_id}), (d:Decision {id: r.to_id})
+                CREATE (m)-[:DECIDED_IN]->(d)
+            """, items=rels)
+
+    async def _create_approves(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from_id}), (d:Decision {id: r.to_id})
+                CREATE (u)-[:APPROVES]->(d)
+            """, items=rels)
+
+    async def _create_rejects(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from_id}), (d:Decision {id: r.to_id})
+                CREATE (u)-[:REJECTS]->(d)
+            """, items=rels)
+
+    async def _create_outdates(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (new_d:Decision {id: r.from_id}), (old_d:Decision {id: r.to_id})
+                CREATE (new_d)-[:OUTDATES]->(old_d)
+            """, items=rels)
+
+    async def _create_suggests(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from_id}), (s:Suggestion {id: r.to_id})
+                CREATE (u)-[:SUGGESTS]->(s)
+            """, items=rels)
+
+    async def _create_creates(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (s:Suggestion {id: r.from_id}), (d:Decision {id: r.to_id})
+                CREATE (s)-[:CREATES]->(d)
+            """, items=rels)
+
+    async def _create_suggestion_on(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (s:Suggestion {id: r.from_id}), (d:Decision {id: r.to_id})
+                CREATE (s)-[:ON]->(d)
+            """, items=rels)
+
+    async def _create_user_comments(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (u:User {id: r.from_id}), (c:Comment {id: r.to_id})
+                CREATE (u)-[:COMMENTS]->(c)
+            """, items=rels)
+
+    async def _create_comment_on(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (c:Comment {id: r.from_id}), (d:Decision {id: r.to_id})
+                CREATE (c)-[:ON]->(d)
+            """, items=rels)
+
+    async def _create_reply_to(self, rels: list):
+        if not rels:
+            return
+        async with self.driver.session(database=self.database) as session:
+            await session.run("""
+                UNWIND $items AS r
+                MATCH (c1:Comment {id: r.from_id}), (c2:Comment {id: r.to_id})
+                CREATE (c1)-[:REPLY_TO]->(c2)
             """, items=rels)
 
     async def get_stats(self) -> dict:
