@@ -152,8 +152,11 @@ async def run_agent_with_context(
                 user_id=str(transcript.user_id),
                 db=db,
             )
-            # 응답을 스트리밍 형태로 전달 (호환성 유지)
-            yield f"data: {response}\n\n"
+            # SSE는 data 필드가 줄마다 분리되어야 하므로 줄 단위로 전송
+            response_text = "" if response is None else str(response)
+            for line in response_text.splitlines():
+                if line:  # 빈 줄 스킵
+                    yield f"data: {line}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             logger.error("Agent Context 오류: %s", e, exc_info=True)
