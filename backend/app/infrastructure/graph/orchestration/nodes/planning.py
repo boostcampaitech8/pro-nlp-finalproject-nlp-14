@@ -243,7 +243,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             f"Need tools: {result.need_tools}\n"
             f"Can answer: {result.can_answer}\n"
             f"Reasoning: {result.reasoning}\n"
-            f"Required topics: {result.required_topics}\n"
             f"Missing requirements: {result.missing_requirements}\n"
             f"Next subquery: {result.next_subquery}\n"
         )
@@ -285,7 +284,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["query_analysis_error"],
             }
 
@@ -297,7 +295,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": True,
                 "can_answer": True,
                 "next_subquery": query,
-                "required_topics": [],
                 "missing_requirements": [],
             }
 
@@ -308,7 +305,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": True,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": [],
             }
 
@@ -319,7 +315,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["weather_api"],
             }
 
@@ -330,7 +325,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["stock_api"],
             }
 
@@ -341,7 +335,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["web_search"],
             }
 
@@ -361,7 +354,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["query_analysis_error"],
             }
 
@@ -381,7 +373,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["web_search"],
             }
 
@@ -392,7 +383,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["mit_action"],
             }
 
@@ -403,6 +393,5 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["query_analysis_error"],
             }
