@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arq-worker
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arq-worker
+  template:
+    metadata:
+      labels:
+        app: arq-worker
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "mit.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: arq-worker
+          # 백엔드와 동일한 이미지 사용
+          image: {{ include "mit.image" (dict "Values" .Values "name" "backend") }}
+          imagePullPolicy: Always
+          # ARQ 워커 실행 명령어
+          command: ["uv", "run", "python", "-m", "app.workers.run_worker"]
+          envFrom:
+            - configMapRef:
+                name: mit-config
+            - secretRef:
+                name: mit-secrets
+          resources:
+            requests:
+              memory: {{ .Values.resources.arqWorker.requests.memory | quote }}
+              cpu: {{ .Values.resources.arqWorker.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.resources.arqWorker.limits.memory | quote }}
+              cpu: {{ .Values.resources.arqWorker.limits.cpu | quote }}
