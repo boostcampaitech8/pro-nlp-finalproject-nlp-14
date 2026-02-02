@@ -38,10 +38,9 @@ def get_base_llm(model: str = "HCX-003", **kwargs) -> ChatClovaX:
     # 기본값 설정
     default_config = {
         "temperature": 0.5,
-        "max_tokens": 256,
+        "max_tokens": 1024,
         "model": model,
         "api_key": NCP_CLOVASTUDIO_API_KEY,
-        "thinking": {"effort": "low"},
     }
 
     # kwargs로 덮어쓰기
@@ -98,6 +97,32 @@ def get_evaluator_llm() -> ChatClovaX:
         max_tokens=512,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
+    )
+
+
+# ============================================================================
+# Context Engineering용 LLM 인스턴스
+# ============================================================================
+
+
+def get_context_summarizer_llm() -> ChatClovaX:
+    """ContextManager 토픽 분할/요약 전용 LLM.
+
+    Model: HCX-DASH-002
+    Use Case: 실시간 회의 토픽 분할 및 요약
+    temperature: 0.3 (일관된 요약)
+    max_tokens: 2048 (정보 손실 최소화)
+
+    Why HCX-DASH-002?
+    - 실시간 처리에 필요한 빠른 응답 속도
+    - 비용 효율성 (빈번한 호출에 적합)
+    - 요약/분류 작업에 충분한 성능
+    """
+    return ChatClovaX(
+        model="HCX-DASH-002",
+        temperature=0.3,
+        max_tokens=2048,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
     )
 
 
