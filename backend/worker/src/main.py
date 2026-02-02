@@ -526,12 +526,13 @@ class RealtimeWorker:
 
     @staticmethod
     def _extract_sentences(text: str) -> tuple[list[str], str]:
-        """마침표/종결부호 기준으로 문장 분리"""
+        """마침표/종결부호 또는 줄바꿈 기준으로 문장 분리
+        """
         if not text:
             return [], ""
 
         endings = {".", "!", "?", "。", "！", "？"}
-        closing = {'"', "'", "”", "’", ")", "]", "}", "」", "』", "】"}
+        closing = {'"', "'", "\u201c", "\u201d", ")", "]", "}", "」", "』", "】"}
 
         sentences: list[str] = []
         start = 0
@@ -539,6 +540,16 @@ class RealtimeWorker:
 
         while i < len(text):
             ch = text[i]
+
+            # 줄바꿈도 문장 경계로 처리
+            if ch == "\n":
+                sentence = text[start:i].strip()
+                if sentence:
+                    sentences.append(sentence)
+                start = i + 1
+                i = start
+                continue
+
             if ch in endings:
                 end = i + 1
                 while end < len(text) and (text[end] in endings or text[end] in closing):
