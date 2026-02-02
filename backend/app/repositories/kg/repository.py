@@ -804,7 +804,7 @@ class KGRepository:
         )
 
     async def create_reply(
-        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False
+        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False, is_error_response: bool = False
     ) -> "KGComment":
         """대댓글 생성"""
         from app.models.kg import KGComment
@@ -821,6 +821,7 @@ class KGRepository:
             id: $reply_id,
             content: $content,
             pending_agent_reply: $pending_agent_reply,
+            is_error_response: $is_error_response,
             created_at: datetime($created_at)
         })
         CREATE (u)-[:COMMENTS]->(r)
@@ -829,7 +830,8 @@ class KGRepository:
 
         RETURN r.id as id, $content as content, $user_id as author_id,
                d.id as decision_id, $comment_id as parent_id,
-               r.pending_agent_reply as pending_agent_reply, r.created_at as created_at
+               r.pending_agent_reply as pending_agent_reply,
+               r.is_error_response as is_error_response, r.created_at as created_at
         """
         records = await self._execute_write(query, {
             "comment_id": comment_id,
@@ -837,6 +839,7 @@ class KGRepository:
             "content": content,
             "reply_id": reply_id,
             "pending_agent_reply": pending_agent_reply,
+            "is_error_response": is_error_response,
             "created_at": now,
         })
 
@@ -851,26 +854,39 @@ class KGRepository:
             decision_id=r["decision_id"],
             parent_id=r["parent_id"],
             pending_agent_reply=r["pending_agent_reply"] or False,
+            is_error_response=r.get("is_error_response") or False,
             created_at=_convert_neo4j_datetime(r["created_at"]),
         )
 
-    async def delete_comment(self, comment_id: str, user_id: str) -> bool:
-        """Comment 삭제 (작성자 확인 + CASCADE)"""
+    async def delete_comment(self, comment_id: str, user_id: str) -> dict | None:
+        """Comment 삭제 (작성자 확인 + CASCADE)
+
+        Returns:
+            dict | None: 삭제 성공 시 {decision_id, meeting_id}, 실패 시 None
+        """
+        # 삭제 전에 정보 조회
         query = """
         MATCH (u:User {id: $user_id})-[:COMMENTS]->(c:Comment {id: $comment_id})
+        MATCH (c)-[:ON]->(d:Decision)
 
         // 대댓글도 함께 삭제
         OPTIONAL MATCH (reply:Comment)-[:REPLY_TO]->(c)
         DETACH DELETE reply
 
         DETACH DELETE c
-        RETURN true as deleted
+        RETURN d.id as decision_id, d.meeting_id as meeting_id
         """
         records = await self._execute_write(query, {
             "comment_id": comment_id,
             "user_id": user_id,
         })
-        return len(records) > 0
+        if not records:
+            return None
+        r = records[0]
+        return {
+            "decision_id": r.get("decision_id"),
+            "meeting_id": r.get("meeting_id"),
+        }
 
     # =========================================================================
     # Decision CRUD 확장
@@ -969,10 +985,18 @@ class KGRepository:
             meeting_id=r["meeting_id"],
         )
 
-    async def delete_agenda(self, agenda_id: str, user_id: str) -> bool:
-        """Agenda 삭제 (전체 CASCADE)"""
+    async def delete_agenda(self, agenda_id: str, user_id: str) -> dict | None:
+        """Agenda 삭제 (전체 CASCADE)
+
+        Returns:
+            삭제된 경우: {"meeting_id": str}
+            실패한 경우: None
+        """
         query = """
         MATCH (a:Agenda {id: $agenda_id})
+
+        // meeting_id 먼저 저장
+        WITH a, a.meeting_id as meeting_id
 
         // 관련 Decision과 하위 엔티티 삭제
         OPTIONAL MATCH (a)-[:HAS_DECISION]->(d:Decision)
@@ -988,10 +1012,13 @@ class KGRepository:
         DETACH DELETE d
         DETACH DELETE a
 
-        RETURN true as deleted
+        RETURN meeting_id
         """
         records = await self._execute_write(query, {"agenda_id": agenda_id})
-        return len(records) > 0
+        if records:
+            r = records[0]
+            return {"meeting_id": r.get("meeting_id")}
+        return None
 
     # =========================================================================
     # ActionItem CRUD 확장
@@ -1181,6 +1208,7 @@ class KGRepository:
                 RETURN c.id as id, c.content as content,
                        u.id as author_id, u.name as author_name, u.email as author_email,
                        c.pending_agent_reply as pending_agent_reply,
+                       c.is_error_response as is_error_response,
                        c.created_at as created_at,
                        parent.id as parent_id
                 ORDER BY c.created_at
@@ -1221,6 +1249,7 @@ class KGRepository:
                             "email": c["author_email"] or "",
                         },
                         "pending_agent_reply": c["pending_agent_reply"] or False,
+                        "is_error_response": c.get("is_error_response") or False,
                         "created_at": _convert_neo4j_datetime(c["created_at"]).isoformat(),
                         "parent_id": c["parent_id"],
                     }
@@ -1326,3 +1355,105 @@ class KGRepository:
             query, {"comment_id": comment_id, "pending": pending}
         )
         return len(records) > 0
+
+    async def get_comment_pending_status(self, comment_id: str) -> bool | None:
+        """Comment의 pending_agent_reply 상태 조회
+
+        Args:
+            comment_id: Comment ID
+
+        Returns:
+            bool | None: pending_agent_reply 상태 (Comment가 없으면 None)
+        """
+        query = """
+        MATCH (c:Comment {id: $comment_id})
+        RETURN c.pending_agent_reply as pending
+        """
+        records = await self._execute_read(query, {"comment_id": comment_id})
+        if not records:
+            return None
+        return records[0].get("pending", False)
+
+    async def get_decision_thread_history(
+        self, decision_id: str
+    ) -> list[dict]:
+        """Decision에 달린 모든 Comment/Reply 이력 조회
+
+        AI가 이전 논의를 참고할 수 있도록 시간순 정렬된 대화 이력 반환
+
+        Args:
+            decision_id: Decision ID
+
+        Returns:
+            list[dict]: 대화 이력 [{role, content, author_name, created_at}, ...]
+        """
+        from app.constants.agents import AI_AGENTS
+
+        query = """
+        MATCH (u:User)-[:COMMENTS]->(c:Comment)-[:ON]->(d:Decision {id: $decision_id})
+        RETURN c.id as id, c.content as content,
+               u.id as author_id, u.name as author_name,
+               c.created_at as created_at
+        ORDER BY c.created_at
+        """
+        records = await self._execute_read(query, {"decision_id": decision_id})
+
+        # AI agent ID 목록
+        agent_ids = {agent.id for agent in AI_AGENTS}
+
+        history = []
+        for r in records:
+            is_ai = r["author_id"] in agent_ids
+            history.append({
+                "role": "assistant" if is_ai else "user",
+                "content": r["content"] or "",
+                "author_name": r["author_name"] or "",
+                "created_at": _convert_neo4j_datetime(r["created_at"]).isoformat(),
+            })
+
+        return history
+
+    async def get_meeting_context(self, meeting_id: str) -> dict | None:
+        """Meeting 컨텍스트 조회 (AI 응답 생성용)
+
+        Args:
+            meeting_id: Meeting ID
+
+        Returns:
+            {
+                "meeting_title": str,
+                "meeting_date": str,
+                "agenda_topics": list[str],  # 같은 회의의 Agenda 주제들
+                "other_decisions": list[dict],  # 같은 회의의 다른 Decision 요약
+            }
+        """
+        query = """
+        MATCH (m:Meeting {id: $meeting_id})
+        OPTIONAL MATCH (m)-[:CONTAINS]->(a:Agenda)
+        OPTIONAL MATCH (a)-[:HAS_DECISION]->(d:Decision)
+        WHERE d.status IN ['draft', 'latest']
+        RETURN m.title as title, m.started_at as date,
+               collect(DISTINCT a.topic) as agendas,
+               collect(DISTINCT {id: d.id, content: d.content}) as decisions
+        """
+        records = await self._execute_read(query, {"meeting_id": meeting_id})
+
+        if not records:
+            return None
+
+        r = records[0]
+
+        # Filter out null values from collections
+        agenda_topics = [topic for topic in r.get("agendas", []) if topic]
+        decisions = [
+            {"id": d["id"], "content": d["content"]}
+            for d in r.get("decisions", [])
+            if d.get("id") and d.get("content")
+        ]
+
+        return {
+            "meeting_title": r.get("title", ""),
+            "meeting_date": _convert_neo4j_datetime(r.get("date")).isoformat() if r.get("date") else "",
+            "agenda_topics": agenda_topics,
+            "other_decisions": decisions,
+        }
