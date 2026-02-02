@@ -6,6 +6,7 @@ LiveKit 서버에서 발생하는 이벤트를 처리합니다:
 """
 
 import logging
+import time
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.telemetry import get_mit_metrics
 from app.infrastructure.worker_manager import get_worker_manager
 from app.services.vad_event_service import vad_event_service
 
@@ -120,17 +122,30 @@ async def handle_room_started(body: dict) -> None:
     """
     room = body.get("room", {})
     room_name = room.get("name", "")
+    metrics = get_mit_metrics()
 
     logger.info(f"[LiveKit] Room started: {room_name}")
 
     # 회의 ID 추출 (room_name: "meeting-{uuid}")
     if room_name.startswith("meeting-"):
         meeting_id = room_name  # meeting-{uuid} 전체를 사용
+        start_time = time.perf_counter()
         try:
             worker_manager = get_worker_manager()
             worker_id = await worker_manager.start_worker(meeting_id)
-            logger.info(f"[LiveKit] Realtime worker started: {worker_id}")
+
+            # K8s Job 생성 시간 메트릭 기록
+            duration = time.perf_counter() - start_time
+            if metrics:
+                metrics.webhook_to_job_latency.record(duration, {"meeting_id": meeting_id})
+                metrics.realtime_worker_jobs_total.add(1, {"status": "created"})
+
+            logger.info(
+                f"[LiveKit] Realtime worker started: {worker_id}, duration={duration:.3f}s"
+            )
         except Exception as e:
+            if metrics:
+                metrics.realtime_worker_jobs_total.add(1, {"status": "failed"})
             logger.error(f"[LiveKit] Failed to start realtime worker: {e}")
 
 

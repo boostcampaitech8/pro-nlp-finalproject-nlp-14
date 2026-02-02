@@ -18,10 +18,6 @@ class PlanningOutput(BaseModel):
         default=None,
         description="재계획 시 다음 단계에서 사용할 구체적 서브-쿼리 (없으면 null)",
     )
-    required_topics: list[str] = Field(
-        default_factory=list,
-        description="추가 컨텍스트가 필요한 L1 토픽 이름 목록 (없으면 빈 리스트)",
-    )
     missing_requirements: list[str] = Field(
         default_factory=list,
         description="답변에 필요한데 현재 없는 정보/도구 목록\n"
@@ -64,7 +60,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         return {
             "plan": state.get("plan", ""),
             "need_tools": state.get("need_tools", False),
-            "required_topics": state.get("required_topics", []),
             "can_answer": state.get("can_answer", True),
             "missing_requirements": state.get("missing_requirements", []),
         }
@@ -241,7 +236,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         logger.info(f"도구 사용 필요 여부: {result.need_tools}")
         logger.info(f"답변 가능 여부: {result.can_answer}")
         logger.info(f"판단 근거: {result.reasoning}")
-        logger.info(f"추가 토픽 필요: {result.required_topics}")
         logger.info(f"부족한 요소: {result.missing_requirements}")
         print(
             "\n[Planner Output]\n"
@@ -249,7 +243,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             f"Need tools: {result.need_tools}\n"
             f"Can answer: {result.can_answer}\n"
             f"Reasoning: {result.reasoning}\n"
-            f"Required topics: {result.required_topics}\n"
             f"Missing requirements: {result.missing_requirements}\n"
             f"Next subquery: {result.next_subquery}\n"
         )
@@ -264,7 +257,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             "need_tools": result.need_tools,
             "can_answer": result.can_answer,
             "next_subquery": next_subquery,
-            "required_topics": result.required_topics,
             "missing_requirements": result.missing_requirements,
         }
 
@@ -292,7 +284,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["query_analysis_error"],
             }
 
@@ -304,7 +295,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": True,
                 "can_answer": True,
                 "next_subquery": query,
-                "required_topics": [],
                 "missing_requirements": [],
             }
 
@@ -315,7 +305,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": True,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": [],
             }
 
@@ -326,7 +315,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["weather_api"],
             }
 
@@ -337,7 +325,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["stock_api"],
             }
 
@@ -348,7 +335,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["web_search"],
             }
 
@@ -368,7 +354,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["query_analysis_error"],
             }
 
@@ -388,7 +373,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["web_search"],
             }
 
@@ -399,7 +383,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["mit_action"],
             }
 
@@ -410,6 +393,5 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
                 "need_tools": False,
                 "can_answer": False,
                 "next_subquery": None,
-                "required_topics": [],
                 "missing_requirements": ["query_analysis_error"],
             }

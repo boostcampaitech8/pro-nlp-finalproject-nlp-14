@@ -1,22 +1,79 @@
-"""ARQ Worker 설정 및 태스크 정의"""
+"""ARQ Worker 설정 및 태스크 정의 (OTel 계측 포함)"""
 
 import logging
+import time
+from functools import wraps
+from typing import Any, Callable, TypeVar
 from urllib.parse import urlparse
 from uuid import UUID
 
 from arq.connections import RedisSettings
+from opentelemetry import trace
 
 from app.core.config import get_settings
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
+from app.core.telemetry import get_mit_metrics, get_tracer, setup_telemetry
 from app.repositories.kg.repository import KGRepository
 from app.schemas.transcript import GetMeetingTranscriptsResponse
 from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
 
+
+def traced_task(task_name: str) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """ARQ 태스크에 OTel 트레이싱 + 메트릭 추가 데코레이터"""
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        async def wrapper(ctx: dict, *args: Any, **kwargs: Any) -> T:
+            tracer = get_tracer()
+            metrics = get_mit_metrics()
+
+            with tracer.start_as_current_span(
+                f"arq.task.{task_name}",
+                kind=trace.SpanKind.CONSUMER,
+            ) as span:
+                span.set_attribute("arq.task.name", task_name)
+                span.set_attribute("arq.task.args", str(args)[:200])
+
+                start_time = time.perf_counter()
+                try:
+                    result = await func(ctx, *args, **kwargs)
+
+                    # 성공 메트릭
+                    span.set_attribute("arq.task.status", "success")
+                    if metrics:
+                        metrics.arq_task_result.add(
+                            1, {"task_name": task_name, "status": "success"}
+                        )
+                    return result
+
+                except Exception as e:
+                    # 실패 메트릭
+                    span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                    span.record_exception(e)
+                    if metrics:
+                        metrics.arq_task_result.add(
+                            1, {"task_name": task_name, "status": "failed"}
+                        )
+                    raise
+
+                finally:
+                    # 실행 시간 메트릭
+                    duration = time.perf_counter() - start_time
+                    if metrics:
+                        metrics.arq_task_duration.record(
+                            duration, {"task_name": task_name}
+                        )
+
+        return wrapper  # type: ignore
+    return decorator
+
+
+@traced_task("generate_pr_task")
 async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
     """PR 생성 태스크
 
@@ -87,6 +144,7 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
             }
 
 
+@traced_task("mit_action_task")
 async def mit_action_task(ctx: dict, decision_id: str) -> dict:
     """Decision에서 Action Item 추출 태스크
 
@@ -153,6 +211,7 @@ async def mit_action_task(ctx: dict, decision_id: str) -> dict:
         }
 
 
+@traced_task("process_suggestion_task")
 async def process_suggestion_task(
     ctx: dict, suggestion_id: str, decision_id: str, content: str
 ) -> dict:
@@ -229,6 +288,7 @@ async def process_suggestion_task(
         }
 
 
+@traced_task("process_mit_mention")
 async def process_mit_mention(
     ctx: dict, comment_id: str, decision_id: str, content: str
 ) -> dict:
@@ -331,6 +391,17 @@ def _get_redis_settings() -> RedisSettings:
     )
 
 
+async def startup(ctx: dict) -> None:
+    """Worker 시작 시 Telemetry 초기화"""
+    setup_telemetry("mit-arq-worker", "0.1.0")
+    logger.info("ARQ Worker started with telemetry")
+
+
+async def shutdown(ctx: dict) -> None:
+    """Worker 종료 시 정리"""
+    logger.info("ARQ Worker shutting down")
+
+
 class WorkerSettings:
     """ARQ Worker 설정"""
 
@@ -344,6 +415,10 @@ class WorkerSettings:
 
     # Redis 연결 설정 (arq는 인스턴스를 기대)
     redis_settings = _get_redis_settings()
+
+    # 라이프사이클 콜백
+    on_startup = startup
+    on_shutdown = shutdown
 
     # Worker 설정
     max_tries = 3                    # 최대 재시도 횟수
