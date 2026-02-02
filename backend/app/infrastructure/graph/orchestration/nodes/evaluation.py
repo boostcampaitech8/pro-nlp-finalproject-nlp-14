@@ -11,7 +11,6 @@ from app.infrastructure.graph.orchestration.state import OrchestrationState
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
 
-
 class EvaluationOutput(BaseModel):
     """도구 실행 결과 평가 출력 모델.
 

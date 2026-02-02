@@ -100,7 +100,7 @@ def generate_cypher_by_strategy(
         cypher = f"""MATCH (u:User)-[:MEMBER_OF]->(t:Team)<-[:MEMBER_OF]-(team_member:User)
 WHERE u.name CONTAINS $query AND (t)<-[:MEMBER_OF]-(:User {{id: $user_id}})
 {date_filter}
-RETURN team_member.id AS id, team_member.name AS title, team_member.name AS content, "active" AS status, 'N/A' AS created_at, t.id AS team_id, t.name AS team_name, 1.0 AS score,
+RETURN team_member.id AS id, team_member.name AS title, team_member.name AS content, "active" AS status, t.created_at AS created_at, t.id AS team_id, t.name AS team_name, 1.0 AS score,
        team_member.name + '님은 ' + t.name + ' 팀의 멤버입니다.' AS graph_context
 ORDER BY team_member.name ASC
 LIMIT 20"""
@@ -110,7 +110,7 @@ LIMIT 20"""
         cypher = f"""MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)
 WHERE u.name CONTAINS $query
 {date_filter}
-RETURN d.id AS id, d.content AS content, d.status AS status, toString(d.created_at) AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
+RETURN d.id AS id, d.content AS content, d.status AS status, d.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
        u.name + '님이 참여한 ' + m.title + ' 회의의 ' + a.topic + ' 안건에서 도출된 결정사항: ' + d.content AS graph_context
 ORDER BY d.created_at DESC
 LIMIT 20"""
@@ -141,7 +141,7 @@ MATCH (m)-[:CONTAINS]->(a:Agenda)
 WHERE ($query = "*" OR a.topic CONTAINS $query OR a.description CONTAINS $query)
 {date_filter}
 RETURN a.id AS id, a.topic AS title, coalesce(a.description, a.topic) AS content,
-       m.status AS status, toString(a.created_at) AS created_at,
+       m.status AS status, a.created_at AS created_at,
        m.id AS meeting_id, m.title AS meeting_title, 1.0 AS score,
        m.title + ' 회의의 안건: ' + a.topic AS graph_context
 ORDER BY a.created_at DESC
@@ -156,7 +156,7 @@ WHERE ($query = "*" OR ai.content CONTAINS $query)
 {date_filter}
 OPTIONAL MATCH (u:User)-[:ASSIGNED_TO]->(ai)
 RETURN ai.id AS id, ai.content AS title, ai.content AS content, ai.status AS status,
-       CASE WHEN ai.due_date IS NOT NULL THEN toString(ai.due_date) ELSE null END AS created_at,
+       CASE WHEN ai.due_date IS NOT NULL THEN ai.due_date ELSE null END AS created_at,
        coalesce(u.name, "미배정") AS assignee, u.id AS assignee_id, 1.0 AS score,
        'Action Item: ' + ai.content + ' (담당자: ' + coalesce(u.name, '미배정') + ', 상태: ' + ai.status + ')' AS graph_context
 ORDER BY ai.due_date DESC
@@ -200,7 +200,7 @@ RETURN DISTINCT
     teammate.name AS teammate_name,
     team.name AS team_name,
     1.0 AS score,
-    toString(d.created_at) AS created_at
+    d.created_at AS created_at
 ORDER BY d.created_at DESC
 LIMIT 50"""
         return cypher

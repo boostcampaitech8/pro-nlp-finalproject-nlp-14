@@ -135,8 +135,6 @@ async def _generate_text_to_cypher_raw(
 
                     4. **Formatting (CRITICAL - String Operations)**:
                             - Must return: id, title/content, created_at, score, graph_context.
-                            - **CRITICAL**: Convert datetime fields to strings using toString()
-                            - Example: `toString(m.created_at) AS created_at`
                             - `graph_context` must be a human-readable string built with `+` operator.
                             - **NEVER use CONCAT() function - Neo4j does NOT support it!**
                             - **ONLY use + operator for string concatenation**
@@ -158,7 +156,7 @@ async def _generate_text_to_cypher_raw(
         MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
         WHERE u.name CONTAINS '민수'
           AND m.title CONTAINS '예산'
-        RETURN m.id AS id, m.title AS title, toString(m.created_at) AS created_at, 1.0 AS score,
+        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
                u.name + '님과 함께한 예산(Budget) 회의: ' + m.title AS graph_context
         ORDER BY m.created_at DESC
         LIMIT 20
@@ -176,7 +174,7 @@ async def _generate_text_to_cypher_raw(
         MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
         WHERE u.name CONTAINS '조우진'
           AND m.title CONTAINS 'UX'
-        RETURN m.id AS id, m.title AS title, toString(m.created_at) AS created_at, 1.0 AS score,
+        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
                u.name + '님이 참여한 UX 관련 회의: ' + m.title AS graph_context
         ORDER BY m.created_at DESC
         LIMIT 20
@@ -192,7 +190,7 @@ async def _generate_text_to_cypher_raw(
         ```cypher
         MATCH (m:Meeting)
         WHERE m.title CONTAINS '회고'
-        RETURN m.id AS id, m.title AS title, toString(m.created_at) AS created_at, 1.0 AS score,
+        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
                '회고 관련 회의: ' + m.title AS graph_context
         ORDER BY m.created_at DESC
         LIMIT 20
@@ -487,7 +485,7 @@ def _get_fulltext_template() -> str:
 YIELD node, score
 MATCH (a:Agenda)-[:HAS_DECISION]->(node)
 MATCH (m:Meeting)-[:CONTAINS]->(a)
-RETURN node.id AS id, node.content AS content, node.status AS status, toString(node.created_at) AS created_at, m.id AS meeting_id, m.title AS meeting_title, score,
+RETURN node.id AS id, node.content AS content, node.status AS status, node.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, score,
        m.title + ' 회의의 ' + coalesce(a.topic, '안건') + '에서 도출된 결정: ' + node.content AS graph_context
 ORDER BY score DESC, node.created_at DESC
 LIMIT 20"""
@@ -497,7 +495,7 @@ def _get_meeting_template() -> str:
     """Meeting 검색용 기본 템플릿 (m.date 제거됨, created_at 사용)"""
     return """MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
 WHERE u.name CONTAINS $entity_name
-RETURN m.id AS id, m.title AS title, toString(m.created_at) AS created_at, 1.0 AS score,
+RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
        u.name + '님이 참여한 회의: ' + m.title AS graph_context
 ORDER BY m.created_at DESC
 LIMIT 20"""
@@ -555,15 +553,6 @@ def _sanitize_generated_cypher(cypher: str) -> str:
         r"\b(a\.|agenda\.)title\b", "a.topic", cypher, flags=re.IGNORECASE
     )
     cypher = re.sub(r"\bm\.date\b", "m.created_at", cypher, flags=re.IGNORECASE)
-
-    # DateTime 직렬화 문제 해결: created_at을 toString()으로 변환
-    # RETURN 절에서 created_at을 찾아 toString()으로 감싸기
-    cypher = re.sub(
-        r'\b(\w+)\.created_at\s+AS\s+created_at\b',
-        r'toString(\1.created_at) AS created_at',
-        cypher,
-        flags=re.IGNORECASE
-    )
 
     # OPTIONAL MATCH 제거
     cypher = re.sub(
