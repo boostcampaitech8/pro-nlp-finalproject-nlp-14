@@ -201,17 +201,9 @@ class RealtimeWorker:
         )
 
         if event_type == "speech_start":
-            # speech_start + (Agent 실행 중 OR TTS 재생 중) → 인터럽트
-            agent_running = (
-                self._current_agent_task is not None
-                and not self._current_agent_task.done()
-            )
-            if agent_running or (self._tts_enabled and self._tts_playing):
-                logger.info(f"VAD speech_start 인터럽트: user={user_id}")
-                asyncio.create_task(self._cancel_current_agent())
-                if self._tts_enabled:
-                    self._tts_interrupt_event.set()
-                    self._clear_tts_queue()
+            # Wake word 기반 인터럽트로 변경됨
+            # VAD speech_start에서는 인터럽트하지 않음
+            logger.debug(f"VAD speech_start: user={user_id}")
 
         elif event_type == "speech_end":
             # STT에 발화 종료 알림
@@ -260,6 +252,13 @@ class RealtimeWorker:
                 )
                 self._wake_word_pending[user_id] = True
 
+                # Wake word 감지 즉시 TTS 인터럽트
+                await self._cancel_current_agent()
+                if self._tts_enabled:
+                    self._tts_interrupt_event.set()
+                    self._clear_tts_queue()
+                logger.info(f"Wake word 인터럽트 발동: user={user_id}")
+
                 # context 선준비 (pre_transcript_id 기준으로 업데이트)
                 # 기존 task가 있으면 취소 후 새로 시작
                 if self._pre_transcript_id:
@@ -302,6 +301,10 @@ class RealtimeWorker:
             if response:
                 # 기존 Agent 취소 (즉시 실행 + 취소 방식)
                 await self._cancel_current_agent()
+                # TTS만 재생 중인 경우도 인터럽트 (중간 결과에서 놓쳤을 때)
+                if self._tts_enabled:
+                    self._tts_interrupt_event.set()
+                    self._clear_tts_queue()
 
                 # 새 Agent 시작
                 self._current_agent_task = asyncio.create_task(
