@@ -225,6 +225,7 @@ class RealtimeWorkerMetrics:
 _metrics: RealtimeWorkerMetrics | None = None
 _tracer: trace.Tracer | None = None
 _initialized: bool = False
+_livekit_connect_time: float = 0.0  # LiveKit 연결 시간 (epoch seconds)
 
 
 def init_realtime_telemetry(meeting_id: str) -> RealtimeWorkerMetrics:
@@ -294,3 +295,15 @@ def get_realtime_tracer() -> trace.Tracer:
 def is_telemetry_initialized() -> bool:
     """Telemetry 초기화 여부 확인"""
     return _initialized
+
+
+def set_livekit_connect_time() -> None:
+    """LiveKit 연결 시간 기록 (STT 타임스탬프 기준점)"""
+    global _livekit_connect_time
+    _livekit_connect_time = time.time()
+    logger.info(f"LiveKit connect time recorded: {_livekit_connect_time}")
+
+
+def get_livekit_connect_time() -> float:
+    """LiveKit 연결 시간 반환 (epoch seconds)"""
+    return _livekit_connect_time

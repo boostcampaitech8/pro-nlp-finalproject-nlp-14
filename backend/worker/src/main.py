@@ -26,6 +26,7 @@ from src.telemetry import (
     RealtimeWorkerMetrics,
     get_realtime_metrics,
     init_realtime_telemetry,
+    set_livekit_connect_time,
 )
 
 # 로깅 설정
@@ -124,6 +125,7 @@ class RealtimeWorker:
 
         # LiveKit 연결
         await self.bot.connect()
+        set_livekit_connect_time()  # STT 타임스탬프 기준점 기록
 
         # TTS 루프 시작
         if self._tts_client:
