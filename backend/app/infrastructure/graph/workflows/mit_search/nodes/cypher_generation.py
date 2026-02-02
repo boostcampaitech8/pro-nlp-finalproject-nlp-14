@@ -101,6 +101,8 @@ async def _generate_text_to_cypher_raw(
         f"""당신은 Neo4j Cypher 쿼리 생성 전문가입니다.
 스키마와 관계를 바탕으로 자연어 질문을 Neo4j Cypher 쿼리로 변환하세요.
 
+⚠️ CRITICAL: ONLY RETURN THE CYPHER QUERY. NO MARKDOWN FORMATTING. NO CODE BLOCKS. NO EXPLANATION. NO ** MARKERS. PURE CYPHER ONLY.
+
 {schema_info}
 
 규칙:
@@ -116,37 +118,31 @@ async def _generate_text_to_cypher_raw(
 - Focus: {search_focus or "일반"}
 - Entity: {primary_entity or "없음"}
 
-**CRITICAL 지시 - Intent별 필수 구조**:
+⚠️ **CRITICAL**: 다음 지시를 정확히 따르세요:
 
-IF Intent = "entity_search" AND primary_entity = "{primary_entity}":
-  → MATCH (u:User {{name: $query}})를 시작점으로 사용하세요
-  IF search_focus = "Meeting": u → Meeting 검색
-  IF search_focus = "Decision": u → Meeting → Agenda → Decision 검색
-  IF search_focus = "User": u → Team → 다른 User 검색
+IF Intent = "entity_search" AND Focus = "Meeting" AND Entity = "{primary_entity}":
+  → 반드시 다음 구조를 사용하세요 (다른 것 사용 금지):
+  → MATCH (u:User {{name: $query}})-[:PARTICIPATED_IN]->(m:Meeting)
+  → RETURN m으로 시작하는 Meeting 정보 반환
+  → graph_context에 "{primary_entity}님이 참여한 회의:" 포함
+  → WHERE 절에 $user_id 조건 없음
+  
+IF Intent = "entity_search" AND Focus = "Decision" AND Entity = "{primary_entity}":
+  → 반드시 다음 구조를 사용하세요:
+  → MATCH (u:User {{name: $query}})-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)
+  → RETURN d로 시작하는 Decision 정보 반환
+  → WHERE 절에 $user_id 조건 없음
 
 IF Intent = "general_search":
-  → FULLTEXT 검색으로 시작하세요 (CALL db.index.fulltext.queryNodes)
-
-모든 경우:
-    → WHERE 절에 반드시 사용자 접근 제어 포함: (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
-    → 모든 Cypher는 LIMIT로 끝나야 함 (보통 20)
-    → graph_context는 자연어 설명 필수
-
-**중요**: 같은 Intent와 Focus가 주어지면 항상 같은 구조의 Cypher를 생성하세요!
-
-**필수 요건**:
-1. RETURN 절 포함
-2. LIMIT 포함
-3. graph_context 포함
-4. $user_id 접근제어 포함 (WHERE 절 마지막)
+  → FULLTEXT 검색 사용
+  → WHERE 절에 $user_id 조건 포함
 
 === 예시1 ===
 질문: "신수효가 참가한 회의 뭐가 있어?"
 의도: entity_search + Meeting (primary_entity="신수효")
-명령: primary_entity를 WHERE 절에서 필터링하세요!
+명령: 현재 사용자 필터 없이 신수효가 참여한 회의를 모두 찾으세요!
 Cypher:
 MATCH (u:User {{name: $query}})-[:PARTICIPATED_IN]->(m:Meeting)
-WHERE (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
 RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
        u.name + '님이 참여한 회의: ' + m.title AS graph_context
 ORDER BY m.created_at DESC LIMIT 20
@@ -154,10 +150,9 @@ ORDER BY m.created_at DESC LIMIT 20
 === 예시2 ===
 질문: "신수효 관련 결정사항"
 의도: entity_search + Decision (primary_entity="신수효")
-명령: 사람을 통해 회의→안건→결정으로 이동하되, WHERE 절에서 사람과 사용자 모두 검증!
+명령: 현재 사용자 필터 없이 신수효가 관련된 결정사항을 모두 찾으세요!
 Cypher:
 MATCH (u:User {{name: $query}})-[:PARTICIPATED_IN]->(m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)
-WHERE (m)<-[:PARTICIPATED_IN]-(:User {{id: $user_id}})
 RETURN d.id AS id, d.content AS content, d.status AS status, 1.0 AS score,
        u.name + '님이 참여한 ' + m.title + ' 회의의 결정: ' + d.content AS graph_context
 ORDER BY d.created_at DESC LIMIT 20
@@ -165,7 +160,7 @@ ORDER BY d.created_at DESC LIMIT 20
 === 예시3 ===
 질문: "교육 프로그램에 대한 결정사항"
 의도: general_search + Decision (no primary_entity)
-명령: FULLTEXT 검색으로 결정사항을 찾되, 사용자가 참여한 회의만 포함!
+명령: FULLTEXT 검색으로 결정사항을 찾되, 현재 사용자가 참여한 회의만 포함!
 Cypher:
 CALL db.index.fulltext.queryNodes('decision_search', $query) YIELD node, score
 MATCH (a:Agenda)-[:HAS_DECISION]->(node)
@@ -190,7 +185,7 @@ ORDER BY member.name ASC LIMIT 20
 """
     ).strip()
 
-    user_message = f"질문: {query}\n\nCypher 쿼리를 생성하세요:"
+    user_message = f"질문: {query}\n\nCypher 쿼리를 생성하세요: (순수 Cypher만 반환, 마크다운 없음)"
 
     try:
         cypher = ""
@@ -204,15 +199,36 @@ ORDER BY member.name ASC LIMIT 20
         print()  # 줄바꿈
         cypher = cypher.strip()
 
-        # 코드 블록 제거
-        if cypher.startswith("```"):
-            cypher = re.sub(r"```(?:cypher|sql)?\n?", "", cypher)
-            cypher = cypher.strip("`").strip()
+        # 마크다운 포맷팅 제거 (일반적인 형식들)
+        # Remove ```cypher ... ``` blocks
+        cypher = re.sub(r"```(?:cypher|sql|cql)?\s*\n?", "", cypher, flags=re.IGNORECASE)
+        cypher = cypher.strip("`").strip()
+        
+        # Remove any remaining markdown markers
+        # Extract only the MATCH/CALL ... LIMIT part
+        # Find where Cypher starts
+        match = re.search(r"(MATCH|CALL)\b", cypher, re.IGNORECASE)
+        if match:
+            cypher = cypher[match.start():]
+        
+        cypher = cypher.strip()
 
         # 기본 검증: MATCH/CALL 포함 확인
         if not any(keyword in cypher.upper() for keyword in ["MATCH", "CALL"]):
             logger.warning(f"[Text-to-Cypher] 유효하지 않은 Cypher: {cypher[:100]}")
             return ""
+
+        # Entity search 의도일 때 사용자 필터 제거 (교집합 문제 해결)
+        # entity_search에서는 특정 사람의 데이터를 찾으므로 현재 사용자 필터가 불필요
+        if query_intent.get("intent_type") == "entity_search":
+            # WHERE (m)<-[:PARTICIPATED_IN]-(:User {id: $user_id}) 제거
+            cypher = re.sub(
+                r'\s*WHERE\s+\(m\)<-\[:PARTICIPATED_IN\]-\(:User\s*\{\s*id:\s*\$user_id\s*\}\)\s*',
+                ' ',
+                cypher,
+                flags=re.IGNORECASE
+            )
+            logger.info("[Text-to-Cypher] Entity search → 사용자 필터 제거")
 
         cypher = _sanitize_generated_cypher(cypher)
 
@@ -429,6 +445,22 @@ def _apply_focus_fallback(cypher: str, strategy: dict, query_intent: dict) -> tu
 
 def _sanitize_generated_cypher(cypher: str) -> str:
     """LLM 생성 Cypher의 흔한 오류를 보정합니다."""
+    # CONCAT 함수를 + 연산자로 변환 (Neo4j는 CONCAT 함수가 없음)
+    cypher = re.sub(r"CONCAT\s*\(", "", cypher, flags=re.IGNORECASE)
+    # 모든 CONCAT( ... ) 를 제거하고 + 로 연결
+    while "CONCAT" in cypher.upper():
+        # CONCAT(...) 패턴 찾기
+        match = re.search(r"CONCAT\s*\([^()]*(?:\([^()]*\)[^()]*)*\)", cypher, re.IGNORECASE)
+        if match:
+            concat_str = match.group(0)
+            # CONCAT(a, b, c) → a + b + c
+            inner = concat_str[7:-1]  # CONCAT( 와 ) 제거
+            parts = [p.strip() for p in inner.split(',')]
+            replacement = " + ".join(parts)
+            cypher = cypher[:match.start()] + replacement + cypher[match.end():]
+        else:
+            break
+
     # 존재하지 않는 관계/속성 제거
     cypher = re.sub(r":MADE_DECISION\b", "", cypher)
     cypher = re.sub(r"\b(a\.|agenda\.)order\b", "a.title", cypher, flags=re.IGNORECASE)
@@ -522,7 +554,7 @@ def _collect_cypher_issues(cypher: str, query_intent: dict) -> list[str]:
     if not cypher:
         return ["empty_cypher"]
 
-    issues = _evaluate_cypher_quality(cypher)
+    issues = _evaluate_cypher_quality(cypher, query_intent)
     if not _is_safe_cypher(cypher):
         issues.append("unsafe_cypher")
     if not _is_intent_aligned(cypher, query_intent):
@@ -553,16 +585,22 @@ def _is_intent_aligned(cypher: str, query_intent: dict) -> bool:
     return True
 
 
-def _format_cypher_feedback(issues: list[str], cypher: str) -> str:
+def _format_cypher_feedback(issues: list[str], cypher: str, query_intent: dict = None) -> str:
     """LLM 재시도를 위한 피드백 생성."""
     issue_lines = ", ".join(issues)
+    
+    # Entity search는 $user_id 불필요
+    user_scope_msg = ""
+    if not (query_intent and query_intent.get("intent_type") == "entity_search"):
+        user_scope_msg = "\n- 반드시 $user_id로 접근 제어 포함"
+    
     return (
         "다음 문제를 수정해서 Cypher를 다시 생성하세요."
         f"\n- 문제: {issue_lines}"
         "\n- 반드시 graph_context 포함"
         "\n- 반드시 RETURN 절 포함"
         "\n- 반드시 LIMIT 포함"
-        "\n- 반드시 $user_id로 접근 제어 포함"
+        f"{user_scope_msg}"
         "\n- 허용된 스키마/관계만 사용"
         f"\n현재 Cypher:\n{cypher}"
     )
@@ -586,7 +624,7 @@ async def _attempt_cypher_with_feedback(
             )
             return cypher
 
-        feedback = _format_cypher_feedback(issues, cypher)
+        feedback = _format_cypher_feedback(issues, cypher, query_intent)
         logger.warning(
             "[Text-to-Cypher] 생성 실패, 재시도",
             extra={"attempt": attempt, "issues": issues},
@@ -639,7 +677,7 @@ async def _extract_subqueries(query: str) -> list[str]:
     return [query]
 
 
-def _evaluate_cypher_quality(cypher: str) -> list[str]:
+def _evaluate_cypher_quality(cypher: str, query_intent: dict = None) -> list[str]:
     """Cypher 품질 검증.
 
     필수 기준을 충족하지 않으면 이슈 목록을 반환합니다.
@@ -659,8 +697,15 @@ def _evaluate_cypher_quality(cypher: str) -> list[str]:
     if not re.search(r"\bgraph_context\b", cypher, re.IGNORECASE):
         issues.append("missing_graph_context")
 
-    if not re.search(r"\$user_id\b", cypher):
-        issues.append("missing_user_scope")
+    # Entity search는 $user_id 필터 불필요 (사용자 필터 제거됨)
+    # General search는 $user_id 필터 필수
+    if query_intent and query_intent.get("intent_type") != "entity_search":
+        if not re.search(r"\$user_id\b", cypher):
+            issues.append("missing_user_scope")
+    elif not query_intent:
+        # 의도 정보가 없으면 $user_id 필수
+        if not re.search(r"\$user_id\b", cypher):
+            issues.append("missing_user_scope")
 
     if re.search(r"\bCALL\b", upper) and not re.search(
         r"CALL\s+db\.index\.fulltext\.queryNodes", cypher, re.IGNORECASE

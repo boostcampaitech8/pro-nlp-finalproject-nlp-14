@@ -1,42 +1,52 @@
-"""LangChain LLM 통합 및 용도별 인스턴스 관리."""
+"""LangChain LLM 통합 및 용도별 인스턴스 관리.
+
+HCX-007 모델 사용 (v3 API, langchain-naver 패키지 필요)
+- thinking 파라미터 필수: effort 값으로 'none', 'low', 'medium', 'high' 사용
+"""
 
 from functools import lru_cache
 
-from langchain_community.chat_models import ChatClovaX
+from langchain_naver import ChatClovaX
 
 from app.infrastructure.graph.config import NCP_CLOVASTUDIO_API_KEY
 
 
-@lru_cache
-def get_base_llm() -> ChatClovaX:
-    """Base LLM 인스턴스 반환 (cached)"""
+def _create_llm(temperature: float = 0.5, max_tokens: int = 256) -> ChatClovaX:
+    """LLM 인스턴스 생성 헬퍼 함수"""
     if not NCP_CLOVASTUDIO_API_KEY:
         raise ValueError(
             "NCP_CLOVASTUDIO_API_KEY가 설정되지 않았습니다. "
             ".env 파일에 NCP_CLOVASTUDIO_API_KEY를 설정해주세요."
         )
-    
+
     return ChatClovaX(
-        temperature=0.5,
-        max_tokens=256,
-        model="HCX-003",
-        ncp_clovastudio_api_key=NCP_CLOVASTUDIO_API_KEY,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model="HCX-007",
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
     )
+
+
+@lru_cache
+def get_base_llm() -> ChatClovaX:
+    """Base LLM 인스턴스 반환 (cached)"""
+    return _create_llm(temperature=0.5, max_tokens=256)
 
 
 def get_planner_llm() -> ChatClovaX:
     """Planning 전용 LLM (낮은 temperature)"""
-    return get_base_llm().bind(temperature=0.3)
+    return _create_llm(temperature=0.3, max_tokens=1024)
 
 
 def get_generator_llm() -> ChatClovaX:
     """Generator 전용 LLM (기본 temperature)"""
-    return get_base_llm()
+    return _create_llm(temperature=0.5, max_tokens=256)
 
 
 def get_evaluator_llm() -> ChatClovaX:
     """Evaluator 전용 LLM (낮은 temperature)"""
-    return get_base_llm().bind(temperature=0.3)
+    return _create_llm(temperature=0.3, max_tokens=1024)
 
 
 # ============================================================================
@@ -49,7 +59,7 @@ def get_query_rewriter_llm() -> ChatClovaX:
     temperature: 0.7 (창의적인 정규화)
     max_tokens: 256
     """
-    return get_base_llm().bind(temperature=0.7, max_tokens=256)
+    return _create_llm(temperature=0.7, max_tokens=256)
 
 
 def get_filter_extractor_llm() -> ChatClovaX:
@@ -58,7 +68,7 @@ def get_filter_extractor_llm() -> ChatClovaX:
     temperature: 0.2 (정확한 추출)
     max_tokens: 512
     """
-    return get_base_llm().bind(temperature=0.2, max_tokens=512)
+    return _create_llm(temperature=0.2, max_tokens=512)
 
 
 def get_cypher_generator_llm() -> ChatClovaX:
@@ -67,7 +77,7 @@ def get_cypher_generator_llm() -> ChatClovaX:
     temperature: 0.05 (극도로 일관된 쿼리 생성 - 같은 의도는 항상 같은 구조)
     max_tokens: 512
     """
-    return get_base_llm().bind(temperature=0.05, max_tokens=512)
+    return _create_llm(temperature=0.05, max_tokens=512)
 
 
 def get_answer_generator_llm() -> ChatClovaX:
@@ -76,7 +86,7 @@ def get_answer_generator_llm() -> ChatClovaX:
     temperature: 0.5 (자연스러운 답변)
     max_tokens: 1024
     """
-    return get_base_llm().bind(temperature=0.5, max_tokens=1024)
+    return _create_llm(temperature=0.5, max_tokens=1024)
 
 
 def get_llm() -> ChatClovaX:
@@ -85,7 +95,7 @@ def get_llm() -> ChatClovaX:
     Returns:
         ChatClovaX: Configured LLM instance
     """
-    return get_base_llm()
+    return _create_llm(temperature=0.5, max_tokens=256)
 
 
 # 하위 호환성을 위한 변수 export
@@ -96,6 +106,7 @@ def _lazy_llm():
     except ValueError:
         # 테스트 환경에서 API 키가 없을 수 있음
         return None
+
 
 try:
     llm = get_llm()

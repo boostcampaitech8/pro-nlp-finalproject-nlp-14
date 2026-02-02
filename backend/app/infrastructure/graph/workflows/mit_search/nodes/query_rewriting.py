@@ -99,9 +99,13 @@ async def normalize_query_with_llm(query: str) -> str:
     user_message = f"쿼리: {query}"
 
     try:
-        response = await llm.ainvoke([SystemMessage(system_prompt), HumanMessage(user_message)])
+        # ainvoke 대신 astream 사용 (더 안정적)
+        content = ""
+        async for chunk in llm.astream([SystemMessage(system_prompt), HumanMessage(user_message)]):
+            if hasattr(chunk, 'content') and chunk.content:
+                content += chunk.content
 
-        normalized = response.content.strip()
+        normalized = content.strip()
         logger.debug(f"LLM normalized: '{query}' → '{normalized}'")
         return normalized
 

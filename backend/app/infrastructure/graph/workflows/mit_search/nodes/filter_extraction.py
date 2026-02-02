@@ -119,14 +119,18 @@ async def _extract_filters_with_llm(query: str) -> dict:
 
     user_message = f"쿼리: {query}"
 
-    response = await llm.ainvoke(
+    # ainvoke 대신 astream 사용 (더 안정적)
+    content = ""
+    async for chunk in llm.astream(
         [
             SystemMessage(system_prompt),
             HumanMessage(user_message),
         ]
-    )
+    ):
+        if hasattr(chunk, 'content') and chunk.content:
+            content += chunk.content
 
-    content = response.content.strip()
+    content = content.strip()
     try:
         # 코드펜스 제거
         if content.startswith("```"):

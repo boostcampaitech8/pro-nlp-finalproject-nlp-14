@@ -183,29 +183,79 @@ search_focus 분류:
 
     user_message = f"쿼리: {query}"
 
-    response = await llm.ainvoke(
-        [
-            SystemMessage(system_prompt),
-            HumanMessage(user_message),
-        ]
-    )
-
-    content = response.content.strip()
     try:
-        # 코드펜스 제거
+        print("[의도분석] LLM 호출 시작...")
+        content = ""
+
+        # ainvoke 대신 astream 사용 (더 안정적)
+        async for chunk in llm.astream(
+            [
+                SystemMessage(system_prompt),
+                HumanMessage(user_message),
+            ]
+        ):
+            if hasattr(chunk, 'content') and chunk.content:
+                content += chunk.content
+
+        content = content.strip()
+
+        # 디버깅: 원본 응답 출력
+        print(f"\n[의도분석 LLM 원본 응답]")
+        print(f"{'='*80}")
+        print(content if content else "(빈 응답)")
+        print(f"{'='*80}\n")
+
+        if not content:
+            logger.warning("[의도분석] LLM이 빈 응답을 반환 → 규칙 기반 분석 사용")
+            return _analyze_intent_with_rules(query)
+
+    except Exception as e:
+        logger.error(f"[의도분석] LLM 호출 실패: {e}", exc_info=True)
+        print(f"[오류] LLM 호출 실패: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return _analyze_intent_with_rules(query)
+
+    try:
+        # 코드 블록 제거
+        import re
+        original_content = content
         if content.startswith("```"):
-            content = content.strip("`").replace("json", "", 1).strip()
+            content = re.sub(r"```(?:json)?\n?", "", content)
+            content = content.strip("`").strip()
+            print(f"[파싱] 코드 블록 제거 후: {content[:200]}")
+
+        # 설명 텍스트 제거 (마크다운 스타일)
+        lines = content.split("\n")
+        cleaned_lines = []
+        json_started = False
+        for line in lines:
+            # JSON 시작 감지
+            if line.strip().startswith("{"):
+                json_started = True
+            # JSON 내부에서 설명 시작 패턴 감지 시 중단
+            if json_started and re.match(r"^\s*(\*\*|==|--|#\s*설명|설명:)", line.strip()):
+                break
+            cleaned_lines.append(line)
+        content = "\n".join(cleaned_lines).strip()
+        print(f"[파싱] 설명 제거 후: {content[:200]}")
 
         # JSON 추출
-        import re
         if not content.startswith("{"):
             match = re.search(r"\{.*\}", content, flags=re.DOTALL)
             if match:
                 content = match.group(0)
+                print(f"[파싱] JSON 추출 후: {content[:200]}")
 
-        return json.loads(content)
-    except json.JSONDecodeError:
-        logger.warning(f"Failed to parse LLM response: {content}")
+        result = json.loads(content)
+        logger.debug(f"[의도분석] LLM 응답 파싱 성공: {result}")
+        return result
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse LLM response (원본 길이: {len(original_content)})")
+        print(f"[파싱 실패] 원본: {original_content[:500]}")
+        print(f"[파싱 실패] 처리 후: {content[:500]}")
+        print(f"[파싱 실패] 에러: {e}")
+        logger.debug(f"JSON decode error: {e}")
         return _analyze_intent_with_rules(query)
 
 
@@ -226,6 +276,16 @@ def _analyze_intent_with_rules(query: str) -> dict:
         if name in query:
             has_person_name = True
             person_name = name
+            break
+
+    # 팀 이름 감지
+    has_team_name = False
+    team_name = None
+    known_teams = {"프로덕션팀", "마케팅팀", "개발팀", "디자인팀", "데이터팀", "서비스팀"}
+    for team in known_teams:
+        if team in query:
+            has_team_name = True
+            team_name = team
             break
 
     # 찾지 못했으면 첫 단어 확인 (2-3글자 한글)
@@ -276,11 +336,15 @@ def _analyze_intent_with_rules(query: str) -> dict:
         # "신수효랑 같은 팀"은 단순 팀원 검색
         is_composite_query = False
 
-    # 의도 결정 (사람 이름 우선, 그다음 복합 쿼리)
+    # 의도 결정 (알려진 entity 우선, 그다음 복합 쿼리)
     if has_person_name:
-        # 사람 이름이 있으면 entity_search
+        # 알려진 사람 이름이 있으면 entity_search
         intent_type = "entity_search"
         primary_entity = person_name
+    elif has_team_name:
+        # 알려진 팀 이름이 있으면 entity_search
+        intent_type = "entity_search"
+        primary_entity = team_name
     elif is_composite_query:
         # 복합 쿼리: 한 번에 multi-hop Cypher로 처리
         intent_type = "meta_search"
@@ -296,6 +360,7 @@ def _analyze_intent_with_rules(query: str) -> dict:
         intent_type = "meta_search"
         primary_entity = None
     else:
+        # ← 중요: entity 없으면 일반 검색으로 분류
         intent_type = "general_search"
         primary_entity = None
 

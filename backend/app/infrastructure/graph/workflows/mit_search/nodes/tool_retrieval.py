@@ -243,8 +243,21 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
             return {"mit_search_raw_results": []}
 
         # 파라미터 준비
+        # Entity search의 경우 primary_entity 우선 사용 (정규화된 키워드보다 정확함)
+        query_intent = state.get("mit_search_query_intent", {})
+        primary_entity = query_intent.get("primary_entity", "")
+        search_term = strategy.get("search_term", "")
+
+        # entity_search 의도이고 primary_entity가 있으면 그것을 사용
+        if query_intent.get("intent_type") == "entity_search" and primary_entity:
+            query_param = primary_entity
+            print(f"[파라미터 생성] Entity search 감지 → primary_entity 사용: '{primary_entity}'")
+        else:
+            query_param = search_term
+            print(f"[파라미터 생성] 일반 검색 → search_term 사용: '{search_term}'")
+
         parameters = {
-            "query": strategy.get("search_term", ""),
+            "query": query_param,
             "user_id": user_id,
         }
         
