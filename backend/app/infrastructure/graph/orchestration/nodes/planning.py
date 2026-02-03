@@ -237,15 +237,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         logger.info(f"답변 가능 여부: {result.can_answer}")
         logger.info(f"판단 근거: {result.reasoning}")
         logger.info(f"부족한 요소: {result.missing_requirements}")
-        print(
-            "\n[Planner Output]\n"
-            f"Plan: {result.plan}\n"
-            f"Need tools: {result.need_tools}\n"
-            f"Can answer: {result.can_answer}\n"
-            f"Reasoning: {result.reasoning}\n"
-            f"Missing requirements: {result.missing_requirements}\n"
-            f"Next subquery: {result.next_subquery}\n"
-        )
 
         next_subquery = result.next_subquery if retry_count > 0 else None
         if retry_count > 0:

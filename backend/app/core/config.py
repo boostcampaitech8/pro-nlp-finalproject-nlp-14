@@ -71,6 +71,7 @@ class Settings(BaseSettings):
 
     # Agent 설정
     agent_wake_word: str = "부덕"
+    enable_agent_streaming: bool = True  # astream_events() 활성화 (프로토타입)
 
     # Langfuse (LLM Observability)
     langfuse_public_key: str = ""

@@ -470,33 +470,63 @@ class RealtimeWorker:
                     pre_transcript_id=pre_transcript_id,
                 )
 
-            # 2. LLM 스트리밍 호출
+            # 2. LLM 스트리밍 호출 (Planner → Tools → Generator)
             buffer = ""
-            agent_start_time = time.perf_counter()
-            async for token in self.api_client.stream_agent_response(
+            event_count = 0
+
+            async for event in self.api_client.stream_agent_response(
                 meeting_id=self.meeting_id,
                 transcript_id=transcript_id,
             ):
-                if not token:
+                event_count += 1
+                event_type = event.get("type")
+                content = event.get("content", "")
+                logger.info(f"[EVENT #{event_count}] type={event_type}")
+
+                # ===== 상태 메시지: 채팅 + TTS =====
+                if event_type == "status":
+                    if content:
+                        logger.info(f"[CHAT SEND] {content}")
+                        await self.bot.send_chat_message(content)
+                        self._enqueue_tts(content)  # TTS 큐에 즉시 추가
                     continue
 
-                # Agent 첫 토큰 시점 기록
-                if (
-                    not self._agent_first_token_recorded
-                    and self._metrics
-                    and self._wakeword_user_id
-                ):
-                    self._metrics.mark_agent_first_token(self._wakeword_user_id)
-                    self._agent_first_token_recorded = True
+                # ===== 최종 답변: TTS + 채팅 =====
+                if event_type == "message":
+                    # Agent 첫 토큰 시점 기록
+                    if (
+                        not self._agent_first_token_recorded
+                        and self._metrics
+                        and self._wakeword_user_id
+                    ):
+                        self._metrics.mark_agent_first_token(self._wakeword_user_id)
+                        self._agent_first_token_recorded = True
 
-                buffer += token
-                sentences, buffer = self._extract_sentences(buffer)
-                for sentence in sentences:
-                    await self.bot.send_chat_message(sentence)
-                    self._enqueue_tts(sentence)
+                    if content:
+                        logger.debug(f"[MESSAGE] len={len(content)}")
+                        buffer += content
+                        sentences, buffer = self._extract_sentences(buffer)
+                        for sentence in sentences:
+                            logger.info(f"[CHAT SEND] {sentence[:50]}...")
+                            await self.bot.send_chat_message(sentence)
+                            self._enqueue_tts(sentence)
+                    continue
 
+                # ===== 완료/에러 =====
+                if event_type == "done":
+                    logger.info("[SSE] Stream done")
+                    break
+                
+                if event_type == "error":
+                    logger.error(f"[SSE ERROR] {content}")
+                    break
+                # ===== 기타: 내부 이벤트는 무시 =====
+                logger.debug(f"[SKIP] 미처리 이벤트: type={event_type} tag={tag}")
+
+            # 남은 텍스트 처리
             tail = buffer.strip()
             if tail:
+                logger.info(f"[CHAT SEND] 남은텍스트: {tail}")
                 await self.bot.send_chat_message(tail)
                 self._enqueue_tts(tail)
 

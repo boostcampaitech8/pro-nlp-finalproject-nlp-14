@@ -301,7 +301,7 @@ async def tool_executor_async(state: MitSearchState) -> Dict[str, Any]:
                 # 상황에 맞는 템플릿 선택 (Meeting Focus라면 meeting_search 사용)
                 target_strategy = "meeting_search" if intent.get("search_focus") == "Meeting" else "user_search"
                 
-                fallback_cypher = _generate_cypher_by_strategy(
+                fallback_cypher = generate_cypher_by_strategy(
                     strategy=target_strategy,
                     query_intent=intent,
                     entity_types=filters.get("entity_types", []),

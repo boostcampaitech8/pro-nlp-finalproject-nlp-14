@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
+from openai import RateLimitError
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -161,27 +162,101 @@ async def run_agent_with_context(
     transcript_service = TranscriptService(db)
 
     async def event_generator():
+        """표준 SSE 포맷으로 이벤트 스트리밍
+
+        event 타입:
+        - message: TTS 읽음 (최종 답변 텍스트)
+        - status: UI만 표시 (상태 메시지, 도구 정보)
+        - done: 완료
+        """
         nonlocal full_response, is_completed
 
         try:
-            # Context Engineering + Orchestration Graph 사용
-            response = await agent_service.process_with_context(
-                user_input=user_input,
-                meeting_id=str(request.meeting_id),
-                user_id=str(transcript.user_id),
-                db=db,
-            )
-            # SSE는 data 필드가 줄마다 분리되어야 하므로 줄 단위로 전송
-            response_text = "" if response is None else str(response)
-            full_response = response_text  # 응답 저장용 변수에 누적
-            for line in response_text.splitlines():
-                if line:  # 빈 줄 스킵
-                    yield f"data: {line}\n\n"
-            yield "data: [DONE]\n\n"
-            is_completed = True  # 정상 완료 표시
+            # Feature flag에 따라 streaming vs non-streaming 선택
+            settings = get_settings()
+            if settings.enable_agent_streaming:
+                # 프로토타입: astream_events() 사용
+                logger.info("Using astream_events() for streaming")
+                import json
+
+                async for event in agent_service.process_with_context_streaming(
+                    user_input=user_input,
+                    meeting_id=str(request.meeting_id),
+                    user_id=str(transcript.user_id),
+                    db=db,
+                ):
+                    event_type = event.get("type")
+                    tag = event.get("tag")
+                    
+                    # ===== 최종 답변 텍스트: TTS도 읽음 =====
+                    if event_type == "token" and tag == "generator_token":
+                        content = event.get("content", "")
+                        if content:
+                            full_response += content  # 응답 누적
+                            logger.debug(
+                                f"[SSE MESSAGE] content='{content}' "
+                                f"(len={len(content)}, repr={repr(content)})"
+                            )
+                            yield f"event: message\n"
+                            yield f"data: {content}\n\n"
+                    
+                    # ===== 상태 메시지: UI만 표시 =====
+                    elif event_type == "node_start" and tag == "status":
+                        node = event.get("node")
+                        status_map = {
+                            "planner": "🧠 생각을 정리하고 있어요…",
+                            "mit_tools": "🔍 관련 정보를 찾고 있어요…",
+                            "evaluator": "✓ 답변을 다듬고 있어요…",
+                            "generator": "💬 답변을 준비 중입니다…",
+                        }
+                        status_msg = status_map.get(node)
+                        if status_msg:
+                            yield f"event: status\n"
+                            yield f"data: {status_msg}\n\n"
+                    
+                    # ===== 도구 실행: UI에만 표시 =====
+                    elif event_type == "tool_start" and tag == "tool_event":
+                        tool_name = event.get("tool_name", "unknown")
+                        yield f"event: status\n"
+                        yield f"data: 🔧 '{tool_name}' 도구를 실행하고 있어요…\n\n"
+                    
+                    elif event_type == "tool_end" and tag == "tool_event":
+                        tool_name = event.get("tool_name", "unknown")
+                        yield f"event: status\n"
+                        yield f"data: ✅ '{tool_name}' 검색 완료\n\n"
+                    
+                    # 기타 이벤트는 무시
+
+                yield f"event: done\n"
+                yield f"data: [DONE]\n\n"
+                is_completed = True
+            else:
+                # 기존 방식: ainvoke() 사용
+                logger.info("Using ainvoke() for non-streaming")
+                response = await agent_service.process_with_context(
+                    user_input=user_input,
+                    meeting_id=str(request.meeting_id),
+                    user_id=str(transcript.user_id),
+                    db=db,
+                )
+                # SSE는 data 필드가 줄마다 분리되어야 하므로 줄 단위로 전송
+                response_text = "" if response is None else str(response)
+                full_response = response_text  # 응답 저장용 변수에 누적
+                for line in response_text.splitlines():
+                    if line:  # 빈 줄 스킵
+                        yield f"event: message\n"
+                        yield f"data: {line}\n\n"
+                yield f"event: done\n"
+                yield f"data: [DONE]\n\n"
+                is_completed = True
+        except RateLimitError as e:
+            logger.error("Rate Limit 오류: %s", e, exc_info=True)
+            yield f"event: error\n"
+            yield f"data: API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.\n\n"
         except Exception as e:
             logger.error("Agent Context 오류: %s", e, exc_info=True)
-            yield f"data: [ERROR] {str(e)}\n\n"
+            yield f"event: error\n"
+            yield f"data: {str(e)}\n\n"
         finally:
             # 응답이 있거나 인터럽트 시 저장
             if full_response.strip() or not is_completed:

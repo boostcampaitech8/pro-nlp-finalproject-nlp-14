@@ -142,6 +142,11 @@ async def _generate_text_to_cypher_raw(
                             - Alias MUST be `AS graph_context`.
                             - ALWAYS end with `LIMIT 20`.
                             - No UNION/UNION ALL. Single query only.
+                            - **CRITICAL: ASCII arrows ONLY**:
+                                    - RIGHT arrow: -> (hyphen + greater-than)
+                                    - LEFT arrow: <- (less-than + hyphen)
+                                    - NEVER use Unicode: → ← ⇒ ⇐ ➡ ⬅
+                                    - Example: (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
 
         [Few-Shot Examples]
         Q: "민수랑 했던 예산 회의 찾아줘"
@@ -547,6 +552,14 @@ def _sanitize_generated_cypher(cypher: str) -> str:
     # 주석 제거
     cypher = re.sub(r"//.*", "", cypher)
 
+    # 유니코드 화살표를 ASCII로 변환
+    # 우측 화살표: → (U+2192), ⇒ (U+21D2), ➡ (U+27A1)
+    cypher = cypher.replace('→', '->').replace('⇒', '->').replace('➡', '->')
+    # 좌측 화살표: ← (U+2190), ⇐ (U+21D0), ⬅ (U+2B05)
+    cypher = cypher.replace('←', '<-').replace('⇐', '<-').replace('⬅', '<-')
+    # Em dash (혼동 가능)
+    cypher = cypher.replace('—', '-')
+
     # 존재하지 않는 속성/관계 수정
     cypher = re.sub(r":MADE_DECISION\b", "", cypher)
     cypher = re.sub(
@@ -621,6 +634,12 @@ def _is_safe_cypher(cypher: str) -> bool:
         if re.search(rf"\b{keyword}\b", upper):
             return False
 
+    # 유니코드 화살표 검출 (ASCII 화살표만 허용)
+    unicode_arrows = ['→', '←', '⇒', '⇐', '➡', '⬅']
+    if any(arrow in cypher for arrow in unicode_arrows):
+        logger.warning("[Cypher Safety] Unicode arrows detected in query")
+        return False
+
     if re.search(r"\bCALL\b", upper):
         if not re.search(
             r"CALL\s+db\.index\.fulltext\.queryNodes", cypher, re.IGNORECASE
@@ -676,6 +695,19 @@ def _is_intent_aligned(cypher: str, query_intent: dict) -> bool:
 
 def _format_cypher_feedback(issues: List[str], cypher: str) -> str:
     """LLM 재시도를 위한 피드백 생성."""
+    # 유니코드 화살표 문제에 대한 구체적 피드백
+    if "unicode_arrows_detected" in issues:
+        return (
+            "다음 문제를 수정해서 Cypher를 다시 생성하세요."
+            "\n- 문제: Unicode 화살표 사용 (→, ←) - ASCII 화살표만 사용해야 합니다"
+            "\n- 반드시 ASCII 화살표 사용: -> (오른쪽), <- (왼쪽)"
+            "\n- 예시: (u:User)-[:PARTICIPATED_IN]->(m:Meeting)"
+            "\n- 반드시 graph_context 포함 (문자열 조합 필수)"
+            "\n- RETURN ... AS graph_context 형식 준수"
+            "\n- 반드시 LIMIT 포함"
+            f"\n현재 Cypher:\n{cypher}"
+        )
+
     issue_lines = ", ".join(issues)
     return (
         "다음 문제를 수정해서 Cypher를 다시 생성하세요."
@@ -789,6 +821,11 @@ def _evaluate_cypher_quality(cypher: str) -> List[str]:
 
     if re.search(r"\bSKIP\b", upper) and "LIMIT" not in upper:
         issues.append("skip_without_limit")
+
+    # 유니코드 화살표 검출
+    unicode_arrows = ['→', '←', '⇒', '⇐', '➡', '⬅']
+    if any(arrow in cypher for arrow in unicode_arrows):
+        issues.append("unicode_arrows_detected")
 
     return issues
 

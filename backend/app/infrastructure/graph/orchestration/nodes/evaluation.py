@@ -88,7 +88,6 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
     # MIT Search 결과가 있으면 일반적으로 success 처리
     if tool_results and "[MIT Search 결과" in tool_results:
         logger.info("✓ MIT Search 결과 수신 → success")
-        print(f"\n[Evaluation] ✓ 검색 결과 획득 → status: success\n")
         return OrchestrationState(
             evaluation="검색 결과 충분",
             evaluation_status="success",
