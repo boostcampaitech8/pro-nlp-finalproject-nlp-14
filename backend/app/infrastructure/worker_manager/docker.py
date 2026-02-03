@@ -99,7 +99,7 @@ class DockerWorkerManager:
             return container_name
 
         # Clova API 키 할당
-        key_manager = get_clova_key_manager()
+        key_manager = await get_clova_key_manager()
         api_key_index = await key_manager.allocate_key(meeting_id)
         if api_key_index is None:
             raise WorkerStartError("사용 가능한 Clova API 키가 없습니다")

@@ -208,7 +208,7 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
 
         # Clova API 키 반환 (워커 종료 후 반환)
         try:
-            key_manager = get_clova_key_manager()
+            key_manager = await get_clova_key_manager()
             released = await key_manager.release_key(meeting_id)
             if released:
                 logger.info(f"[LiveKit] Clova API key released: meeting={meeting_id}")
