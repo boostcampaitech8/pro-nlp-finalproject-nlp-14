@@ -322,13 +322,16 @@ async def process_suggestion_task(
 
     except Exception as e:
         logger.exception(f"[process_suggestion_task] Failed: suggestion={suggestion_id}")
-        # 실패 시 rejected로 변경
+        # H3: 실패 시 rejected로 변경 (status 업데이트 실패도 로깅)
         try:
             driver = get_neo4j_driver()
             kg_repo = KGRepository(driver)
             await kg_repo.update_suggestion_status(suggestion_id, "rejected")
-        except Exception:
-            pass
+        except Exception as status_error:
+            logger.error(
+                f"[process_suggestion_task] Failed to update suggestion status to rejected: "
+                f"suggestion={suggestion_id}, error={status_error}"
+            )
         return {
             "status": "failed",
             "suggestion_id": suggestion_id,
