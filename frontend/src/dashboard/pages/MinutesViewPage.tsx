@@ -5,7 +5,7 @@
  * Agenda/Decision 인라인 수정, Comments, Suggestions, ActionItems 통합
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, memo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ import {
   Check,
   X,
   Lock,
+  Sparkles,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -53,7 +54,7 @@ const DecisionStatusBadge = ({ status }: { status: string }) => {
     draft: 'Draft',
     latest: 'Latest',
     approved: 'Approved',
-    rejected: 'Rejected',
+    rejected: '부결',
     outdated: 'Outdated',
     superseded: 'Superseded',
   };
@@ -67,8 +68,31 @@ const DecisionStatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-// Decision 카드 컴포넌트
-function DecisionCard({
+/**
+ * AI가 Decision 내용을 생성 중인지 판단
+ * - suggestions 중 createdDecision이 현재 decision과 같고
+ * - suggestion content와 decision content가 동일하면 → AI가 아직 처리 중
+ */
+function isAIGeneratingDecision(decision: DecisionWithReview): boolean {
+  if (decision.status !== 'draft') return false;
+  return decision.suggestions.some(
+    (s) => s.createdDecision?.id === decision.id && s.content === decision.content
+  );
+}
+
+/**
+ * AI 생성 중인 suggestion을 찾아서 반환
+ * - 사용자 요청 내용을 표시하기 위해 사용
+ */
+function getPendingSuggestion(decision: DecisionWithReview) {
+  if (decision.status !== 'draft') return null;
+  return decision.suggestions.find(
+    (s) => s.createdDecision?.id === decision.id && s.content === decision.content
+  ) || null;
+}
+
+// M1: Decision 카드 컴포넌트 - React.memo로 불필요한 리렌더링 방지
+const DecisionCard = memo(function DecisionCard({
   decision,
   meetingId,
   currentUserId,
@@ -103,6 +127,15 @@ function DecisionCard({
   const hasRejected = currentUserId && decision.rejectors.includes(currentUserId);
   const canReview = decision.status === 'draft' && !hasApproved && !hasRejected;
 
+  // M2: AI가 Decision 내용을 생성 중인지 확인 - useMemo로 최적화
+  const { isGenerating, pendingSuggestion } = useMemo(() => ({
+    isGenerating: isAIGeneratingDecision(decision),
+    pendingSuggestion: getPendingSuggestion(decision),
+  }), [decision]);
+
+  // 최종 상태 여부 (rejected 또는 latest면 suggestion 불가)
+  const isFinalState = decision.status === 'latest' || decision.status === 'rejected';
+
   const handleSubmitComment = async (content: string) => {
     await addComment(decision.id, content);
   };
@@ -132,9 +165,44 @@ function DecisionCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      {/* Decision 헤더 */}
-      <div className="p-4 border-b border-gray-100">
+    <div
+      className={`rounded-xl border shadow-sm overflow-hidden transition-all duration-300 ${
+        isGenerating
+          ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200 animate-float'
+          : 'bg-white border-gray-200'
+      }`}
+    >
+      {/* AI 생성 중 배너 */}
+      {isGenerating && pendingSuggestion && (
+        <div className="px-4 py-3 bg-gradient-to-r from-amber-100 to-yellow-100 border-b border-amber-200">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="relative">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-400 rounded-full animate-ping" />
+            </div>
+            <span className="text-sm text-amber-700 font-medium">AI가 새로운 Decision 내용을 작성하고 있습니다...</span>
+          </div>
+          <div className="ml-6 p-2 bg-white/60 rounded-lg border border-amber-200/50">
+            <span className="text-xs text-amber-600 font-medium">사용자 요청:</span>
+            <p className="text-sm text-gray-700 mt-1">{pendingSuggestion.content}</p>
+          </div>
+        </div>
+      )}
+      {/* Decision 헤더 - 클릭으로 펼치기/접기 */}
+      {/* M4: 접근성 속성 추가 */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        className="p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50/50 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        }}
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
@@ -148,12 +216,20 @@ function DecisionCard({
             </div>
 
             {/* 수정 가능한 내용 */}
-            <EditableText
-              value={decision.content}
-              onSave={async (content) => updateDecision(decision.id, { content })}
-              className="text-gray-900 font-medium"
-              multiline
-            />
+            {isGenerating ? (
+              <div className="flex items-center gap-2 text-gray-400 italic py-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>AI가 새로운 내용을 생성하고 있습니다...</span>
+              </div>
+            ) : (
+              <EditableText
+                value={decision.content}
+                onSave={async (content) => updateDecision(decision.id, { content })}
+                className="text-gray-900 font-medium"
+                multiline
+                disabled={isFinalState}
+              />
+            )}
 
             {decision.context && (
               <p className="mt-2 text-sm text-gray-600 italic">{decision.context}</p>
@@ -216,7 +292,7 @@ function DecisionCard({
 
           {/* 승인/거절 버튼 */}
           {canReview && (
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
                 onClick={handleApprove}
@@ -291,11 +367,27 @@ function DecisionCard({
               <span>모든 결정사항이 확정되어 더 이상 댓글/제안을 추가할 수 없습니다.</span>
             </div>
           ) : (
-            <UnifiedInput
-              onSubmitComment={handleSubmitComment}
-              onSubmitSuggestion={handleSubmitSuggestion}
-              isLoading={isLoading}
-            />
+            <div className="space-y-2">
+              {isFinalState && (
+                <div className="flex items-start gap-2 p-3 bg-gray-50 rounded-lg text-gray-600 text-sm border border-gray-200">
+                  <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
+                  <p>
+                    {decision.status === 'latest' ? '확정된' : '부결된'} 결정사항입니다.
+                    새로운 제안은 새 회의를 통해 안건으로 등록해주세요.
+                  </p>
+                </div>
+              )}
+              <UnifiedInput
+                onSubmitComment={handleSubmitComment}
+                onSubmitSuggestion={handleSubmitSuggestion}
+                isLoading={isLoading}
+                enabledModes={
+                  isFinalState
+                    ? ['comment', 'ask']
+                    : ['comment', 'suggestion', 'ask']
+                }
+              />
+            </div>
           )}
 
           {/* 댓글 목록 */}
@@ -339,7 +431,7 @@ function DecisionCard({
       )}
     </div>
   );
-}
+});
 
 // Agenda 섹션 컴포넌트
 function AgendaSection({
@@ -372,12 +464,12 @@ function AgendaSection({
     <section className="mb-8">
       {/* Agenda 헤더 - 마크다운 스타일 */}
       <div className="group flex items-start gap-3 mb-4">
-        <span className="text-2xl font-bold text-gray-300">#{index + 1}</span>
+        <span className="text-3xl font-bold text-gray-300">#{index + 1}</span>
         <div className="flex-1">
           <EditableText
             value={agenda.topic}
             onSave={async (topic) => updateAgenda(agenda.id, { topic })}
-            className="text-xl font-bold text-gray-900"
+            className="text-2xl font-bold text-gray-900"
           />
           {agenda.description && (
             <p className="mt-1 text-gray-600">{agenda.description}</p>

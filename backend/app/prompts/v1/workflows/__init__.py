@@ -1,11 +1,17 @@
 """Workflows 프롬프트
 
 데이터 처리 워크플로우에서 사용하는 프롬프트 모음.
-- extraction: Agenda/Decision/Action 추출
-- topic: 토픽 병합/분할
+- mit_suggestion/: Decision 수정 제안 처리
+- mit_mention/: 멘션 질문 응답 생성
+- mit_action/: Action Item 추출
+- mit_topic/: 토픽 병합/분할
+- generate_pr/: Agenda/Decision 추출
 """
 
-from . import extraction
-from . import topic
+from . import generate_pr
+from . import mit_action
+from . import mit_mention
+from . import mit_suggestion
+from . import mit_topic
 
-__all__ = ["extraction", "topic"]
+__all__ = ["mit_suggestion", "mit_mention", "mit_action", "mit_topic", "generate_pr"]

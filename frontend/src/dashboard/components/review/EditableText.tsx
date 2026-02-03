@@ -6,7 +6,9 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Pencil, Check, X, Loader2 } from 'lucide-react';
+import { Pencil, Check, Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface EditableTextProps {
   value: string;
@@ -88,7 +90,7 @@ export function EditableText({
     const InputComponent = multiline ? 'textarea' : 'input';
 
     return (
-      <div className="flex items-start gap-2">
+      <div className="space-y-2">
         <InputComponent
           ref={inputRef as any}
           value={editValue}
@@ -102,28 +104,12 @@ export function EditableText({
           }}
           placeholder={placeholder}
           disabled={isSaving}
-          className={`flex-1 px-3 py-2 border-2 border-blue-400 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 ${
-            multiline ? 'resize-none min-h-[80px]' : ''
+          className={`w-full px-4 py-3 border-2 border-blue-400 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 text-gray-900 ${
+            multiline ? 'resize-y min-h-[200px]' : ''
           } ${inputClassName}`}
-          rows={multiline ? 3 : undefined}
+          rows={multiline ? 8 : undefined}
         />
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleSave();
-            }}
-            disabled={isSaving}
-            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-          >
-            {isSaving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
-          </button>
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={(e) => {
@@ -132,9 +118,26 @@ export function EditableText({
               handleCancel();
             }}
             disabled={isSaving}
-            className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"
+            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <X className="w-4 h-4" />
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleSave();
+            }}
+            disabled={isSaving}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1"
+          >
+            {isSaving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Check className="w-4 h-4" />
+            )}
+            저장
           </button>
         </div>
       </div>
@@ -143,12 +146,30 @@ export function EditableText({
 
   return (
     <div
-      className={`group flex items-center gap-2 cursor-pointer ${disabled ? 'cursor-not-allowed opacity-60' : ''} ${className}`}
-      onClick={() => !disabled && setIsEditing(true)}
+      className={`group flex items-start gap-2 ${disabled ? 'opacity-60' : ''} ${className}`}
+      onDoubleClick={() => !disabled && setIsEditing(true)}
     >
-      <span className={value ? '' : 'text-gray-400 italic'}>{value || placeholder}</span>
+      <div className="flex-1">
+        {value ? (
+          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+          </div>
+        ) : (
+          <span className="text-gray-400 italic">{placeholder}</span>
+        )}
+      </div>
       {showEditIcon && !disabled && (
-        <Pencil className="w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsEditing(true);
+          }}
+          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all shrink-0"
+          title="편집 (더블클릭으로도 가능)"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
       )}
     </div>
   );
