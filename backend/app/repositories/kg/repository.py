@@ -326,6 +326,12 @@ class KGRepository:
                 "already_finalized": bool,  # 이미 종결된 상태였는지
             }
         """
+        # H1: Input validation
+        if not decision_id or not decision_id.strip():
+            raise ValueError("decision_id is required")
+        if not user_id or not user_id.strip():
+            raise ValueError("user_id is required")
+
         now = datetime.now(timezone.utc).isoformat()
 
         query = """
@@ -418,6 +424,12 @@ class KGRepository:
                 "already_rejected": bool, # 이미 거부된 경우 True
             }
         """
+        # H1: Input validation
+        if not decision_id or not decision_id.strip():
+            raise ValueError("decision_id is required")
+        if not user_id or not user_id.strip():
+            raise ValueError("user_id is required")
+
         now = datetime.now(timezone.utc).isoformat()
 
         query = """
