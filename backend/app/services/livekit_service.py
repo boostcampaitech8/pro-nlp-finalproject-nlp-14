@@ -6,6 +6,7 @@ LiveKit SDK를 사용하여:
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -25,6 +26,7 @@ class LiveKitService:
         self._api_secret = settings.livekit_api_secret
         self._ws_url = settings.livekit_ws_url
         self._external_url = settings.livekit_external_url
+        self._empty_timeout = int(os.getenv("LIVEKIT_EMPTY_TIMEOUT", "5"))
 
     @property
     def is_configured(self) -> bool:
@@ -105,7 +107,7 @@ class LiveKitService:
                     api.CreateRoomRequest(
                         name=room_name,
                         max_participants=max_participants,
-                        empty_timeout=300,  # 빈 룸 5분 후 삭제
+                        empty_timeout=self._empty_timeout,  # 환경변수에서 읽기 (기본값 5초)
                     )
                 )
             logger.info(f"[LiveKit] Room created: {room_name}")
