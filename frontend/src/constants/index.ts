@@ -4,3 +4,4 @@
 
 export * from './labels';
 export * from './agents';
+export * from './config';
