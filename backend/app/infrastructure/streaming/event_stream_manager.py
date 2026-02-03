@@ -81,6 +81,17 @@ async def stream_llm_tokens_only(
                             "timestamp": datetime.now().isoformat(),
                         }
 
+                    # MIT Tools 및 Evaluator: 상태 전송
+                    elif event_name in ["mit_tools", "evaluator"]:
+                        logger.info(f"[{event_name.upper()}] 진입 → 즉시 상태 전송")
+                        node_status_sent.add(event_name)
+                        yield {
+                            "type": "node_start",
+                            "node": event_name,
+                            "tag": "status",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+
                     # 기타 노드: 일단 진입만 기록
                     else:
                         logger.debug(f"[NODE START] {event_name}")

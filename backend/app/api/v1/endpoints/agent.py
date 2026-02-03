@@ -172,12 +172,6 @@ async def run_agent_with_context(
         nonlocal full_response, is_completed
 
         try:
-            # ===== [CRITICAL] Zero Latency: 즉시 접수 확인 =====
-            # Graph 실행 전에 먼저 "요청을 받았다" 신호를 보냄
-            yield f"event: status\n"
-            yield f"data: 🚀 요청을 분석하고 있습니다…\n\n"
-            # Planning이 Graph 내부에서 실행되므로 즉시 스트리밍 시작
-            
             # Feature flag에 따라 streaming vs non-streaming 선택
             settings = get_settings()
             if settings.enable_agent_streaming:
