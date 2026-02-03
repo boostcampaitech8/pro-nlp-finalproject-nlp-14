@@ -53,13 +53,10 @@ async def execute_mit_tools(state: OrchestrationState) -> OrchestrationState:
                 result_summary += f"{idx}. {title} (점수: {score:.2f})\n"
             
             logger.info(f"✓ MIT Search 성공: {len(final_results)}개 결과 반환")
-            print(f"\n[MIT Tools] ✓ {len(final_results)}개 결과 → tool_results 설정 완료\n")
             return OrchestrationState(tool_results=result_summary)
         logger.warning("✗ MIT Search 결과 없음")
-        print("\n[MIT Tools] ✗ 검색 결과 없음\n")
         return OrchestrationState(tool_results="\n[MIT Search 결과] 검색 결과가 없습니다\n")
 
     except Exception as e:
         logger.error(f"MIT-Tools 실행 중 오류: {e}", exc_info=True)
-        print(f"\n[MIT Tools] ✗ 오류: {str(e)}\n")
         return OrchestrationState(tool_results=f"\n[MIT Search 오류] {str(e)}\n")
