@@ -30,6 +30,13 @@ export function SpotlightInput() {
     }
   }, [isChatMode]);
 
+  // 답변 완료 후 (isStreaming false) 포커스 유지
+  useEffect(() => {
+    if (isChatMode && !isStreaming && !isProcessing) {
+      inputRef.current?.focus();
+    }
+  }, [isChatMode, isStreaming, isProcessing]);
+
   const handleSubmit = () => {
     if (!inputValue.trim() || isProcessing || isStreaming) return;
     submitCommand();
