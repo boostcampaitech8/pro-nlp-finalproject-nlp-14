@@ -19,6 +19,7 @@ permissions:
   contents: write
   packages: write
   pull-requests: read
+  actions: write  # repository-dispatch로 CD workflow 트리거에 필요
 
 env:
   REGISTRY: ghcr.io
@@ -249,6 +250,7 @@ jobs:
           fi
 
           echo "updated=$UPDATED" >> $GITHUB_OUTPUT
+          echo "::notice::UPDATED=$UPDATED"
           echo "📝 Current image-tags.yaml:"
           cat k8s/image-tags.yaml
 
