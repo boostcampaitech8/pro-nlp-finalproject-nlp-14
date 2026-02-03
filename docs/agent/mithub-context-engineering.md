@@ -232,7 +232,6 @@ speaker_buffer_max_per_speaker = 25
 
 max_topics = 30
 topic_merge_threshold = 0.80
-topic_similarity_threshold = 0.85
 
 # CLOVA Studio API 사용
 embedding_model = "bge-m3"
