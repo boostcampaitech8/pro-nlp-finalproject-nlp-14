@@ -118,7 +118,7 @@ export function TeamDetailPage() {
   return (
     <div className="min-h-screen gradient-bg">
       <header className="glass-sidebar border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
               to="/"
@@ -153,7 +153,7 @@ export function TeamDetailPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-4 pt-8 pb-24">
         {/* 팀 정보 */}
         {currentTeam && (
           <TeamInfoCard
