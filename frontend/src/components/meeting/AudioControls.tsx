@@ -15,9 +15,6 @@ interface AudioControlsProps {
   audioOutputDeviceId: string | null;
   onAudioInputChange: (deviceId: string) => void;
   onAudioOutputChange: (deviceId: string) => void;
-  // 마이크 gain
-  micGain: number;
-  onMicGainChange: (gain: number) => void;
   // 화면공유
   isScreenSharing: boolean;
   onToggleScreenShare: () => void;
@@ -31,8 +28,6 @@ export function AudioControls({
   audioOutputDeviceId,
   onAudioInputChange,
   onAudioOutputChange,
-  micGain,
-  onMicGainChange,
   isScreenSharing,
   onToggleScreenShare,
 }: AudioControlsProps) {
@@ -42,31 +37,8 @@ export function AudioControls({
     isSinkIdSupported,
   } = useAudioDevices();
 
-  // 20% 단위로 반올림
-  const roundedGain = Math.round(micGain * 5) / 5; // 0.2 단위로 반올림
-  const displayPercent = Math.round(roundedGain * 100);
-
   return (
     <div className="flex items-center gap-6">
-      {/* 마이크 gain 조절 (가장 왼쪽) */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400 w-8">Gain</span>
-        <input
-          type="range"
-          min="0"
-          max="200"
-          step="20"
-          value={displayPercent}
-          onChange={(e) => onMicGainChange(Number(e.target.value) / 100)}
-          disabled={disabled}
-          className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          title={`마이크 볼륨: ${displayPercent}%`}
-        />
-        <span className="text-xs text-gray-400 w-10 text-right">
-          {displayPercent}%
-        </span>
-      </div>
-
       {/* 마이크 선택 */}
       <DeviceSelector
         label="마이크 선택"
