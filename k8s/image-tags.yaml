@@ -4,6 +4,6 @@
 # 형식: <service>: <sha> 또는 "latest"
 # CI에서 빌드된 서비스만 SHA로 업데이트됨
 
-backend: 57d802b
+backend: dbd4c93
 frontend: latest
 worker: 57d802b
