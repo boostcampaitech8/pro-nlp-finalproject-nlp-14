@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.auth import UserResponse
 from app.schemas.team import TeamMemberResponse
 from app.schemas.team_member import InviteTeamMemberRequest, UpdateTeamMemberRequest
+from app.core.config import get_settings
 from app.core.neo4j_sync import neo4j_sync
 
 
@@ -31,6 +32,12 @@ class TeamMemberService:
             raise ValueError("NOT_TEAM_MEMBER")
         if current_member.role not in [TeamRole.OWNER.value, TeamRole.ADMIN.value]:
             raise ValueError("PERMISSION_DENIED")
+
+        # 팀원 수 제한 체크
+        settings = get_settings()
+        current_member_count = await self._count_members(team_id)
+        if current_member_count >= settings.max_team_members:
+            raise ValueError("TEAM_MEMBER_LIMIT_EXCEEDED")
 
         # 초대할 사용자 조회
         user = await self._get_user_by_email(data.email)
@@ -215,3 +222,11 @@ class TeamMemberService:
         query = select(User).where(User.email == email)
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
+
+    async def _count_members(self, team_id: UUID) -> int:
+        """팀 멤버 수 조회"""
+        query = select(func.count(TeamMember.id)).where(
+            TeamMember.team_id == team_id,
+        )
+        result = await self.db.execute(query)
+        return result.scalar() or 0

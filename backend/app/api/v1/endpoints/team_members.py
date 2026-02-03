@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas import ErrorResponse
@@ -64,6 +65,12 @@ async def invite_team_member(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"error": "CONFLICT", "message": "User is already a team member"},
+            )
+        if error_code == "TEAM_MEMBER_LIMIT_EXCEEDED":
+            settings = get_settings()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "TEAM_MEMBER_LIMIT_EXCEEDED", "message": f"팀 정원이 초과되었습니다 (최대 {settings.max_team_members}명)"},
             )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

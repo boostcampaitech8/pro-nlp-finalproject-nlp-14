@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import {
+  MAX_TEAM_MEMBERS,
   TEAM_ROLE_COLORS,
   TEAM_ROLE_LABELS,
 } from '@/constants';
@@ -39,9 +40,19 @@ export function TeamMemberSection({
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState<TeamRole>('member');
 
+  // 팀 멤버 수 계산
+  const memberCount = members.length;
+  const isTeamFull = memberCount >= MAX_TEAM_MEMBERS;
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
+
+    // 사전 체크: 팀 정원 초과 시 alert
+    if (isTeamFull) {
+      alert(`팀 정원이 가득 찼습니다. (최대 ${MAX_TEAM_MEMBERS}명)`);
+      return;
+    }
 
     setInviting(true);
     try {
@@ -63,10 +74,18 @@ export function TeamMemberSection({
     <div className="mt-8">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold text-white">
-          Team Members ({members.length})
+          Team Members ({memberCount}/{MAX_TEAM_MEMBERS})
         </h3>
         {canManageMembers && (
-          <Button onClick={() => setShowInviteForm(!showInviteForm)}>
+          <Button
+            onClick={() => setShowInviteForm(!showInviteForm)}
+            disabled={isTeamFull && !showInviteForm}
+            title={
+              isTeamFull
+                ? `팀 정원이 가득 찼습니다 (최대 ${MAX_TEAM_MEMBERS}명)`
+                : undefined
+            }
+          >
             {showInviteForm ? 'Cancel' : 'Invite Member'}
           </Button>
         )}
