@@ -234,7 +234,7 @@ export function MeetingDetailPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-4 pt-8 pb-24">
         {/* 에러 메시지 */}
         {meetingError && (
           <div className="bg-red-500/20 text-red-300 p-4 rounded-lg mb-6 border border-red-500/30">

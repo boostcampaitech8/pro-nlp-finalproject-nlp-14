@@ -153,7 +153,7 @@ export function TeamDetailPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-4 pt-8 pb-24">
         {/* 팀 정보 */}
         {currentTeam && (
           <TeamInfoCard

@@ -78,7 +78,7 @@ export function HomePage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-4 pt-8 pb-24">
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-white">My Teams</h2>
