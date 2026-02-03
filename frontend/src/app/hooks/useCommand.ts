@@ -41,8 +41,6 @@ export function useCommand() {
         };
         setStreaming(true);
         addChatMessage(agentMsg);
-        // 응답 완료 후 스트리밍 종료
-        setStreaming(false);
       } catch {
         const errorMsg: ChatMessage = {
           id: `chat-${Date.now()}-error`,
@@ -52,7 +50,6 @@ export function useCommand() {
         };
         setStreaming(true);
         addChatMessage(errorMsg);
-        setStreaming(false);
       }
     },
     [addChatMessage, setStreaming]
@@ -102,8 +99,6 @@ export function useCommand() {
           };
           setStreaming(true);
           addChatMessage(agentMsg);
-          // 응답 완료 후 스트리밍 종료
-          setStreaming(false);
         } else {
           // text 또는 plan 응답 추가
           const agentMsg: ChatMessage = {
@@ -115,8 +110,6 @@ export function useCommand() {
           };
           setStreaming(true);
           addChatMessage(agentMsg);
-          // 응답 완료 후 스트리밍 종료
-          setStreaming(false);
         }
       } catch (error) {
         const errorMsg: ChatMessage = {
@@ -127,7 +120,6 @@ export function useCommand() {
         };
         setStreaming(true);
         addChatMessage(errorMsg);
-        setStreaming(false);
         console.error('Command processing error:', error);
       } finally {
         setProcessing(false);
@@ -172,8 +164,6 @@ export function useCommand() {
         };
         setStreaming(true);
         addChatMessage(agentMsg);
-        // 응답 완료 후 스트리밍 종료
-        setStreaming(false);
       } catch {
         const errorMsg: ChatMessage = {
           id: `chat-${Date.now()}-approve-error`,
@@ -183,7 +173,6 @@ export function useCommand() {
         };
         setStreaming(true);
         addChatMessage(errorMsg);
-        setStreaming(false);
       }
     },
     [updateChatMessage, addChatMessage, setStreaming]

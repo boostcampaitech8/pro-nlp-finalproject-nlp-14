@@ -641,7 +641,7 @@ export function MinutesViewPage() {
       </header>
 
       {/* 메인 컨텐츠 */}
-      <main className="max-w-4xl mx-auto px-4 pt-8 pb-24">
+      <main className="max-w-4xl mx-auto px-4 py-8">
         {minutes && (
           <>
             {/* 제목 영역 - 마크다운 스타일 */}

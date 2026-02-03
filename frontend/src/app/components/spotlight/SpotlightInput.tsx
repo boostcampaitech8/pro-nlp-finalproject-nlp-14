@@ -30,22 +30,12 @@ export function SpotlightInput() {
     }
   }, [isChatMode]);
 
-  // 답변 완료 후 (isStreaming false) 포커스 유지
-  useEffect(() => {
-    if (isChatMode && !isStreaming && !isProcessing) {
-      inputRef.current?.focus();
-    }
-  }, [isChatMode, isStreaming, isProcessing]);
-
   const handleSubmit = () => {
     if (!inputValue.trim() || isProcessing || isStreaming) return;
     submitCommand();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // 한글 입력 중(IME composing) Enter 무시 - 두 번 입력 버그 방지
-    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();

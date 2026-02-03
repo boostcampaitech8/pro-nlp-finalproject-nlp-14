@@ -197,7 +197,7 @@ export function MeetingDetailPage() {
   return (
     <div className="min-h-screen gradient-bg">
       <header className="glass-sidebar border-b border-white/10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
               to="/"
@@ -234,7 +234,7 @@ export function MeetingDetailPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 pt-8 pb-24">
+      <main className="max-w-7xl mx-auto px-4 py-8">
         {/* 에러 메시지 */}
         {meetingError && (
           <div className="bg-red-500/20 text-red-300 p-4 rounded-lg mb-6 border border-red-500/30">

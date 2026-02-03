@@ -75,7 +75,7 @@
 }
 
 @layer components {
-  /* 그라디언트 배경 - 스크롤 시에도 배경 유지 */
+  /* 그라디언트 배경 */
   .gradient-bg {
     background: linear-gradient(
       135deg,
@@ -83,7 +83,6 @@
       var(--gradient-mid) 50%,
       var(--gradient-end) 100%
     );
-    background-attachment: fixed;
   }
 
   /* 글래스모피즘 카드 */
