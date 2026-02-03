@@ -16,12 +16,12 @@ export const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
 };
 
 export const MEETING_STATUS_COLORS: Record<MeetingStatus, string> = {
-  scheduled: 'bg-blue-100 text-blue-800',
-  ongoing: 'bg-green-100 text-green-800',
-  completed: 'bg-gray-100 text-gray-800',
-  in_review: 'bg-yellow-100 text-yellow-800',
-  confirmed: 'bg-purple-100 text-purple-800',
-  cancelled: 'bg-red-100 text-red-800',
+  scheduled: 'bg-blue-500/20 text-blue-300',
+  ongoing: 'bg-green-500/20 text-green-300',
+  completed: 'bg-white/10 text-white/70',
+  in_review: 'bg-yellow-500/20 text-yellow-300',
+  confirmed: 'bg-purple-500/20 text-purple-300',
+  cancelled: 'bg-red-500/20 text-red-300',
 };
 
 // 회의 참여자 역할 라벨
@@ -31,8 +31,8 @@ export const PARTICIPANT_ROLE_LABELS: Record<ParticipantRole, string> = {
 };
 
 export const PARTICIPANT_ROLE_COLORS: Record<ParticipantRole, string> = {
-  host: 'bg-blue-100 text-blue-800',
-  participant: 'bg-gray-100 text-gray-700',
+  host: 'bg-blue-500/20 text-blue-300',
+  participant: 'bg-white/10 text-white/70',
 };
 
 // 팀 역할 라벨
@@ -43,9 +43,9 @@ export const TEAM_ROLE_LABELS: Record<TeamRole, string> = {
 };
 
 export const TEAM_ROLE_COLORS: Record<TeamRole, string> = {
-  owner: 'bg-purple-100 text-purple-800',
-  admin: 'bg-blue-100 text-blue-800',
-  member: 'bg-gray-100 text-gray-700',
+  owner: 'bg-purple-500/20 text-purple-300',
+  admin: 'bg-blue-500/20 text-blue-300',
+  member: 'bg-white/10 text-white/70',
 };
 
 // 녹음 상태 라벨
@@ -60,11 +60,11 @@ export const RECORDING_STATUS_LABELS: Record<RecordingStatus, string> = {
 };
 
 export const RECORDING_STATUS_COLORS: Record<RecordingStatus, string> = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  recording: 'bg-red-100 text-red-800',
-  completed: 'bg-green-100 text-green-800',
-  failed: 'bg-gray-100 text-gray-600',
-  transcribing: 'bg-blue-100 text-blue-800',
-  transcribed: 'bg-purple-100 text-purple-800',
-  transcription_failed: 'bg-orange-100 text-orange-800',
+  pending: 'bg-yellow-500/20 text-yellow-300',
+  recording: 'bg-red-500/20 text-red-300',
+  completed: 'bg-green-500/20 text-green-300',
+  failed: 'bg-white/10 text-white/50',
+  transcribing: 'bg-blue-500/20 text-blue-300',
+  transcribed: 'bg-purple-500/20 text-purple-300',
+  transcription_failed: 'bg-orange-500/20 text-orange-300',
 };

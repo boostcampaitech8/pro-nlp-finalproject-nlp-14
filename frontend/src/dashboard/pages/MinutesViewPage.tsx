@@ -39,15 +39,15 @@ import { ActionItemList } from '../components/review/actionitems';
 import { EditableText } from '../components/review/EditableText';
 import { PRStatusBadge } from '../components/review/PRStatusBadge';
 
-// Decision 상태 배지
+// Decision 상태 배지 (glassmorphism 적용)
 const DecisionStatusBadge = ({ status }: { status: string }) => {
   const styles: Record<string, string> = {
-    draft: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    latest: 'bg-blue-100 text-blue-700 border-blue-200',
-    approved: 'bg-green-100 text-green-700 border-green-200',
-    rejected: 'bg-red-100 text-red-700 border-red-200',
-    outdated: 'bg-gray-100 text-gray-500 border-gray-200',
-    superseded: 'bg-purple-100 text-purple-700 border-purple-200',
+    draft: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+    latest: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    approved: 'bg-green-500/20 text-green-300 border-green-500/30',
+    rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
+    outdated: 'bg-white/10 text-white/50 border-white/20',
+    superseded: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   };
 
   const labels: Record<string, string> = {
@@ -207,7 +207,7 @@ const DecisionCard = memo(function DecisionCard({
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
               <DecisionStatusBadge status={decision.status} />
-              <div className="flex items-center gap-1 text-xs text-white/40">
+              <div className="flex items-center gap-1 text-xs text-white/80">
                 <Users className="w-3 h-3" />
                 <span>
                   {decision.approvers.length} approved / {decision.rejectors.length} rejected
@@ -217,7 +217,7 @@ const DecisionCard = memo(function DecisionCard({
 
             {/* 수정 가능한 내용 */}
             {isGenerating ? (
-              <div className="flex items-center gap-2 text-white/40 italic py-2">
+              <div className="flex items-center gap-2 text-white/80 italic py-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>AI가 새로운 내용을 생성하고 있습니다...</span>
               </div>
@@ -232,14 +232,14 @@ const DecisionCard = memo(function DecisionCard({
             )}
 
             {decision.context && (
-              <p className="mt-2 text-sm text-white/60 italic">{decision.context}</p>
+              <p className="mt-2 text-sm text-white/80 italic">{decision.context}</p>
             )}
 
             {/* 이전 버전 (GT) 정보 */}
             {decision.supersedes && (
               <div className="mt-3 p-3 bg-white/5 rounded-lg border-l-4 border-white/20">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-medium text-white/50">이전 버전 (GT)</span>
+                  <span className="text-xs font-medium text-white/70">이전 버전 (GT)</span>
                   {decision.supersedes.meetingId && (
                     <Link
                       to={`/dashboard/meetings/${decision.supersedes.meetingId}/minutes`}
@@ -259,7 +259,7 @@ const DecisionCard = memo(function DecisionCard({
                 <button
                   type="button"
                   onClick={() => setShowHistory(!showHistory)}
-                  className="flex items-center gap-2 text-sm text-white/50 hover:text-white/70 transition-colors"
+                  className="flex items-center gap-2 text-sm text-white/70 hover:text-white transition-colors"
                 >
                   <ChevronDown className={`w-4 h-4 transition-transform ${showHistory ? 'rotate-180' : ''}`} />
                   히스토리 ({decision.history.length}개 이전 버전)
@@ -272,7 +272,7 @@ const DecisionCard = memo(function DecisionCard({
                         <div className="absolute -left-[9px] top-1.5 w-2 h-2 rounded-full bg-white/30" />
                         <div className="text-sm text-white/50 pl-2">
                           <p className="line-through">{item.content}</p>
-                          <span className="text-xs text-white/40">
+                          <span className="text-xs text-white/70">
                             {new Date(item.createdAt).toLocaleDateString('ko-KR', {
                               year: 'numeric',
                               month: 'short',
@@ -297,7 +297,7 @@ const DecisionCard = memo(function DecisionCard({
                 type="button"
                 onClick={handleApprove}
                 disabled={isApproving || isRejecting}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-300 bg-green-500/20 border border-green-500/30 rounded-lg hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isApproving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -310,7 +310,7 @@ const DecisionCard = memo(function DecisionCard({
                 type="button"
                 onClick={handleReject}
                 disabled={isApproving || isRejecting}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-red-300 bg-red-500/20 border border-red-500/30 rounded-lg hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isRejecting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -322,12 +322,12 @@ const DecisionCard = memo(function DecisionCard({
             </div>
           )}
           {hasApproved && (
-            <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+            <span className="text-xs text-green-300 bg-green-500/20 px-2 py-1 rounded-full border border-green-500/30">
               You approved
             </span>
           )}
           {hasRejected && (
-            <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full">
+            <span className="text-xs text-red-300 bg-red-500/20 px-2 py-1 rounded-full border border-red-500/30">
               You rejected
             </span>
           )}
@@ -340,7 +340,7 @@ const DecisionCard = memo(function DecisionCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full px-4 py-2 flex items-center justify-between bg-white/5 hover:bg-white/10 transition-colors"
       >
-        <div className="flex items-center gap-4 text-sm text-white/60">
+        <div className="flex items-center gap-4 text-sm text-white/80">
           <span className="flex items-center gap-1">
             <MessageSquare className="w-4 h-4" />
             {decision.comments.length} comments
@@ -351,9 +351,9 @@ const DecisionCard = memo(function DecisionCard({
           </span>
         </div>
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-white/40" />
+          <ChevronDown className="w-4 h-4 text-white/70" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-white/40" />
+          <ChevronRight className="w-4 h-4 text-white/70" />
         )}
       </button>
 
@@ -362,15 +362,15 @@ const DecisionCard = memo(function DecisionCard({
         <div className="p-4 space-y-6">
           {/* 통합 입력창 */}
           {isReviewClosed ? (
-            <div className="flex items-center gap-2 p-3 bg-white/5 rounded-lg text-white/50 text-sm">
+            <div className="flex items-center gap-2 p-3 bg-white/5 rounded-lg text-white/70 text-sm">
               <Lock className="w-4 h-4" />
               <span>모든 결정사항이 확정되어 더 이상 댓글/제안을 추가할 수 없습니다.</span>
             </div>
           ) : (
             <div className="space-y-2">
               {isFinalState && (
-                <div className="flex items-start gap-2 p-3 bg-white/5 rounded-lg text-white/60 text-sm border border-white/10">
-                  <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-white/40" />
+                <div className="flex items-start gap-2 p-3 bg-white/5 rounded-lg text-white/80 text-sm border border-white/10">
+                  <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-white" />
                   <p>
                     {decision.status === 'latest' ? '확정된' : '부결된'} 결정사항입니다.
                     새로운 제안은 새 회의를 통해 안건으로 등록해주세요.
@@ -464,7 +464,7 @@ function AgendaSection({
     <section className="mb-8">
       {/* Agenda 헤더 - 마크다운 스타일 */}
       <div className="group flex items-start gap-3 mb-4">
-        <span className="text-3xl font-bold text-white/30">#{index + 1}</span>
+        <span className="text-3xl font-bold text-white/80">#{index + 1}</span>
         <div className="flex-1">
           <EditableText
             value={agenda.topic}
@@ -472,7 +472,7 @@ function AgendaSection({
             className="text-2xl font-bold text-white"
           />
           {agenda.description && (
-            <p className="mt-1 text-white/60">{agenda.description}</p>
+            <p className="mt-1 text-white/80">{agenda.description}</p>
           )}
         </div>
         <button
@@ -503,7 +503,7 @@ function AgendaSection({
         ))}
 
         {agenda.decisions.length === 0 && (
-          <p className="text-white/40 text-sm italic">이 안건에 대한 결정사항이 없습니다.</p>
+          <p className="text-white/30 text-sm italic">이 안건에 대한 결정사항이 없습니다.</p>
         )}
       </div>
     </section>
@@ -646,7 +646,7 @@ export function MinutesViewPage() {
           <>
             {/* 제목 영역 - 마크다운 스타일 */}
             <div className="mb-8 pb-6 border-b border-white/10">
-              <div className="flex items-center gap-2 text-sm text-white/50 mb-2">
+              <div className="flex items-center gap-2 text-sm text-white/70 mb-2">
                 <FileText className="w-4 h-4" />
                 <span>Meeting Minutes</span>
               </div>
@@ -655,7 +655,7 @@ export function MinutesViewPage() {
               </h1>
 
               {/* 통계 */}
-              <div className="flex items-center gap-6 text-sm text-white/60">
+              <div className="flex items-center gap-6 text-sm text-white/80">
                 <span className="flex items-center gap-1">
                   <ListTodo className="w-4 h-4" />
                   {minutes.agendas.length} agendas
@@ -697,8 +697,8 @@ export function MinutesViewPage() {
               ))}
 
               {minutes.agendas.length === 0 && (
-                <div className="text-center py-12 text-white/50">
-                  <FileText className="w-12 h-12 mx-auto mb-3 text-white/30" />
+                <div className="text-center py-12 text-white/80">
+                  <FileText className="w-12 h-12 mx-auto mb-3 text-white/80" />
                   <p>등록된 안건이 없습니다</p>
                 </div>
               )}

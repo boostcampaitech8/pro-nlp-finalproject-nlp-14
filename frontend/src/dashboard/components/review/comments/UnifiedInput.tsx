@@ -47,9 +47,9 @@ export function UnifiedInput({
     comment: {
       icon: MessageSquare,
       label: 'Comment',
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      borderColor: 'border-blue-200 focus:border-blue-400',
+      color: 'text-blue-400',
+      bgColor: 'bg-blue-500/10',
+      borderColor: 'border-blue-500/30 focus-within:border-blue-400',
       placeholder: placeholder || (enableMention
         ? `댓글을 입력하세요... (${DEFAULT_AI_AGENT.mention}으로 AI 멘션)`
         : '댓글을 입력하세요...'),
@@ -57,17 +57,17 @@ export function UnifiedInput({
     suggestion: {
       icon: Lightbulb,
       label: 'Suggestion',
-      color: 'text-amber-600',
-      bgColor: 'bg-amber-50',
-      borderColor: 'border-amber-200 focus:border-amber-400',
+      color: 'text-amber-400',
+      bgColor: 'bg-amber-500/10',
+      borderColor: 'border-amber-500/30 focus-within:border-amber-400',
       placeholder: placeholder || '수정 제안을 입력하세요...',
     },
     ask: {
       icon: Bot,
       label: 'Ask',
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-      borderColor: 'border-purple-200 focus:border-purple-400',
+      color: 'text-purple-400',
+      bgColor: 'bg-purple-500/10',
+      borderColor: 'border-purple-500/30 focus-within:border-purple-400',
       placeholder: placeholder || 'AI에게 질문하세요...',
     },
   };
@@ -248,7 +248,7 @@ export function UnifiedInput({
             (agent) => agent.mention.toLowerCase() === part.toLowerCase()
           );
           return isMention ? (
-            <span key={i} className="bg-purple-200/60 text-purple-700">
+            <span key={i} className="bg-purple-500/30 text-purple-300">
               {part}
             </span>
           ) : (
@@ -273,17 +273,17 @@ export function UnifiedInput({
             disabled={enabledModes.length <= 1}
             className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors flex-shrink-0 ${
               mode === 'comment'
-                ? 'bg-blue-100 text-blue-700'
+                ? 'bg-blue-500/20 text-blue-300'
                 : mode === 'suggestion'
-                ? 'bg-amber-100 text-amber-700'
-                : 'bg-purple-100 text-purple-700'
+                ? 'bg-amber-500/20 text-amber-300'
+                : 'bg-purple-500/20 text-purple-300'
             } ${
               enabledModes.length > 1
                 ? mode === 'comment'
-                  ? 'hover:bg-blue-200 cursor-pointer'
+                  ? 'hover:bg-blue-500/30 cursor-pointer'
                   : mode === 'suggestion'
-                  ? 'hover:bg-amber-200 cursor-pointer'
-                  : 'hover:bg-purple-200 cursor-pointer'
+                  ? 'hover:bg-amber-500/30 cursor-pointer'
+                  : 'hover:bg-purple-500/30 cursor-pointer'
                 : 'cursor-default'
             }`}
             title={enabledModes.length > 1 ? 'Shift+Tab으로 전환' : ''}
@@ -295,12 +295,12 @@ export function UnifiedInput({
           <div className="flex-1 relative min-h-[24px]">
             {/* 하이라이트 오버레이 (textarea 뒤에 렌더링) */}
             <div
-              className="absolute inset-0 text-sm leading-normal pointer-events-none overflow-hidden"
+              className="absolute inset-0 text-sm leading-normal pointer-events-none overflow-hidden text-white/80"
               aria-hidden="true"
             >
               {renderHighlightedContent(content)}
               {!content && (
-                <span className="text-gray-400">{currentConfig.placeholder}</span>
+                <span className="text-white/40">{currentConfig.placeholder}</span>
               )}
             </div>
             {/* 실제 textarea (투명 텍스트, caret만 표시) */}
@@ -313,8 +313,8 @@ export function UnifiedInput({
               placeholder=""
               disabled={isLoading}
               rows={1}
-              className="w-full bg-transparent resize-none outline-none min-h-[24px] disabled:opacity-50 text-transparent caret-gray-900 text-sm leading-normal"
-              style={{ caretColor: '#111827' }}
+              className="w-full bg-transparent resize-none outline-none min-h-[24px] disabled:opacity-50 text-transparent caret-white text-sm leading-normal"
+              style={{ caretColor: '#ffffff' }}
             />
           </div>
           <button
@@ -339,7 +339,7 @@ export function UnifiedInput({
 
         {/* 멘션 자동완성 드롭다운 */}
         {enableMention && showSuggestions && filteredAgents.length > 0 && (
-          <div className="absolute left-3 bottom-full mb-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[180px]">
+          <div className="absolute left-3 bottom-full mb-1 bg-gray-800 rounded-lg shadow-lg border border-white/10 py-1 z-10 min-w-[180px]">
             {filteredAgents.map((agent, index) => (
               <button
                 key={agent.id + agent.mention}
@@ -347,18 +347,18 @@ export function UnifiedInput({
                 onClick={() => applyMention(agent)}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
                   index === selectedIndex
-                    ? 'bg-purple-50 text-purple-700'
-                    : 'text-gray-700 hover:bg-gray-50'
+                    ? 'bg-purple-500/20 text-purple-300'
+                    : 'text-white/80 hover:bg-white/10'
                 }`}
               >
-                <Bot className="w-4 h-4 text-purple-500" />
+                <Bot className="w-4 h-4 text-purple-400" />
                 <div>
                   <div className="font-medium">{agent.displayName}</div>
-                  <div className="text-xs text-gray-500">{agent.description}</div>
+                  <div className="text-xs text-white/50">{agent.description}</div>
                 </div>
               </button>
             ))}
-            <div className="px-3 py-1 text-xs text-gray-400 border-t border-gray-100">
+            <div className="px-3 py-1 text-xs text-white/40 border-t border-white/10">
               Tab 또는 Enter로 선택
             </div>
           </div>
@@ -366,20 +366,20 @@ export function UnifiedInput({
 
         {/* 멘션 표시 뱃지 */}
         {showMentionBadge && (
-          <span className="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+          <span className="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full">
             AI 응답 요청
           </span>
         )}
       </div>
 
       {/* 힌트 */}
-      <div className="flex items-center justify-between mt-1.5 text-xs text-gray-400">
+      <div className="flex items-center justify-between mt-1.5 text-xs text-white/40">
         <span>Cmd/Ctrl + Enter로 전송</span>
         {mode === 'suggestion' && (
-          <span className="text-amber-600">제안 시 새로운 Draft Decision이 생성됩니다</span>
+          <span className="text-amber-400">제안 시 새로운 Draft Decision이 생성됩니다</span>
         )}
         {mode === 'ask' && (
-          <span className="text-purple-600">AI가 결정사항을 바탕으로 답변합니다</span>
+          <span className="text-purple-400">AI가 결정사항을 바탕으로 답변합니다</span>
         )}
       </div>
     </div>

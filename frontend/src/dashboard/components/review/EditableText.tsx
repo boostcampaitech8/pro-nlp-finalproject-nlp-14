@@ -104,7 +104,7 @@ export function EditableText({
           }}
           placeholder={placeholder}
           disabled={isSaving}
-          className={`w-full px-4 py-3 border-2 border-blue-400 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 text-gray-900 ${
+          className={`w-full px-4 py-3 border-2 border-blue-500/50 rounded-xl bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 text-white placeholder-white/50 ${
             multiline ? 'resize-y min-h-[200px]' : ''
           } ${inputClassName}`}
           rows={multiline ? 8 : undefined}
@@ -118,7 +118,7 @@ export function EditableText({
               handleCancel();
             }}
             disabled={isSaving}
-            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="px-3 py-1.5 text-sm text-white/70 hover:bg-white/10 rounded-lg transition-colors"
           >
             취소
           </button>
@@ -151,11 +151,11 @@ export function EditableText({
     >
       <div className="flex-1">
         {value ? (
-          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5">
+          <div className="prose prose-sm prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
           </div>
         ) : (
-          <span className="text-gray-400 italic">{placeholder}</span>
+          <span className="text-white/50 italic">{placeholder}</span>
         )}
       </div>
       {showEditIcon && !disabled && (
@@ -165,7 +165,7 @@ export function EditableText({
             e.stopPropagation();
             setIsEditing(true);
           }}
-          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all shrink-0"
+          className="p-1.5 text-white/40 hover:text-blue-400 hover:bg-blue-500/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all shrink-0"
           title="편집 (더블클릭으로도 가능)"
         >
           <Pencil className="w-4 h-4" />

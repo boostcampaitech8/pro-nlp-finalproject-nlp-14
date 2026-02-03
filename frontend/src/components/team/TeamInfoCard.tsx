@@ -23,18 +23,18 @@ export function TeamInfoCard({
   onDelete,
 }: TeamInfoCardProps) {
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+    <div className="glass-card p-6 mb-6">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+          <h2 className="text-2xl font-bold text-white mb-2">
             {team.name}
           </h2>
           {team.description && (
-            <MarkdownRenderer content={team.description} className="text-gray-600 mb-4" />
+            <MarkdownRenderer content={team.description} className="text-white/70 mb-4" />
           )}
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-white/60">
             {team.members.length} member(s) | Your role:{' '}
-            <span className="font-medium">{currentUserRole}</span>
+            <span className="font-medium text-white/80">{currentUserRole}</span>
           </p>
         </div>
         {isOwner && (
@@ -42,7 +42,7 @@ export function TeamInfoCard({
             variant="outline"
             onClick={onDelete}
             isLoading={deleting}
-            className="text-red-600 border-red-300 hover:bg-red-50"
+            className="text-red-400 border-red-500/30 hover:bg-red-500/20"
           >
             Delete Team
           </Button>

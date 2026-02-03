@@ -88,30 +88,30 @@ export function RecordingList({ meetingId }: RecordingListProps) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <p className="text-gray-500 text-center">Loading recordings...</p>
+      <div className="glass-card p-6">
+        <p className="text-white/50 text-center">Loading recordings...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <p className="text-red-600 text-center">{error}</p>
+      <div className="glass-card p-6">
+        <p className="text-red-400 text-center">{error}</p>
       </div>
     );
   }
 
   if (recordings.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <p className="text-gray-500 text-center">No recordings available</p>
+      <div className="glass-card p-6">
+        <p className="text-white/50 text-center">No recordings available</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-md divide-y">
+    <div className="glass-card divide-y divide-white/10">
       {recordings.map((recording) => (
         <div
           key={recording.id}
@@ -119,7 +119,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
         >
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-1">
-              <p className="font-medium text-gray-900">
+              <p className="font-medium text-white">
                 {recording.userId ? (recording.userName || 'Unknown User') : 'Server Recording'}
               </p>
               <span
@@ -130,7 +130,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
                 {RECORDING_STATUS_LABELS[recording.status]}
               </span>
             </div>
-            <div className="flex items-center gap-4 text-sm text-gray-500">
+            <div className="flex items-center gap-4 text-sm text-white/60">
               <span>
                 {new Date(recording.startedAt).toLocaleString()}
               </span>
