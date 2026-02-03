@@ -122,3 +122,30 @@ resources:
   livekit:
     requests: { memory: "128Mi", cpu: "100m" }
     limits: { memory: "256Mi", cpu: "500m" }
+  # Observability 스택
+  prometheus:
+    requests: { memory: "256Mi", cpu: "100m" }
+    limits: { memory: "512Mi", cpu: "300m" }
+  loki:
+    requests: { memory: "128Mi", cpu: "50m" }
+    limits: { memory: "256Mi", cpu: "200m" }
+  alloy:
+    requests: { memory: "64Mi", cpu: "50m" }
+    limits: { memory: "128Mi", cpu: "100m" }
+  grafana:
+    requests: { memory: "64Mi", cpu: "50m" }
+    limits: { memory: "128Mi", cpu: "100m" }
+
+# Observability 설정
+observability:
+  prometheus:
+    storage: 5Gi
+  loki:
+    storage: 5Gi
+  grafana:
+    storage: 1Gi
+    adminPassword: admin
+
+# Cloudflare Tunnel (로컬에서는 비활성화)
+cloudflare:
+  enabled: false

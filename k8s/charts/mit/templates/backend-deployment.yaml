@@ -18,6 +18,10 @@ spec:
     spec:
       serviceAccountName: backend
       {{- include "mit.imagePullSecrets" . | nindent 6 }}
+      initContainers:
+        - name: wait-for-alloy
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -zv alloy 4317; do echo "Waiting for Alloy gRPC..."; sleep 2; done']
       containers:
         - name: backend
           image: {{ include "mit.image" (dict "Values" .Values "name" "backend") }}

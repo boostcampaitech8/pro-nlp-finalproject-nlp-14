@@ -64,23 +64,45 @@ async def _generate_text_to_cypher_raw(
         """
         [Graph Schema]
         Nodes:
-        - Meeting: {id, title, created_at(datetime)}
-        - Agenda: {id, title, created_at}
-        - Decision: {id, content, status("Decided", "Pending"), created_at}
-        - ActionItem: {id, title, status("To Do", "In Progress", "Done"), due_date, created_at}
-        - User: {id, name, email, role}
-        - Team: {id, name}
+        - Team: {id, name, description}
+        - User: {id, name, email}
+        - Meeting: {id, title, status("scheduled", "ongoing", "completed", "in_review", "confirmed", "cancelled"),
+                   description, summary, team_id, scheduled_at(datetime), started_at(datetime),
+                   ended_at(datetime), created_at(datetime)}
+        - Agenda: {id, topic, description, team_id, created_at(datetime)}
+        - Decision: {id, content, status("draft", "latest", "outdated", "superseded", "rejected"),
+                    context, meeting_id, team_id, created_at(datetime), updated_at(datetime)}
+        - ActionItem: {id, content, status("pending", "in_progress", "completed", "cancelled"),
+                      due_date(datetime), meeting_id, team_id, created_at(datetime)}
+        - Suggestion: {id, content, status("pending", "accepted", "rejected"), author_id,
+                      decision_id, created_decision_id, meeting_id, team_id, created_at(datetime)}
+        - Comment: {id, content, author_id, decision_id, parent_id, team_id, created_at(datetime)}
 
         Relationships (Directional):
-        - (:User)-[:PARTICIPATED_IN]->(:Meeting)
-        - (:Meeting)-[:CONTAINS]->(:Agenda)
+        - (:User)-[:MEMBER_OF {role}]->(:Team)
+        - (:Team)-[:HOSTS]->(:Meeting)
+        - (:User)-[:PARTICIPATED_IN {role}]->(:Meeting)
+        - (:Meeting)-[:CONTAINS {order}]->(:Agenda)
+        - (:Meeting)-[:DECIDED_IN]->(:Decision)
         - (:Agenda)-[:HAS_DECISION]->(:Decision)
-        - (:Agenda)-[:HAS_ACTION]->(:ActionItem)
+        - (:User)-[:APPROVES]->(:Decision)
+        - (:User)-[:REJECTS]->(:Decision)
+        - (:Decision)-[:SUPERSEDES]->(:Decision)
+        - (:Decision)-[:OUTDATES]->(:Decision)
+        - (:Decision)-[:TRIGGERS]->(:ActionItem)
         - (:User)-[:ASSIGNED_TO]->(:ActionItem)
-        - (:User)-[:MEMBER_OF]->(:Team)
+        - (:Team)-[:ASSIGNED_TO]->(:ActionItem)
+        - (:User)-[:SUGGESTS]->(:Suggestion)
+        - (:Suggestion)-[:CREATES]->(:Decision)
+        - (:Suggestion)-[:ON]->(:Decision)
+        - (:User)-[:COMMENTS]->(:Comment)
+        - (:Comment)-[:ON]->(:Decision)
+        - (:Comment)-[:REPLY_TO]->(:Comment)
 
         Indexes:
         - CALL db.index.fulltext.queryNodes('decision_search', 'keyword')
+        - CALL db.index.fulltext.queryNodes('meeting_search', 'keyword')
+        - CALL db.index.fulltext.queryNodes('comment_search', 'keyword')
         """
     ).strip()
 
@@ -464,7 +486,7 @@ YIELD node, score
 MATCH (a:Agenda)-[:HAS_DECISION]->(node)
 MATCH (m:Meeting)-[:CONTAINS]->(a)
 RETURN node.id AS id, node.content AS content, node.status AS status, node.created_at AS created_at, m.id AS meeting_id, m.title AS meeting_title, score,
-       m.title + ' 회의의 ' + coalesce(a.title, '안건') + '에서 도출된 결정: ' + node.content AS graph_context
+       m.title + ' 회의의 ' + coalesce(a.topic, '안건') + '에서 도출된 결정: ' + node.content AS graph_context
 ORDER BY score DESC, node.created_at DESC
 LIMIT 20"""
 
@@ -528,7 +550,7 @@ def _sanitize_generated_cypher(cypher: str) -> str:
     # 존재하지 않는 속성/관계 수정
     cypher = re.sub(r":MADE_DECISION\b", "", cypher)
     cypher = re.sub(
-        r"\b(a\.|agenda\.)order\b", "a.title", cypher, flags=re.IGNORECASE
+        r"\b(a\.|agenda\.)title\b", "a.topic", cypher, flags=re.IGNORECASE
     )
     cypher = re.sub(r"\bm\.date\b", "m.created_at", cypher, flags=re.IGNORECASE)
 

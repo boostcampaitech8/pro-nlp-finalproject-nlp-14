@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import math
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ import nest_pb2
 import nest_pb2_grpc
 
 from src.config import get_config
+from src.telemetry import get_livekit_connect_time
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,9 @@ class ClovaSpeechSTTClient:
         self._confidence_sum = 0.0
         self._confidence_count = 0
         self._min_confidence = 1.0
+
+        # 세션 오프셋 (LiveKit 연결 기준 ms)
+        self._session_offset_ms: int = 0
 
     async def connect(self) -> None:
         """gRPC 채널 연결"""
@@ -198,7 +203,7 @@ class ClovaSpeechSTTClient:
 
                 try:
                     data = json.loads(response.contents)
-                    logger.info(f"STT 응답: {data}")
+                    logger.debug(f"STT 응답: {data}")
 
                     # transcription 결과 파싱
                     if "transcription" in data:
@@ -238,8 +243,8 @@ class ClovaSpeechSTTClient:
                         if not is_final and text.strip() and self.on_result:
                             segment = STTSegment(
                                 text=self._full_text.strip(),
-                                start_ms=self._start_timestamp or 0,
-                                end_ms=self._end_timestamp,
+                                start_ms=(self._start_timestamp or 0) + self._session_offset_ms,
+                                end_ms=self._end_timestamp + self._session_offset_ms,
                                 confidence=confidence,
                                 min_confidence=self._min_confidence if self._confidence_count > 0 else confidence,
                                 is_final=False,
@@ -257,8 +262,8 @@ class ClovaSpeechSTTClient:
                                 )
                                 segment = STTSegment(
                                     text=self._full_text.strip(),
-                                    start_ms=self._start_timestamp or 0,
-                                    end_ms=self._end_timestamp,
+                                    start_ms=(self._start_timestamp or 0) + self._session_offset_ms,
+                                    end_ms=self._end_timestamp + self._session_offset_ms,
                                     confidence=avg_confidence,
                                     min_confidence=self._min_confidence if self._confidence_count > 0 else 0.0,
                                     is_final=True,
@@ -291,6 +296,14 @@ class ClovaSpeechSTTClient:
         self._is_running = True
         self._seq_id = 0
         self._reset_buffer()
+
+        # 세션 오프셋 계산 (LiveKit 연결 시점 기준)
+        livekit_connect = get_livekit_connect_time()
+        if livekit_connect > 0:
+            self._session_offset_ms = int((time.time() - livekit_connect) * 1000)
+        else:
+            self._session_offset_ms = 0
+            logger.warning("LiveKit 연결 시간이 설정되지 않음, 오프셋=0")
 
         # 인증 메타데이터
         metadata = (("authorization", f"Bearer {self.config.clova_stt_secret}"),)

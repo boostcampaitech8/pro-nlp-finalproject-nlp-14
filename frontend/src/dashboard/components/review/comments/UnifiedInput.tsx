@@ -1,7 +1,7 @@
 /**
  * 통합 입력 컴포넌트
  *
- * Comment와 Suggestion 모드를 Shift+Tab으로 전환
+ * Comment, Suggestion, Ask 모드를 Shift+Tab으로 전환
  * @부덕이 멘션 지원 (Comment 모드) - Tab으로 자동완성
  */
 
@@ -15,22 +15,28 @@ import {
   type AIAgent,
 } from '@/constants';
 
-type InputMode = 'comment' | 'suggestion';
+type InputMode = 'comment' | 'suggestion' | 'ask';
 
 interface UnifiedInputProps {
   onSubmitComment: (content: string) => Promise<void>;
   onSubmitSuggestion: (content: string) => Promise<void>;
+  onSubmitAsk?: (content: string) => Promise<void>;
   isLoading?: boolean;
   placeholder?: string;
+  enabledModes?: InputMode[];
+  enableMention?: boolean;
 }
 
 export function UnifiedInput({
   onSubmitComment,
   onSubmitSuggestion,
+  onSubmitAsk,
   isLoading = false,
   placeholder,
+  enabledModes = ['comment', 'suggestion', 'ask'],
+  enableMention = false,
 }: UnifiedInputProps) {
-  const [mode, setMode] = useState<InputMode>('comment');
+  const [mode, setMode] = useState<InputMode>(enabledModes[0]);
   const [content, setContent] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -44,7 +50,9 @@ export function UnifiedInput({
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
       borderColor: 'border-blue-200 focus:border-blue-400',
-      placeholder: placeholder || `댓글을 입력하세요... (${DEFAULT_AI_AGENT.mention}으로 AI 멘션)`,
+      placeholder: placeholder || (enableMention
+        ? `댓글을 입력하세요... (${DEFAULT_AI_AGENT.mention}으로 AI 멘션)`
+        : '댓글을 입력하세요...'),
     },
     suggestion: {
       icon: Lightbulb,
@@ -53,6 +61,14 @@ export function UnifiedInput({
       bgColor: 'bg-amber-50',
       borderColor: 'border-amber-200 focus:border-amber-400',
       placeholder: placeholder || '수정 제안을 입력하세요...',
+    },
+    ask: {
+      icon: Bot,
+      label: 'Ask',
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-50',
+      borderColor: 'border-purple-200 focus:border-purple-400',
+      placeholder: placeholder || 'AI에게 질문하세요...',
     },
   };
 
@@ -66,8 +82,11 @@ export function UnifiedInput({
   }, [mentionQuery]);
 
   const toggleMode = useCallback(() => {
-    setMode((prev) => (prev === 'comment' ? 'suggestion' : 'comment'));
-  }, []);
+    if (enabledModes.length <= 1) return; // Only one mode, no toggle
+    const currentIndex = enabledModes.indexOf(mode);
+    const nextIndex = (currentIndex + 1) % enabledModes.length;
+    setMode(enabledModes[nextIndex]);
+  }, [mode, enabledModes]);
 
   // @ 뒤의 쿼리 추출
   const extractMentionQuery = useCallback((text: string, cursorPos: number) => {
@@ -115,14 +134,23 @@ export function UnifiedInput({
     try {
       if (mode === 'comment') {
         await onSubmitComment(trimmed);
-      } else {
+      } else if (mode === 'suggestion') {
         await onSubmitSuggestion(trimmed);
+      } else if (mode === 'ask') {
+        // Ask 모드: @mit prefix를 붙여서 AI 응답 트리거
+        const askContent = `${DEFAULT_AI_AGENT.mention} ${trimmed}`;
+        if (onSubmitAsk) {
+          await onSubmitAsk(askContent);
+        } else {
+          // onSubmitAsk가 없으면 onSubmitComment로 fallback
+          await onSubmitComment(askContent);
+        }
       }
       setContent('');
     } catch {
       // 에러는 부모에서 처리
     }
-  }, [content, isLoading, mode, onSubmitComment, onSubmitSuggestion]);
+  }, [content, isLoading, mode, onSubmitComment, onSubmitSuggestion, onSubmitAsk]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -173,8 +201,8 @@ export function UnifiedInput({
       const cursorPos = e.target.selectionStart;
       setContent(newContent);
 
-      // Comment 모드에서만 @ 감지
-      if (mode === 'comment') {
+      // enableMention이 활성화되고 Comment 모드일 때만 @ 감지
+      if (enableMention && mode === 'comment') {
         const query = extractMentionQuery(newContent, cursorPos);
         if (query !== null) {
           setMentionQuery(query);
@@ -186,7 +214,7 @@ export function UnifiedInput({
         }
       }
     },
-    [mode, extractMentionQuery]
+    [mode, extractMentionQuery, enableMention]
   );
 
   // 자동 높이 조절
@@ -198,11 +226,11 @@ export function UnifiedInput({
   }, [content]);
 
   // 멘션 하이라이트 표시
-  const showMentionBadge = mode === 'comment' && hasAgentMention(content);
+  const showMentionBadge = enableMention && mode === 'comment' && hasAgentMention(content);
 
   // 입력 중 멘션 하이라이트 렌더링 (overlay용)
   const renderHighlightedContent = useCallback((text: string) => {
-    if (mode !== 'comment' || !text) {
+    if (!enableMention || mode !== 'comment' || !text) {
       return <span className="whitespace-pre-wrap">{text || '\u00A0'}</span>;
     }
 
@@ -229,7 +257,7 @@ export function UnifiedInput({
         })}
       </span>
     );
-  }, [mode]);
+  }, [mode, enableMention]);
 
   return (
     <div className="relative">
@@ -242,12 +270,23 @@ export function UnifiedInput({
           <button
             type="button"
             onClick={toggleMode}
+            disabled={enabledModes.length <= 1}
             className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors flex-shrink-0 ${
               mode === 'comment'
-                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                ? 'bg-blue-100 text-blue-700'
+                : mode === 'suggestion'
+                ? 'bg-amber-100 text-amber-700'
+                : 'bg-purple-100 text-purple-700'
+            } ${
+              enabledModes.length > 1
+                ? mode === 'comment'
+                  ? 'hover:bg-blue-200 cursor-pointer'
+                  : mode === 'suggestion'
+                  ? 'hover:bg-amber-200 cursor-pointer'
+                  : 'hover:bg-purple-200 cursor-pointer'
+                : 'cursor-default'
             }`}
-            title="Shift+Tab으로 전환"
+            title={enabledModes.length > 1 ? 'Shift+Tab으로 전환' : ''}
           >
             <Icon className="w-3 h-3" />
             {currentConfig.label}
@@ -285,7 +324,9 @@ export function UnifiedInput({
             className={`p-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               mode === 'comment'
                 ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                : 'bg-amber-600 hover:bg-amber-700 text-white'
+                : mode === 'suggestion'
+                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                : 'bg-purple-600 hover:bg-purple-700 text-white'
             }`}
           >
             {isLoading ? (
@@ -297,7 +338,7 @@ export function UnifiedInput({
         </div>
 
         {/* 멘션 자동완성 드롭다운 */}
-        {showSuggestions && filteredAgents.length > 0 && (
+        {enableMention && showSuggestions && filteredAgents.length > 0 && (
           <div className="absolute left-3 bottom-full mb-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[180px]">
             {filteredAgents.map((agent, index) => (
               <button
@@ -336,6 +377,9 @@ export function UnifiedInput({
         <span>Cmd/Ctrl + Enter로 전송</span>
         {mode === 'suggestion' && (
           <span className="text-amber-600">제안 시 새로운 Draft Decision이 생성됩니다</span>
+        )}
+        {mode === 'ask' && (
+          <span className="text-purple-600">AI가 결정사항을 바탕으로 답변합니다</span>
         )}
       </div>
     </div>

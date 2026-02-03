@@ -18,8 +18,7 @@ class KGMinutesActionItem(BaseModel):
     """회의록 내 액션아이템"""
 
     id: str
-    title: str
-    description: str | None = None
+    content: str
     assignee: str | None = None
     due_date: str | None = None
 

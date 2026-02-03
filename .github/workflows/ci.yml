@@ -15,6 +15,12 @@ on:
       - 'frontend/**'
       - 'packages/**'
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+  actions: write  # repository-dispatch로 CD workflow 트리거에 필요
+
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/teamatoi
@@ -23,9 +29,6 @@ jobs:
   # 변경된 서비스 감지
   changes:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -50,9 +53,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -91,9 +91,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -135,9 +132,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -170,3 +164,109 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ===========================================
+  # CI 성공 여부 (Branch Protection용)
+  # ===========================================
+  ci-success:
+    name: CI Success
+    needs: [changes, build-backend, build-frontend, build-worker]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check build results
+        run: |
+          # 빌드가 필요했는데 실패한 경우 체크
+          if [ "${{ needs.changes.outputs.backend }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "failure" ]; then
+            echo "❌ Backend build failed"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "failure" ]; then
+            echo "❌ Frontend build failed"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.worker }}" == "true" ] && [ "${{ needs.build-worker.result }}" == "failure" ]; then
+            echo "❌ Worker build failed"
+            exit 1
+          fi
+          echo "✅ All required builds passed"
+
+  # ===========================================
+  # 이미지 태그 업데이트 (main push 시에만)
+  # ===========================================
+  update-tags:
+    needs: [changes, build-backend, build-frontend, build-worker]
+    # 모든 빌드가 성공하거나 skip된 경우에만 실행 (실패 시 배포 안 함)
+    # Note: needs.*.result는 GitHub Actions 버그로 인해 명시적 체크 필요 (actions/runner#1540)
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      needs.build-backend.result != 'failure' &&
+      needs.build-frontend.result != 'failure' &&
+      needs.build-worker.result != 'failure' &&
+      (needs.build-backend.result == 'success' ||
+       needs.build-frontend.result == 'success' ||
+       needs.build-worker.result == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.update.outputs.updated }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update image tags
+        id: update
+        run: |
+          # Short SHA (7자) - docker/metadata-action의 type=sha와 동일
+          SHA="${GITHUB_SHA:0:7}"
+          UPDATED="false"
+
+          # 빌드된 서비스만 SHA 태그로 업데이트
+          if [ "${{ needs.changes.outputs.backend }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
+            yq -i '.backend = "'$SHA'"' k8s/image-tags.yaml
+            UPDATED="true"
+            echo "✅ Backend tag updated to $SHA"
+          fi
+
+          if [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ]; then
+            yq -i '.frontend = "'$SHA'"' k8s/image-tags.yaml
+            UPDATED="true"
+            echo "✅ Frontend tag updated to $SHA"
+          fi
+
+          if [ "${{ needs.changes.outputs.worker }}" == "true" ] && [ "${{ needs.build-worker.result }}" == "success" ]; then
+            yq -i '.worker = "'$SHA'"' k8s/image-tags.yaml
+            UPDATED="true"
+            echo "✅ Worker tag updated to $SHA"
+          fi
+
+          echo "updated=$UPDATED" >> $GITHUB_OUTPUT
+          echo "::notice::UPDATED=$UPDATED"
+          echo "📝 Current image-tags.yaml:"
+          cat k8s/image-tags.yaml
+
+      - name: Commit and push
+        if: steps.update.outputs.updated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/image-tags.yaml
+          git commit -m "chore: update image tags to ${{ github.sha }} [skip ci]"
+          git push
+
+      - name: Trigger CD workflow
+        if: steps.update.outputs.updated == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: deploy
+          client-payload: '{"sha": "${{ github.sha }}", "ref": "${{ github.ref }}"}'

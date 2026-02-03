@@ -78,3 +78,6 @@ export type {
   AgendaWithDecisions,
   MinutesResponse,
 } from './kg';
+
+// Context/Topic types (local)
+export type { TopicItem, TopicFeedResponse } from './context';

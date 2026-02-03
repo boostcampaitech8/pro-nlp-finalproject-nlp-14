@@ -1,7 +1,7 @@
 """ContextManager runtime cache for real-time updates.
 
 TTL Cache를 사용하여 메모리 누수 방지:
-- 최대 500개 회의 동시 캐시
+- 최대 10개 회의 동시 캐시
 - 1시간 미접근 시 자동 삭제
 """
 
@@ -29,9 +29,10 @@ class ContextRuntimeState:
     lock: asyncio.Lock
     last_processed_start_ms: int | None = None
     last_utterance_id: int = 0
+    topic_publish_task: asyncio.Task | None = None
 
 
-# TTL Cache: 동시 최대 500개 회의, 1시간 미접근 시 자동 삭제
+# TTL Cache: 동시 최대 10개 회의, 1시간 미접근 시 자동 삭제
 _runtime_cache: TTLCache[str, ContextRuntimeState] = TTLCache(
     maxsize=10,
     ttl=3600,  # 1시간

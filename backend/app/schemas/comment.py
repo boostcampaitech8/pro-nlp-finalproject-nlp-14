@@ -23,6 +23,9 @@ class CommentResponse(BaseModel):
     pending_agent_reply: bool = Field(
         default=False, serialization_alias="pendingAgentReply"
     )  # @mit 멘션 시 Agent 응답 대기 중
+    is_error_response: bool = Field(
+        default=False, serialization_alias="isErrorResponse"
+    )  # AI 응답 생성 중 에러 발생 여부
     created_at: datetime = Field(serialization_alias="createdAt")
 
     class Config:

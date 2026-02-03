@@ -4,18 +4,16 @@
  * 재귀적으로 대댓글 렌더링
  * 삭제 기능 (작성자만)
  * AI 응답 대기 표시
+ * SSE를 통한 실시간 업데이트
  */
 
-import { useState } from 'react';
-import { Reply, Trash2, Bot, Loader2, User } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Reply, Trash2, Bot, Loader2, User, AlertCircle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Comment } from '@/types';
-import { isAIAgent, isAIAgentByName, AI_AGENTS } from '@/constants';
-
-// 멘션 분리용 패턴 (split에서 캡처 그룹 사용)
-const MENTION_SPLIT_PATTERN = new RegExp(
-  `(${AI_AGENTS.map((a) => a.mention.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
-  'gi'
-);
+import { isAIAgent, isAIAgentByName } from '@/constants';
+import { UnifiedInput } from './UnifiedInput';
 
 interface CommentItemProps {
   comment: Comment;
@@ -24,6 +22,7 @@ interface CommentItemProps {
   depth?: number;
   onReply: (commentId: string, content: string) => Promise<void>;
   onDelete: (commentId: string) => Promise<void>;
+  onRefresh?: () => void;
 }
 
 export function CommentItem({
@@ -33,16 +32,71 @@ export function CommentItem({
   depth = 0,
   onReply,
   onDelete,
+  onRefresh,
 }: CommentItemProps) {
   const [showReplyInput, setShowReplyInput] = useState(false);
-  const [replyContent, setReplyContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [displayedContent, setDisplayedContent] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const typingIntervalRef = useRef<number | null>(null);
+  const previousContentRef = useRef<string>('');
 
   const isAuthor = currentUserId === comment.author.id;
   const isAI = isAIAgent(comment.author.id) || isAIAgentByName(comment.author.name);
   const maxDepth = 3;
   const canReply = depth < maxDepth;
+
+  // Typing effect for AI responses
+  useEffect(() => {
+    // Only apply typing effect to AI comments
+    if (!isAI || comment.isErrorResponse) {
+      setDisplayedContent(comment.content);
+      return;
+    }
+
+    // Check if this is a new or updated AI response
+    const isNewContent = previousContentRef.current !== comment.content;
+    previousContentRef.current = comment.content;
+
+    if (!isNewContent) {
+      setDisplayedContent(comment.content);
+      return;
+    }
+
+    // Start typing effect
+    setIsTyping(true);
+    setDisplayedContent('');
+    let index = 0;
+    const content = comment.content;
+    const typingSpeed = 15; // milliseconds per character
+
+    // Clear any existing interval
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+    }
+
+    typingIntervalRef.current = setInterval(() => {
+      if (index < content.length) {
+        setDisplayedContent(content.slice(0, index + 1));
+        index++;
+      } else {
+        if (typingIntervalRef.current) {
+          clearInterval(typingIntervalRef.current);
+          typingIntervalRef.current = null;
+        }
+        setIsTyping(false);
+      }
+    }, typingSpeed);
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+    };
+  }, [comment.content, isAI, comment.isErrorResponse]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -59,12 +113,11 @@ export function CommentItem({
     return date.toLocaleDateString('ko-KR');
   };
 
-  const handleSubmitReply = async () => {
-    if (!replyContent.trim() || isSubmitting) return;
+  const handleSubmitReply = async (content: string) => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await onReply(comment.id, replyContent);
-      setReplyContent('');
+      await onReply(comment.id, content);
       setShowReplyInput(false);
     } finally {
       setIsSubmitting(false);
@@ -81,23 +134,6 @@ export function CommentItem({
     }
   };
 
-  // @부덕이 등 에이전트 멘션 하이라이트
-  const renderContent = (text: string) => {
-    const parts = text.split(MENTION_SPLIT_PATTERN);
-    return parts.map((part, i) => {
-      // AI_AGENTS의 mention과 일치하는지 확인
-      const isMention =
-        part && AI_AGENTS.some((agent) => agent.mention.toLowerCase() === part.toLowerCase());
-      return isMention ? (
-        <span key={i} className="text-purple-600 font-medium bg-purple-100 px-1 rounded">
-          {part}
-        </span>
-      ) : (
-        <span key={i}>{part}</span>
-      );
-    });
-  };
-
   return (
     <div
       className={`${depth > 0 ? 'ml-6 pl-4 border-l-2 border-gray-100' : ''}`}
@@ -105,29 +141,50 @@ export function CommentItem({
     >
       <div
         className={`group p-3 rounded-lg transition-colors ${
-          isAI
-            ? 'bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100'
-            : 'bg-gray-50 hover:bg-gray-100'
+          comment.isErrorResponse
+            ? 'bg-red-50 border border-red-200'
+            : isAI
+              ? 'bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100'
+              : 'bg-gray-50 hover:bg-gray-100'
         }`}
       >
         {/* 헤더 */}
         <div className="flex items-center gap-2 mb-2">
           <div
             className={`w-7 h-7 rounded-full flex items-center justify-center ${
-              isAI ? 'bg-purple-200' : 'bg-blue-200'
+              comment.isErrorResponse
+                ? 'bg-red-200'
+                : isAI
+                  ? 'bg-purple-200'
+                  : 'bg-blue-200'
             }`}
           >
-            {isAI ? (
+            {comment.isErrorResponse ? (
+              <AlertCircle className="w-4 h-4 text-red-700" />
+            ) : isAI ? (
               <Bot className="w-4 h-4 text-purple-700" />
             ) : (
               <User className="w-4 h-4 text-blue-700" />
             )}
           </div>
           <div className="flex items-center gap-2">
-            <span className={`font-medium text-sm ${isAI ? 'text-purple-700' : 'text-gray-900'}`}>
+            <span
+              className={`font-medium text-sm ${
+                comment.isErrorResponse
+                  ? 'text-red-700'
+                  : isAI
+                    ? 'text-purple-700'
+                    : 'text-gray-900'
+              }`}
+            >
               {comment.author.name}
             </span>
-            {isAI && (
+            {comment.isErrorResponse && (
+              <span className="text-xs bg-red-200 text-red-700 px-1.5 py-0.5 rounded-full">
+                에러
+              </span>
+            )}
+            {isAI && !comment.isErrorResponse && (
               <span className="text-xs bg-purple-200 text-purple-700 px-1.5 py-0.5 rounded-full">
                 AI
               </span>
@@ -166,8 +223,20 @@ export function CommentItem({
         </div>
 
         {/* 내용 */}
-        <div className="text-gray-700 text-sm whitespace-pre-wrap">
-          {renderContent(comment.content)}
+        <div
+          className={`text-sm ${
+            comment.isErrorResponse ? 'text-red-700' : 'text-gray-700'
+          }`}
+        >
+          {/* 모든 댓글에 마크다운 렌더링 적용 */}
+          <div className="prose prose-sm max-w-none prose-gray prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-headings:text-gray-800 prose-strong:text-gray-800 prose-code:text-purple-700 prose-code:bg-purple-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-800 prose-pre:text-gray-100">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {isAI && !comment.isErrorResponse ? displayedContent : comment.content}
+            </ReactMarkdown>
+            {isTyping && (
+              <span className="inline-block w-1 h-4 ml-0.5 bg-purple-600 animate-pulse" />
+            )}
+          </div>
         </div>
 
         {/* AI 응답 대기 표시 */}
@@ -182,42 +251,21 @@ export function CommentItem({
       {/* 답글 입력 */}
       {showReplyInput && (
         <div className="mt-2 ml-4">
-          <div className="flex gap-2">
-            <textarea
-              value={replyContent}
-              onChange={(e) => setReplyContent(e.target.value)}
-              placeholder="답글을 입력하세요..."
-              rows={2}
-              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-blue-400 focus:outline-none resize-none"
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                  e.preventDefault();
-                  handleSubmitReply();
-                }
-              }}
-            />
-            <div className="flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={handleSubmitReply}
-                disabled={!replyContent.trim() || isSubmitting}
-                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  '전송'
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowReplyInput(false)}
-                className="px-3 py-1.5 text-gray-500 text-sm hover:text-gray-700"
-              >
-                취소
-              </button>
-            </div>
-          </div>
+          <UnifiedInput
+            onSubmitComment={handleSubmitReply}
+            onSubmitSuggestion={async () => {}}
+            onSubmitAsk={handleSubmitReply}
+            enabledModes={['comment', 'ask']}
+            isLoading={isSubmitting}
+            placeholder="답글을 입력하세요..."
+          />
+          <button
+            type="button"
+            onClick={() => setShowReplyInput(false)}
+            className="mt-1 px-3 py-1 text-gray-500 text-xs hover:text-gray-700"
+          >
+            취소
+          </button>
         </div>
       )}
 
@@ -233,6 +281,7 @@ export function CommentItem({
               depth={depth + 1}
               onReply={onReply}
               onDelete={onDelete}
+              onRefresh={onRefresh}
             />
           ))}
         </div>

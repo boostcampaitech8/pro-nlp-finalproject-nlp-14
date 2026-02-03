@@ -25,6 +25,7 @@ class TranscriptSegmentRequest:
     confidence: float
     min_confidence: float = 0.0
     agent_call: bool = False
+    agent_call_keyword: str | None = None
     agent_call_confidence: float | None = None
 
 
@@ -105,6 +106,9 @@ class BackendAPIClient:
 
             if segment.agent_call:
                 payload["agentCall"] = segment.agent_call
+
+            if segment.agent_call_keyword is not None:
+                payload["agentCallKeyword"] = segment.agent_call_keyword
 
             if segment.agent_call_confidence is not None:
                 payload["agentCallConfidence"] = segment.agent_call_confidence

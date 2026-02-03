@@ -128,6 +128,14 @@ export default {
           from: { transform: 'translateX(-10px)', opacity: '0' },
           to: { transform: 'translateX(0)', opacity: '1' },
         },
+        float: {
+          '0%, 100%': { transform: 'translateY(0)', boxShadow: '0 4px 20px rgba(251, 191, 36, 0.15)' },
+          '50%': { transform: 'translateY(-4px)', boxShadow: '0 8px 30px rgba(251, 191, 36, 0.25)' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -137,8 +145,10 @@ export default {
         'slide-in-from-top': 'slide-in-from-top 0.2s ease-out',
         'slide-in-from-bottom': 'slide-in-from-bottom 0.2s ease-out',
         'slide-in-from-left': 'slide-in-from-left 0.2s ease-out',
+        float: 'float 3s ease-in-out infinite',
+        shimmer: 'shimmer 2s linear infinite',
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [require('tailwindcss-animate'), require('@tailwindcss/typography')],
 };

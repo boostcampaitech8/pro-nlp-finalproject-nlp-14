@@ -10,6 +10,7 @@ from uuid import uuid4
 from neo4j import AsyncDriver, READ_ACCESS
 from neo4j.time import DateTime as Neo4jDateTime
 
+from app.constants.agents import DEFAULT_AI_AGENT
 from app.models.kg import (
     KGActionItem,
     KGAgenda,
@@ -160,9 +161,9 @@ class KGRepository:
     async def get_agenda(self, meeting_id: str) -> list[KGAgenda]:
         """회의의 아젠다 목록 조회"""
         query = """
-        MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)
-        RETURN a
-        ORDER BY a.order
+        MATCH (m:Meeting {id: $meeting_id})-[rel:CONTAINS]->(a:Agenda)
+        RETURN a, rel.order AS order
+        ORDER BY rel.order
         """
         records = await self._execute_read(query, {"meeting_id": meeting_id})
         return [
@@ -170,7 +171,7 @@ class KGRepository:
                 id=dict(r["a"])["id"],
                 topic=dict(r["a"]).get("topic", ""),
                 description=dict(r["a"]).get("description"),
-                order=dict(r["a"]).get("order", 0),
+                order=r["order"] or 0,
                 meeting_id=meeting_id,
             )
             for r in records
@@ -217,10 +218,9 @@ class KGRepository:
             id: 'agenda-' + randomUUID(),
             topic: agenda_data.topic,
             description: coalesce(agenda_data.description, ''),
-            order: idx,
             created_at: datetime($created_at)
         })
-        CREATE (m)-[:CONTAINS]->(a)
+        CREATE (m)-[:CONTAINS {order: idx}]->(a)
 
         // 3. Decision 생성 (decision이 있는 경우만)
         // meeting_id 추가 + DECIDED_IN 관계 생성
@@ -274,8 +274,7 @@ class KGRepository:
                }) as decisions,
                collect(DISTINCT {
                    id: ai.id,
-                   title: ai.title,
-                   description: ai.description,
+                   content: ai.content,
                    assignee: assignee.name,
                    due_date: ai.due_date
                }) as action_items
@@ -314,22 +313,62 @@ class KGRepository:
 
     # --- 상태 변경 (승인/거절/머지) ---
 
-    async def reject_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 거절 (REJECTED_BY 관계 생성)
+    async def reject_decision(self, decision_id: str, user_id: str) -> dict:
+        """결정 거절 - 한 명이라도 거절하면 즉시 rejected 상태로 변경
+
+        draft 상태의 Decision만 rejected로 변경됨.
+        이미 finalized된 상태(rejected, outdated, superseded)는 변경하지 않음.
 
         Returns:
-            bool: 거절 성공 여부 (decision과 user가 존재하면 True)
+            {
+                "rejected": bool,  # 거절 성공 여부 (관계 생성 성공)
+                "status": str,     # 최종 상태
+                "already_finalized": bool,  # 이미 종결된 상태였는지
+            }
         """
+        # H1: Input validation
+        if not decision_id or not decision_id.strip():
+            raise ValueError("decision_id is required")
+        if not user_id or not user_id.strip():
+            raise ValueError("user_id is required")
+
+        now = datetime.now(timezone.utc).isoformat()
+
         query = """
         MATCH (d:Decision {id: $decision_id})
         MATCH (u:User {id: $user_id})
-        MERGE (u)-[:REJECTED_BY]->(d)
-        RETURN d.id as decision_id
+
+        // 1. REJECTS 관계 생성
+        MERGE (u)-[:REJECTS]->(d)
+
+        // 2. 현재 상태 확인 - draft인 경우만 rejected로 변경
+        WITH d, d.status as old_status
+        SET d.status = CASE
+            WHEN d.status = 'draft' THEN 'rejected'
+            ELSE d.status
+        END,
+        d.updated_at = CASE
+            WHEN old_status = 'draft' THEN datetime($now)
+            ELSE d.updated_at
+        END
+
+        RETURN d.id as decision_id,
+               d.status as status,
+               old_status IN ['rejected', 'outdated', 'superseded', 'latest'] as already_finalized
         """
         records = await self._execute_write(
-            query, {"decision_id": decision_id, "user_id": user_id}
+            query, {"decision_id": decision_id, "user_id": user_id, "now": now}
         )
-        return len(records) > 0
+
+        if not records:
+            return {"rejected": False, "status": "not_found", "already_finalized": False}
+
+        record = records[0]
+        return {
+            "rejected": True,
+            "status": record["status"],
+            "already_finalized": record["already_finalized"],
+        }
 
     async def merge_decision(self, decision_id: str) -> bool:
         """결정 승격 (draft -> latest)
@@ -382,53 +421,65 @@ class KGRepository:
                 "status": str,          # 최종 상태
                 "approvers_count": int,
                 "participants_count": int,
+                "already_rejected": bool, # 이미 거부된 경우 True
             }
         """
+        # H1: Input validation
+        if not decision_id or not decision_id.strip():
+            raise ValueError("decision_id is required")
+        if not user_id or not user_id.strip():
+            raise ValueError("user_id is required")
+
         now = datetime.now(timezone.utc).isoformat()
 
         query = """
         MATCH (d:Decision {id: $decision_id})
         MATCH (u:User {id: $user_id})
 
-        // 1. 승인 관계 생성 (MERGE로 중복 방지)
-        MERGE (u)-[:APPROVED_BY]->(d)
+        // 0. rejected 상태 체크 - rejected면 승인하지 않음
+        WITH d, u, d.status = 'rejected' as is_rejected
+
+        // 1. 승인 관계 생성 (rejected가 아닌 경우만)
+        FOREACH (_ IN CASE WHEN NOT is_rejected THEN [1] ELSE [] END |
+            MERGE (u)-[:APPROVES]->(d)
+        )
 
         // 2. 참여자 수와 승인자 수 계산
-        WITH d
+        WITH d, is_rejected
         MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
         // 참여자가 Neo4j에 동기화되지 않았을 수 있으므로 OPTIONAL MATCH 사용
         OPTIONAL MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
-        WITH d, a, [p IN collect(DISTINCT participant.id) WHERE p IS NOT NULL] as participants
+        WITH d, a, is_rejected, [p IN collect(DISTINCT participant.id) WHERE p IS NOT NULL] as participants
 
-        OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
-        WITH d, a, participants, collect(DISTINCT approver.id) as approvers
+        OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
+        WITH d, a, is_rejected, participants, collect(DISTINCT approver.id) as approvers
 
         // 3. 전원 승인 시: 기존 latest -> outdated + OUTDATES 관계
         // 참여자가 없으면 (p_count = 0) 자동 승격하지 않음 (데이터 동기화 필요)
-        WITH d, a, participants, approvers,
+        WITH d, a, is_rejected, participants, approvers,
              size(participants) as p_count,
              size(approvers) as a_count
         OPTIONAL MATCH (a)-[:HAS_DECISION]->(old:Decision)
-        WHERE old.status = 'latest' AND old.id <> d.id AND p_count > 0 AND p_count = a_count
+        WHERE old.status = 'latest' AND old.id <> d.id AND p_count > 0 AND p_count = a_count AND NOT is_rejected
         SET old.status = 'outdated', old.updated_at = datetime($now)
         // OUTDATES 관계 생성 (GT 변화 추적)
-        FOREACH (_ IN CASE WHEN old IS NOT NULL AND p_count > 0 AND p_count = a_count THEN [1] ELSE [] END |
+        FOREACH (_ IN CASE WHEN old IS NOT NULL AND p_count > 0 AND p_count = a_count AND NOT is_rejected THEN [1] ELSE [] END |
             MERGE (d)-[:OUTDATES]->(old)
         )
 
         // 4. 전원 승인 시: 현재 Decision -> latest
         // 참여자가 없으면 자동 승격하지 않음
-        WITH d, participants, approvers, p_count, a_count
+        WITH d, is_rejected, participants, approvers, p_count, a_count
         SET d.status = CASE
-            WHEN p_count > 0 AND p_count = a_count THEN 'latest'
+            WHEN p_count > 0 AND p_count = a_count AND NOT is_rejected THEN 'latest'
             ELSE d.status
         END,
         d.approved_at = CASE
-            WHEN p_count > 0 AND p_count = a_count THEN datetime()
+            WHEN p_count > 0 AND p_count = a_count AND NOT is_rejected THEN datetime()
             ELSE d.approved_at
         END,
         d.updated_at = CASE
-            WHEN p_count > 0 AND p_count = a_count THEN datetime($now)
+            WHEN p_count > 0 AND p_count = a_count AND NOT is_rejected THEN datetime($now)
             ELSE d.updated_at
         END
 
@@ -436,22 +487,24 @@ class KGRepository:
                d.status as status,
                p_count as participants_count,
                a_count as approvers_count,
-               p_count > 0 AND p_count = a_count as merged
+               p_count > 0 AND p_count = a_count AND NOT is_rejected as merged,
+               is_rejected as already_rejected
         """
         records = await self._execute_write(
             query, {"decision_id": decision_id, "user_id": user_id, "now": now}
         )
 
         if not records:
-            return {"approved": False, "merged": False, "status": "not_found"}
+            return {"approved": False, "merged": False, "status": "not_found", "already_rejected": False}
 
         record = records[0]
         return {
-            "approved": True,
-            "merged": record["merged"],
+            "approved": not record.get("already_rejected", False),
+            "merged": record["merged"] if not record.get("already_rejected") else False,
             "status": record["status"],
             "approvers_count": record["approvers_count"],
             "participants_count": record["participants_count"],
+            "already_rejected": record.get("already_rejected", False),
         }
 
     # --- 조회 ---
@@ -461,8 +514,8 @@ class KGRepository:
         query = """
         MATCH (d:Decision {id: $decision_id})
         OPTIONAL MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
-        OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
-        OPTIONAL MATCH (rejector:User)-[:REJECTED_BY]->(d)
+        OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
+        OPTIONAL MATCH (rejector:User)-[:REJECTS]->(d)
         OPTIONAL MATCH (d)-[:SUPERSEDES]->(prev:Decision)
         RETURN d, a, m,
                collect(DISTINCT approver.id) as approvers,
@@ -501,7 +554,7 @@ class KGRepository:
               <-[:CONTAINS]-(m:Meeting)
         MATCH (u:User)-[:PARTICIPATED_IN]->(m)
         WITH d, collect(DISTINCT u.id) as participants
-        OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
+        OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
         WITH participants, collect(DISTINCT approver.id) as approvers
         RETURN size(participants) = size(approvers) as all_approved
         """
@@ -523,7 +576,7 @@ class KGRepository:
 
         Args:
             decision_id: 연결할 Decision ID
-            action_items: [{"id", "title", "description", "due_date", "assignee_id"}]
+            action_items: [{"id", "content", "due_date", "assignee_id"}]
 
         Returns:
             생성된 ActionItem ID 목록
@@ -544,8 +597,7 @@ class KGRepository:
         UNWIND $items AS item
         CREATE (ai:ActionItem {
             id: item.id,
-            title: item.title,
-            description: coalesce(item.description, ''),
+            content: item.content,
             due_date: CASE WHEN item.due_date IS NOT NULL
                            THEN datetime(item.due_date)
                            ELSE null END,
@@ -742,6 +794,33 @@ class KGRepository:
             created_at=_convert_neo4j_datetime(r["created_at"]),
         )
 
+    async def get_suggestion(self, suggestion_id: str) -> KGSuggestion | None:
+        """Suggestion 조회"""
+        query = """
+        MATCH (s:Suggestion {id: $suggestion_id})
+        MATCH (u:User)-[:SUGGESTS]->(s)
+        MATCH (s)-[:ON]->(original:Decision)
+        OPTIONAL MATCH (s)-[:CREATES]->(created:Decision)
+        RETURN s, u.id as author_id, original.id as decision_id,
+               created.id as created_decision_id, s.meeting_id as meeting_id
+        """
+        records = await self._execute_read(query, {"suggestion_id": suggestion_id})
+        if not records:
+            return None
+
+        r = records[0]
+        s = dict(r["s"])
+        return KGSuggestion(
+            id=s["id"],
+            content=s.get("content", ""),
+            author_id=r["author_id"],
+            status=s.get("status", "pending"),
+            decision_id=r["decision_id"],
+            created_decision_id=r.get("created_decision_id"),
+            meeting_id=r.get("meeting_id"),
+            created_at=_convert_neo4j_datetime(s.get("created_at")),
+        )
+
     async def update_suggestion_status(self, suggestion_id: str, status: str) -> bool:
         """Suggestion 상태 업데이트"""
         query = """
@@ -753,6 +832,42 @@ class KGRepository:
             "suggestion_id": suggestion_id,
             "status": status,
         })
+        return len(records) > 0
+
+    async def update_decision_content(
+        self, decision_id: str, content: str, context: str | None = None
+    ) -> bool:
+        """Decision 내용 업데이트 (AI 워크플로우용)"""
+        now = datetime.now(timezone.utc).isoformat()
+
+        if context is not None:
+            query = """
+            MATCH (d:Decision {id: $decision_id})
+            SET d.content = $content,
+                d.context = $context,
+                d.updated_at = datetime($updated_at)
+            RETURN d.id as id
+            """
+            params = {
+                "decision_id": decision_id,
+                "content": content,
+                "context": context,
+                "updated_at": now,
+            }
+        else:
+            query = """
+            MATCH (d:Decision {id: $decision_id})
+            SET d.content = $content,
+                d.updated_at = datetime($updated_at)
+            RETURN d.id as id
+            """
+            params = {
+                "decision_id": decision_id,
+                "content": content,
+                "updated_at": now,
+            }
+
+        records = await self._execute_write(query, params)
         return len(records) > 0
 
     # =========================================================================
@@ -809,7 +924,7 @@ class KGRepository:
         )
 
     async def create_reply(
-        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False
+        self, comment_id: str, user_id: str, content: str, pending_agent_reply: bool = False, is_error_response: bool = False
     ) -> "KGComment":
         """대댓글 생성"""
         from app.models.kg import KGComment
@@ -826,6 +941,7 @@ class KGRepository:
             id: $reply_id,
             content: $content,
             pending_agent_reply: $pending_agent_reply,
+            is_error_response: $is_error_response,
             created_at: datetime($created_at)
         })
         CREATE (u)-[:COMMENTS]->(r)
@@ -834,7 +950,8 @@ class KGRepository:
 
         RETURN r.id as id, $content as content, $user_id as author_id,
                d.id as decision_id, $comment_id as parent_id,
-               r.pending_agent_reply as pending_agent_reply, r.created_at as created_at
+               r.pending_agent_reply as pending_agent_reply,
+               r.is_error_response as is_error_response, r.created_at as created_at
         """
         records = await self._execute_write(query, {
             "comment_id": comment_id,
@@ -842,6 +959,7 @@ class KGRepository:
             "content": content,
             "reply_id": reply_id,
             "pending_agent_reply": pending_agent_reply,
+            "is_error_response": is_error_response,
             "created_at": now,
         })
 
@@ -856,26 +974,39 @@ class KGRepository:
             decision_id=r["decision_id"],
             parent_id=r["parent_id"],
             pending_agent_reply=r["pending_agent_reply"] or False,
+            is_error_response=r.get("is_error_response") or False,
             created_at=_convert_neo4j_datetime(r["created_at"]),
         )
 
-    async def delete_comment(self, comment_id: str, user_id: str) -> bool:
-        """Comment 삭제 (작성자 확인 + CASCADE)"""
+    async def delete_comment(self, comment_id: str, user_id: str) -> dict | None:
+        """Comment 삭제 (작성자 확인 + CASCADE)
+
+        Returns:
+            dict | None: 삭제 성공 시 {decision_id, meeting_id}, 실패 시 None
+        """
+        # 삭제 전에 정보 조회
         query = """
         MATCH (u:User {id: $user_id})-[:COMMENTS]->(c:Comment {id: $comment_id})
+        MATCH (c)-[:ON]->(d:Decision)
 
         // 대댓글도 함께 삭제
         OPTIONAL MATCH (reply:Comment)-[:REPLY_TO]->(c)
         DETACH DELETE reply
 
         DETACH DELETE c
-        RETURN true as deleted
+        RETURN d.id as decision_id, d.meeting_id as meeting_id
         """
         records = await self._execute_write(query, {
             "comment_id": comment_id,
             "user_id": user_id,
         })
-        return len(records) > 0
+        if not records:
+            return None
+        r = records[0]
+        return {
+            "decision_id": r.get("decision_id"),
+            "meeting_id": r.get("meeting_id"),
+        }
 
     # =========================================================================
     # Decision CRUD 확장
@@ -955,10 +1086,10 @@ class KGRepository:
 
         query = f"""
         MATCH (a:Agenda {{id: $agenda_id}})
-        OPTIONAL MATCH (m:Meeting)-[:CONTAINS]->(a)
+        OPTIONAL MATCH (m:Meeting)-[rel:CONTAINS]->(a)
         SET {', '.join(set_clauses)}
         RETURN a.id as id, a.topic as topic, a.description as description,
-               a.order as order, m.id as meeting_id
+               rel.order as order, m.id as meeting_id
         """
         records = await self._execute_write(query, params)
 
@@ -974,10 +1105,18 @@ class KGRepository:
             meeting_id=r["meeting_id"],
         )
 
-    async def delete_agenda(self, agenda_id: str, user_id: str) -> bool:
-        """Agenda 삭제 (전체 CASCADE)"""
+    async def delete_agenda(self, agenda_id: str, user_id: str) -> dict | None:
+        """Agenda 삭제 (전체 CASCADE)
+
+        Returns:
+            삭제된 경우: {"meeting_id": str}
+            실패한 경우: None
+        """
         query = """
         MATCH (a:Agenda {id: $agenda_id})
+
+        // meeting_id 먼저 저장
+        WITH a, a.meeting_id as meeting_id
 
         // 관련 Decision과 하위 엔티티 삭제
         OPTIONAL MATCH (a)-[:HAS_DECISION]->(d:Decision)
@@ -993,10 +1132,13 @@ class KGRepository:
         DETACH DELETE d
         DETACH DELETE a
 
-        RETURN true as deleted
+        RETURN meeting_id
         """
         records = await self._execute_write(query, {"agenda_id": agenda_id})
-        return len(records) > 0
+        if records:
+            r = records[0]
+            return {"meeting_id": r.get("meeting_id")}
+        return None
 
     # =========================================================================
     # ActionItem CRUD 확장
@@ -1025,7 +1167,7 @@ class KGRepository:
         OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
         OPTIONAL MATCH (d:Decision)-[:TRIGGERS]->(ai)
         {where_clause}
-        RETURN ai.id as id, ai.title as title, ai.description as description,
+        RETURN ai.id as id, ai.content as content,
                ai.status as status, assignee.id as assignee_id,
                ai.due_date as due_date, d.id as decision_id
         """
@@ -1034,8 +1176,7 @@ class KGRepository:
         return [
             KGActionItem(
                 id=r["id"],
-                title=r["title"] or "",
-                description=r["description"],
+                content=r["content"] or "",
                 status=r["status"] or "pending",
                 assignee_id=r["assignee_id"],
                 due_date=_convert_neo4j_datetime(r["due_date"]) if r["due_date"] else None,
@@ -1054,7 +1195,7 @@ class KGRepository:
         params: dict[str, Any] = {"action_item_id": action_item_id}
 
         for key, value in data.items():
-            if key in ("title", "description", "status"):
+            if key in ("content", "status"):
                 set_clauses.append(f"ai.{key} = ${key}")
                 params[key] = value
             elif key == "due_date" and value:
@@ -1069,7 +1210,7 @@ class KGRepository:
         OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
         OPTIONAL MATCH (d:Decision)-[:TRIGGERS]->(ai)
         SET {', '.join(set_clauses)}
-        RETURN ai.id as id, ai.title as title, ai.description as description,
+        RETURN ai.id as id, ai.content as content,
                ai.status as status, assignee.id as assignee_id,
                ai.due_date as due_date, d.id as decision_id
         """
@@ -1081,8 +1222,7 @@ class KGRepository:
         r = records[0]
         return KGActionItem(
             id=r["id"],
-            title=r["title"] or "",
-            description=r["description"],
+            content=r["content"] or "",
             status=r["status"] or "pending",
             assignee_id=r["assignee_id"],
             due_date=_convert_neo4j_datetime(r["due_date"]) if r["due_date"] else None,
@@ -1118,21 +1258,21 @@ class KGRepository:
 
         # 2. Agendas 조회
         agenda_query = """
-        MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)
-        RETURN a.id as id, a.topic as topic, a.description as description, a.order as order
-        ORDER BY a.order
+        MATCH (m:Meeting {id: $meeting_id})-[rel:CONTAINS]->(a:Agenda)
+        RETURN a.id as id, a.topic as topic, a.description as description, rel.order as order
+        ORDER BY rel.order
         """
         agenda_records = await self._execute_read(agenda_query, {"meeting_id": meeting_id})
 
         agendas = []
         for a in agenda_records:
             # 3. Decisions per Agenda (with approvers/rejectors)
-            # active Decision만 조회 (superseded, outdated, rejected 제외)
+            # active Decision만 조회 (superseded, outdated 제외 - rejected는 포함)
             decision_query = """
             MATCH (a:Agenda {id: $agenda_id})-[:HAS_DECISION]->(d:Decision)
-            WHERE NOT (d.status IN ['superseded', 'outdated', 'rejected'])
-            OPTIONAL MATCH (approver:User)-[:APPROVED_BY]->(d)
-            OPTIONAL MATCH (rejector:User)-[:REJECTED_BY]->(d)
+            WHERE NOT (d.status IN ['superseded', 'outdated'])
+            OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
+            OPTIONAL MATCH (rejector:User)-[:REJECTS]->(d)
             // 이전 GT 조회 (OUTDATES 관계 - latest → outdated)
             OPTIONAL MATCH (d)-[:OUTDATES]->(prev:Decision)
             WHERE prev.status = 'outdated'
@@ -1186,6 +1326,7 @@ class KGRepository:
                 RETURN c.id as id, c.content as content,
                        u.id as author_id, u.name as author_name, u.email as author_email,
                        c.pending_agent_reply as pending_agent_reply,
+                       c.is_error_response as is_error_response,
                        c.created_at as created_at,
                        parent.id as parent_id
                 ORDER BY c.created_at
@@ -1226,6 +1367,7 @@ class KGRepository:
                             "email": c["author_email"] or "",
                         },
                         "pending_agent_reply": c["pending_agent_reply"] or False,
+                        "is_error_response": c.get("is_error_response") or False,
                         "created_at": _convert_neo4j_datetime(c["created_at"]).isoformat(),
                         "parent_id": c["parent_id"],
                     }
@@ -1269,14 +1411,14 @@ class KGRepository:
         action_item_query = """
         MATCH (m:Meeting {id: $meeting_id})-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)-[:TRIGGERS]->(ai:ActionItem)
         OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
-        RETURN ai.id as id, ai.title as title, ai.status as status,
+        RETURN ai.id as id, ai.content as content, ai.status as status,
                assignee.id as assignee_id, ai.due_date as due_date
         """
         action_item_records = await self._execute_read(action_item_query, {"meeting_id": meeting_id})
         action_items = [
             {
                 "id": ai["id"],
-                "title": ai["title"] or "",
+                "content": ai["content"] or "",
                 "status": ai["status"] or "pending",
                 "assignee_id": ai["assignee_id"],
                 "due_date": _convert_neo4j_datetime(ai["due_date"]).isoformat() if ai["due_date"] else None,
@@ -1295,10 +1437,10 @@ class KGRepository:
         """MIT Agent 시스템 사용자 조회/생성
 
         Returns:
-            str: mit-agent 사용자 ID
+            str: Agent 사용자 ID (UUID)
         """
-        agent_id = "mit-agent"
-        agent_name = "MIT Agent"
+        agent_id = DEFAULT_AI_AGENT.id
+        agent_name = DEFAULT_AI_AGENT.name
 
         query = """
         MERGE (u:User {id: $agent_id})
@@ -1331,3 +1473,105 @@ class KGRepository:
             query, {"comment_id": comment_id, "pending": pending}
         )
         return len(records) > 0
+
+    async def get_comment_pending_status(self, comment_id: str) -> bool | None:
+        """Comment의 pending_agent_reply 상태 조회
+
+        Args:
+            comment_id: Comment ID
+
+        Returns:
+            bool | None: pending_agent_reply 상태 (Comment가 없으면 None)
+        """
+        query = """
+        MATCH (c:Comment {id: $comment_id})
+        RETURN c.pending_agent_reply as pending
+        """
+        records = await self._execute_read(query, {"comment_id": comment_id})
+        if not records:
+            return None
+        return records[0].get("pending", False)
+
+    async def get_decision_thread_history(
+        self, decision_id: str
+    ) -> list[dict]:
+        """Decision에 달린 모든 Comment/Reply 이력 조회
+
+        AI가 이전 논의를 참고할 수 있도록 시간순 정렬된 대화 이력 반환
+
+        Args:
+            decision_id: Decision ID
+
+        Returns:
+            list[dict]: 대화 이력 [{role, content, author_name, created_at}, ...]
+        """
+        from app.constants.agents import AI_AGENTS
+
+        query = """
+        MATCH (u:User)-[:COMMENTS]->(c:Comment)-[:ON]->(d:Decision {id: $decision_id})
+        RETURN c.id as id, c.content as content,
+               u.id as author_id, u.name as author_name,
+               c.created_at as created_at
+        ORDER BY c.created_at
+        """
+        records = await self._execute_read(query, {"decision_id": decision_id})
+
+        # AI agent ID 목록
+        agent_ids = {agent.id for agent in AI_AGENTS}
+
+        history = []
+        for r in records:
+            is_ai = r["author_id"] in agent_ids
+            history.append({
+                "role": "assistant" if is_ai else "user",
+                "content": r["content"] or "",
+                "author_name": r["author_name"] or "",
+                "created_at": _convert_neo4j_datetime(r["created_at"]).isoformat(),
+            })
+
+        return history
+
+    async def get_meeting_context(self, meeting_id: str) -> dict | None:
+        """Meeting 컨텍스트 조회 (AI 응답 생성용)
+
+        Args:
+            meeting_id: Meeting ID
+
+        Returns:
+            {
+                "meeting_title": str,
+                "meeting_date": str,
+                "agenda_topics": list[str],  # 같은 회의의 Agenda 주제들
+                "other_decisions": list[dict],  # 같은 회의의 다른 Decision 요약
+            }
+        """
+        query = """
+        MATCH (m:Meeting {id: $meeting_id})
+        OPTIONAL MATCH (m)-[:CONTAINS]->(a:Agenda)
+        OPTIONAL MATCH (a)-[:HAS_DECISION]->(d:Decision)
+        WHERE d.status IN ['draft', 'latest']
+        RETURN m.title as title, m.started_at as date,
+               collect(DISTINCT a.topic) as agendas,
+               collect(DISTINCT {id: d.id, content: d.content}) as decisions
+        """
+        records = await self._execute_read(query, {"meeting_id": meeting_id})
+
+        if not records:
+            return None
+
+        r = records[0]
+
+        # Filter out null values from collections
+        agenda_topics = [topic for topic in r.get("agendas", []) if topic]
+        decisions = [
+            {"id": d["id"], "content": d["content"]}
+            for d in r.get("decisions", [])
+            if d.get("id") and d.get("content")
+        ]
+
+        return {
+            "meeting_title": r.get("title", ""),
+            "meeting_date": _convert_neo4j_datetime(r.get("date")).isoformat() if r.get("date") else "",
+            "agenda_topics": agenda_topics,
+            "other_decisions": decisions,
+        }

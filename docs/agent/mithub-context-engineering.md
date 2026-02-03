@@ -14,13 +14,15 @@
 | 모듈 | 파일 | 상태 | 설명 |
 |------|------|------|------|
 | **ContextManager** | `backend/app/infrastructure/context/manager.py` | 완료 | L0/L1 메모리, L1 백그라운드 처리, L1 토픽 분할 |
-| **ContextBuilder** | `backend/app/infrastructure/context/builder.py` | 완료 | 호출 유형별 컨텍스트 조합 + 시맨틱 서치 |
+| **ContextBuilder** | `backend/app/infrastructure/context/builder.py` | 완료 | 호출 유형별 컨텍스트 조합 + 비동기 시맨틱 서치 |
 | **SpeakerContext** | `backend/app/infrastructure/context/speaker_context.py` | 완료 | 화자별 통계 및 역할 추론 |
-| **Embedding (API)** | `backend/app/infrastructure/context/embedding.py` | 완료 | CLOVA Studio Embedding API (bge-m3) |
+| **Embedding (API)** | `backend/app/infrastructure/context/embedding.py` | 완료 | CLOVA Studio Embedding API (bge-m3), 배치 임베딩 지원 |
+| **배치 임베딩** | `manager.py:_embed_topics_batch_async()` | 완료 | L1 처리 후 병렬 API 호출로 배치 임베딩 |
+| **비동기 시맨틱 서치** | `manager.py:search_similar_topics_async()` | 완료 | 비동기 쿼리 임베딩 + 유사도 검색 |
 | **토픽 분할 프롬프트** | `backend/app/infrastructure/context/prompts/topic_separation.py` | 완료 | 초기/재귀 토픽 분할 |
 | **테스트 스크립트** | `backend/app/infrastructure/context/run_test.py` | 완료 | 옵션7 전용 통합 테스트 |
 | **Checkpointer(그래프)** | `backend/app/infrastructure/graph/checkpointer.py` | 완료 | 멀티턴 그래프 상태 영속화 |
-| **Context Runtime Cache** | `backend/app/services/context_runtime.py` | 완료 | TTL Cache 기반 실시간 ContextManager 캐시 (maxsize=500, ttl=1h) |
+| **Context Runtime Cache** | `backend/app/services/context_runtime.py` | 완료 | TTL Cache 기반 실시간 ContextManager 캐시 (maxsize=10, ttl=1h) |
 
 ### 0.2 미구현/제약
 
@@ -90,11 +92,19 @@
 - 로컬 모델 대신 API 호출로 서버 메모리 부담 없음
 - 요약(`segment.summary`)에 대해 임베딩 생성 후 메모리에 저장
 
-### 4.2 검색
-- `search_similar_topics(query, top_k, threshold)`
+### 4.2 배치 임베딩 (최적화)
+- **`_embed_topics_batch_async(segments)`**: 여러 토픽을 병렬 API 호출로 배치 임베딩
+- L1 처리 완료 후 새로 생성된 세그먼트를 한 번에 임베딩
+- `asyncio.gather`로 병렬 호출 → 11개 토픽 = 11번 순차 → 1번 병렬 배치
+- 실패한 임베딩은 영벡터로 저장하지 않음 (fallback 검색 유지)
+
+### 4.3 시맨틱 서치
+- **`search_similar_topics_async(query, top_k, threshold)`**: 비동기 시맨틱 서치 (권장)
+- `search_similar_topics()`: 동기 버전 (하위 호환성)
+- 쿼리 임베딩도 비동기로 생성하여 블로킹 방지
 - 임베딩 미사용 시 fallback으로 최근 L1 반환
 
-### 4.3 토픽 병합
+### 4.4 토픽 병합
 - 토픽 수가 `max_topics`(기본 30) 초과 시 자동 병합
 - `_check_and_merge_topics()`: L1 처리 완료 후 자동 호출
 - 유사도 계산: cosine similarity (임베딩 기반)
@@ -110,12 +120,14 @@
 2. API가 **Context Runtime Cache**를 증분 업데이트
 3. 에이전트 호출 시 캐시된 ContextManager 사용
 4. L1 완료 대기 (`await_l1_idle()`)
-5. Planning context 생성 (L0/L1 요약)
-6. Planning 단계에서 `required_topics` 도출
-7. `additional_context` 생성 후 그래프 실행
+5. Planning context 생성 (L0 + L1 토픽 목록)
+6. Planning 단계에서 plan 생성
+7. **Semantic Search**로 관련 L1 토픽 선택 (query = 사용자 질문)
+8. `build_additional_context_with_search_async()`로 `additional_context` 구성 후 그래프 실행
 
 ### 5.2 참고
-- `required_topics`는 **그래프 외부에서 사용**, 오케스트레이션 상태에는 전달하지 않음
+- 현재 실서비스/테스트 모두 시맨틱 서치 기반 `additional_context`를 사용함.
+- Planning 결과는 plan/need_tools/can_answer/next_subquery/missing_requirements 중심으로 사용됨.
 
 ### 5.3 실제 서비스 워크플로우 (RealtimeWorker ↔ API)
 
@@ -161,7 +173,8 @@
 
 ## 6. run_test.py (통합 파이프라인 검증)
 
-run_test.py는 **실제 서비스와 동일한 전체 컨텍스트 파이프라인**을 단일 스크립트로 검증한다.
+run_test.py는 **실서비스 흐름을 최대한 근접하게 모사한 통합 테스트 스크립트**다.
+(`ContextRuntime` 증분 업데이트 API 경로 대신, 테스트 내부에서 `ContextManager.add_utterance()`를 직접 호출)
 
 ### 6.1 검증 범위
 
@@ -172,20 +185,18 @@ run_test.py는 **실제 서비스와 동일한 전체 컨텍스트 파이프라�
 | **L1 백그라운드 처리** | 25턴 도달 시 자동 큐잉 → 백그라운드 토픽 분할/요약 |
 | **시맨틱 서치** | BGE-M3 임베딩 기반 유사 토픽 검색 |
 | **토픽 병합** | max_topics 초과 시 유사 토픽 자동 병합 |
-| **Checkpointer** | 그래프 상태 영속화 (SQLite 기반) |
+| **Checkpointer** | 그래프 상태 영속화 (AsyncPostgresSaver / PostgreSQL) |
 
 ### 6.2 실행 흐름
 
 ```
 1. 임시 DB 초기화 (SQLite)
-2. 샘플 발화 50개 순차 삽입 (0.5초 간격)
+2. 샘플 발화(시나리오 전체, 현재 106개) 순차 삽입
    └── 매 발화마다 ContextManager.add_utterance()
-3. 25턴 도달 시 [L1 BG START] 로그 출력
+3. 25턴 도달 시 L1 chunk queued
    └── 백그라운드에서 토픽 분할/요약 수행
-4. 모든 발화 완료 후 await_pending_l1() 호출
-   └── 백그라운드 작업 완료 대기
-5. 에이전트 쿼리로 시맨틱 토픽 검색 수행
-6. Checkpointer 저장 여부 확인
+4. wake word 발화 시 planning + additional_context 구성 후 orchestration 실행
+5. 종료 시점에 Checkpointer 저장 여부 확인
 ```
 
 ### 6.3 실행 방법
@@ -198,15 +209,10 @@ uv run python -m app.infrastructure.context.run_test
 ### 6.4 예상 출력
 
 ```
-[L1 BG START] 토픽 분할 시작
-[L1 BG DONE] 토픽 2개 생성
-
-=== Topic Search (Agent Query) ===
-Query: "예산 관련 논의 내용을 알려줘"
-Found 2 topics:
-  - 예산 논의 (similarity: 0.85)
-  - 분기 계획 (similarity: 0.72)
-
+L1 chunk queued: 25 utterances, total pending: 1
+Awaiting 1 pending L1 chunks...
+Chunk 1: 2 topics from turn 1~25
+L1 processing complete: 2 total segments
 ✅ 체크포인트 저장됨!
 ```
 
@@ -226,7 +232,6 @@ speaker_buffer_max_per_speaker = 25
 
 max_topics = 30
 topic_merge_threshold = 0.80
-topic_similarity_threshold = 0.85
 
 # CLOVA Studio API 사용
 embedding_model = "bge-m3"
@@ -240,7 +245,7 @@ topic_search_threshold = 0.30
 
 ```python
 # TTL Cache: 메모리 누수 방지
-maxsize = 500    # 동시 최대 500개 회의
+maxsize = 10     # 동시 최대 10개 회의
 ttl = 3600       # 1시간 미접근 시 자동 삭제
 ```
 
@@ -255,6 +260,7 @@ ttl = 3600       # 1시간 미접근 시 자동 삭제
 | L1 영속화 없음 | 메모리 기반 | 재로드 시 L1 재생성 필요 |
 | 임베딩 API 의존 | CLOVA Studio API 필요 | API 키 미설정 시 fallback |
 | 실시간 캐시 유실 | 서버 재시작 시 캐시 초기화 | TTL Cache로 메모리 관리 (1시간 미접근 시 삭제) |
+| Planning fallback 잔여 필드 | required_topics는 legacy인데 fallback return에 잔존 | Planning 예외 경로에서 키 정리 필요 |
 
 ---
 
@@ -291,3 +297,4 @@ backend/app/api/v1/endpoints/
 - **CLOVA Studio Embedding API** 사용으로 서버 메모리 부담 없음
 - **TTL Cache** 적용으로 런타임 메모리 누수 방지
 - **checkpointer는 그래프 상태 영속화**에만 사용, 컨텍스트는 별개
+- **additional_context는 semantic search 기반**으로 구성

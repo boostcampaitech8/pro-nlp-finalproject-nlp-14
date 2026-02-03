@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_current_user, handle_service_error
+from app.constants.agents import has_agent_mention
 from app.core.neo4j import get_neo4j_driver
 from app.models.user import User
 from app.schemas import ErrorResponse
@@ -55,7 +56,7 @@ async def create_comment(
             content=comment.content,
             author=UserBriefResponse(id=str(current_user.id), name=current_user.name),
             replies=[],
-            pending_agent_reply="@mit" in request.content.lower(),
+            pending_agent_reply=has_agent_mention(request.content),
             created_at=comment.created_at,
         )
     except ValueError as e:
@@ -88,7 +89,7 @@ async def create_reply(
             content=reply.content,
             author=UserBriefResponse(id=str(current_user.id), name=current_user.name),
             replies=[],
-            pending_agent_reply="@mit" in request.content.lower(),
+            pending_agent_reply=has_agent_mention(request.content),
             created_at=reply.created_at,
         )
     except ValueError as e:

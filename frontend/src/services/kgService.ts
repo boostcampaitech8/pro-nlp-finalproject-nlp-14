@@ -26,6 +26,7 @@ interface CommentRaw {
   author: { id: string; name: string };
   replies: CommentRaw[];
   pendingAgentReply: boolean;
+  isErrorResponse: boolean;
   createdAt: string;
 }
 
@@ -39,8 +40,7 @@ interface SuggestionRaw {
 
 interface ActionItemRaw {
   id: string;
-  title: string;
-  description: string | null;
+  content: string;
   status: 'pending' | 'in_progress' | 'completed';
   assigneeId: string | null;
   dueDate: string | null;
@@ -108,6 +108,7 @@ function transformComment(raw: CommentRaw): Comment {
     author: raw.author,
     replies: raw.replies.map(transformComment),
     pendingAgentReply: raw.pendingAgentReply,
+    isErrorResponse: raw.isErrorResponse,
     createdAt: raw.createdAt,
   };
 }
@@ -129,8 +130,7 @@ function transformSuggestion(raw: SuggestionRaw): Suggestion {
 function transformActionItem(raw: ActionItemRaw): ActionItem {
   return {
     id: raw.id,
-    title: raw.title,
-    description: raw.description,
+    content: raw.content,
     status: raw.status,
     assigneeId: raw.assigneeId,
     dueDate: raw.dueDate,

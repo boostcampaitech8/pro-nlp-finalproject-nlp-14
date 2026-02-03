@@ -181,9 +181,9 @@ def generate_template_cypher(
     # Pattern 5: 복합 메타 검색 (담당자와 같은 팀원)
     if intent_type == "meta_search" and search_focus == "Composite" and effective_search_term:
         cypher = f"""
-        MATCH (m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_ACTION]->(ai:ActionItem)<-[:ASSIGNED_TO]-(owner:User)
+        MATCH (m:Meeting)-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)-[:TRIGGERS]->(ai:ActionItem)<-[:ASSIGNED_TO]-(owner:User)
         MATCH (owner)-[:MEMBER_OF]->(team:Team)<-[:MEMBER_OF]-(member:User)
-        WHERE (ai.title CONTAINS $search_term OR a.title CONTAINS $search_term OR m.title CONTAINS $search_term)
+        WHERE (ai.content CONTAINS $search_term OR a.topic CONTAINS $search_term OR m.title CONTAINS $search_term)
           AND member.id <> owner.id
         RETURN member.id AS id,
                member.name AS title,
