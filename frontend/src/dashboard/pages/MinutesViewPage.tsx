@@ -5,7 +5,7 @@
  * Agenda/Decision 인라인 수정, Comments, Suggestions, ActionItems 통합
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -91,8 +91,8 @@ function getPendingSuggestion(decision: DecisionWithReview) {
   ) || null;
 }
 
-// Decision 카드 컴포넌트
-function DecisionCard({
+// M1: Decision 카드 컴포넌트 - React.memo로 불필요한 리렌더링 방지
+const DecisionCard = memo(function DecisionCard({
   decision,
   meetingId,
   currentUserId,
@@ -127,9 +127,11 @@ function DecisionCard({
   const hasRejected = currentUserId && decision.rejectors.includes(currentUserId);
   const canReview = decision.status === 'draft' && !hasApproved && !hasRejected;
 
-  // AI가 Decision 내용을 생성 중인지 확인
-  const isGenerating = isAIGeneratingDecision(decision);
-  const pendingSuggestion = getPendingSuggestion(decision);
+  // M2: AI가 Decision 내용을 생성 중인지 확인 - useMemo로 최적화
+  const { isGenerating, pendingSuggestion } = useMemo(() => ({
+    isGenerating: isAIGeneratingDecision(decision),
+    pendingSuggestion: getPendingSuggestion(decision),
+  }), [decision]);
 
   // 최종 상태 여부 (rejected 또는 latest면 suggestion 불가)
   const isFinalState = decision.status === 'latest' || decision.status === 'rejected';
@@ -187,9 +189,19 @@ function DecisionCard({
         </div>
       )}
       {/* Decision 헤더 - 클릭으로 펼치기/접기 */}
+      {/* M4: 접근성 속성 추가 */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
         className="p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50/50 transition-colors"
         onClick={() => setIsExpanded(!isExpanded)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        }}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
@@ -419,7 +431,7 @@ function DecisionCard({
       )}
     </div>
   );
-}
+});
 
 // Agenda 섹션 컴포넌트
 function AgendaSection({
