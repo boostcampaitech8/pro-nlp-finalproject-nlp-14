@@ -218,13 +218,16 @@ async def process_suggestion_task(
 ) -> dict:
     """Suggestion AI 분석 태스크
 
+    Suggestion을 반영하여 AI가 새로운 Decision 내용을 생성합니다.
+
     NOTE: 새로운 설계에서는 Suggestion 생성 시 즉시 draft Decision이 생성됩니다.
-    이 태스크는 AI 분석 후 Suggestion 상태 업데이트만 수행합니다.
+    이 태스크는 AI가 새 Decision 내용을 생성하고, 해당 draft Decision을 업데이트합니다.
 
     워크플로우:
     1. Decision 컨텍스트 조회
-    2. LangGraph mit-suggestion 워크플로우 실행 (선택적)
-    3. Suggestion 상태 업데이트 (accepted/rejected)
+    2. LangGraph mit-suggestion 워크플로우 실행 (AI가 새 Decision 내용 생성)
+    3. 생성된 draft Decision 내용 업데이트
+    4. Suggestion 상태 업데이트 (accepted)
 
     Args:
         ctx: ARQ 컨텍스트
@@ -248,29 +251,73 @@ async def process_suggestion_task(
             await kg_repo.update_suggestion_status(suggestion_id, "rejected")
             return {"status": "error", "message": "Decision not found"}
 
-        # 2. mit-suggestion 워크플로우 실행 (선택적)
-        # TODO: LangGraph 워크플로우 구현 시 활성화
-        # from app.infrastructure.graph.workflows.mit_suggestion.graph import (
-        #     mit_suggestion_graph,
-        # )
-        #
-        # result = await mit_suggestion_graph.ainvoke({
-        #     "suggestion_content": content,
-        #     "decision_context": decision.content,
-        # })
+        # 2. Suggestion 정보 조회 (created_decision_id 획득)
+        suggestion = await kg_repo.get_suggestion(suggestion_id)
+        if not suggestion:
+            logger.error(f"[process_suggestion_task] Suggestion not found: {suggestion_id}")
+            return {"status": "error", "message": "Suggestion not found"}
 
-        # 3. Suggestion 상태 업데이트 (새 Decision은 이미 생성됨)
-        # AI 분석 결과에 따라 accepted/rejected로 업데이트
-        # 현재는 임시로 accepted로 설정
+        # 3. mit-suggestion 워크플로우 실행
+        from app.infrastructure.graph.workflows.mit_suggestion.graph import (
+            mit_suggestion_graph,
+        )
+
+        result = await mit_suggestion_graph.ainvoke(
+            {
+                "mit_suggestion_id": suggestion_id,
+                "mit_suggestion_content": content,
+                "mit_suggestion_decision_id": decision_id,
+                "mit_suggestion_decision_content": decision.content,
+                "mit_suggestion_decision_context": decision.context,
+                "mit_suggestion_agenda_topic": decision.agenda_topic,
+                "mit_suggestion_meeting_id": decision.meeting_id,
+            },
+            config=get_runnable_config(
+                trace_name=f"mit_suggestion:{suggestion_id}",
+                metadata={"suggestion_id": suggestion_id, "decision_id": decision_id},
+            ),
+        )
+
+        # 4. 워크플로우 결과 추출
+        new_content = result.get("mit_suggestion_new_decision_content")
+        supersedes_reason = result.get("mit_suggestion_supersedes_reason", "")
+        confidence = result.get("mit_suggestion_confidence", "medium")
+
+        # 5. draft Decision 내용 업데이트 (이미 생성된 draft Decision)
+        if suggestion.created_decision_id and new_content:
+            await kg_repo.update_decision_content(
+                suggestion.created_decision_id,
+                content=new_content,
+                context=f"[AI 생성] {supersedes_reason}",
+            )
+            logger.info(
+                f"[process_suggestion_task] Draft decision updated: "
+                f"decision={suggestion.created_decision_id}, confidence={confidence}"
+            )
+
+        # 6. Suggestion 상태 업데이트
         await kg_repo.update_suggestion_status(suggestion_id, "accepted")
 
         logger.info(
-            f"[process_suggestion_task] Completed: suggestion={suggestion_id}"
+            f"[process_suggestion_task] Completed: suggestion={suggestion_id}, "
+            f"confidence={confidence}"
         )
+
+        # 7. Minutes SSE 이벤트 발행 (draft Decision 업데이트 알림)
+        if decision.meeting_id:
+            await minutes_event_manager.publish(decision.meeting_id, {
+                "event": "suggestion_processed",
+                "suggestion_id": suggestion_id,
+                "decision_id": decision_id,
+                "created_decision_id": suggestion.created_decision_id,
+                "confidence": confidence,
+            })
 
         return {
             "status": "success",
             "suggestion_id": suggestion_id,
+            "confidence": confidence,
+            "new_decision_content": new_content[:100] + "..." if new_content and len(new_content) > 100 else new_content,
         }
 
     except Exception as e:

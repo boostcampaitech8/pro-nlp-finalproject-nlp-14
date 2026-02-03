@@ -9,15 +9,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Reply, Trash2, Bot, Loader2, User, AlertCircle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Comment } from '@/types';
-import { isAIAgent, isAIAgentByName, AI_AGENTS } from '@/constants';
+import { isAIAgent, isAIAgentByName } from '@/constants';
 import { UnifiedInput } from './UnifiedInput';
-
-// 멘션 분리용 패턴 (split에서 캡처 그룹 사용)
-const MENTION_SPLIT_PATTERN = new RegExp(
-  `(${AI_AGENTS.map((a) => a.mention.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
-  'gi'
-);
 
 interface CommentItemProps {
   comment: Comment;
@@ -138,23 +134,6 @@ export function CommentItem({
     }
   };
 
-  // @부덕이 등 에이전트 멘션 하이라이트
-  const renderContent = (text: string) => {
-    const parts = text.split(MENTION_SPLIT_PATTERN);
-    return parts.map((part, i) => {
-      // AI_AGENTS의 mention과 일치하는지 확인
-      const isMention =
-        part && AI_AGENTS.some((agent) => agent.mention.toLowerCase() === part.toLowerCase());
-      return isMention ? (
-        <span key={i} className="text-purple-600 font-medium bg-purple-100 px-1 rounded">
-          {part}
-        </span>
-      ) : (
-        <span key={i}>{part}</span>
-      );
-    });
-  };
-
   return (
     <div
       className={`${depth > 0 ? 'ml-6 pl-4 border-l-2 border-gray-100' : ''}`}
@@ -245,14 +224,19 @@ export function CommentItem({
 
         {/* 내용 */}
         <div
-          className={`text-sm whitespace-pre-wrap ${
+          className={`text-sm ${
             comment.isErrorResponse ? 'text-red-700' : 'text-gray-700'
           }`}
         >
-          {renderContent(isAI && !comment.isErrorResponse ? displayedContent : comment.content)}
-          {isTyping && (
-            <span className="inline-block w-1 h-4 ml-0.5 bg-purple-600 animate-pulse" />
-          )}
+          {/* 모든 댓글에 마크다운 렌더링 적용 */}
+          <div className="prose prose-sm max-w-none prose-gray prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-headings:text-gray-800 prose-strong:text-gray-800 prose-code:text-purple-700 prose-code:bg-purple-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-800 prose-pre:text-gray-100">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {isAI && !comment.isErrorResponse ? displayedContent : comment.content}
+            </ReactMarkdown>
+            {isTyping && (
+              <span className="inline-block w-1 h-4 ml-0.5 bg-purple-600 animate-pulse" />
+            )}
+          </div>
         </div>
 
         {/* AI 응답 대기 표시 */}

@@ -313,22 +313,56 @@ class KGRepository:
 
     # --- 상태 변경 (승인/거절/머지) ---
 
-    async def reject_decision(self, decision_id: str, user_id: str) -> bool:
-        """결정 거절 (REJECTS 관계 생성)
+    async def reject_decision(self, decision_id: str, user_id: str) -> dict:
+        """결정 거절 - 한 명이라도 거절하면 즉시 rejected 상태로 변경
+
+        draft 상태의 Decision만 rejected로 변경됨.
+        이미 finalized된 상태(rejected, outdated, superseded)는 변경하지 않음.
 
         Returns:
-            bool: 거절 성공 여부 (decision과 user가 존재하면 True)
+            {
+                "rejected": bool,  # 거절 성공 여부 (관계 생성 성공)
+                "status": str,     # 최종 상태
+                "already_finalized": bool,  # 이미 종결된 상태였는지
+            }
         """
+        now = datetime.now(timezone.utc).isoformat()
+
         query = """
         MATCH (d:Decision {id: $decision_id})
         MATCH (u:User {id: $user_id})
+
+        // 1. REJECTS 관계 생성
         MERGE (u)-[:REJECTS]->(d)
-        RETURN d.id as decision_id
+
+        // 2. 현재 상태 확인 - draft인 경우만 rejected로 변경
+        WITH d, d.status as old_status
+        SET d.status = CASE
+            WHEN d.status = 'draft' THEN 'rejected'
+            ELSE d.status
+        END,
+        d.updated_at = CASE
+            WHEN old_status = 'draft' THEN datetime($now)
+            ELSE d.updated_at
+        END
+
+        RETURN d.id as decision_id,
+               d.status as status,
+               old_status IN ['rejected', 'outdated', 'superseded', 'latest'] as already_finalized
         """
         records = await self._execute_write(
-            query, {"decision_id": decision_id, "user_id": user_id}
+            query, {"decision_id": decision_id, "user_id": user_id, "now": now}
         )
-        return len(records) > 0
+
+        if not records:
+            return {"rejected": False, "status": "not_found", "already_finalized": False}
+
+        record = records[0]
+        return {
+            "rejected": True,
+            "status": record["status"],
+            "already_finalized": record["already_finalized"],
+        }
 
     async def merge_decision(self, decision_id: str) -> bool:
         """결정 승격 (draft -> latest)
@@ -381,6 +415,7 @@ class KGRepository:
                 "status": str,          # 최종 상태
                 "approvers_count": int,
                 "participants_count": int,
+                "already_rejected": bool, # 이미 거부된 경우 True
             }
         """
         now = datetime.now(timezone.utc).isoformat()
@@ -389,45 +424,50 @@ class KGRepository:
         MATCH (d:Decision {id: $decision_id})
         MATCH (u:User {id: $user_id})
 
-        // 1. 승인 관계 생성 (MERGE로 중복 방지)
-        MERGE (u)-[:APPROVES]->(d)
+        // 0. rejected 상태 체크 - rejected면 승인하지 않음
+        WITH d, u, d.status = 'rejected' as is_rejected
+
+        // 1. 승인 관계 생성 (rejected가 아닌 경우만)
+        FOREACH (_ IN CASE WHEN NOT is_rejected THEN [1] ELSE [] END |
+            MERGE (u)-[:APPROVES]->(d)
+        )
 
         // 2. 참여자 수와 승인자 수 계산
-        WITH d
+        WITH d, is_rejected
         MATCH (d)<-[:HAS_DECISION]-(a:Agenda)<-[:CONTAINS]-(m:Meeting)
         // 참여자가 Neo4j에 동기화되지 않았을 수 있으므로 OPTIONAL MATCH 사용
         OPTIONAL MATCH (participant:User)-[:PARTICIPATED_IN]->(m)
-        WITH d, a, [p IN collect(DISTINCT participant.id) WHERE p IS NOT NULL] as participants
+        WITH d, a, is_rejected, [p IN collect(DISTINCT participant.id) WHERE p IS NOT NULL] as participants
 
         OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
-        WITH d, a, participants, collect(DISTINCT approver.id) as approvers
+        WITH d, a, is_rejected, participants, collect(DISTINCT approver.id) as approvers
 
         // 3. 전원 승인 시: 기존 latest -> outdated + OUTDATES 관계
         // 참여자가 없으면 (p_count = 0) 자동 승격하지 않음 (데이터 동기화 필요)
-        WITH d, a, participants, approvers,
+        WITH d, a, is_rejected, participants, approvers,
              size(participants) as p_count,
              size(approvers) as a_count
         OPTIONAL MATCH (a)-[:HAS_DECISION]->(old:Decision)
-        WHERE old.status = 'latest' AND old.id <> d.id AND p_count > 0 AND p_count = a_count
+        WHERE old.status = 'latest' AND old.id <> d.id AND p_count > 0 AND p_count = a_count AND NOT is_rejected
         SET old.status = 'outdated', old.updated_at = datetime($now)
         // OUTDATES 관계 생성 (GT 변화 추적)
-        FOREACH (_ IN CASE WHEN old IS NOT NULL AND p_count > 0 AND p_count = a_count THEN [1] ELSE [] END |
+        FOREACH (_ IN CASE WHEN old IS NOT NULL AND p_count > 0 AND p_count = a_count AND NOT is_rejected THEN [1] ELSE [] END |
             MERGE (d)-[:OUTDATES]->(old)
         )
 
         // 4. 전원 승인 시: 현재 Decision -> latest
         // 참여자가 없으면 자동 승격하지 않음
-        WITH d, participants, approvers, p_count, a_count
+        WITH d, is_rejected, participants, approvers, p_count, a_count
         SET d.status = CASE
-            WHEN p_count > 0 AND p_count = a_count THEN 'latest'
+            WHEN p_count > 0 AND p_count = a_count AND NOT is_rejected THEN 'latest'
             ELSE d.status
         END,
         d.approved_at = CASE
-            WHEN p_count > 0 AND p_count = a_count THEN datetime()
+            WHEN p_count > 0 AND p_count = a_count AND NOT is_rejected THEN datetime()
             ELSE d.approved_at
         END,
         d.updated_at = CASE
-            WHEN p_count > 0 AND p_count = a_count THEN datetime($now)
+            WHEN p_count > 0 AND p_count = a_count AND NOT is_rejected THEN datetime($now)
             ELSE d.updated_at
         END
 
@@ -435,22 +475,24 @@ class KGRepository:
                d.status as status,
                p_count as participants_count,
                a_count as approvers_count,
-               p_count > 0 AND p_count = a_count as merged
+               p_count > 0 AND p_count = a_count AND NOT is_rejected as merged,
+               is_rejected as already_rejected
         """
         records = await self._execute_write(
             query, {"decision_id": decision_id, "user_id": user_id, "now": now}
         )
 
         if not records:
-            return {"approved": False, "merged": False, "status": "not_found"}
+            return {"approved": False, "merged": False, "status": "not_found", "already_rejected": False}
 
         record = records[0]
         return {
-            "approved": True,
-            "merged": record["merged"],
+            "approved": not record.get("already_rejected", False),
+            "merged": record["merged"] if not record.get("already_rejected") else False,
             "status": record["status"],
             "approvers_count": record["approvers_count"],
             "participants_count": record["participants_count"],
+            "already_rejected": record.get("already_rejected", False),
         }
 
     # --- 조회 ---
@@ -740,6 +782,33 @@ class KGRepository:
             created_at=_convert_neo4j_datetime(r["created_at"]),
         )
 
+    async def get_suggestion(self, suggestion_id: str) -> KGSuggestion | None:
+        """Suggestion 조회"""
+        query = """
+        MATCH (s:Suggestion {id: $suggestion_id})
+        MATCH (u:User)-[:SUGGESTS]->(s)
+        MATCH (s)-[:ON]->(original:Decision)
+        OPTIONAL MATCH (s)-[:CREATES]->(created:Decision)
+        RETURN s, u.id as author_id, original.id as decision_id,
+               created.id as created_decision_id, s.meeting_id as meeting_id
+        """
+        records = await self._execute_read(query, {"suggestion_id": suggestion_id})
+        if not records:
+            return None
+
+        r = records[0]
+        s = dict(r["s"])
+        return KGSuggestion(
+            id=s["id"],
+            content=s.get("content", ""),
+            author_id=r["author_id"],
+            status=s.get("status", "pending"),
+            decision_id=r["decision_id"],
+            created_decision_id=r.get("created_decision_id"),
+            meeting_id=r.get("meeting_id"),
+            created_at=_convert_neo4j_datetime(s.get("created_at")),
+        )
+
     async def update_suggestion_status(self, suggestion_id: str, status: str) -> bool:
         """Suggestion 상태 업데이트"""
         query = """
@@ -751,6 +820,42 @@ class KGRepository:
             "suggestion_id": suggestion_id,
             "status": status,
         })
+        return len(records) > 0
+
+    async def update_decision_content(
+        self, decision_id: str, content: str, context: str | None = None
+    ) -> bool:
+        """Decision 내용 업데이트 (AI 워크플로우용)"""
+        now = datetime.now(timezone.utc).isoformat()
+
+        if context is not None:
+            query = """
+            MATCH (d:Decision {id: $decision_id})
+            SET d.content = $content,
+                d.context = $context,
+                d.updated_at = datetime($updated_at)
+            RETURN d.id as id
+            """
+            params = {
+                "decision_id": decision_id,
+                "content": content,
+                "context": context,
+                "updated_at": now,
+            }
+        else:
+            query = """
+            MATCH (d:Decision {id: $decision_id})
+            SET d.content = $content,
+                d.updated_at = datetime($updated_at)
+            RETURN d.id as id
+            """
+            params = {
+                "decision_id": decision_id,
+                "content": content,
+                "updated_at": now,
+            }
+
+        records = await self._execute_write(query, params)
         return len(records) > 0
 
     # =========================================================================
@@ -1150,10 +1255,10 @@ class KGRepository:
         agendas = []
         for a in agenda_records:
             # 3. Decisions per Agenda (with approvers/rejectors)
-            # active Decision만 조회 (superseded, outdated, rejected 제외)
+            # active Decision만 조회 (superseded, outdated 제외 - rejected는 포함)
             decision_query = """
             MATCH (a:Agenda {id: $agenda_id})-[:HAS_DECISION]->(d:Decision)
-            WHERE NOT (d.status IN ['superseded', 'outdated', 'rejected'])
+            WHERE NOT (d.status IN ['superseded', 'outdated'])
             OPTIONAL MATCH (approver:User)-[:APPROVES]->(d)
             OPTIONAL MATCH (rejector:User)-[:REJECTS]->(d)
             // 이전 GT 조회 (OUTDATES 관계 - latest → outdated)

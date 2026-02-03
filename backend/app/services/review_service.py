@@ -44,6 +44,11 @@ class ReviewService:
             result = await self.kg_repo.approve_and_merge_if_complete(
                 decision_id, user_id
             )
+
+            # 이미 rejected된 decision에 approve 시도
+            if result.get("already_rejected"):
+                raise ValueError("DECISION_ALREADY_REJECTED")
+
             if not result["approved"]:
                 raise ValueError("DECISION_NOT_FOUND")
 
@@ -77,12 +82,22 @@ class ReviewService:
             )
 
         else:  # reject
-            success = await self.kg_repo.reject_decision(decision_id, user_id)
-            if not success:
+            result = await self.kg_repo.reject_decision(decision_id, user_id)
+            if not result["rejected"]:
                 raise ValueError("DECISION_NOT_FOUND")
 
             decision = await self.kg_repo.get_decision(decision_id)
-            logger.info(f"Decision rejected: decision={decision_id}, user={user_id}")
+
+            if result.get("already_finalized"):
+                logger.info(
+                    f"Decision reject attempted on finalized decision: "
+                    f"decision={decision_id}, user={user_id}, status={result['status']}"
+                )
+            else:
+                logger.info(
+                    f"Decision rejected: decision={decision_id}, user={user_id}, "
+                    f"status={result['status']}"
+                )
 
             # 이벤트 발행
             if decision:
@@ -91,6 +106,7 @@ class ReviewService:
                     "decision_id": decision_id,
                     "action": action,
                     "merged": False,
+                    "status": result["status"],
                 })
 
             return DecisionReviewResponse(
@@ -98,9 +114,9 @@ class ReviewService:
                 action="reject",
                 success=True,
                 merged=False,
-                status=decision.status if decision else "rejected",
+                status=result["status"],
                 approvers_count=len(decision.approvers) if decision else 0,
-                participants_count=0,  # reject에서는 참여자 수 미계산
+                participants_count=0,
             )
 
     async def _enqueue_mit_action(self, decision_id: str) -> None:
