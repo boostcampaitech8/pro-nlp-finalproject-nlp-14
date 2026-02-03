@@ -253,10 +253,13 @@ def init_realtime_telemetry(meeting_id: str) -> RealtimeWorkerMetrics:
     })
 
     # Tracer 설정
+    # TODO: Tempo 설치 후 traces export 활성화
+    # - Alloy configmap에서 traces output 추가 필요
+    # - 현재는 Alloy가 traces receiver를 지원하지 않아 UNIMPLEMENTED 에러 발생
     tracer_provider = TracerProvider(resource=resource)
-    tracer_provider.add_span_processor(
-        BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
-    )
+    # tracer_provider.add_span_processor(
+    #     BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+    # )
     trace.set_tracer_provider(tracer_provider)
     _tracer = trace.get_tracer("mit-realtime-worker", "0.1.0")
 
