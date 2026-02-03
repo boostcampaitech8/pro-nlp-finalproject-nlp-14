@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.infrastructure.context import ContextBuilder, ContextManager
+from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.infrastructure.graph.orchestration.nodes.planning import create_plan
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
@@ -122,11 +123,17 @@ class AgentService:
             "planning_context": planning_context,
         }
 
-        # 5. thread_id 기반 config (멀티턴 핵심)
+        # 5. thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
+        langfuse_config = get_runnable_config(
+            trace_name=f"voice_in_meeting:{meeting_id}",
+            user_id=user_id,
+            session_id=meeting_id,
+        )
         config = {
+            **langfuse_config,
             "configurable": {
                 "thread_id": meeting_id,  # 회의별 대화 컨텍스트 유지
-            }
+            },
         }
 
         try:
@@ -166,15 +173,18 @@ class AgentService:
         user_input: str,
         meeting_id: str,
         user_id: str,
-        db: AsyncSession,
+        planning_context: str,
     ) -> AsyncGenerator[dict, None]:
-        """Context Engineering + Orchestration + Event Streaming (프로토타입)
+        """Context Engineering + Orchestration + Event Streaming
+
+        DB 세션 없이 스트리밍만 수행합니다.
+        Context 로드는 호출 전에 미리 완료되어야 합니다.
 
         Args:
             user_input: 사용자 질의
             meeting_id: 회의 ID (thread_id로 사용하여 멀티턴 유지)
             user_id: 사용자 ID
-            db: DB 세션
+            planning_context: 미리 구성된 planning context 문자열
 
         Yields:
             dict: SSE 이벤트 ({'type': 'token', 'content': str} or {'type': 'done'})
@@ -185,34 +195,7 @@ class AgentService:
             user_input[:50] if user_input else "",
         )
 
-        # 1-8단계: 기존 process_with_context()와 동일한 Context Engineering
-        runtime = await get_or_create_runtime(meeting_id)
-        async with runtime.lock:
-            latest_start_ms = await get_latest_start_ms(db, meeting_id)
-            if latest_start_ms is not None:
-                await update_runtime_from_db(
-                    runtime,
-                    db,
-                    meeting_id,
-                    latest_start_ms,
-                )
-            ctx_manager = runtime.manager
-            loaded = runtime.last_utterance_id
-        logger.info("Context runtime 로드됨: %d개 발화", loaded)
-
-        # 2. 대기 중/실행 중인 L1 처리 완료 대기
-        l1_was_busy = ctx_manager.has_pending_l1 or ctx_manager.is_l1_running
-        await ctx_manager.await_l1_idle()
-        if l1_was_busy:
-            logger.info("L1 처리 완료: %d개 세그먼트", len(ctx_manager.l1_segments))
-
-        # 3. ContextBuilder로 planning context 구성
-        builder = ContextBuilder()
-        planning_context = builder.build_planning_input_context(
-            ctx_manager, user_query=user_input
-        )
-
-        # 4. Orchestration Graph 초기 상태 구성
+        # Orchestration Graph 초기 상태 구성 (DB 작업 없음)
         initial_state = {
             "messages": [HumanMessage(content=user_input)],
             "run_id": str(uuid.uuid4()),
@@ -222,16 +205,21 @@ class AgentService:
             "planning_context": planning_context,
         }
 
-        # 5. thread_id 기반 config (멀티턴 핵심)
+        # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
+        langfuse_config = get_runnable_config(
+            trace_name=f"voice_in_meeting:{meeting_id}",
+            user_id=user_id,
+            session_id=meeting_id,
+        )
         config = {
+            **langfuse_config,
             "configurable": {
                 "thread_id": meeting_id,
-            }
+            },
         }
 
         try:
-            # 6. astream_events()로 실행 (Planning 포함)
-            # Planning을 Graph 내부에서 실행하여 즉시 스트리밍 시작
+            # astream_events()로 실행 (Planning 포함)
             app = await self._get_app()
             async for event in stream_llm_tokens_only(app, initial_state, config):
                 yield event
