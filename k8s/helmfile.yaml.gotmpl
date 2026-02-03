@@ -194,6 +194,13 @@ releases:
           replicas: 0
         backend:
           replicas: 0
+        # SingleBinary 모드에서는 cache/gateway 불필요
+        gateway:
+          enabled: false
+        chunksCache:
+          enabled: false
+        resultsCache:
+          enabled: false
         singleBinary:
           replicas: 1
           persistence:

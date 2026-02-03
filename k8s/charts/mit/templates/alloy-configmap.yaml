@@ -17,9 +17,24 @@ data:
       }
       output {
         metrics = [otelcol.processor.batch.default.input]
-        // logs, traces는 Kubernetes 로그 수집 및 Tempo 설치 후 활성화
+        // TODO: Tempo 설치 후 traces 활성화
+        // 1. Tempo helm chart 설치 (MinIO 백엔드 필요)
+        // 2. 아래 traces output 주석 해제:
+        //    traces = [otelcol.exporter.otlp.tempo.input]
+        // 3. backend/app/core/telemetry.py, backend/worker/src/telemetry.py에서
+        //    BatchSpanProcessor 주석 해제
       }
     }
+
+    // TODO: Tempo 설치 후 주석 해제
+    // otelcol.exporter.otlp "tempo" {
+    //   client {
+    //     endpoint = "tempo:4317"
+    //     tls {
+    //       insecure = true
+    //     }
+    //   }
+    // }
 
     // ===========================================
     // Batch Processor (효율적 전송을 위한 배치 처리)

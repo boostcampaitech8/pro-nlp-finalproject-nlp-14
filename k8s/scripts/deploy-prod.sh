@@ -62,6 +62,32 @@ setup_ghcr_secret() {
     log_info "GHCR 시크릿 생성 완료"
 }
 
+# 이미지 태그 파일에서 환경변수 로드
+load_image_tags() {
+    local TAGS_FILE="$K8S_DIR/image-tags.yaml"
+    if [ -f "$TAGS_FILE" ]; then
+        log_info "이미지 태그 로드: $TAGS_FILE"
+
+        # yq가 설치되어 있는지 확인
+        if command -v yq &> /dev/null; then
+            export BACKEND_TAG="${BACKEND_TAG:-$(yq '.backend' "$TAGS_FILE")}"
+            export FRONTEND_TAG="${FRONTEND_TAG:-$(yq '.frontend' "$TAGS_FILE")}"
+            export WORKER_TAG="${WORKER_TAG:-$(yq '.worker' "$TAGS_FILE")}"
+        else
+            # yq가 없으면 grep/sed로 파싱 (fallback)
+            export BACKEND_TAG="${BACKEND_TAG:-$(grep '^backend:' "$TAGS_FILE" | sed 's/backend: *//')}"
+            export FRONTEND_TAG="${FRONTEND_TAG:-$(grep '^frontend:' "$TAGS_FILE" | sed 's/frontend: *//')}"
+            export WORKER_TAG="${WORKER_TAG:-$(grep '^worker:' "$TAGS_FILE" | sed 's/worker: *//')}"
+        fi
+
+        log_info "  Backend:  $BACKEND_TAG"
+        log_info "  Frontend: $FRONTEND_TAG"
+        log_info "  Worker:   $WORKER_TAG"
+    else
+        log_warn "이미지 태그 파일 없음, 기본값(latest) 사용"
+    fi
+}
+
 # 배포 실행
 deploy() {
     log_info "배포 시작"
@@ -77,6 +103,9 @@ deploy() {
         log_error ".env 파일 없음: $ENV_FILE"
         exit 1
     fi
+
+    # 이미지 태그 파일 로드 (환경변수로 덮어쓰기 가능)
+    load_image_tags
 
     cd "$K8S_DIR"
 
@@ -195,6 +224,10 @@ case "${1:-}" in
         echo ""
         echo "설정:"
         echo "  --setup-ghcr              GHCR 인증 시크릿 (최초 1회)"
+        echo ""
+        echo "이미지 태그:"
+        echo "  기본값은 k8s/image-tags.yaml에서 로드"
+        echo "  환경변수로 덮어쓰기 가능: BACKEND_TAG, FRONTEND_TAG, WORKER_TAG"
         ;;
     *)
         deploy
