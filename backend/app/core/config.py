@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_enabled: bool = True
 
+    # 팀 제한 설정
+    max_team_members: int = 7  # AI Agent 미포함
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
