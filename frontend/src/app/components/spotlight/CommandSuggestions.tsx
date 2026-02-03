@@ -1,8 +1,17 @@
 // 추천 명령어 컴포넌트
+import { Video, Search, Calendar, Users, type LucideIcon } from 'lucide-react';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { useCommand } from '@/app/hooks/useCommand';
 import { SUGGESTIONS_DISPLAY_LIMIT } from '@/app/constants';
 import type { Suggestion } from '@/app/types/command';
+
+// 아이콘 이름 -> Lucide 컴포넌트 매핑
+const iconMap: Record<string, LucideIcon> = {
+  video: Video,
+  search: Search,
+  calendar: Calendar,
+  users: Users,
+};
 
 interface SuggestionCardProps {
   suggestion: Suggestion;
@@ -10,6 +19,8 @@ interface SuggestionCardProps {
 }
 
 function SuggestionCard({ suggestion, onSelect }: SuggestionCardProps) {
+  const IconComponent = iconMap[suggestion.icon];
+
   return (
     <button
       onClick={() => onSelect(suggestion.command)}
@@ -17,7 +28,11 @@ function SuggestionCard({ suggestion, onSelect }: SuggestionCardProps) {
     >
       <div className="flex items-start gap-3">
         <div className="icon-container-sm flex-shrink-0 group-hover:scale-105 transition-transform">
-          <span className="text-lg">{suggestion.icon}</span>
+          {IconComponent ? (
+            <IconComponent className="w-5 h-5 text-mit-primary" />
+          ) : (
+            <span className="text-lg">{suggestion.icon}</span>
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-card-title mb-1 group-hover:text-mit-primary transition-colors">

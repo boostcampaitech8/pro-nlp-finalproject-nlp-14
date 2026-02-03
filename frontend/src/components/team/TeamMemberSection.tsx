@@ -62,7 +62,7 @@ export function TeamMemberSection({
   return (
     <div className="mt-8">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xl font-bold text-gray-900">
+        <h3 className="text-xl font-bold text-white">
           Team Members ({members.length})
         </h3>
         {canManageMembers && (
@@ -74,8 +74,8 @@ export function TeamMemberSection({
 
       {/* 멤버 초대 폼 */}
       {showInviteForm && (
-        <div className="bg-white rounded-xl shadow-md p-6 mb-4">
-          <h4 className="text-lg font-semibold mb-4">Invite New Member</h4>
+        <div className="glass-card p-6 mb-4">
+          <h4 className="text-lg font-semibold text-white mb-4">Invite New Member</h4>
           <form onSubmit={handleInvite} className="space-y-4">
             <Input
               label="Email"
@@ -86,16 +86,16 @@ export function TeamMemberSection({
               required
             />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-white/70 mb-1">
                 Role
               </label>
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value as TeamRole)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-mit-primary/50"
               >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
+                <option value="member" className="bg-gray-800">Member</option>
+                <option value="admin" className="bg-gray-800">Admin</option>
               </select>
             </div>
             <div className="flex gap-2">
@@ -114,7 +114,7 @@ export function TeamMemberSection({
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-md divide-y">
+      <div className="glass-card divide-y divide-white/10">
         {members.map((member) => (
           <MemberRow
             key={member.id}
@@ -172,13 +172,13 @@ function MemberRow({
   return (
     <div className="p-4 flex items-center justify-between">
       <div>
-        <p className="font-medium text-gray-900">
+        <p className="font-medium text-white">
           {member.user?.name || 'Unknown User'}
           {isCurrentUser && (
-            <span className="text-gray-500 text-sm ml-2">(You)</span>
+            <span className="text-white/50 text-sm ml-2">(You)</span>
           )}
         </p>
-        <p className="text-sm text-gray-500">{member.user?.email}</p>
+        <p className="text-sm text-white/60">{member.user?.email}</p>
       </div>
       <div className="flex items-center gap-2">
         {isEditing ? (
@@ -187,10 +187,10 @@ function MemberRow({
             <select
               value={editRole}
               onChange={(e) => onEditRoleChange(e.target.value as TeamRole)}
-              className="px-2 py-1 border border-gray-300 rounded text-sm"
+              className="px-2 py-1 bg-white/5 border border-white/10 rounded text-sm text-white"
             >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
+              <option value="member" className="bg-gray-800">Member</option>
+              <option value="admin" className="bg-gray-800">Admin</option>
             </select>
             <Button
               variant="outline"
@@ -233,7 +233,7 @@ function MemberRow({
               <Button
                 variant="outline"
                 onClick={onRemove}
-                className="text-sm px-2 py-1 text-red-600 border-red-300 hover:bg-red-50"
+                className="text-sm px-2 py-1 text-red-400 border-red-500/30 hover:bg-red-500/20"
               >
                 Remove
               </Button>

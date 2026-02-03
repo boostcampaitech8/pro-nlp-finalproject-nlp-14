@@ -16,7 +16,7 @@ export function PRStatusBadge({ status }: PRStatusBadgeProps) {
   return (
     <div
       className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-        isOpen ? 'bg-green-100 text-green-800' : 'bg-purple-100 text-purple-800'
+        isOpen ? 'bg-green-500/20 text-green-300' : 'bg-purple-500/20 text-purple-300'
       }`}
     >
       {isOpen ? (

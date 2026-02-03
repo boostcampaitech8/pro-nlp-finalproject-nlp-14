@@ -41,7 +41,6 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     isUploading,
     audioInputDeviceId,
     audioOutputDeviceId,
-    micGain,
     remoteVolumes,
     // 화면공유
     isScreenSharing,
@@ -53,7 +52,6 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     forceMute,
     changeAudioInputDevice,
     changeAudioOutputDevice,
-    changeMicGain,
     changeRemoteVolume,
     // 화면공유
     startScreenShare,
@@ -257,81 +255,82 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
         </div>
 
         {/* 사이드바 - 참여자 목록 + 채팅 */}
-        {(showParticipants || showChat) && (
-          <aside className="w-80 bg-gray-850 border-l border-gray-700 flex flex-col">
-            {/* 참여자 목록 */}
-            <div className={`border-b border-gray-700 ${showParticipants ? '' : 'hidden'}`}>
-              <button
-                onClick={() => setShowParticipants(!showParticipants)}
-                className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-700/50 transition-colors"
-              >
-                <span className="text-white font-medium flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                  참여자 ({participants.size})
-                </span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className={`h-4 w-4 text-gray-400 transition-transform ${showParticipants ? 'rotate-180' : ''}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        <aside className="w-80 bg-gray-850 border-l border-gray-700 flex flex-col">
+          {/* 참여자 목록 헤더 - 항상 표시 */}
+          <div className="border-b border-gray-700">
+            <button
+              onClick={() => setShowParticipants(!showParticipants)}
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-700/50 transition-colors"
+            >
+              <span className="text-white font-medium flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
-              </button>
-              {showParticipants && (
-                <div className="p-4 pt-0">
-                  <ParticipantList
-                    participants={participants}
-                    currentUserId={userId}
-                    audioLevels={audioLevels}
-                    localMuteState={isAudioMuted}
-                    remoteVolumes={remoteVolumes}
-                    onVolumeChange={changeRemoteVolume}
-                    isHost={isHost}
-                    onForceMute={forceMute}
-                  />
-                </div>
-              )}
-            </div>
-            {/* 채팅 */}
-            <div className={`flex-1 min-h-0 flex flex-col ${showChat ? '' : 'hidden'}`}>
-              <button
-                onClick={() => setShowChat(!showChat)}
-                className="px-4 py-3 flex items-center justify-between hover:bg-gray-700/50 transition-colors border-b border-gray-700"
+                참여자 ({participants.size})
+              </span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className={`h-4 w-4 text-gray-400 transition-transform ${showParticipants ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
               >
-                <span className="text-white font-medium flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  채팅
-                </span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className={`h-4 w-4 text-gray-400 transition-transform ${showChat ? 'rotate-180' : ''}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {/* 참여자 목록 컨텐츠 - 토글로 표시/숨김 */}
+            {showParticipants && (
+              <div className="p-4 pt-0">
+                <ParticipantList
+                  participants={participants}
+                  currentUserId={userId}
+                  audioLevels={audioLevels}
+                  localMuteState={isAudioMuted}
+                  remoteVolumes={remoteVolumes}
+                  onVolumeChange={changeRemoteVolume}
+                  isHost={isHost}
+                  onForceMute={forceMute}
+                />
+              </div>
+            )}
+          </div>
+          {/* 채팅 */}
+          <div className="flex-1 min-h-0 flex flex-col">
+            {/* 채팅 헤더 - 항상 표시 */}
+            <button
+              onClick={() => setShowChat(!showChat)}
+              className="px-4 py-3 flex items-center justify-between hover:bg-gray-700/50 transition-colors border-b border-gray-700"
+            >
+              <span className="text-white font-medium flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-              </button>
-              {showChat && (
-                <div className="flex-1 min-h-0">
-                  <ChatPanel
-                    messages={chatMessages}
-                    onSendMessage={sendChatMessage}
-                    disabled={connectionState !== 'connected'}
-                    currentUserId={userId}
-                    hideHeader
-                  />
-                </div>
-              )}
-            </div>
-          </aside>
-        )}
+                채팅
+              </span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className={`h-4 w-4 text-gray-400 transition-transform ${showChat ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {/* 채팅 컨텐츠 - 토글로 표시/숨김 */}
+            {showChat && (
+              <div className="flex-1 min-h-0">
+                <ChatPanel
+                  messages={chatMessages}
+                  onSendMessage={sendChatMessage}
+                  disabled={connectionState !== 'connected'}
+                  currentUserId={userId}
+                  hideHeader
+                />
+              </div>
+            )}
+          </div>
+        </aside>
       </main>
 
       {/* 하단 컨트롤 */}
@@ -344,8 +343,6 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
           audioOutputDeviceId={audioOutputDeviceId}
           onAudioInputChange={changeAudioInputDevice}
           onAudioOutputChange={changeAudioOutputDevice}
-          micGain={micGain}
-          onMicGainChange={changeMicGain}
           isScreenSharing={isScreenSharing}
           onToggleScreenShare={handleToggleScreenShare}
         />

@@ -113,7 +113,7 @@ export function MeetingListSection({
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold text-gray-900">Meetings</h3>
+        <h3 className="text-xl font-bold text-white">Meetings</h3>
         <Button onClick={() => setShowCreateForm(!showCreateForm)}>
           {showCreateForm ? 'Cancel' : 'Create Meeting'}
         </Button>
@@ -121,8 +121,8 @@ export function MeetingListSection({
 
       {/* 회의 생성 폼 */}
       {showCreateForm && (
-        <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-          <h4 className="text-lg font-semibold mb-4">Create New Meeting</h4>
+        <div className="glass-card p-6 mb-6">
+          <h4 className="text-lg font-semibold text-white mb-4">Create New Meeting</h4>
           <form onSubmit={handleCreate} className="space-y-4">
             <Input
               label="Meeting Title"
@@ -132,7 +132,7 @@ export function MeetingListSection({
               required
             />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-white/70 mb-1">
                 Description (optional)
               </label>
               <textarea
@@ -140,18 +140,18 @@ export function MeetingListSection({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Enter meeting description (Shift+Enter: new line)"
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-mit-primary/50 resize-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-white/70 mb-1">
                 Scheduled At (optional)
               </label>
               <input
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-mit-primary/50"
               />
             </div>
             <div className="flex gap-2">
@@ -172,22 +172,22 @@ export function MeetingListSection({
 
       {/* 에러 메시지 */}
       {meetingError && (
-        <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6">
+        <div className="bg-red-500/20 text-red-300 p-4 rounded-lg mb-6 border border-red-500/30">
           {meetingError}
         </div>
       )}
 
       {/* 로딩 */}
       {meetingsLoading && meetings.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-white/50">
           Loading meetings...
         </div>
       )}
 
       {/* 회의 목록 */}
       {!meetingsLoading && meetings.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-md p-8 text-center">
-          <p className="text-gray-600 mb-4">No meetings yet.</p>
+        <div className="glass-card p-8 text-center">
+          <p className="text-white/60 mb-4">No meetings yet.</p>
           <Button onClick={() => setShowCreateForm(true)}>
             Create First Meeting
           </Button>
@@ -198,19 +198,19 @@ export function MeetingListSection({
             <Link
               key={meeting.id}
               to={`/dashboard/meetings/${meeting.id}`}
-              className="block bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
+              className="block glass-card-hover p-6"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                  <h4 className="text-lg font-semibold text-white mb-1">
                     {meeting.title}
                   </h4>
                   {meeting.description && (
-                    <p className="text-gray-600 text-sm mb-2 line-clamp-2">
+                    <p className="text-white/60 text-sm mb-2 line-clamp-2">
                       {meeting.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
+                  <div className="flex items-center gap-4 text-sm text-white/50">
                     {meeting.scheduledAt && (
                       <span>
                         Scheduled: {new Date(meeting.scheduledAt).toLocaleString()}
