@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.core.config import get_settings
-
+from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
 
 
 async def main():
@@ -22,19 +22,29 @@ async def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--query", type=str, default=None)
     parser.add_argument("--no-checkpointer", action="store_true", help="Disable checkpointer")
+    parser.add_argument("--no-streaming", action="store_true", help="Disable streaming (use ainvoke)")
     args, _ = parser.parse_known_args()
 
     # 컴파일된 앱 로드 (checkpointer 선택적 적용)
     use_checkpointer = not args.no_checkpointer
+    use_streaming = not args.no_streaming
     app = await get_compiled_app(with_checkpointer=use_checkpointer)
 
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print("🚀 Orchestration Graph CLI")
+    print("=" * 60)
     if use_checkpointer:
-        print("Checkpointer: 활성화 (멀티턴 지원)")
+        print("✅ Checkpointer: 활성화 (멀티턴 지원)")
     else:
-        print("Checkpointer: 비활성화 (단일 턴)")
-    print("종료하려면 'quit', 'exit', 'q' 를 입력하세요")
-    print("=" * 50 + "\n")
+        print("⚠️  Checkpointer: 비활성화 (단일 턴)")
+
+    if use_streaming:
+        print("✅ Streaming: 활성화 (실시간 토큰 출력)")
+    else:
+        print("⚠️  Streaming: 비활성화 (완료 후 일괄 출력)")
+
+    print("\n💡 종료하려면 'quit', 'exit', 'q' 를 입력하세요")
+    print("=" * 60 + "\n")
 
     run_id = str(uuid.uuid4())
     user_id = "user-1e6382d1"  # 신수효 (샘플 데이터의 실제 사용자)
@@ -70,21 +80,65 @@ async def main():
             }
 
             # 그래프 실행
-            print("\n처리 중...\n")
+            print("\n⚙️  처리 중...\n")
 
-            # ainvoke로 그래프 실행
-            # Langfuse 콜백으로 전체 워크플로우 추적 + checkpointer 사용 시 멀티턴 지원
-            langfuse_config = get_runnable_config(
+            # config 설정 (checkpointer 및 langfuse)
+            config = get_runnable_config(
                 trace_name="cli-mit-agent",
                 user_id=user_id,
                 session_id=run_id,
             )
-
-            # checkpointer 사용 시 thread_id를 configurable에 추가
             if use_checkpointer:
-                langfuse_config["configurable"] = {"thread_id": thread_id}
+                config["configurable"] = {"thread_id": thread_id}
 
-            await app.ainvoke(initial_state, config=langfuse_config)
+            if use_streaming:
+                # 스트리밍 모드: 실시간 토큰 출력
+                print("-" * 60)
+                print("📡 응답:\n")
+
+                # 노드 시작 메시지 매핑
+                NODE_STATUS_MESSAGES = {
+                    "planner": "🧠 계획 수립 중...",
+                    "mit_tools": "🔍 데이터 검색 중...",
+                    "evaluator": "✅ 결과 평가 중...",
+                    "generator": "✍️ 답변 생성 중...",
+                }
+
+                token_count = 0
+                stream_config = config if use_checkpointer else {}
+
+                async for event in stream_llm_tokens_only(app, initial_state, stream_config):
+                    event_type = event.get("type")
+
+                    if event_type == "node_start":
+                        node = event.get("node", "")
+                        message = NODE_STATUS_MESSAGES.get(node, f"{node} 시작")
+                        print(f"\n{message}")
+
+                    elif event_type == "token":
+                        token = event.get("content", "")
+                        node = event.get("node", "")
+
+                        # 실제 사용자 출력 (generator 노드만 빨간색으로 표시)
+                        if node == "generator":
+                            print(f"\033[91m{token}\033[0m", end="", flush=True)  # 빨간색
+                            token_count += 1
+                        else:
+                            # 다른 노드들은 회색으로 표시 (디버그용)
+                            print(f"\033[90m{token}\033[0m", end="", flush=True)  # 회색
+
+                    elif event_type == "done":
+                        print("\n")
+                        print("-" * 60)
+                        print(f"\n✅ 완료! (사용자 출력 토큰: {token_count}개)")
+
+                    elif event_type == "error":
+                        print("\n")
+                        print(f"\n❌ 에러: {event.get('error')}")
+
+            else:
+                # 비스트리밍 모드: langfuse 설정 사용
+                await app.ainvoke(initial_state, config=config)
 
         except Exception as e:
             print(f"\n실행 중 오류 발생: {e}")
