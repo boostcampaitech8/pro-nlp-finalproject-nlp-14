@@ -86,7 +86,7 @@ export async function* streamAgentEvents(
           }
           // SSE 데이터 파싱
           else if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
+            const data = line.slice(6); // trim() 제거하여 띄어쓰기 토큰 보존
 
             // 완료 신호
             if (data === '[DONE]') {

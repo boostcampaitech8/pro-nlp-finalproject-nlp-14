@@ -193,6 +193,10 @@ async def run_agent_with_context(
                         content = event.get("content", "")
                         if content:
                             full_response += content  # 응답 누적
+                            logger.debug(
+                                f"[SSE MESSAGE] content='{content}' "
+                                f"(len={len(content)}, repr={repr(content)})"
+                            )
                             yield f"event: message\n"
                             yield f"data: {content}\n\n"
                     

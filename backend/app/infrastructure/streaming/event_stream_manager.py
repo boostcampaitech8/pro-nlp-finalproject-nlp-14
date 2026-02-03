@@ -118,7 +118,10 @@ async def stream_llm_tokens_only(
                 # Generator 토큰 (최종 답변)
                 elif current_node == "generator":
                     token_count["generator"] += 1
-                    logger.debug(f"[GENERATOR TOKEN] {chunk.content[:20]}")
+                    logger.debug(
+                        f"[GENERATOR TOKEN] '{chunk.content}' "
+                        f"(len={len(chunk.content)}, repr={repr(chunk.content)})"
+                    )
                     yield {
                         "type": "token",
                         "tag": "generator_token",

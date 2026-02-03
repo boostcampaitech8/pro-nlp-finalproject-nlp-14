@@ -292,14 +292,16 @@ class BackendAPIClient:
                 if not line.startswith("data: "):
                     continue
 
-                data = line[6:].strip()
+                data = line[6:]  # strip() 제거하여 띄어쓰기 토큰 보존
 
-                if data == "[DONE]":
+                # 제어 메시지는 trim 처리
+                data_trimmed = data.strip()
+                if data_trimmed == "[DONE]":
                     logger.info("[SSE] Stream completed")
                     break
-                
-                if data.startswith("[ERROR]"):
-                    raise RuntimeError(data)
+
+                if data_trimmed.startswith("[ERROR]"):
+                    raise RuntimeError(data_trimmed)
 
                 # 표준 SSE 포맷: event 타입별로 처리
                 if current_event_type == "message":
