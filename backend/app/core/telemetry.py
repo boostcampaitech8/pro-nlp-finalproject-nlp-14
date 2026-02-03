@@ -59,9 +59,12 @@ def init_telemetry(
     )
 
     # Tracer Provider 설정
+    # TODO: Tempo 설치 후 traces export 활성화
+    # - Alloy configmap에서 traces output 추가 필요
+    # - 현재는 Alloy가 traces receiver를 지원하지 않아 UNIMPLEMENTED 에러 발생
     tracer_provider = TracerProvider(resource=resource)
-    span_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
-    tracer_provider.add_span_processor(span_processor)
+    # span_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+    # tracer_provider.add_span_processor(span_processor)
     trace.set_tracer_provider(tracer_provider)
 
     # Meter Provider 설정
