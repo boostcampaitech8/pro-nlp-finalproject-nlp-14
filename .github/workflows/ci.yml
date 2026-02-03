@@ -19,6 +19,7 @@ permissions:
   contents: write
   packages: write
   pull-requests: read
+  actions: write  # repository-dispatch로 CD workflow 트리거에 필요
 
 env:
   REGISTRY: ghcr.io
@@ -249,6 +250,7 @@ jobs:
           fi
 
           echo "updated=$UPDATED" >> $GITHUB_OUTPUT
+          echo "::notice::UPDATED=$UPDATED"
           echo "📝 Current image-tags.yaml:"
           cat k8s/image-tags.yaml
 
@@ -261,15 +263,8 @@ jobs:
           git commit -m "chore: update image tags to ${{ github.sha }} [skip ci]"
           git push
 
-  # ===========================================
-  # CD 트리거 (배포 워크플로우 호출)
-  # ===========================================
-  trigger-deploy:
-    needs: [update-tags]
-    if: needs.update-tags.outputs.updated == 'true'
-    runs-on: ubuntu-latest
-    steps:
       - name: Trigger CD workflow
+        if: steps.update.outputs.updated == 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
