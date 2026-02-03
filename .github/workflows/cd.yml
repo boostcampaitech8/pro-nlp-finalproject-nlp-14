@@ -1,0 +1,132 @@
+# CD - Production Deployment Pipeline
+#
+# 필요한 GitHub Secrets:
+#   PROD_SSH_HOST     - 프로덕션 서버 IP/호스트명
+#   PROD_SSH_USER     - SSH 사용자명 (mit)
+#   PROD_SSH_KEY      - SSH 개인키 (PEM 형식)
+#
+# GitHub Environment 설정:
+#   Settings > Environments > "production" 생성
+#   - Protection rules: Required reviewers (선택)
+#   - Deployment branches: main only
+#
+# 프로덕션 서버 사전 설정:
+#   1. SSH 키 등록: ~/.ssh/authorized_keys에 공개키 추가
+#   2. Git 저장소 클론: /home/mit/mit
+#   3. .env 파일 설정: /home/mit/mit/.env
+#   4. kubectl/helmfile 설치 및 k3s 클러스터 연결
+#   5. GHCR 시크릿 설정: ./k8s/scripts/deploy-prod.sh --setup-ghcr
+
+name: CD - Deploy to Production
+
+on:
+  # CI에서 이미지 빌드 완료 후 자동 트리거
+  repository_dispatch:
+    types: [deploy]
+
+  # 수동 배포
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '배포 환경'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+      skip_health_check:
+        description: '헬스체크 스킵'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DEPLOY_PATH: /home/mit/mit  # 프로덕션 서버의 프로젝트 경로
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        env:
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ${SSH_USER}@${SSH_HOST} << 'ENDSSH'
+            set -e
+            cd ${{ env.DEPLOY_PATH }}
+
+            echo "📥 Pulling latest changes..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "🚀 Deploying to Kubernetes..."
+            ./k8s/scripts/deploy-prod.sh
+
+            echo "✅ Deployment completed!"
+          ENDSSH
+
+      - name: Health Check
+        if: ${{ !inputs.skip_health_check }}
+        env:
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+        run: |
+          echo "⏳ Waiting for pods to be ready..."
+          sleep 30
+
+          ssh -i ~/.ssh/deploy_key ${SSH_USER}@${SSH_HOST} << 'ENDSSH'
+            set -e
+            cd ${{ env.DEPLOY_PATH }}
+
+            echo "🔍 Checking deployment status..."
+            kubectl rollout status deployment/backend -n mit --timeout=120s
+            kubectl rollout status deployment/frontend -n mit --timeout=120s
+
+            echo "📊 Current pod status:"
+            kubectl get pods -n mit
+
+            echo "🖼️ Current images:"
+            kubectl get deployment -n mit -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.template.spec.containers[0].image}{"\n"}{end}'
+          ENDSSH
+
+      - name: Notify on Failure
+        if: failure()
+        env:
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+        run: |
+          echo "❌ Deployment failed! Checking logs..."
+          ssh -i ~/.ssh/deploy_key ${SSH_USER}@${SSH_HOST} << 'ENDSSH' || true
+            kubectl get pods -n mit
+            kubectl describe pods -n mit --selector=app=backend | tail -50
+          ENDSSH
+
+  # 배포 완료 알림 (선택적)
+  notify:
+    name: Notify Deployment
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Deployment Status
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+            echo "🔗 SHA: ${{ github.event.client_payload.sha || github.sha }}"
+          else
+            echo "❌ Deployment failed!"
+          fi
