@@ -74,6 +74,12 @@ class Settings(BaseSettings):
 
     # Clova STT 키 관리 설정
     clova_stt_key_count: int = 5  # 사용 가능한 API 키 총 개수
+      
+    # Langfuse (LLM Observability)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_enabled: bool = True
 
     @field_validator("cors_origins", mode="before")
     @classmethod

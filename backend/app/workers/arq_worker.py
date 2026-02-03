@@ -11,11 +11,13 @@ from arq.connections import RedisSettings
 from opentelemetry import trace
 
 from app.core.config import get_settings
+from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
 from app.core.telemetry import get_mit_metrics, get_tracer, setup_telemetry
 from app.repositories.kg.repository import KGRepository
 from app.schemas.transcript import GetMeetingTranscriptsResponse
+from app.services.minutes_events import minutes_event_manager
 from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
@@ -108,10 +110,16 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
 
             logger.info(f"Starting generate_pr workflow: meeting={meeting_id}")
 
-            result = await generate_pr_graph.ainvoke({
-                "generate_pr_meeting_id": meeting_id,
-                "generate_pr_transcript_text": transcript_response.full_text,
-            })
+            result = await generate_pr_graph.ainvoke(
+                {
+                    "generate_pr_meeting_id": meeting_id,
+                    "generate_pr_transcript_text": transcript_response.full_text,
+                },
+                config=get_runnable_config(
+                    trace_name="generate_pr",
+                    metadata={"meeting_id": meeting_id},
+                ),
+            )
 
             agenda_count = len(result.get("generate_pr_agenda_ids", []))
             decision_count = len(result.get("generate_pr_decision_ids", []))
@@ -168,14 +176,20 @@ async def mit_action_task(ctx: dict, decision_id: str) -> dict:
             mit_action_graph,
         )
 
-        result = await mit_action_graph.ainvoke({
-            "mit_action_decision": {
-                "id": decision.id,
-                "content": decision.content,
-                "context": decision.context,
+        result = await mit_action_graph.ainvoke(
+            {
+                "mit_action_decision": {
+                    "id": decision.id,
+                    "content": decision.content,
+                    "context": decision.context,
+                },
+                "mit_action_meeting_id": "",  # Decision에서 meeting_id 필요시 별도 조회
             },
-            "mit_action_meeting_id": "",  # Decision에서 meeting_id 필요시 별도 조회
-        })
+            config=get_runnable_config(
+                trace_name=f"mit_action:{decision_id}",
+                metadata={"decision_id": decision_id},
+            ),
+        )
 
         action_count = len(result.get("mit_action_actions", []))
         logger.info(
@@ -303,38 +317,62 @@ async def process_mit_mention(
 
         if not decision:
             logger.error(f"[process_mit_mention] Decision not found: {decision_id}")
+            await kg_repo.update_comment_pending_agent_reply(comment_id, False)
+
+            # Decision을 찾을 수 없는 경우 에러 응답 생성
+            agent_id = await kg_repo.get_or_create_system_agent()
+            error_message = "죄송합니다. 결정사항을 찾을 수 없습니다. 페이지를 새로고침해 주세요."
+            error_reply = await kg_repo.create_reply(
+                comment_id=comment_id,
+                user_id=agent_id,
+                content=error_message,
+                pending_agent_reply=False,
+                is_error_response=True,
+            )
+
+            # Minutes SSE 이벤트 발행 (에러 응답)
+            # Decision이 없으므로 meeting_id를 조회할 수 없음 - 이벤트 발행 스킵
+
             return {"status": "error", "message": "Decision not found"}
 
-        # 2. mit-mention 워크플로우 실행
-        # TODO: LangGraph 워크플로우 구현 시 활성화
-        # from app.infrastructure.graph.workflows.mit_mention.graph import (
-        #     mit_mention_graph,
-        # )
-        #
-        # result = await mit_mention_graph.ainvoke({
-        #     "comment_content": content,
-        #     "decision_context": decision.content,
-        # })
+        # 2. Decision에 달린 이전 논의 이력 조회
+        thread_history = await kg_repo.get_decision_thread_history(decision_id)
+        logger.info(f"[process_mit_mention] Thread history: {len(thread_history)} messages")
 
-        # 임시: AI 응답 생성 (워크플로우 구현 전까지)
+        # 3. mit_mention 워크플로우 실행
+        from app.infrastructure.graph.workflows.mit_mention.graph import (
+            mit_mention_graph,
+        )
+
+        result = await mit_mention_graph.ainvoke({
+            "mit_mention_comment_id": comment_id,
+            "mit_mention_content": content,
+            "mit_mention_decision_id": decision_id,
+            "mit_mention_decision_content": decision.content,
+            "mit_mention_decision_context": decision.context,
+            "mit_mention_thread_history": thread_history,
+            "mit_mention_meeting_id": decision.meeting_id,  # Meeting ID 추가
+            "mit_mention_retry_count": 0,
+        })
+
+        # 3. AI 응답으로 대댓글 생성
+        ai_response = result.get("mit_mention_response", "")
+        is_error = False
+
+        if not ai_response:
+            logger.error(f"[process_mit_mention] No response generated: comment={comment_id}")
+            ai_response = "죄송합니다. 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+            is_error = True
+
         # MIT Agent 시스템 사용자로 대댓글 작성
         agent_id = await kg_repo.get_or_create_system_agent()
 
-        # 임시 AI 응답 생성
-        decision_preview = decision.content[:100] if decision.content else ""
-        ai_response = (
-            f"안녕하세요, 부덕이입니다. "
-            f"'{content[:50]}...'에 대해 분석해보겠습니다.\n\n"
-            f"[Decision 컨텍스트: {decision_preview}...]\n\n"
-            f"(AI 워크플로우 구현 예정)"
-        )
-
-        # 대댓글 생성
         reply = await kg_repo.create_reply(
             comment_id=comment_id,
             user_id=agent_id,
             content=ai_response,
             pending_agent_reply=False,
+            is_error_response=is_error,
         )
 
         # 원본 comment의 pending_agent_reply 해제
@@ -342,22 +380,72 @@ async def process_mit_mention(
 
         logger.info(f"[process_mit_mention] Reply created: {reply.id}")
 
+        # Minutes SSE 이벤트 발행
+        if decision.meeting_id:
+            await minutes_event_manager.publish(decision.meeting_id, {
+                "event": "comment_reply_ready",
+                "decision_id": decision_id,
+                "comment_id": comment_id,
+                "reply_id": reply.id,
+            })
+            logger.info(f"[process_mit_mention] SSE event published: meeting={decision.meeting_id}")
+
         return {
             "status": "success",
             "comment_id": comment_id,
             "reply_id": reply.id,
-            "response": ai_response,
+            "response": ai_response[:100] + "..." if len(ai_response) > 100 else ai_response,
         }
 
     except Exception as e:
         logger.exception(f"[process_mit_mention] Failed: comment={comment_id}")
-        # 실패 시에도 pending 상태 해제 (UI가 무한 대기하지 않도록)
+
+        # 실패 시 사용자 친화적인 에러 메시지로 대댓글 생성
         try:
             driver = get_neo4j_driver()
             kg_repo = KGRepository(driver)
+
+            # 에러 타입별 메시지 생성
+            error_str = str(e).lower()
+            if "timeout" in error_str or "timed out" in error_str:
+                error_message = "죄송합니다. 응답 생성 시간이 초과되었습니다. 다시 시도해 주세요."
+            elif "context" in error_str or "decision" in error_str:
+                error_message = "죄송합니다. 컨텍스트 수집 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            else:
+                error_message = "죄송합니다. AI 응답 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+
+            # 에러 응답 대댓글 생성
+            agent_id = await kg_repo.get_or_create_system_agent()
+            error_reply = await kg_repo.create_reply(
+                comment_id=comment_id,
+                user_id=agent_id,
+                content=error_message,
+                pending_agent_reply=False,
+                is_error_response=True,
+            )
+
+            # pending 상태 해제
             await kg_repo.update_comment_pending_agent_reply(comment_id, False)
+
+            # Minutes SSE 이벤트 발행 (에러 응답)
+            try:
+                error_decision = await kg_repo.get_decision(decision_id)
+                if error_decision and error_decision.meeting_id:
+                    await minutes_event_manager.publish(error_decision.meeting_id, {
+                        "event": "comment_reply_ready",
+                        "decision_id": decision_id,
+                        "comment_id": comment_id,
+                        "reply_id": error_reply.id,
+                    })
+            except Exception:
+                pass  # 이벤트 발행 실패해도 에러 응답은 이미 생성됨
         except Exception:
-            pass  # Best effort
+            # 에러 응답 생성 실패 시에도 최소한 pending 상태는 해제
+            try:
+                await kg_repo.update_comment_pending_agent_reply(comment_id, False)
+            except Exception:
+                pass  # Best effort
+
         return {
             "status": "failed",
             "comment_id": comment_id,

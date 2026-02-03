@@ -1,13 +1,23 @@
+import os
 from datetime import datetime
 
 from langchain_core.messages import HumanMessage
 
+from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration import get_compiled_app
+from app.core.config import get_settings
+
 
 
 async def main():
     import argparse
     import uuid
+    settings = get_settings()
+
+    os.environ['LANGFUSE_PUBLIC_KEY'] = settings.langfuse_public_key
+    os.environ['LANGFUSE_SECRET_KEY'] = settings.langfuse_secret_key
+    os.environ['LANGFUSE_HOST'] = settings.langfuse_host
+    os.environ["LANGFUSE_ENABLED"] = "true" if settings.langfuse_enabled else "false"
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--query", type=str, default=None)
@@ -29,7 +39,6 @@ async def main():
     run_id = str(uuid.uuid4())
     user_id = "user-1e6382d1"  # 신수효 (샘플 데이터의 실제 사용자)
     thread_id = f"cli-session-{run_id[:8]}"  # CLI 세션용 thread_id
-    config = {"configurable": {"thread_id": thread_id}}
 
     single_query = args.query
 
@@ -63,11 +72,19 @@ async def main():
             # 그래프 실행
             print("\n처리 중...\n")
 
-            # ainvoke로 그래프 실행 (checkpointer 사용 시 멀티턴 지원)
+            # ainvoke로 그래프 실행
+            # Langfuse 콜백으로 전체 워크플로우 추적 + checkpointer 사용 시 멀티턴 지원
+            langfuse_config = get_runnable_config(
+                trace_name="cli-mit-agent",
+                user_id=user_id,
+                session_id=run_id,
+            )
+
+            # checkpointer 사용 시 thread_id를 configurable에 추가
             if use_checkpointer:
-                await app.ainvoke(initial_state, config)
-            else:
-                await app.ainvoke(initial_state)
+                langfuse_config["configurable"] = {"thread_id": thread_id}
+
+            await app.ainvoke(initial_state, config=langfuse_config)
 
         except Exception as e:
             print(f"\n실행 중 오류 발생: {e}")

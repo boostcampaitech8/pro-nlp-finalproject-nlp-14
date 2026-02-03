@@ -5,10 +5,10 @@ Suggestion/Comment CRUD 및 @mit 멘션 처리 포함.
 """
 
 import logging
-import re
 from typing import Literal
 
 from app.api.dependencies import get_arq_pool
+from app.constants.agents import has_agent_mention
 from app.core.telemetry import get_mit_metrics
 from app.models.kg import KGComment, KGSuggestion
 from app.repositories.kg.repository import KGRepository
@@ -17,10 +17,8 @@ from app.schemas.review import (
     DecisionResponse,
     DecisionReviewResponse,
 )
+from app.services.minutes_events import minutes_event_manager
 from neo4j import AsyncDriver
-
-# @mit 멘션 패턴
-MIT_MENTION_PATTERN = re.compile(r"@mit\b", re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +56,16 @@ class ReviewService:
             if result["merged"]:
                 await self._enqueue_mit_action(decision_id)
 
+            # 이벤트 발행
+            decision = await self.kg_repo.get_decision(decision_id)
+            if decision:
+                await self._publish_event(decision.meeting_id, {
+                    "event": "decision_review_changed",
+                    "decision_id": decision_id,
+                    "action": action,
+                    "merged": result["merged"],
+                })
+
             return DecisionReviewResponse(
                 decision_id=decision_id,
                 action="approve",
@@ -75,6 +83,15 @@ class ReviewService:
 
             decision = await self.kg_repo.get_decision(decision_id)
             logger.info(f"Decision rejected: decision={decision_id}, user={user_id}")
+
+            # 이벤트 발행
+            if decision:
+                await self._publish_event(decision.meeting_id, {
+                    "event": "decision_review_changed",
+                    "decision_id": decision_id,
+                    "action": action,
+                    "merged": False,
+                })
 
             return DecisionReviewResponse(
                 decision_id=decision_id,
@@ -182,6 +199,14 @@ class ReviewService:
         # AI 분석 태스크 큐잉 (선택적 - 필요 시)
         await self._enqueue_suggestion_analysis(suggestion.id, decision_id, content)
 
+        # 이벤트 발행
+        await self._publish_event(meeting_id, {
+            "event": "suggestion_created",
+            "decision_id": decision_id,
+            "suggestion_id": suggestion.id,
+            "created_decision_id": suggestion.created_decision_id,
+        })
+
         return suggestion
 
     async def _enqueue_suggestion_analysis(
@@ -216,7 +241,7 @@ class ReviewService:
     ) -> KGComment:
         """Comment 생성 + @mit 멘션 감지 시 Agent 호출 큐잉"""
         # @mit 멘션이 있으면 Agent 응답 대기 중
-        has_mit_mention = MIT_MENTION_PATTERN.search(content) is not None
+        has_mit_mention = has_agent_mention(content)
         comment = await self.kg_repo.create_comment(
             decision_id, user_id, content, pending_agent_reply=has_mit_mention
         )
@@ -226,6 +251,15 @@ class ReviewService:
         if has_mit_mention:
             await self._enqueue_mit_mention(comment.id, decision_id, content)
 
+        # 이벤트 발행 - decision에서 meeting_id 조회 필요
+        decision = await self.kg_repo.get_decision(decision_id)
+        if decision:
+            await self._publish_event(decision.meeting_id, {
+                "event": "comment_created",
+                "decision_id": decision_id,
+                "comment_id": comment.id,
+            })
+
         return comment
 
     async def create_reply(
@@ -233,7 +267,7 @@ class ReviewService:
     ) -> KGComment:
         """대댓글 생성 + @mit 멘션 감지 시 Agent 호출 큐잉"""
         # @mit 멘션이 있으면 Agent 응답 대기 중
-        has_mit_mention = MIT_MENTION_PATTERN.search(content) is not None
+        has_mit_mention = has_agent_mention(content)
         reply = await self.kg_repo.create_reply(
             comment_id, user_id, content, pending_agent_reply=has_mit_mention
         )
@@ -243,14 +277,32 @@ class ReviewService:
         if has_mit_mention:
             await self._enqueue_mit_mention(reply.id, reply.decision_id, content)
 
+        # 이벤트 발행
+        decision = await self.kg_repo.get_decision(reply.decision_id)
+        if decision:
+            await self._publish_event(decision.meeting_id, {
+                "event": "comment_created",
+                "decision_id": reply.decision_id,
+                "comment_id": reply.id,
+                "parent_id": comment_id,
+            })
+
         return reply
 
     async def delete_comment(self, comment_id: str, user_id: str) -> bool:
         """Comment 삭제 (작성자만 가능)"""
-        deleted = await self.kg_repo.delete_comment(comment_id, user_id)
-        if deleted:
+        result = await self.kg_repo.delete_comment(comment_id, user_id)
+        if result:
             logger.info(f"Comment deleted: comment={comment_id}, user={user_id}")
-        return deleted
+
+            # 이벤트 발행
+            await self._publish_event(result.get("meeting_id"), {
+                "event": "comment_deleted",
+                "decision_id": result.get("decision_id"),
+                "comment_id": comment_id,
+            })
+            return True
+        return False
 
     async def _enqueue_mit_mention(
         self, comment_id: str, decision_id: str, content: str
@@ -280,6 +332,15 @@ class ReviewService:
             # 큐잉 실패해도 Comment 생성은 성공으로 처리 (best-effort)
             logger.error(f"Failed to enqueue mit_mention_task: {e}")
 
+    async def _publish_event(self, meeting_id: str | None, event: dict) -> None:
+        """Minutes 이벤트 발행 (best-effort)"""
+        if not meeting_id:
+            return
+        try:
+            await minutes_event_manager.publish(meeting_id, event)
+        except Exception as e:
+            logger.warning(f"Failed to publish event: {e}")
+
     # =========================================================================
     # Decision CRUD 확장
     # =========================================================================
@@ -296,6 +357,12 @@ class ReviewService:
 
         decision = await self.kg_repo.update_decision(decision_id, user_id, data)
         logger.info(f"Decision updated: decision={decision_id}, user={user_id}")
+
+        # 이벤트 발행
+        await self._publish_event(decision.meeting_id, {
+            "event": "decision_updated",
+            "decision_id": decision_id,
+        })
 
         return DecisionResponse(
             id=decision.id,

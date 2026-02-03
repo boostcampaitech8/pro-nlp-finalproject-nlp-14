@@ -3,6 +3,7 @@
 Agenda 수정/삭제 (Meeting 하위).
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -13,6 +14,9 @@ from app.models.user import User
 from app.repositories.kg.repository import KGRepository
 from app.schemas import ErrorResponse
 from app.schemas.agenda import AgendaResponse, UpdateAgendaRequest
+from app.services.minutes_events import minutes_event_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agendas", tags=["Agendas"])
 
@@ -45,6 +49,17 @@ async def update_agenda(
         if request.description is not None:
             data["description"] = request.description
         agenda = await repo.update_agenda(agenda_id, str(current_user.id), data)
+
+        # SSE 이벤트 발행
+        if agenda.meeting_id:
+            try:
+                await minutes_event_manager.publish(agenda.meeting_id, {
+                    "event": "agenda_updated",
+                    "agenda_id": agenda_id,
+                })
+            except Exception as e:
+                logger.warning(f"Failed to publish agenda_updated event: {e}")
+
         return AgendaResponse(
             id=agenda.id,
             topic=agenda.topic,
@@ -70,6 +85,17 @@ async def delete_agenda(
     current_user: Annotated[User, Depends(get_current_user)],
     repo: Annotated[KGRepository, Depends(get_kg_repo)],
 ) -> None:
-    deleted = await repo.delete_agenda(agenda_id, str(current_user.id))
-    if not deleted:
+    result = await repo.delete_agenda(agenda_id, str(current_user.id))
+    if not result:
         handle_service_error(ValueError("AGENDA_NOT_FOUND"))
+
+    # SSE 이벤트 발행
+    meeting_id = result.get("meeting_id")
+    if meeting_id:
+        try:
+            await minutes_event_manager.publish(meeting_id, {
+                "event": "agenda_deleted",
+                "agenda_id": agenda_id,
+            })
+        except Exception as e:
+            logger.warning(f"Failed to publish agenda_deleted event: {e}")

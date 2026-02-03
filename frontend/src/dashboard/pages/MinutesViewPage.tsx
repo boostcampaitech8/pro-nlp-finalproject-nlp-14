@@ -90,6 +90,7 @@ function DecisionCard({
     approveDecision,
     rejectDecision,
     actionLoading,
+    fetchMinutes,
   } = useKGStore();
 
   const isLoading =
@@ -124,6 +125,10 @@ function DecisionCard({
 
   const handleReject = async () => {
     await rejectDecision(decision.id);
+  };
+
+  const handleRefresh = () => {
+    fetchMinutes(meetingId);
   };
 
   return (
@@ -309,6 +314,7 @@ function DecisionCard({
                     currentUserId={currentUserId}
                     onReply={handleReply}
                     onDelete={handleDeleteComment}
+                    onRefresh={handleRefresh}
                   />
                 ))}
               </div>
@@ -434,6 +440,40 @@ export function MinutesViewPage() {
     }
     return () => reset();
   }, [meetingId, fetchMinutes, reset]);
+
+  // Minutes SSE 구독 - 실시간 업데이트
+  useEffect(() => {
+    if (!meetingId) return;
+
+    const eventSource = new EventSource(`/api/v1/meetings/${meetingId}/minutes/events`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // keepalive는 무시
+        if (data.event === 'keepalive') return;
+
+        console.log('[MinutesSSE] Event received:', data.event);
+
+        // 모든 이벤트에서 Minutes 재조회 (간단한 구현)
+        // 추후 부분 업데이트로 최적화 가능
+        fetchMinutes(meetingId);
+      } catch (e) {
+        console.error('[MinutesSSE] Parse error:', e);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('[MinutesSSE] Connection error:', error);
+      // 연결 끊김 시 자동 재연결 (EventSource 기본 동작)
+    };
+
+    return () => {
+      eventSource.close();
+      console.log('[MinutesSSE] Disconnected');
+    };
+  }, [meetingId, fetchMinutes]);
 
   // 모든 Decision이 latest 상태인지 확인 (리뷰 비활성화용)
   const isReviewClosed = useMemo(() => isAllDecisionsLatest(), [minutes]);

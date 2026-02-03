@@ -29,6 +29,7 @@ class ContextRuntimeState:
     lock: asyncio.Lock
     last_processed_start_ms: int | None = None
     last_utterance_id: int = 0
+    topic_publish_task: asyncio.Task | None = None
 
 
 # TTL Cache: 동시 최대 500개 회의, 1시간 미접근 시 자동 삭제

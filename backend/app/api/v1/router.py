@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     auth,
     chat,
     comments,
+    context,
     decisions,
     livekit_webhooks,
     meeting_participants,
@@ -42,3 +43,6 @@ api_router.include_router(suggestions.decisions_suggestions_router)
 api_router.include_router(agendas.router)
 api_router.include_router(action_items.router)
 api_router.include_router(minutes.meetings_minutes_router)
+
+# Context API - Real-time topic feed
+api_router.include_router(context.router)

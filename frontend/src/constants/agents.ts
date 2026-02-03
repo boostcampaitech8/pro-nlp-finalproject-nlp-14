@@ -17,11 +17,11 @@ export interface AIAgent {
  */
 export const AI_AGENTS: AIAgent[] = [
   {
-    id: 'mit-agent',
-    name: 'MIT Agent',
-    displayName: 'MIT 에이전트',
-    mention: '@mit',
-    description: '이 결정 사항에 대해 궁금 한 점이 있으면 언제든지 물어보세요!',
+    id: '11111111-1111-1111-1111-111111111111', // PR #62 AGENT_USER_ID와 동일
+    name: '부덕이',
+    displayName: '부덕이',
+    mention: '@부덕이',
+    description: '이 결정 사항에 대해 궁금한 점이 있으면 언제든지 물어보세요!',
   },
 ];
 

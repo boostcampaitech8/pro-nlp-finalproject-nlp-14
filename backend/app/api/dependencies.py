@@ -6,7 +6,7 @@ from uuid import UUID
 
 from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +43,24 @@ async def get_current_user(
         )
 
 
+async def get_current_user_from_query(
+    token: Annotated[str, Query(description="JWT 액세스 토큰")],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> User:
+    """쿼리 파라미터에서 토큰으로 사용자 조회 (SSE용)
+
+    EventSource는 Authorization 헤더를 지원하지 않으므로
+    쿼리 파라미터로 토큰을 전달받습니다.
+    """
+    try:
+        return await auth_service.get_current_user(token)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "INVALID_TOKEN", "message": "Invalid or expired token"},
+        )
+
+
 # ===== Meeting Validation Dependencies =====
 
 
@@ -71,6 +89,20 @@ async def require_meeting_participant(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Meeting:
     """회의 참여자인지 확인 (403 처리 포함)"""
+    is_participant = any(p.user_id == current_user.id for p in meeting.participants)
+    if not is_participant:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "FORBIDDEN", "message": "회의 참여자만 접근할 수 있습니다."},
+        )
+    return meeting
+
+
+async def require_meeting_participant_sse(
+    meeting: Annotated[Meeting, Depends(get_meeting_with_participants)],
+    current_user: Annotated[User, Depends(get_current_user_from_query)],
+) -> Meeting:
+    """회의 참여자인지 확인 (SSE용, 쿼리 파라미터 토큰 사용)"""
     is_participant = any(p.user_id == current_user.id for p in meeting.participants)
     if not is_participant:
         raise HTTPException(
