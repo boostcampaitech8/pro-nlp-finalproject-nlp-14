@@ -1,6 +1,5 @@
 // 명령 히스토리 컴포넌트
 import { useCommandStore } from '@/app/stores/commandStore';
-import { usePreviewStore } from '@/app/stores/previewStore';
 import { STATUS_COLORS } from '@/app/constants';
 import { formatRelativeTime } from '@/app/utils/dateUtils';
 import type { HistoryItem } from '@/app/types/command';
@@ -8,15 +7,11 @@ import { cn } from '@/lib/utils';
 
 interface CommandCardProps {
   item: HistoryItem;
-  onClick: () => void;
 }
 
-function CommandCard({ item, onClick }: CommandCardProps) {
+function CommandCard({ item }: CommandCardProps) {
   return (
-    <button
-      onClick={onClick}
-      className="glass-card-hover p-4 w-full text-left group"
-    >
+    <div className="glass-card p-4 w-full text-left">
       <div className="flex items-center gap-3">
         <div className="icon-container-sm flex-shrink-0">
           <span className="text-lg">{item.icon}</span>
@@ -24,7 +19,7 @@ function CommandCard({ item, onClick }: CommandCardProps) {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-card-title truncate group-hover:text-mit-primary transition-colors">
+            <h3 className="text-card-title truncate">
               {item.command}
             </h3>
             <span
@@ -43,21 +38,12 @@ function CommandCard({ item, onClick }: CommandCardProps) {
           {formatRelativeTime(item.timestamp)}
         </span>
       </div>
-    </button>
+    </div>
   );
 }
 
 export function CommandHistory() {
   const { history } = useCommandStore();
-  const { setPreview } = usePreviewStore();
-
-  const handleClick = (item: HistoryItem) => {
-    setPreview('command-result', {
-      title: item.command,
-      content: item.result,
-      createdAt: item.timestamp.toISOString(),
-    });
-  };
 
   if (history.length === 0) {
     return (
@@ -83,7 +69,6 @@ export function CommandHistory() {
           <CommandCard
             key={item.id}
             item={item}
-            onClick={() => handleClick(item)}
           />
         ))}
       </div>

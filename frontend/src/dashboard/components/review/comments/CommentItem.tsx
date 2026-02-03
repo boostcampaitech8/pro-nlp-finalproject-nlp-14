@@ -9,15 +9,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Reply, Trash2, Bot, Loader2, User, AlertCircle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Comment } from '@/types';
-import { isAIAgent, isAIAgentByName, AI_AGENTS } from '@/constants';
+import { isAIAgent, isAIAgentByName } from '@/constants';
 import { UnifiedInput } from './UnifiedInput';
-
-// 멘션 분리용 패턴 (split에서 캡처 그룹 사용)
-const MENTION_SPLIT_PATTERN = new RegExp(
-  `(${AI_AGENTS.map((a) => a.mention.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
-  'gi'
-);
 
 interface CommentItemProps {
   comment: Comment;
@@ -138,35 +134,18 @@ export function CommentItem({
     }
   };
 
-  // @부덕이 등 에이전트 멘션 하이라이트
-  const renderContent = (text: string) => {
-    const parts = text.split(MENTION_SPLIT_PATTERN);
-    return parts.map((part, i) => {
-      // AI_AGENTS의 mention과 일치하는지 확인
-      const isMention =
-        part && AI_AGENTS.some((agent) => agent.mention.toLowerCase() === part.toLowerCase());
-      return isMention ? (
-        <span key={i} className="text-purple-600 font-medium bg-purple-100 px-1 rounded">
-          {part}
-        </span>
-      ) : (
-        <span key={i}>{part}</span>
-      );
-    });
-  };
-
   return (
     <div
-      className={`${depth > 0 ? 'ml-6 pl-4 border-l-2 border-gray-100' : ''}`}
+      className={`${depth > 0 ? 'ml-6 pl-4 border-l-2 border-white/10' : ''}`}
       style={{ marginLeft: depth > 0 ? `${depth * 1.5}rem` : 0 }}
     >
       <div
         className={`group p-3 rounded-lg transition-colors ${
           comment.isErrorResponse
-            ? 'bg-red-50 border border-red-200'
+            ? 'bg-red-500/10 border border-red-500/30'
             : isAI
-              ? 'bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100'
-              : 'bg-gray-50 hover:bg-gray-100'
+              ? 'bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20'
+              : 'bg-white/5 hover:bg-white/10'
         }`}
       >
         {/* 헤더 */}
@@ -174,44 +153,44 @@ export function CommentItem({
           <div
             className={`w-7 h-7 rounded-full flex items-center justify-center ${
               comment.isErrorResponse
-                ? 'bg-red-200'
+                ? 'bg-red-500/20'
                 : isAI
-                  ? 'bg-purple-200'
-                  : 'bg-blue-200'
+                  ? 'bg-purple-500/20'
+                  : 'bg-blue-500/20'
             }`}
           >
             {comment.isErrorResponse ? (
-              <AlertCircle className="w-4 h-4 text-red-700" />
+              <AlertCircle className="w-4 h-4 text-red-400" />
             ) : isAI ? (
-              <Bot className="w-4 h-4 text-purple-700" />
+              <Bot className="w-4 h-4 text-purple-400" />
             ) : (
-              <User className="w-4 h-4 text-blue-700" />
+              <User className="w-4 h-4 text-blue-400" />
             )}
           </div>
           <div className="flex items-center gap-2">
             <span
               className={`font-medium text-sm ${
                 comment.isErrorResponse
-                  ? 'text-red-700'
+                  ? 'text-red-300'
                   : isAI
-                    ? 'text-purple-700'
-                    : 'text-gray-900'
+                    ? 'text-purple-300'
+                    : 'text-white'
               }`}
             >
               {comment.author.name}
             </span>
             {comment.isErrorResponse && (
-              <span className="text-xs bg-red-200 text-red-700 px-1.5 py-0.5 rounded-full">
+              <span className="text-xs bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded-full">
                 에러
               </span>
             )}
             {isAI && !comment.isErrorResponse && (
-              <span className="text-xs bg-purple-200 text-purple-700 px-1.5 py-0.5 rounded-full">
+              <span className="text-xs bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded-full">
                 AI
               </span>
             )}
           </div>
-          <span className="text-xs text-gray-400">{formatDate(comment.createdAt)}</span>
+          <span className="text-xs text-white/40">{formatDate(comment.createdAt)}</span>
 
           {/* 액션 버튼 */}
           <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -219,7 +198,7 @@ export function CommentItem({
               <button
                 type="button"
                 onClick={() => setShowReplyInput(!showReplyInput)}
-                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                className="p-1.5 text-white/40 hover:text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors"
                 title="답글"
               >
                 <Reply className="w-4 h-4" />
@@ -230,7 +209,7 @@ export function CommentItem({
                 type="button"
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                className="p-1.5 text-white/40 hover:text-red-400 hover:bg-red-500/20 rounded-lg transition-colors disabled:opacity-50"
                 title="삭제"
               >
                 {isDeleting ? (
@@ -245,19 +224,24 @@ export function CommentItem({
 
         {/* 내용 */}
         <div
-          className={`text-sm whitespace-pre-wrap ${
-            comment.isErrorResponse ? 'text-red-700' : 'text-gray-700'
+          className={`text-sm ${
+            comment.isErrorResponse ? 'text-red-300' : 'text-white/80'
           }`}
         >
-          {renderContent(isAI && !comment.isErrorResponse ? displayedContent : comment.content)}
-          {isTyping && (
-            <span className="inline-block w-1 h-4 ml-0.5 bg-purple-600 animate-pulse" />
-          )}
+          {/* 모든 댓글에 마크다운 렌더링 적용 */}
+          <div className="prose prose-sm prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-headings:text-white prose-strong:text-white prose-code:text-purple-300 prose-code:bg-purple-500/20 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {isAI && !comment.isErrorResponse ? displayedContent : comment.content}
+            </ReactMarkdown>
+            {isTyping && (
+              <span className="inline-block w-1 h-4 ml-0.5 bg-purple-400 animate-pulse" />
+            )}
+          </div>
         </div>
 
         {/* AI 응답 대기 표시 */}
         {comment.pendingAgentReply && (
-          <div className="mt-2 flex items-center gap-2 text-purple-600 text-xs">
+          <div className="mt-2 flex items-center gap-2 text-purple-400 text-xs">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>AI 응답 생성 중...</span>
           </div>
@@ -278,7 +262,7 @@ export function CommentItem({
           <button
             type="button"
             onClick={() => setShowReplyInput(false)}
-            className="mt-1 px-3 py-1 text-gray-500 text-xs hover:text-gray-700"
+            className="mt-1 px-3 py-1 text-white/50 text-xs hover:text-white/70"
           >
             취소
           </button>

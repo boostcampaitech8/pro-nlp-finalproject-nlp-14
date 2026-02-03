@@ -5,7 +5,7 @@
  * Agenda/Decision 인라인 수정, Comments, Suggestions, ActionItems 통합
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, memo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ import {
   Check,
   X,
   Lock,
+  Sparkles,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -38,22 +39,22 @@ import { ActionItemList } from '../components/review/actionitems';
 import { EditableText } from '../components/review/EditableText';
 import { PRStatusBadge } from '../components/review/PRStatusBadge';
 
-// Decision 상태 배지
+// Decision 상태 배지 (glassmorphism 적용)
 const DecisionStatusBadge = ({ status }: { status: string }) => {
   const styles: Record<string, string> = {
-    draft: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    latest: 'bg-blue-100 text-blue-700 border-blue-200',
-    approved: 'bg-green-100 text-green-700 border-green-200',
-    rejected: 'bg-red-100 text-red-700 border-red-200',
-    outdated: 'bg-gray-100 text-gray-500 border-gray-200',
-    superseded: 'bg-purple-100 text-purple-700 border-purple-200',
+    draft: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+    latest: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    approved: 'bg-green-500/20 text-green-300 border-green-500/30',
+    rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
+    outdated: 'bg-white/10 text-white/50 border-white/20',
+    superseded: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   };
 
   const labels: Record<string, string> = {
     draft: 'Draft',
     latest: 'Latest',
     approved: 'Approved',
-    rejected: 'Rejected',
+    rejected: '부결',
     outdated: 'Outdated',
     superseded: 'Superseded',
   };
@@ -67,8 +68,31 @@ const DecisionStatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-// Decision 카드 컴포넌트
-function DecisionCard({
+/**
+ * AI가 Decision 내용을 생성 중인지 판단
+ * - suggestions 중 createdDecision이 현재 decision과 같고
+ * - suggestion content와 decision content가 동일하면 → AI가 아직 처리 중
+ */
+function isAIGeneratingDecision(decision: DecisionWithReview): boolean {
+  if (decision.status !== 'draft') return false;
+  return decision.suggestions.some(
+    (s) => s.createdDecision?.id === decision.id && s.content === decision.content
+  );
+}
+
+/**
+ * AI 생성 중인 suggestion을 찾아서 반환
+ * - 사용자 요청 내용을 표시하기 위해 사용
+ */
+function getPendingSuggestion(decision: DecisionWithReview) {
+  if (decision.status !== 'draft') return null;
+  return decision.suggestions.find(
+    (s) => s.createdDecision?.id === decision.id && s.content === decision.content
+  ) || null;
+}
+
+// M1: Decision 카드 컴포넌트 - React.memo로 불필요한 리렌더링 방지
+const DecisionCard = memo(function DecisionCard({
   decision,
   meetingId,
   currentUserId,
@@ -103,6 +127,15 @@ function DecisionCard({
   const hasRejected = currentUserId && decision.rejectors.includes(currentUserId);
   const canReview = decision.status === 'draft' && !hasApproved && !hasRejected;
 
+  // M2: AI가 Decision 내용을 생성 중인지 확인 - useMemo로 최적화
+  const { isGenerating, pendingSuggestion } = useMemo(() => ({
+    isGenerating: isAIGeneratingDecision(decision),
+    pendingSuggestion: getPendingSuggestion(decision),
+  }), [decision]);
+
+  // 최종 상태 여부 (rejected 또는 latest면 suggestion 불가)
+  const isFinalState = decision.status === 'latest' || decision.status === 'rejected';
+
   const handleSubmitComment = async (content: string) => {
     await addComment(decision.id, content);
   };
@@ -132,14 +165,49 @@ function DecisionCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      {/* Decision 헤더 */}
-      <div className="p-4 border-b border-gray-100">
+    <div
+      className={`rounded-xl border shadow-sm overflow-hidden transition-all duration-300 ${
+        isGenerating
+          ? 'bg-gradient-to-br from-amber-900/30 to-yellow-900/30 border-amber-500/30 animate-float'
+          : 'glass-card'
+      }`}
+    >
+      {/* AI 생성 중 배너 */}
+      {isGenerating && pendingSuggestion && (
+        <div className="px-4 py-3 bg-gradient-to-r from-amber-900/40 to-yellow-900/40 border-b border-amber-500/30">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="relative">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-400 rounded-full animate-ping" />
+            </div>
+            <span className="text-sm text-amber-300 font-medium">AI가 새로운 Decision 내용을 작성하고 있습니다...</span>
+          </div>
+          <div className="ml-6 p-2 bg-white/5 rounded-lg border border-amber-500/20">
+            <span className="text-xs text-amber-400 font-medium">사용자 요청:</span>
+            <p className="text-sm text-white/70 mt-1">{pendingSuggestion.content}</p>
+          </div>
+        </div>
+      )}
+      {/* Decision 헤더 - 클릭으로 펼치기/접기 */}
+      {/* M4: 접근성 속성 추가 */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        className="p-4 border-b border-white/10 cursor-pointer hover:bg-white/5 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        }}
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
               <DecisionStatusBadge status={decision.status} />
-              <div className="flex items-center gap-1 text-xs text-gray-400">
+              <div className="flex items-center gap-1 text-xs text-white/80">
                 <Users className="w-3 h-3" />
                 <span>
                   {decision.approvers.length} approved / {decision.rejectors.length} rejected
@@ -148,55 +216,63 @@ function DecisionCard({
             </div>
 
             {/* 수정 가능한 내용 */}
-            <EditableText
-              value={decision.content}
-              onSave={async (content) => updateDecision(decision.id, { content })}
-              className="text-gray-900 font-medium"
-              multiline
-            />
+            {isGenerating ? (
+              <div className="flex items-center gap-2 text-white/80 italic py-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>AI가 새로운 내용을 생성하고 있습니다...</span>
+              </div>
+            ) : (
+              <EditableText
+                value={decision.content}
+                onSave={async (content) => updateDecision(decision.id, { content })}
+                className="text-white font-medium"
+                multiline
+                disabled={isFinalState}
+              />
+            )}
 
             {decision.context && (
-              <p className="mt-2 text-sm text-gray-600 italic">{decision.context}</p>
+              <p className="mt-2 text-sm text-white/80 italic">{decision.context}</p>
             )}
 
             {/* 이전 버전 (GT) 정보 */}
             {decision.supersedes && (
-              <div className="mt-3 p-3 bg-gray-50 rounded-lg border-l-4 border-gray-300">
+              <div className="mt-3 p-3 bg-white/5 rounded-lg border-l-4 border-white/20">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-medium text-gray-500">이전 버전 (GT)</span>
+                  <span className="text-xs font-medium text-white/70">이전 버전 (GT)</span>
                   {decision.supersedes.meetingId && (
                     <Link
                       to={`/dashboard/meetings/${decision.supersedes.meetingId}/minutes`}
-                      className="text-xs text-blue-600 hover:underline"
+                      className="text-xs text-mit-primary hover:underline"
                     >
                       해당 회의록으로 이동 →
                     </Link>
                   )}
                 </div>
-                <p className="text-sm text-gray-600 line-through">{decision.supersedes.content}</p>
+                <p className="text-sm text-white/50 line-through">{decision.supersedes.content}</p>
               </div>
             )}
 
             {/* 히스토리 타임라인 (같은 Meeting 스코프 내 superseded된 이전 버전들) */}
             {decision.history && decision.history.length > 0 && (
-              <div className="mt-4 border-t pt-4">
+              <div className="mt-4 border-t border-white/10 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowHistory(!showHistory)}
-                  className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                  className="flex items-center gap-2 text-sm text-white/70 hover:text-white transition-colors"
                 >
                   <ChevronDown className={`w-4 h-4 transition-transform ${showHistory ? 'rotate-180' : ''}`} />
                   히스토리 ({decision.history.length}개 이전 버전)
                 </button>
 
                 {showHistory && (
-                  <div className="mt-3 space-y-2 pl-4 border-l-2 border-gray-200">
+                  <div className="mt-3 space-y-2 pl-4 border-l-2 border-white/20">
                     {decision.history.map((item) => (
                       <div key={item.id} className="relative">
-                        <div className="absolute -left-[9px] top-1.5 w-2 h-2 rounded-full bg-gray-300" />
-                        <div className="text-sm text-gray-500 pl-2">
+                        <div className="absolute -left-[9px] top-1.5 w-2 h-2 rounded-full bg-white/30" />
+                        <div className="text-sm text-white/50 pl-2">
                           <p className="line-through">{item.content}</p>
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-white/70">
                             {new Date(item.createdAt).toLocaleDateString('ko-KR', {
                               year: 'numeric',
                               month: 'short',
@@ -216,12 +292,12 @@ function DecisionCard({
 
           {/* 승인/거절 버튼 */}
           {canReview && (
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
                 onClick={handleApprove}
                 disabled={isApproving || isRejecting}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-300 bg-green-500/20 border border-green-500/30 rounded-lg hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isApproving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -234,7 +310,7 @@ function DecisionCard({
                 type="button"
                 onClick={handleReject}
                 disabled={isApproving || isRejecting}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-red-300 bg-red-500/20 border border-red-500/30 rounded-lg hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isRejecting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -246,12 +322,12 @@ function DecisionCard({
             </div>
           )}
           {hasApproved && (
-            <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+            <span className="text-xs text-green-300 bg-green-500/20 px-2 py-1 rounded-full border border-green-500/30">
               You approved
             </span>
           )}
           {hasRejected && (
-            <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full">
+            <span className="text-xs text-red-300 bg-red-500/20 px-2 py-1 rounded-full border border-red-500/30">
               You rejected
             </span>
           )}
@@ -262,9 +338,9 @@ function DecisionCard({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-2 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+        className="w-full px-4 py-2 flex items-center justify-between bg-white/5 hover:bg-white/10 transition-colors"
       >
-        <div className="flex items-center gap-4 text-sm text-gray-600">
+        <div className="flex items-center gap-4 text-sm text-white/80">
           <span className="flex items-center gap-1">
             <MessageSquare className="w-4 h-4" />
             {decision.comments.length} comments
@@ -275,9 +351,9 @@ function DecisionCard({
           </span>
         </div>
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-gray-400" />
+          <ChevronDown className="w-4 h-4 text-white/70" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-gray-400" />
+          <ChevronRight className="w-4 h-4 text-white/70" />
         )}
       </button>
 
@@ -286,22 +362,38 @@ function DecisionCard({
         <div className="p-4 space-y-6">
           {/* 통합 입력창 */}
           {isReviewClosed ? (
-            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg text-gray-500 text-sm">
+            <div className="flex items-center gap-2 p-3 bg-white/5 rounded-lg text-white/70 text-sm">
               <Lock className="w-4 h-4" />
               <span>모든 결정사항이 확정되어 더 이상 댓글/제안을 추가할 수 없습니다.</span>
             </div>
           ) : (
-            <UnifiedInput
-              onSubmitComment={handleSubmitComment}
-              onSubmitSuggestion={handleSubmitSuggestion}
-              isLoading={isLoading}
-            />
+            <div className="space-y-2">
+              {isFinalState && (
+                <div className="flex items-start gap-2 p-3 bg-white/5 rounded-lg text-white/80 text-sm border border-white/10">
+                  <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-white" />
+                  <p>
+                    {decision.status === 'latest' ? '확정된' : '부결된'} 결정사항입니다.
+                    새로운 제안은 새 회의를 통해 안건으로 등록해주세요.
+                  </p>
+                </div>
+              )}
+              <UnifiedInput
+                onSubmitComment={handleSubmitComment}
+                onSubmitSuggestion={handleSubmitSuggestion}
+                isLoading={isLoading}
+                enabledModes={
+                  isFinalState
+                    ? ['comment', 'ask']
+                    : ['comment', 'suggestion', 'ask']
+                }
+              />
+            </div>
           )}
 
           {/* 댓글 목록 */}
           {decision.comments.length > 0 && (
             <div>
-              <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+              <h5 className="text-sm font-medium text-white/70 mb-3 flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
                 Comments
               </h5>
@@ -324,7 +416,7 @@ function DecisionCard({
           {/* 제안 목록 */}
           {decision.suggestions.length > 0 && (
             <div>
-              <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+              <h5 className="text-sm font-medium text-white/70 mb-3 flex items-center gap-2">
                 <Lightbulb className="w-4 h-4" />
                 Suggestions
               </h5>
@@ -339,7 +431,7 @@ function DecisionCard({
       )}
     </div>
   );
-}
+});
 
 // Agenda 섹션 컴포넌트
 function AgendaSection({
@@ -372,22 +464,22 @@ function AgendaSection({
     <section className="mb-8">
       {/* Agenda 헤더 - 마크다운 스타일 */}
       <div className="group flex items-start gap-3 mb-4">
-        <span className="text-2xl font-bold text-gray-300">#{index + 1}</span>
+        <span className="text-3xl font-bold text-white/80">#{index + 1}</span>
         <div className="flex-1">
           <EditableText
             value={agenda.topic}
             onSave={async (topic) => updateAgenda(agenda.id, { topic })}
-            className="text-xl font-bold text-gray-900"
+            className="text-2xl font-bold text-white"
           />
           {agenda.description && (
-            <p className="mt-1 text-gray-600">{agenda.description}</p>
+            <p className="mt-1 text-white/80">{agenda.description}</p>
           )}
         </div>
         <button
           type="button"
           onClick={handleDelete}
           disabled={isDeleting}
-          className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+          className="p-2 text-white/30 hover:text-red-400 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
           title="안건 삭제"
         >
           {isDeleting ? (
@@ -411,7 +503,7 @@ function AgendaSection({
         ))}
 
         {agenda.decisions.length === 0 && (
-          <p className="text-gray-400 text-sm italic">이 안건에 대한 결정사항이 없습니다.</p>
+          <p className="text-white/30 text-sm italic">이 안건에 대한 결정사항이 없습니다.</p>
         )}
       </div>
     </section>
@@ -481,10 +573,10 @@ export function MinutesViewPage() {
   // 로딩 상태
   if (minutesLoading && !minutes) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex items-center justify-center">
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
-          <p className="text-gray-500">회의록을 불러오는 중...</p>
+          <Loader2 className="w-8 h-8 animate-spin text-mit-primary mx-auto mb-3" />
+          <p className="text-white/50">회의록을 불러오는 중...</p>
         </div>
       </div>
     );
@@ -493,10 +585,10 @@ export function MinutesViewPage() {
   // 에러 상태
   if (minutesError && !minutes) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex items-center justify-center">
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-600 mb-4">{minutesError}</p>
-          <Link to="/dashboard" className="text-blue-600 hover:underline">
+          <p className="text-red-400 mb-4">{minutesError}</p>
+          <Link to="/dashboard" className="text-mit-primary hover:underline">
             홈으로 돌아가기
           </Link>
         </div>
@@ -512,21 +604,21 @@ export function MinutesViewPage() {
     ) || 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+    <div className="min-h-screen gradient-bg">
       {/* 헤더 */}
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+      <header className="sticky top-0 z-10 glass-sidebar border-b border-white/10">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               to="/"
-              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
             >
               <Home className="w-4 h-4" />
             </Link>
             {meetingId && (
               <Link
                 to={`/dashboard/meetings/${meetingId}`}
-                className="flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors"
+                className="flex items-center gap-1 text-white/60 hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span className="text-sm">Meeting</span>
@@ -537,8 +629,8 @@ export function MinutesViewPage() {
 
           <div className="flex items-center gap-4">
             {user && (
-              <span className="text-sm text-gray-600">
-                <strong>{user.name}</strong>
+              <span className="text-sm text-white/70">
+                <strong className="text-white">{user.name}</strong>
               </span>
             )}
             <Button variant="outline" onClick={logout} isLoading={authLoading}>
@@ -553,17 +645,17 @@ export function MinutesViewPage() {
         {minutes && (
           <>
             {/* 제목 영역 - 마크다운 스타일 */}
-            <div className="mb-8 pb-6 border-b border-gray-200">
-              <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+            <div className="mb-8 pb-6 border-b border-white/10">
+              <div className="flex items-center gap-2 text-sm text-white/70 mb-2">
                 <FileText className="w-4 h-4" />
                 <span>Meeting Minutes</span>
               </div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              <h1 className="text-3xl font-bold text-white mb-4">
                 {minutes.agendas[0]?.decisions[0]?.meetingTitle || 'Meeting Minutes'}
               </h1>
 
               {/* 통계 */}
-              <div className="flex items-center gap-6 text-sm text-gray-600">
+              <div className="flex items-center gap-6 text-sm text-white/80">
                 <span className="flex items-center gap-1">
                   <ListTodo className="w-4 h-4" />
                   {minutes.agendas.length} agendas
@@ -580,9 +672,9 @@ export function MinutesViewPage() {
 
               {/* 요약 */}
               {minutes.summary && (
-                <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                  <h3 className="text-sm font-medium text-blue-800 mb-2">Summary</h3>
-                  <div className="prose prose-sm prose-blue max-w-none">
+                <div className="mt-6 p-4 bg-mit-primary/10 rounded-xl border border-mit-primary/20">
+                  <h3 className="text-sm font-medium text-mit-primary mb-2">Summary</h3>
+                  <div className="prose prose-sm prose-invert max-w-none text-white/80">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {minutes.summary}
                     </ReactMarkdown>
@@ -605,8 +697,8 @@ export function MinutesViewPage() {
               ))}
 
               {minutes.agendas.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <div className="text-center py-12 text-white/80">
+                  <FileText className="w-12 h-12 mx-auto mb-3 text-white/80" />
                   <p>등록된 안건이 없습니다</p>
                 </div>
               )}
@@ -614,8 +706,8 @@ export function MinutesViewPage() {
 
             {/* Action Items 섹션 */}
             {minutes.actionItems.length > 0 && (
-              <section className="pt-8 border-t border-gray-200">
-                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <section className="pt-8 border-t border-white/10">
+                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                   <ListTodo className="w-5 h-5" />
                   Action Items
                 </h2>

@@ -70,7 +70,7 @@ export function MeetingInfoCard({
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+    <div className="glass-card p-6 mb-6">
       {isEditing ? (
         <form onSubmit={handleSave} className="space-y-4">
           <Input
@@ -80,7 +80,7 @@ export function MeetingInfoCard({
             required
           />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-white/70 mb-1">
               Description
             </label>
             <textarea
@@ -88,20 +88,20 @@ export function MeetingInfoCard({
               onChange={(e) => setEditDescription(e.target.value)}
               placeholder="회의 설명 (Shift+Enter: 줄바꿈)"
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-mit-primary/50 resize-none"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-white/70 mb-1">
               Status
             </label>
             <select
               value={editStatus}
               onChange={(e) => setEditStatus(e.target.value as MeetingStatus)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-mit-primary/50"
             >
               {Object.entries(MEETING_STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
+                <option key={value} value={value} className="bg-gray-800">
                   {label}
                 </option>
               ))}
@@ -124,7 +124,7 @@ export function MeetingInfoCard({
         <>
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-white mb-2">
                 {meeting.title}
               </h2>
               <span
@@ -152,7 +152,7 @@ export function MeetingInfoCard({
                   variant="outline"
                   onClick={onEndMeeting}
                   isLoading={ending}
-                  className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                  className="text-orange-400 border-orange-500/30 hover:bg-orange-500/20"
                 >
                   End Meeting
                 </Button>
@@ -167,7 +167,7 @@ export function MeetingInfoCard({
                     variant="outline"
                     onClick={onDelete}
                     isLoading={deleting}
-                    className="text-red-600 border-red-300 hover:bg-red-50"
+                    className="text-red-400 border-red-500/30 hover:bg-red-500/20"
                   >
                     Delete
                   </Button>
@@ -177,30 +177,30 @@ export function MeetingInfoCard({
           </div>
 
           {meeting.description && (
-            <MarkdownRenderer content={meeting.description} className="text-gray-600 mb-4" />
+            <MarkdownRenderer content={meeting.description} className="text-white/70 mb-4" />
           )}
 
-          <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">
+          <div className="grid grid-cols-2 gap-4 text-sm text-white/60">
             {meeting.scheduledAt && (
               <div>
-                <span className="font-medium">Scheduled:</span>{' '}
+                <span className="font-medium text-white/80">Scheduled:</span>{' '}
                 {new Date(meeting.scheduledAt).toLocaleString()}
               </div>
             )}
             {meeting.startedAt && (
               <div>
-                <span className="font-medium">Started:</span>{' '}
+                <span className="font-medium text-white/80">Started:</span>{' '}
                 {new Date(meeting.startedAt).toLocaleString()}
               </div>
             )}
             {meeting.endedAt && (
               <div>
-                <span className="font-medium">Ended:</span>{' '}
+                <span className="font-medium text-white/80">Ended:</span>{' '}
                 {new Date(meeting.endedAt).toLocaleString()}
               </div>
             )}
             <div>
-              <span className="font-medium">Created:</span>{' '}
+              <span className="font-medium text-white/80">Created:</span>{' '}
               {new Date(meeting.createdAt).toLocaleString()}
             </div>
           </div>

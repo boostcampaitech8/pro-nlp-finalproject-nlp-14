@@ -1,178 +1,189 @@
 // 명령 처리 훅
 import { useCallback } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
-import { usePreviewStore, type PreviewType } from '@/app/stores/previewStore';
-import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { agentService } from '@/app/services/agentService';
-import type { HistoryItem } from '@/app/types/command';
-
-// 유효한 프리뷰 타입 목록
-const VALID_PREVIEW_TYPES: PreviewType[] = ['meeting', 'document', 'command-result', 'search-result'];
-
-function isValidPreviewType(type: string): type is PreviewType {
-  return VALID_PREVIEW_TYPES.includes(type as PreviewType);
-}
+import type { ChatMessage } from '@/app/types/command';
 
 export function useCommand() {
   const {
     inputValue,
-    activeCommand,
+    isChatMode,
     setInputValue,
     setProcessing,
-    setActiveCommand,
-    updateField,
-    addHistory,
-    clearActiveCommand,
+    enterChatMode,
+    exitChatMode,
+    addChatMessage,
+    updateChatMessage,
+    setStreaming,
   } = useCommandStore();
 
-  const { setPreview } = usePreviewStore();
-  const { openModal: openMeetingModal } = useMeetingModalStore();
+  // 채팅 메시지 전송 (후속 대화용 - 항상 text 응답)
+  const sendChatMessage = useCallback(
+    async (text: string) => {
+      // 사용자 메시지 추가
+      const userMsg: ChatMessage = {
+        id: `chat-${Date.now()}`,
+        role: 'user',
+        content: text,
+        timestamp: new Date(),
+      };
+      addChatMessage(userMsg);
 
-  // 명령 제출
+      // 에이전트 응답 요청
+      try {
+        const response = await agentService.processChatMessage(text);
+        const agentMsg: ChatMessage = {
+          id: `chat-${Date.now()}-agent`,
+          role: 'agent',
+          type: response.type,
+          content: response.message,
+          timestamp: new Date(),
+        };
+        setStreaming(true);
+        addChatMessage(agentMsg);
+      } catch {
+        const errorMsg: ChatMessage = {
+          id: `chat-${Date.now()}-error`,
+          role: 'agent',
+          content: '응답 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+          timestamp: new Date(),
+        };
+        setStreaming(true);
+        addChatMessage(errorMsg);
+      }
+    },
+    [addChatMessage, setStreaming]
+  );
+
+  // 명령 제출 (항상 채팅 모드 진입)
   const submitCommand = useCallback(
     async (command?: string) => {
       const cmd = command || inputValue;
       if (!cmd.trim()) return;
 
-      setProcessing(true);
       setInputValue('');
 
+      // 이미 채팅 모드 -> 후속 메시지 전송
+      if (isChatMode) {
+        await sendChatMessage(cmd);
+        return;
+      }
+
+      // 채팅 모드 진입
+      setProcessing(true);
+
       try {
-        // agentService를 통해 명령 처리
+        enterChatMode();
+
+        // 사용자 메시지 추가
+        const userMsg: ChatMessage = {
+          id: `chat-${Date.now()}`,
+          role: 'user',
+          content: cmd,
+          timestamp: new Date(),
+        };
+        addChatMessage(userMsg);
+
+        // 명령 처리 (text 또는 plan 응답)
         const response = await agentService.processCommand(cmd);
 
-        if (response.type === 'modal' && response.modalData) {
-          // 모달 표시
-          if (response.modalData.modalType === 'meeting') {
-            openMeetingModal({
-              title: response.modalData.title,
-              description: response.modalData.description,
-              scheduledAt: response.modalData.scheduledAt,
-              teamId: response.modalData.teamId,
-            });
-          }
-        } else if (response.type === 'form' && response.command) {
-          // Form 표시
-          setActiveCommand(response.command);
-        } else {
-          // 직접 결과 표시
-          const historyItem: HistoryItem = {
-            id: `history-${Date.now()}`,
-            command: cmd,
-            result: response.message || '완료',
+        // text 타입이면서 '채팅 모드로 전환합니다' 응답인 경우, 실제 채팅 응답을 요청
+        if (response.type === 'text' && response.message === '채팅 모드로 전환합니다.') {
+          const chatResponse = await agentService.processChatMessage(cmd);
+          const agentMsg: ChatMessage = {
+            id: `chat-${Date.now()}-agent`,
+            role: 'agent',
+            type: chatResponse.type,
+            content: chatResponse.message,
             timestamp: new Date(),
-            icon: '✅',
-            status: 'success',
           };
-          addHistory(historyItem);
-
-          // 프리뷰 패널 업데이트
-          if (response.previewData) {
-            const previewType = response.previewData.type;
-            if (isValidPreviewType(previewType)) {
-              setPreview(previewType, {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            } else {
-              console.warn(`Unknown preview type: ${previewType}, falling back to command-result`);
-              setPreview('command-result', {
-                title: response.previewData.title,
-                content: response.previewData.content,
-                createdAt: new Date().toISOString(),
-              });
-            }
-          }
+          setStreaming(true);
+          addChatMessage(agentMsg);
+        } else {
+          // text 또는 plan 응답 추가
+          const agentMsg: ChatMessage = {
+            id: `chat-${Date.now()}-agent`,
+            role: 'agent',
+            type: response.type,
+            content: response.message,
+            timestamp: new Date(),
+          };
+          setStreaming(true);
+          addChatMessage(agentMsg);
         }
       } catch (error) {
-        // 에러 처리
-        const historyItem: HistoryItem = {
-          id: `history-${Date.now()}`,
-          command: cmd,
-          result: '명령 처리 중 오류가 발생했습니다.',
+        const errorMsg: ChatMessage = {
+          id: `chat-${Date.now()}-error`,
+          role: 'agent',
+          content: '명령 처리 중 오류가 발생했습니다.',
           timestamp: new Date(),
-          icon: '❌',
-          status: 'error',
         };
-        addHistory(historyItem);
+        setStreaming(true);
+        addChatMessage(errorMsg);
         console.error('Command processing error:', error);
       } finally {
         setProcessing(false);
       }
     },
-    [inputValue, setInputValue, setProcessing, setActiveCommand, addHistory, setPreview, openMeetingModal]
+    [
+      inputValue,
+      isChatMode,
+      setInputValue,
+      setProcessing,
+      enterChatMode,
+      addChatMessage,
+      setStreaming,
+      sendChatMessage,
+    ]
   );
 
-  // Form 제출
-  const submitForm = useCallback(async () => {
-    if (!activeCommand) return;
+  // Plan 승인
+  const approvePlan = useCallback(
+    async (messageId: string) => {
+      // plan 메시지를 승인 상태로 업데이트
+      updateChatMessage(messageId, { approved: true });
 
-    setProcessing(true);
-
-    try {
-      // 필드 값 추출 (id를 키로 사용하여 i18n 호환성 확보)
-      const fieldValues: Record<string, string> = {};
-      activeCommand.fields.forEach((f) => {
-        if (f.value) {
-          fieldValues[f.id] = f.value;
-        }
-      });
-
-      // agentService를 통해 Form 제출
-      const response = await agentService.submitForm(
-        activeCommand.id,
-        activeCommand.title,
-        fieldValues
-      );
-
-      const historyItem: HistoryItem = {
-        id: `history-${Date.now()}`,
-        command: activeCommand.title,
-        result: response.message || `${activeCommand.title} 완료`,
+      // 승인 메시지 추가
+      const userMsg: ChatMessage = {
+        id: `chat-${Date.now()}-approve`,
+        role: 'user',
+        content: '승인합니다',
         timestamp: new Date(),
-        icon: activeCommand.icon || '✅',
-        status: 'success',
       };
-      addHistory(historyItem);
+      addChatMessage(userMsg);
 
-      // 프리뷰 업데이트
-      if (response.previewData) {
-        setPreview('command-result', {
-          title: response.previewData.title,
-          content: response.previewData.content,
-          createdAt: new Date().toISOString(),
-        });
+      // 승인 결과 응답 요청
+      try {
+        const response = await agentService.processChatMessage('승인합니다');
+        const agentMsg: ChatMessage = {
+          id: `chat-${Date.now()}-approve-result`,
+          role: 'agent',
+          type: response.type,
+          content: response.message,
+          timestamp: new Date(),
+        };
+        setStreaming(true);
+        addChatMessage(agentMsg);
+      } catch {
+        const errorMsg: ChatMessage = {
+          id: `chat-${Date.now()}-approve-error`,
+          role: 'agent',
+          content: '승인 처리 중 오류가 발생했습니다.',
+          timestamp: new Date(),
+        };
+        setStreaming(true);
+        addChatMessage(errorMsg);
       }
-
-      clearActiveCommand();
-    } catch (error) {
-      const historyItem: HistoryItem = {
-        id: `history-${Date.now()}`,
-        command: activeCommand.title,
-        result: '명령 실행 중 오류가 발생했습니다.',
-        timestamp: new Date(),
-        icon: '❌',
-        status: 'error',
-      };
-      addHistory(historyItem);
-      console.error('Form submission error:', error);
-      clearActiveCommand();
-    }
-  }, [activeCommand, setProcessing, addHistory, setPreview, clearActiveCommand]);
-
-  // 명령 취소
-  const cancelCommand = useCallback(() => {
-    clearActiveCommand();
-  }, [clearActiveCommand]);
+    },
+    [updateChatMessage, addChatMessage, setStreaming]
+  );
 
   return {
     inputValue,
-    activeCommand,
+    isChatMode,
     setInputValue,
     submitCommand,
-    submitForm,
-    cancelCommand,
-    updateField,
+    approvePlan,
+    exitChatMode,
   };
 }

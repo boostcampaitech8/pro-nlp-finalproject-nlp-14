@@ -253,6 +253,32 @@ def get_selector_llm() -> ChatClovaX:
 
 
 # ============================================================================
+# MIT Suggestion/Mention 워크플로우 전용 LLM
+# ============================================================================
+
+
+def get_decision_generator_llm() -> ChatClovaX:
+    """Decision 생성 LLM (창의적 생성).
+
+    Model: HCX-007
+    Use Case: Suggestion 반영한 새 Decision 내용 생성
+    temperature: 0.5 (자연스러운 생성 + 일관성 균형)
+    max_tokens: 1024 (충분한 Decision 내용)
+
+    Why 중간 temperature?
+    - Decision은 정확성과 창의성 모두 필요
+    - Suggestion을 자연스럽게 반영해야 함
+    """
+    return ChatClovaX(
+        model="HCX-007",
+        temperature=0.5,
+        max_tokens=1024,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "medium"},
+    ).with_config(run_name="decision_generator")
+
+
+# ============================================================================
 # 하위 호환성 함수
 # ============================================================================
 
@@ -262,7 +288,13 @@ def get_mention_generator_llm() -> ChatClovaX:
     temperature: 0.6 (자연스러운 대화)
     max_tokens: 512 (응답 길이 제한)
     """
-    return get_base_llm().bind(temperature=0.6, max_tokens=512)
+    return ChatClovaX(
+        model="HCX-007",
+        temperature=0.6,
+        max_tokens=512,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
+    )
 
 
 def get_llm() -> ChatClovaX:

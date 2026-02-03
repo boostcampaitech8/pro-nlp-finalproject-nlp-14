@@ -17,12 +17,12 @@ interface TranscriptSectionProps {
   meetingStatus: string;
 }
 
-// 상태별 스타일
+// 상태별 스타일 (glassmorphism 적용)
 const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  processing: 'bg-blue-100 text-blue-800',
-  completed: 'bg-green-100 text-green-800',
-  failed: 'bg-red-100 text-red-800',
+  pending: 'bg-yellow-500/20 text-yellow-300',
+  processing: 'bg-blue-500/20 text-blue-300',
+  completed: 'bg-green-500/20 text-green-300',
+  failed: 'bg-red-500/20 text-red-300',
 };
 
 // 상태별 라벨
@@ -167,16 +167,16 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
 
   if (loading && !status && !transcript) {
     return (
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <p className="text-gray-500 text-center">Loading transcript...</p>
+      <div className="glass-card p-6">
+        <p className="text-white/50 text-center">Loading transcript...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <p className="text-red-600 text-center">{error}</p>
+      <div className="glass-card p-6">
+        <p className="text-red-400 text-center">{error}</p>
       </div>
     );
   }
@@ -184,16 +184,16 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
   // 트랜스크립트가 없는 경우
   if (!status && !transcript) {
     return (
-      <div className="bg-white rounded-xl shadow-md p-6">
+      <div className="glass-card p-6">
         <div className="text-center">
-          <p className="text-gray-500 mb-4">No transcript available yet.</p>
+          <p className="text-white/50 mb-4">No transcript available yet.</p>
           {meetingStatus === 'completed' && (
             <Button onClick={handleStartTranscription} isLoading={loading}>
               Start Transcription
             </Button>
           )}
           {meetingStatus === 'ongoing' && (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-white/40">
               Transcription will start automatically when the meeting ends.
             </p>
           )}
@@ -203,9 +203,9 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-md">
+    <div className="glass-card">
       {/* 헤더 */}
-      <div className="p-4 border-b flex items-center justify-between">
+      <div className="p-4 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -216,19 +216,19 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
           </span>
 
           {status && status.status === 'processing' && (
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-white/60">
               Processing: {status.processedRecordings} / {status.totalRecordings} recordings
             </span>
           )}
 
           {transcript?.totalDurationMs && (
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-white/60">
               Duration: {formatDuration(transcript.totalDurationMs)}
             </span>
           )}
 
           {transcript?.speakerCount && (
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-white/60">
               Speakers: {transcript.speakerCount}
             </span>
           )}
@@ -249,7 +249,7 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
 
       {/* 에러 메시지 */}
       {(status?.error || transcript?.error) && (
-        <div className="p-4 bg-red-50 text-red-700 text-sm">
+        <div className="p-4 bg-red-500/20 text-red-300 text-sm border-b border-white/10">
           Error: {status?.error || transcript?.error}
         </div>
       )}
@@ -259,7 +259,7 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
         <div className="p-4">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="w-full text-left mb-4 flex items-center justify-between text-gray-700 hover:text-gray-900"
+            className="w-full text-left mb-4 flex items-center justify-between text-white/80 hover:text-white"
           >
             <span className="font-medium">
               Transcript ({transcript.utterances.length} utterances)
@@ -274,15 +274,15 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
               {transcript.utterances.map((utterance) => (
                 <div key={utterance.id} className="flex gap-3">
                   <div className="flex-shrink-0 w-24">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-white/40">
                       {formatTimestamp(utterance.timestamp)}
                     </span>
                   </div>
                   <div className="flex-1">
-                    <span className="font-medium text-blue-600 mr-2">
+                    <span className="font-medium text-mit-primary mr-2">
                       [{utterance.speakerName}]
                     </span>
-                    <span className="text-gray-700">{utterance.text}</span>
+                    <span className="text-white/80">{utterance.text}</span>
                   </div>
                 </div>
               ))}
@@ -296,7 +296,7 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
         <div className="p-4">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="w-full text-left mb-4 flex items-center justify-between text-gray-700 hover:text-gray-900"
+            className="w-full text-left mb-4 flex items-center justify-between text-white/80 hover:text-white"
           >
             <span className="font-medium">Full Text</span>
             <span className="text-sm">
@@ -305,7 +305,7 @@ export function TranscriptSection({ meetingId, meetingStatus }: TranscriptSectio
           </button>
 
           {expanded && (
-            <div className="prose prose-sm max-w-none max-h-96 overflow-y-auto whitespace-pre-wrap text-gray-700">
+            <div className="prose prose-sm prose-invert max-w-none max-h-96 overflow-y-auto whitespace-pre-wrap text-white/80">
               {transcript.fullText}
             </div>
           )}

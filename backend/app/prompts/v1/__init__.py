@@ -12,13 +12,15 @@ Version 1.0 프롬프트 모음.
         - query_intent: 쿼리 의도 분석
         - cypher: Cypher 쿼리 생성
     - workflows/: 데이터 처리 워크플로우 프롬프트
-        - extraction: Agenda/Decision/Action 추출
-        - topic: 토픽 병합/분할
+        - mit_suggestion/: Decision 수정 제안 처리
+        - mit_action/: Action Item 추출
+        - mit_topic/: 토픽 병합/분할
+        - generate_pr/: Agenda/Decision 추출
 
 사용 예시:
     from app.prompts.v1.orchestration.planning import INITIAL_PLANNING_PROMPT
     from app.prompts.v1.mit_search.cypher import CYPHER_GENERATION_SYSTEM_PROMPT
-    from app.prompts.v1.workflows.extraction import AGENDA_EXTRACTION_PROMPT
+    from app.prompts.v1.workflows.generate_pr import AGENDA_EXTRACTION_PROMPT
 """
 
 from . import orchestration

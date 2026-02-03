@@ -57,9 +57,15 @@ async def subscribe_topic_updates(meeting_id: str) -> AsyncGenerator[dict, None]
 
         while True:
             try:
+                # get_message(timeout=1.0): 최대 1초 대기 후 메시지 없으면 None 반환
+                # wait_for(timeout=30.0): Redis 연결이 응답하지 않을 경우 안전장치
+                #
+                # 동작 흐름:
+                # 1. 메시지 있음 → 즉시 반환 → update 이벤트 전송
+                # 2. 메시지 없음 → 1초 후 None 반환 → heartbeat 전송 → 루프 반복
                 message = await asyncio.wait_for(
                     pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
-                    timeout=30.0,  # 30초마다 heartbeat
+                    timeout=30.0,
                 )
 
                 if message is None:

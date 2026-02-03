@@ -7,6 +7,7 @@ from datetime import datetime
 from uuid import UUID
 
 import httpx
+import json
 
 from src.config import get_config
 
@@ -125,9 +126,7 @@ class BackendAPIClient:
                     created_at=datetime.fromisoformat(data["createdAt"].replace("Z", "+00:00")),
                 )
             else:
-                logger.error(
-                    f"트랜스크립트 전송 실패: {response.status_code} - {response.text}"
-                )
+                logger.error(f"트랜스크립트 전송 실패: {response.status_code} - {response.text}")
                 return None
 
         except httpx.HTTPError as e:
@@ -246,7 +245,7 @@ class BackendAPIClient:
         self,
         meeting_id: str,
         transcript_id: str,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[dict, None]:
         """Agent 스트리밍 응답 수신 (SSE)
 
         Args:
@@ -269,21 +268,49 @@ class BackendAPIClient:
 
         async with self._client.stream(
             "POST",
-            self.config.agent_stream_path,
+            "/api/v1/agent/meeting",
             json=payload,
             headers={"Accept": "text/event-stream"},
             timeout=None,
         ) as response:
             response.raise_for_status()
 
+            current_event_type = None
+
             async for line in response.aiter_lines():
-                if not line or not line.startswith("data: "):
+                if not line:
                     continue
-                data = line[6:]
 
-                if data == "[DONE]":
+                # 표준 SSE 형식: "event: type" 또는 "data: content"
+                if line.startswith("event: "):
+                    current_event_type = line[7:].strip()
+                    logger.debug(f"[SSE] event type: {current_event_type}")
+                    continue
+                
+                if not line.startswith("data: "):
+                    continue
+
+                data = line[6:]  # strip() 제거하여 띄어쓰기 토큰 보존
+
+                # 제어 메시지는 trim 처리
+                data_trimmed = data.strip()
+                if data_trimmed == "[DONE]":
+                    logger.info("[SSE] Stream completed")
                     break
-                if data.startswith("[ERROR]"):
-                    raise RuntimeError(data)
 
-                yield data
+                if data_trimmed.startswith("[ERROR]"):
+                    raise RuntimeError(data_trimmed)
+
+                # 표준 SSE 포맷: event 타입별로 처리
+                if current_event_type == "message":
+                    logger.debug(f"[SSE] message: {data[:50]}")
+                    yield {"type": "message", "content": data}
+                elif current_event_type == "status":
+                    logger.debug(f"[SSE] status: {data[:50]}")
+                    yield {"type": "status", "content": data}
+                elif current_event_type == "done":
+                    logger.info("[SSE] done")
+                    yield {"type": "done"}
+                elif current_event_type == "error":
+                    logger.error(f"[SSE] error: {data}")
+                    yield {"type": "error", "content": data}

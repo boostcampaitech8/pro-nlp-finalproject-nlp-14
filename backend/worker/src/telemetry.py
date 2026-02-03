@@ -114,6 +114,12 @@ class RealtimeWorkerMetrics:
             description="STT 최종 결과 세그먼트 수",
         )
 
+        # Wake word 감지 카운터
+        self.wakeword_detected_count = meter.create_counter(
+            name="mit_wakeword_detected_total",
+            description="Wake word 감지 횟수",
+        )
+
     def get_timestamps(self, user_id: str) -> PipelineTimestamps:
         """사용자별 타임스탬프 가져오기 (없으면 생성)"""
         if user_id not in self._timestamps:
@@ -150,9 +156,13 @@ class RealtimeWorkerMetrics:
     # =========================================================================
 
     def mark_wakeword_detected(self, user_id: str) -> None:
-        """Wake word 감지 시점 기록"""
+        """Wake word 감지 시점 기록 및 카운트 증가"""
         ts = self.get_timestamps(user_id)
         ts.wakeword_detected_time = time.perf_counter()
+        self.wakeword_detected_count.add(
+            1,
+            {"meeting_id": self.meeting_id, "user_id": user_id},
+        )
 
     def mark_agent_first_token(self, user_id: str) -> None:
         """Agent 첫 토큰 출력 시점 기록 및 레이턴시 계산"""

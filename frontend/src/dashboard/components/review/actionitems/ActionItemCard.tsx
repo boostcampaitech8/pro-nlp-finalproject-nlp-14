@@ -31,20 +31,20 @@ const STATUS_CONFIG: Record<
   pending: {
     icon: Circle,
     label: '대기',
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-100',
+    color: 'text-white/50',
+    bgColor: 'bg-white/10',
   },
   in_progress: {
     icon: Clock,
     label: '진행중',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
+    color: 'text-blue-400',
+    bgColor: 'bg-blue-500/20',
   },
   completed: {
     icon: CheckCircle2,
     label: '완료',
-    color: 'text-green-600',
-    bgColor: 'bg-green-100',
+    color: 'text-green-400',
+    bgColor: 'bg-green-500/20',
   },
 };
 
@@ -94,8 +94,8 @@ export function ActionItemCard({
     <div
       className={`group p-4 rounded-xl border transition-all ${
         item.status === 'completed'
-          ? 'bg-gray-50 border-gray-200'
-          : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
+          ? 'bg-white/5 border-white/10'
+          : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10'
       }`}
     >
       <div className="flex items-start gap-3">
@@ -116,7 +116,7 @@ export function ActionItemCard({
                 className="fixed inset-0 z-10"
                 onClick={() => setShowStatusMenu(false)}
               />
-              <div className="absolute top-full left-0 mt-1 py-1 bg-white rounded-lg shadow-lg border border-gray-200 z-20 min-w-[120px]">
+              <div className="absolute top-full left-0 mt-1 py-1 bg-gray-800 rounded-lg shadow-lg border border-white/10 z-20 min-w-[120px]">
                 {(Object.keys(STATUS_CONFIG) as ActionItemStatus[]).map((status) => {
                   const cfg = STATUS_CONFIG[status];
                   const Icon = cfg.icon;
@@ -125,8 +125,8 @@ export function ActionItemCard({
                       key={status}
                       type="button"
                       onClick={() => handleStatusChange(status)}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${
-                        status === item.status ? 'bg-gray-50' : ''
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-white hover:bg-white/10 transition-colors ${
+                        status === item.status ? 'bg-white/10' : ''
                       }`}
                     >
                       <Icon className={`w-4 h-4 ${cfg.color}`} />
@@ -144,7 +144,7 @@ export function ActionItemCard({
             value={item.content}
             onSave={async (content) => onUpdate({ content })}
             className={`font-medium ${
-              item.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-900'
+              item.status === 'completed' ? 'line-through text-white/40' : 'text-white'
             }`}
             disabled={isLoading}
           />
@@ -153,7 +153,7 @@ export function ActionItemCard({
           <div className="flex items-center gap-4 mt-2">
             {/* 담당자 */}
             {item.assigneeId && (
-              <div className="flex items-center gap-1 text-xs text-gray-500">
+              <div className="flex items-center gap-1 text-xs text-white/50">
                 <User className="w-3 h-3" />
                 <span>담당자 지정됨</span>
               </div>
@@ -163,13 +163,13 @@ export function ActionItemCard({
             {dueInfo && (
               <div
                 className={`flex items-center gap-1 text-xs ${
-                  dueInfo.isOverdue ? 'text-red-600' : 'text-gray-500'
+                  dueInfo.isOverdue ? 'text-red-400' : 'text-white/50'
                 }`}
               >
                 <Calendar className="w-3 h-3" />
                 <span>{dueInfo.text}</span>
                 {dueInfo.isOverdue && (
-                  <span className="text-red-600 font-medium">지남</span>
+                  <span className="text-red-400 font-medium">지남</span>
                 )}
               </div>
             )}
@@ -181,7 +181,7 @@ export function ActionItemCard({
           type="button"
           onClick={handleDelete}
           disabled={isDeleting || isLoading}
-          className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+          className="p-2 text-white/30 hover:text-red-400 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
         >
           {isDeleting ? (
             <Loader2 className="w-4 h-4 animate-spin" />
