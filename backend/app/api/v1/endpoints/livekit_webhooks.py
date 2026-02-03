@@ -179,8 +179,12 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
     """룸 종료 이벤트 처리
 
     마지막 참여자 퇴장 후 empty_timeout(30초) 경과 시 발생합니다.
-    Realtime 워커를 종료하고 VAD 메타데이터를 저장합니다.
+    1. Realtime 워커 종료
+    2. Clova API 키 반환
+    3. VAD 메타데이터 저장
     """
+    from app.services.clova_key_manager import get_clova_key_manager
+
     room = body.get("room", {})
     room_name = room.get("name", "")
 
@@ -201,6 +205,15 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
                 logger.info(f"[LiveKit] Realtime worker stopped: {worker_id}")
         except Exception as e:
             logger.error(f"[LiveKit] Failed to stop realtime worker: {e}")
+
+        # Clova API 키 반환 (워커 종료 후 반환)
+        try:
+            key_manager = get_clova_key_manager()
+            released = await key_manager.release_key(meeting_id)
+            if released:
+                logger.info(f"[LiveKit] Clova API key released: meeting={meeting_id}")
+        except Exception as e:
+            logger.error(f"[LiveKit] Failed to release Clova API key: {e}")
 
         # VAD 메타데이터 저장
         try:

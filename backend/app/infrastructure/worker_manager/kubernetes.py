@@ -97,8 +97,14 @@ class K8sWorkerManager:
         else:
             return "http://host.docker.internal:8000"
 
-    def _build_job(self, job_name: str, meeting_id: str) -> client.V1Job:
-        """K8s Job 매니페스트 생성"""
+    def _build_job(self, job_name: str, meeting_id: str, api_key_index: int) -> client.V1Job:
+        """K8s Job 매니페스트 생성
+
+        Args:
+            job_name: Job 이름
+            meeting_id: 회의 ID
+            api_key_index: 할당된 Clova API 키 인덱스 (0-4)
+        """
         return client.V1Job(
             api_version="batch/v1",
             kind="Job",
@@ -109,6 +115,7 @@ class K8sWorkerManager:
                     "app": "realtime-worker",
                     "managed-by": "mit-backend",
                     "meeting-id": re.sub(r"[^a-zA-Z0-9._-]", "", meeting_id),
+                    "clova-key-index": str(api_key_index),
                 },
             ),
             spec=client.V1JobSpec(
@@ -121,6 +128,7 @@ class K8sWorkerManager:
                         labels={
                             "app": "realtime-worker",
                             "meeting-id": re.sub(r"[^a-zA-Z0-9._-]", "", meeting_id),
+                            "clova-key-index": str(api_key_index),
                         },
                     ),
                     spec=client.V1PodSpec(
@@ -141,6 +149,16 @@ class K8sWorkerManager:
                                     client.V1EnvVar(
                                         name="BACKEND_API_URL",
                                         value=self._get_backend_url(),
+                                    ),
+                                    # 할당된 Clova STT API 키 (Secret에서 참조)
+                                    client.V1EnvVar(
+                                        name="CLOVA_STT_SECRET",
+                                        value_from=client.V1EnvVarSource(
+                                            secret_key_ref=client.V1SecretKeySelector(
+                                                name="mit-secrets",
+                                                key=f"CLOVA_STT_SECRET_{api_key_index}",
+                                            ),
+                                        ),
                                     ),
                                 ],
                                 env_from=[
@@ -188,6 +206,8 @@ class K8sWorkerManager:
 
     async def start_worker(self, meeting_id: str) -> str:
         """K8s Job으로 워커 시작"""
+        from app.services.clova_key_manager import get_clova_key_manager
+
         job_name = self._get_job_name(meeting_id)
 
         # 이미 실행 중인지 확인
@@ -196,13 +216,19 @@ class K8sWorkerManager:
             logger.warning(f"워커가 이미 실행 중: {job_name}")
             return job_name
 
+        # Clova API 키 할당
+        key_manager = get_clova_key_manager()
+        api_key_index = await key_manager.allocate_key(meeting_id)
+        if api_key_index is None:
+            raise WorkerStartError("사용 가능한 Clova API 키가 없습니다")
+
         # 기존 Job이 있으면 삭제
         if existing.status in (WorkerStatusEnum.STOPPED, WorkerStatusEnum.FAILED,
                                WorkerStatusEnum.PENDING):
             await self._delete_job(job_name)
 
-        # Job 생성
-        job = self._build_job(job_name, meeting_id)
+        # Job 생성 (할당된 키 인덱스 전달)
+        job = self._build_job(job_name, meeting_id, api_key_index)
         try:
             await asyncio.to_thread(
                 self.batch_v1.create_namespaced_job,
@@ -210,11 +236,13 @@ class K8sWorkerManager:
                 body=job,
             )
         except ApiException as e:
+            # Job 생성 실패 시 키 반환
+            await key_manager.release_key(meeting_id)
             error_msg = f"워커 Job 생성 실패: {e.reason} (status={e.status})"
             logger.error(error_msg)
             raise WorkerStartError(error_msg) from e
 
-        logger.info(f"워커 Job 생성됨: {job_name} (meeting={meeting_id})")
+        logger.info(f"워커 Job 생성됨: {job_name} (meeting={meeting_id}, key_index={api_key_index})")
         return job_name
 
     async def stop_worker(self, worker_id: str) -> bool:
