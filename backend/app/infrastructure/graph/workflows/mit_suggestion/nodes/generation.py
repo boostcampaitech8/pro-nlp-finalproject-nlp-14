@@ -107,9 +107,23 @@ async def generate_new_decision(state: MitSuggestionState) -> dict:
 
             parsed = json.loads(json_str)
 
-            new_content = parsed.get("new_decision_content", decision_content)
-            reason = parsed.get("supersedes_reason", "사용자 제안 반영")
-            confidence = parsed.get("confidence", DEFAULT_CONFIDENCE)
+            new_content = parsed.get("new_decision_content")
+            reason = parsed.get("supersedes_reason")
+            confidence = parsed.get("confidence")
+
+            # H2: Validate and log when fallback values are used
+            if not new_content:
+                logger.warning(
+                    "[generate_new_decision] Missing new_decision_content in response, "
+                    "using original decision content as fallback"
+                )
+                new_content = decision_content
+            if not reason:
+                logger.info("[generate_new_decision] Missing supersedes_reason, using default")
+                reason = "사용자 제안 반영"
+            if not confidence:
+                logger.info("[generate_new_decision] Missing confidence, using default")
+                confidence = DEFAULT_CONFIDENCE
 
             # confidence 값 검증
             if confidence not in CONFIDENCE_LEVELS:
