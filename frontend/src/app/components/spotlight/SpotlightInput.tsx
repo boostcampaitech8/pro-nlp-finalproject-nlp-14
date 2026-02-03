@@ -1,6 +1,6 @@
 // Spotlight 입력창 컴포넌트
 import { useRef, useEffect } from 'react';
-import { Command, Mic, Settings, Loader2, ArrowLeft } from 'lucide-react';
+import { Command, Loader2, ArrowLeft } from 'lucide-react';
 import { useCommand } from '@/app/hooks/useCommand';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { cn } from '@/lib/utils';
@@ -92,34 +92,13 @@ export function SpotlightInput() {
         className="flex-1 bg-transparent text-[15px] text-white placeholder:text-white/40 outline-none disabled:opacity-50"
       />
 
-      {/* 액션 버튼 */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {!isChatMode && (
-          <>
-            <button
-              className="action-btn"
-              title="음성 입력"
-              disabled={isProcessing}
-            >
-              <Mic className="w-4 h-4 text-white/60" />
-            </button>
-            <button
-              className="action-btn"
-              title="설정"
-            >
-              <Settings className="w-4 h-4 text-white/60" />
-            </button>
-          </>
-        )}
-
-        {/* 단축키 힌트 */}
-        {!isChatMode && !isInputFocused && !inputValue && (
-          <div className="flex gap-1 ml-2">
-            <span className="shortcut-key">Cmd</span>
-            <span className="shortcut-key">K</span>
-          </div>
-        )}
-      </div>
+      {/* 단축키 힌트 */}
+      {!isChatMode && !isInputFocused && !inputValue && (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <span className="shortcut-key">Cmd</span>
+          <span className="shortcut-key">K</span>
+        </div>
+      )}
     </div>
   );
 }
