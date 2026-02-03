@@ -158,7 +158,7 @@ export function TopicSidebar({
                       onClick={() => handleItemClick(topic, status)}
                       aria-pressed={isSelected}
                       className={[
-                        'group w-full rounded-lg px-1 py-2 text-left',
+                        'group w-full rounded-lg px-1.5 py-2 text-left',
                         'transition-colors duration-150',
                         isSelected
                           ? 'bg-slate-800/65 text-slate-100'
@@ -167,13 +167,10 @@ export function TopicSidebar({
                             : 'bg-transparent text-slate-400 hover:bg-slate-800/55 hover:text-slate-100',
                       ].join(' ')}
                     >
-                      <div className="grid grid-cols-[auto_minmax(0,1fr)_70px] items-center gap-1.5">
+                      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
                         <StatusMark status={status} />
                         <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium leading-5">
                           {topic.name}
-                        </span>
-                        <span className="w-[33px] justify-self-end text-left whitespace-nowrap text-[9px] text-slate-500 font-mono">
-                          #{topic.startTurn}-{topic.endTurn}
                         </span>
                       </div>
                     </button>
@@ -198,9 +195,9 @@ export function TopicSidebar({
 
                           {topic.keywords.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1">
-                              {topic.keywords.slice(0, 6).map((keyword) => (
+                              {topic.keywords.slice(0, 6).map((keyword, idx) => (
                                 <span
-                                  key={keyword}
+                                  key={`${topic.id}-kw-${idx}`}
                                   className="rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] text-slate-300"
                                 >
                                   {keyword}
