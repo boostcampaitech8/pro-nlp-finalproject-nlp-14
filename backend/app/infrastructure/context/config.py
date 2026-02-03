@@ -34,9 +34,8 @@ class ContextConfig(BaseSettings):
     speaker_buffer_max_per_speaker: int = 25  # 화자별 최대 발화 버퍼 크기
 
     # === 토픽 메모리 설정 (L1 + Semantic Search) ===
-    max_topics: int = 30  # 최대 토픽 수
-    topic_merge_threshold: float = 0.80  # 유사 토픽 병합 임계값
-    topic_similarity_threshold: float = 0.85  # 재귀 병합 임계값
+    max_topics: int = 30  # 최대 토픽 수 (초과 시 유사 토픽 병합)
+    topic_merge_threshold: float = 0.80  # 유사 토픽 병합 임계값 (cosine similarity)
 
     # === 임베딩 설정 (CLOVA Studio API) ===
     embedding_model: str = "bge-m3"  # CLOVA Studio 지원 모델
