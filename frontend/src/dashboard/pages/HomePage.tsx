@@ -50,25 +50,25 @@ export function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
+    <div className="min-h-screen gradient-bg">
+      <header className="glass-sidebar border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
               to="/"
-              className="flex items-center gap-2 text-gray-500 hover:text-gray-700 transition-colors"
+              className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               <span className="text-sm">Back to Home</span>
             </Link>
-            <span className="text-gray-300">|</span>
-            <h1 className="text-xl font-bold text-gray-900">Mit Dashboard</h1>
+            <span className="text-white/20">|</span>
+            <h1 className="text-xl font-bold text-white">Mit Dashboard</h1>
           </div>
 
           <div className="flex items-center gap-4">
             {user && (
-              <span className="text-gray-600">
-                Hello, <strong>{user.name}</strong>
+              <span className="text-white/70">
+                Hello, <strong className="text-white">{user.name}</strong>
               </span>
             )}
             <Button variant="outline" onClick={logout} isLoading={authLoading}>
@@ -81,7 +81,7 @@ export function HomePage() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">My Teams</h2>
+          <h2 className="text-2xl font-bold text-white">My Teams</h2>
           <Button onClick={() => setShowCreateForm(!showCreateForm)}>
             {showCreateForm ? 'Cancel' : 'Create Team'}
           </Button>
@@ -89,8 +89,8 @@ export function HomePage() {
 
         {/* 팀 생성 폼 */}
         {showCreateForm && (
-          <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-            <h3 className="text-lg font-semibold mb-4">Create New Team</h3>
+          <div className="glass-card p-6 mb-6">
+            <h3 className="text-lg font-semibold text-white mb-4">Create New Team</h3>
             <form onSubmit={handleCreateTeam} className="space-y-4">
               <Input
                 label="Team Name"
@@ -100,7 +100,7 @@ export function HomePage() {
                 required
               />
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/70 mb-1">
                   Description (optional)
                 </label>
                 <textarea
@@ -108,7 +108,7 @@ export function HomePage() {
                   onChange={(e) => setNewTeamDescription(e.target.value)}
                   placeholder="Enter team description (Shift+Enter: new line)"
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-mit-primary/50 focus:border-mit-primary/50 resize-none"
                 />
               </div>
               <div className="flex gap-2">
@@ -129,22 +129,22 @@ export function HomePage() {
 
         {/* 에러 메시지 */}
         {teamError && (
-          <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6">
+          <div className="bg-red-500/20 text-red-300 p-4 rounded-lg mb-6 border border-red-500/30">
             {teamError}
           </div>
         )}
 
         {/* 로딩 */}
         {teamsLoading && teams.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-white/50">
             Loading teams...
           </div>
         )}
 
         {/* 팀 목록 */}
         {!teamsLoading && teams.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-md p-8 text-center">
-            <p className="text-gray-600 mb-4">
+          <div className="glass-card p-8 text-center">
+            <p className="text-white/60 mb-4">
               You don't have any teams yet.
             </p>
             <Button onClick={() => setShowCreateForm(true)}>
@@ -157,17 +157,17 @@ export function HomePage() {
               <Link
                 key={team.id}
                 to={`/dashboard/teams/${team.id}`}
-                className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
+                className="glass-card-hover p-6"
               >
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-white mb-2">
                   {team.name}
                 </h3>
                 {team.description && (
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                  <p className="text-white/60 text-sm mb-4 line-clamp-2">
                     {team.description}
                   </p>
                 )}
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-white/40">
                   Created {new Date(team.createdAt).toLocaleDateString()}
                 </p>
               </Link>

@@ -96,18 +96,18 @@ export function TeamDetailPage() {
 
   if (teamsLoading && !currentTeam) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Loading team...</p>
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
+        <p className="text-white/50">Loading team...</p>
       </div>
     );
   }
 
   if (teamError && !currentTeam) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-600 mb-4">{teamError}</p>
-          <Link to="/dashboard" className="text-blue-600 hover:underline">
+          <p className="text-red-400 mb-4">{teamError}</p>
+          <Link to="/dashboard" className="text-mit-primary hover:underline">
             Back to Home
           </Link>
         </div>
@@ -116,34 +116,34 @@ export function TeamDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
+    <div className="min-h-screen gradient-bg">
+      <header className="glass-sidebar border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
               to="/"
-              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
               title="Home"
             >
               <Home className="w-4 h-4" />
             </Link>
             <Link
               to="/dashboard"
-              className="flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors"
+              className="flex items-center gap-1 text-white/60 hover:text-white transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               <span className="text-sm">Dashboard</span>
             </Link>
-            <span className="text-gray-300">|</span>
-            <h1 className="text-xl font-bold text-gray-900">
+            <span className="text-white/20">|</span>
+            <h1 className="text-xl font-bold text-white">
               {currentTeam?.name || 'Team'}
             </h1>
           </div>
 
           <div className="flex items-center gap-4">
             {user && (
-              <span className="text-gray-600">
-                Hello, <strong>{user.name}</strong>
+              <span className="text-white/70">
+                Hello, <strong className="text-white">{user.name}</strong>
               </span>
             )}
             <Button variant="outline" onClick={logout} isLoading={authLoading}>

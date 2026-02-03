@@ -175,18 +175,18 @@ export function MeetingDetailPage() {
 
   if (meetingsLoading && !currentMeeting) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Loading meeting...</p>
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
+        <p className="text-white/50">Loading meeting...</p>
       </div>
     );
   }
 
   if (meetingError && !currentMeeting) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen gradient-bg flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-600 mb-4">{meetingError}</p>
-          <Link to="/dashboard" className="text-blue-600 hover:underline">
+          <p className="text-red-400 mb-4">{meetingError}</p>
+          <Link to="/dashboard" className="text-mit-primary hover:underline">
             Back to Home
           </Link>
         </div>
@@ -195,13 +195,13 @@ export function MeetingDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
+    <div className="min-h-screen gradient-bg">
+      <header className="glass-sidebar border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
               to="/"
-              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
               title="Home"
             >
               <Home className="w-4 h-4" />
@@ -209,22 +209,22 @@ export function MeetingDetailPage() {
             {currentMeeting && (
               <Link
                 to={`/dashboard/teams/${currentMeeting.teamId}`}
-                className="flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors"
+                className="flex items-center gap-1 text-white/60 hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span className="text-sm">Team</span>
               </Link>
             )}
-            <span className="text-gray-300">|</span>
-            <h1 className="text-xl font-bold text-gray-900">
+            <span className="text-white/20">|</span>
+            <h1 className="text-xl font-bold text-white">
               {currentMeeting?.title || 'Meeting'}
             </h1>
           </div>
 
           <div className="flex items-center gap-4">
             {user && (
-              <span className="text-gray-600">
-                Hello, <strong>{user.name}</strong>
+              <span className="text-white/70">
+                Hello, <strong className="text-white">{user.name}</strong>
               </span>
             )}
             <Button variant="outline" onClick={logout} isLoading={authLoading}>
@@ -237,7 +237,7 @@ export function MeetingDetailPage() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* 에러 메시지 */}
         {meetingError && (
-          <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6">
+          <div className="bg-red-500/20 text-red-300 p-4 rounded-lg mb-6 border border-red-500/30">
             {meetingError}
           </div>
         )}
@@ -260,13 +260,13 @@ export function MeetingDetailPage() {
 
         {/* PR Review 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
         {currentMeeting && currentMeeting.status !== 'scheduled' && (
-          <div className="mt-8 bg-white rounded-xl shadow-sm p-6">
+          <div className="mt-8 glass-card p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                <h3 className="text-xl font-bold text-white mb-2">
                   Meeting Review
                 </h3>
-                <p className="text-gray-600">
+                <p className="text-white/60">
                   회의 트랜스크립트를 기반으로 결정사항을 생성하고 리뷰할 수 있습니다.
                 </p>
               </div>
@@ -314,7 +314,7 @@ export function MeetingDetailPage() {
         {/* 녹음 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
         {currentMeeting && currentMeeting.status !== 'scheduled' && (
           <div className="mt-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">
+            <h3 className="text-xl font-bold text-white mb-4">
               Recordings
             </h3>
             <RecordingList meetingId={currentMeeting.id} />
@@ -324,7 +324,7 @@ export function MeetingDetailPage() {
         {/* 회의록(트랜스크립트) 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
         {currentMeeting && currentMeeting.status !== 'scheduled' && (
           <div className="mt-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">
+            <h3 className="text-xl font-bold text-white mb-4">
               Transcript
             </h3>
             <TranscriptSection
