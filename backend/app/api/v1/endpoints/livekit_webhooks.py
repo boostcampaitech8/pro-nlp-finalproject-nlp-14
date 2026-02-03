@@ -7,17 +7,23 @@ LiveKit 서버에서 발생하는 이벤트를 처리합니다:
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from livekit import api
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_arq_pool
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.neo4j_sync import neo4j_sync
 from app.core.telemetry import get_mit_metrics
 from app.infrastructure.worker_manager import get_worker_manager
+from app.models.meeting import Meeting, MeetingStatus
+from app.services.transcript_service import TranscriptService
 from app.services.vad_event_service import vad_event_service
 
 logger = logging.getLogger(__name__)
@@ -176,10 +182,10 @@ async def handle_participant_left(body: dict) -> None:
 
 
 async def handle_room_finished(body: dict, db: AsyncSession) -> None:
-    """룸 종료 이벤트 처리
+    """룸 종료 이벤트 처리 (Fallback)
 
-    마지막 참여자 퇴장 후 empty_timeout(30초) 경과 시 발생합니다.
-    Realtime 워커를 종료하고 VAD 메타데이터를 저장합니다.
+    Worker가 실패한 경우를 대비한 fallback 메커니즘.
+    마지막 참여자 퇴장 후 empty_timeout(5초) 경과 시 발생합니다.
     """
     room = body.get("room", {})
     room_name = room.get("name", "")
@@ -187,29 +193,88 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
     logger.info(f"[LiveKit] Room finished: {room_name}")
 
     # 회의 ID 추출
-    if room_name.startswith("meeting-"):
-        meeting_id = room_name  # meeting-{uuid} 전체를 사용
-        meeting_id_str = room_name[8:]
+    if not room_name.startswith("meeting-"):
+        return
 
-        # Realtime 워커 종료
-        try:
-            worker_manager = get_worker_manager()
-            # 컨테이너 이름은 realtime-worker-meeting-{uuid}
-            worker_id = f"realtime-worker-{meeting_id}"
-            stopped = await worker_manager.stop_worker(worker_id)
-            if stopped:
-                logger.info(f"[LiveKit] Realtime worker stopped: {worker_id}")
-        except Exception as e:
-            logger.error(f"[LiveKit] Failed to stop realtime worker: {e}")
+    meeting_id = room_name  # meeting-{uuid} 전체를 사용
+    meeting_id_str = room_name[8:]
 
-        # VAD 메타데이터 저장
-        try:
-            meeting_uuid = UUID(meeting_id_str)
-            vad_metadata = await vad_event_service.store_meeting_vad_metadata(meeting_uuid)
-            if vad_metadata:
-                logger.info(
-                    f"[LiveKit] VAD metadata saved: meeting={meeting_uuid}, "
-                    f"users={len(vad_metadata)}"
-                )
-        except ValueError:
-            logger.error(f"[LiveKit] Invalid meeting ID in room name: {room_name}")
+    # Realtime 워커 종료 (Worker가 이미 처리했을 수 있으므로 시도만)
+    try:
+        worker_manager = get_worker_manager()
+        # 컨테이너 이름은 realtime-worker-meeting-{uuid}
+        worker_id = f"realtime-worker-{meeting_id}"
+        stopped = await worker_manager.stop_worker(worker_id)
+        if stopped:
+            logger.info(f"[LiveKit] Realtime worker stopped: {worker_id}")
+    except Exception as e:
+        logger.error(f"[LiveKit] Failed to stop realtime worker: {e}")
+
+    # VAD 메타데이터 저장
+    try:
+        meeting_uuid = UUID(meeting_id_str)
+        vad_metadata = await vad_event_service.store_meeting_vad_metadata(meeting_uuid)
+        if vad_metadata:
+            logger.info(
+                f"[LiveKit] VAD metadata saved: meeting={meeting_uuid}, "
+                f"users={len(vad_metadata)}"
+            )
+    except Exception as e:
+        logger.error(f"[LiveKit] Failed to save VAD metadata: {e}")
+
+    # Meeting 상태 변경 (멱등성 체크)
+    try:
+        meeting_uuid = UUID(meeting_id_str)
+        query = select(Meeting).where(Meeting.id == meeting_uuid)
+        result = await db.execute(query)
+        meeting = result.scalar_one_or_none()
+
+        if not meeting:
+            logger.warning(f"[LiveKit] Meeting not found: {meeting_uuid}")
+            return
+
+        # 멱등성 체크: 이미 COMPLETED면 스킵 (Worker가 이미 처리함)
+        if meeting.status == MeetingStatus.COMPLETED.value:
+            logger.info(f"[LiveKit] Meeting already completed (by worker): {meeting_uuid}")
+            return
+
+        # Meeting 상태 변경 (Primary 흐름과 동일)
+        now = datetime.now(timezone.utc)
+        meeting.status = MeetingStatus.COMPLETED.value
+        meeting.ended_at = now
+        await db.commit()
+        await db.refresh(meeting)
+
+        # Neo4j 동기화
+        await neo4j_sync.sync_meeting_update(
+            str(meeting.id),
+            str(meeting.team_id),
+            meeting.title,
+            meeting.status,
+            meeting.created_at,
+        )
+
+        # Worker의 마지막 transcript 전송 대기 (Grace Period)
+        logger.info(f"[LiveKit] Waiting 3 seconds for final transcripts: meeting={meeting.id}")
+        import asyncio
+        await asyncio.sleep(3)
+
+        # PR 큐잉 (동일 로직)
+        transcript_service = TranscriptService(db)
+        transcript_response = await transcript_service.get_meeting_transcripts(meeting.id)
+
+        if transcript_response.full_text:
+            pool = await get_arq_pool()
+            await pool.enqueue_job(
+                "generate_pr_task",
+                str(meeting.id),
+                _job_id=f"generate_pr:{meeting.id}",
+            )
+            await pool.close()
+            logger.info(f"[LiveKit] PR generation task queued (fallback): meeting={meeting.id}")
+        else:
+            logger.info(f"[LiveKit] No transcript, skipping PR: meeting={meeting.id}")
+
+    except Exception as e:
+        logger.error(f"[LiveKit] Failed to complete meeting (fallback): {e}")
+        await db.rollback()

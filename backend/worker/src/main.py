@@ -218,6 +218,28 @@ class RealtimeWorker:
         asyncio.create_task(stt_client.stop_streaming())
         asyncio.create_task(stt_client.disconnect())
 
+        # 모든 일반 참여자가 퇴장했는지 확인
+        if self._all_real_participants_left():
+            asyncio.create_task(self._complete_meeting())
+
+    def _all_real_participants_left(self) -> bool:
+        """모든 일반 참여자가 퇴장했는지 확인 (Bot 제외)
+
+        Bot은 _stt_clients에 포함되지 않으므로 자동 제외됨
+        """
+        return len(self._stt_clients) == 0
+
+    async def _complete_meeting(self) -> None:
+        """Backend에 회의 완료 요청"""
+        try:
+            success = await self.api_client.complete_meeting(self.meeting_id)
+            if success:
+                logger.info("Meeting completed successfully by worker")
+            else:
+                logger.error("Failed to complete meeting")
+        except Exception as e:
+            logger.exception(f"Error completing meeting: {e}")
+
     def _on_vad_event(self, user_id: str, event_type: str, payload: dict) -> None:
         """VAD 이벤트 수신 처리"""
         logger.info(
