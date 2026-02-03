@@ -126,9 +126,7 @@ class BackendAPIClient:
                     created_at=datetime.fromisoformat(data["createdAt"].replace("Z", "+00:00")),
                 )
             else:
-                logger.error(
-                    f"트랜스크립트 전송 실패: {response.status_code} - {response.text}"
-                )
+                logger.error(f"트랜스크립트 전송 실패: {response.status_code} - {response.text}")
                 return None
 
         except httpx.HTTPError as e:
@@ -270,7 +268,7 @@ class BackendAPIClient:
 
         async with self._client.stream(
             "POST",
-            self.config.agent_stream_path,
+            "/api/v1/agent/meeting",
             json=payload,
             headers={"Accept": "text/event-stream"},
             timeout=None,

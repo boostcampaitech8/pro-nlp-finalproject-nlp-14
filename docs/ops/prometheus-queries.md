@@ -6,19 +6,31 @@ MIT 프로젝트용 복붙 가능한 PromQL 쿼리 모음.
 
 ## 1. HTTP 요청 수
 
-### 전체 요청 수 (초당)
+> Grafana Query Options에서 **Min interval: 1m** 설정 권장
+
+### 전체 요청 횟수 (구간별)
 ```
-sum(rate(http_server_duration_milliseconds_count[5m]))
+round(sum(increase(http_server_duration_milliseconds_count[$__interval])))
 ```
 
-### 엔드포인트별 요청 수 (health 제외)
+### 엔드포인트별 요청 횟수 (구간별, health 제외)
 ```
-sum by (http_target) (rate(http_server_duration_milliseconds_count{http_target!="/health"}[5m]))
+round(sum by (http_target) (increase(http_server_duration_milliseconds_count{http_target!="/health"}[$__interval])))
 ```
 
-### 상태 코드별 요청 수
+### 상태 코드별 요청 횟수 (구간별)
 ```
-sum by (http_status_code) (rate(http_server_duration_milliseconds_count[5m]))
+round(sum by (http_status_code) (increase(http_server_duration_milliseconds_count[$__interval])))
+```
+
+### 특정 엔드포인트 요청 횟수 (구간별)
+```
+round(sum(increase(http_server_duration_milliseconds_count{http_target="/api/v1/agent/meeting/call"}[$__interval])))
+```
+
+### 선택한 전체 기간 총합 (Stat 패널용)
+```
+round(sum(increase(http_server_duration_milliseconds_count[$__range])))
 ```
 
 ---
@@ -83,19 +95,21 @@ sum(rate(http_server_duration_milliseconds_count{http_target=~"/api/v1/meetings.
 
 ## 4. ARQ 태스크
 
-### 초당 태스크 enqueue 수
+> Grafana Query Options에서 **Min interval: 1m** 설정 권장
+
+### 태스크 enqueue 수 (구간별)
 ```
-sum(rate(mit_arq_task_enqueue_total[5m]))
+round(sum(increase(mit_arq_task_enqueue_total[$__interval])))
 ```
 
-### 태스크별 enqueue 수
+### 태스크별 enqueue 수 (구간별)
 ```
-sum by (task_name) (rate(mit_arq_task_enqueue_total[5m]))
+round(sum by (task_name) (increase(mit_arq_task_enqueue_total[$__interval])))
 ```
 
-### 태스크 성공/실패 수
+### 태스크 성공/실패 수 (구간별)
 ```
-sum by (status) (rate(mit_arq_task_result_total[5m]))
+round(sum by (status) (increase(mit_arq_task_result_total[$__interval])))
 ```
 
 ### 태스크 평균 실행 시간 (초)
@@ -123,9 +137,9 @@ sum(rate(mit_arq_task_result_total{status="success"}[5m])) / sum(rate(mit_arq_ta
 sum by (task_name) (rate(mit_arq_task_result_total{status="success"}[5m])) / sum by (task_name) (rate(mit_arq_task_result_total[5m])) * 100
 ```
 
-### 실패한 태스크 수 (최근 1시간)
+### 실패한 태스크 수 (구간별)
 ```
-sum(increase(mit_arq_task_result_total{status!="success"}[1h]))
+round(sum(increase(mit_arq_task_result_total{status!="success"}[$__interval])))
 ```
 
 ### 태스크 대기 시간 P95 (초)
@@ -138,6 +152,7 @@ histogram_quantile(0.95, sum by (le) (rate(mit_arq_task_wait_duration_seconds_bu
 ## 5. Realtime Worker (STT/VAD/TTS/Agent)
 
 > **Note**: 이 메트릭들은 실제 회의가 진행되어야 데이터가 쌓입니다. Job 종료 후에도 데이터는 유지됩니다.
+> Grafana Query Options에서 **Min interval: 1m** 설정 권장
 
 ### VAD → STT 평균 레이턴시 (초)
 ```
@@ -184,9 +199,19 @@ sum(rate(mit_tts_synthesis_duration_seconds_sum[5m])) / sum(rate(mit_tts_synthes
 sum(rate(mit_agent_response_duration_seconds_sum[5m])) / sum(rate(mit_agent_response_duration_seconds_count[5m]))
 ```
 
-### 초당 STT 세그먼트 수
+### Wake word 감지 횟수 (구간별)
 ```
-sum(rate(mit_stt_segment_total[5m]))
+round(sum(increase(mit_wakeword_detected_total[$__interval])))
+```
+
+### Agent 호출 횟수 (구간별)
+```
+round(sum(increase(mit_agent_response_duration_seconds_count[$__interval])))
+```
+
+### STT 세그먼트 수 (구간별)
+```
+round(sum(increase(mit_stt_segment_total[$__interval])))
 ```
 
 ### 총 Realtime Worker Job 수
@@ -246,6 +271,8 @@ histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_buc
 2. **rate() 필수**: Counter/Histogram 메트릭은 `rate()` 또는 `increase()` 없이 사용하면 의미 없는 누적값만 나옵니다.
 
 3. **시간 범위**: `[5m]`은 5분 평균입니다. 더 세밀하게 보려면 `[1m]`, 더 안정적으로 보려면 `[15m]` 사용.
+
+4. **구간 겹침 방지**: 횟수를 구간별로 정확히 보려면 `increase([$__interval])` + Min interval 설정 사용.
 
 ---
 
