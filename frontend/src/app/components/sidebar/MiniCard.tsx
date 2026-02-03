@@ -16,24 +16,10 @@ export function MiniCard() {
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[12px] text-white/60">New meeting</span>
-          <div className="flex gap-1">
-            <span className="shortcut-key">Cmd</span>
-            <span className="shortcut-key">N</span>
-          </div>
-        </div>
-        <div className="flex items-center justify-between">
           <span className="text-[12px] text-white/60">Search</span>
           <div className="flex gap-1">
             <span className="shortcut-key">Cmd</span>
             <span className="shortcut-key">K</span>
-          </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-white/60">Dashboard</span>
-          <div className="flex gap-1">
-            <span className="shortcut-key">Cmd</span>
-            <span className="shortcut-key">D</span>
           </div>
         </div>
       </div>
