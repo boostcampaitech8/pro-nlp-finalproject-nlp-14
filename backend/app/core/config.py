@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # Agent 설정
     agent_wake_word: str = "부덕"
 
+    # Clova STT 키 관리 설정
+    clova_stt_key_count: int = 5  # 사용 가능한 API 키 총 개수
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
