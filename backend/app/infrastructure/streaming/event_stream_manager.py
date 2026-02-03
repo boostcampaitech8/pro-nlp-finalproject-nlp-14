@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from langgraph.graph.state import CompiledStateGraph
+from openai import RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,15 @@ async def stream_llm_tokens_only(
             "timestamp": datetime.now().isoformat(),
         }
 
+    except RateLimitError as e:
+        logger.error(f"Rate limit exceeded: {e}", exc_info=True)
+        yield {
+            "type": "error",
+            "error": "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+            "error_code": "RATE_LIMIT_EXCEEDED",
+            "tag": "internal",
+            "timestamp": datetime.now().isoformat(),
+        }
     except Exception as e:
         logger.error(f"Streaming error: {e}", exc_info=True)
         yield {

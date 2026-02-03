@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
+from openai import RateLimitError
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -250,6 +251,10 @@ async def run_agent_with_context(
                 yield f"event: done\n"
                 yield f"data: [DONE]\n\n"
                 is_completed = True
+        except RateLimitError as e:
+            logger.error("Rate Limit 오류: %s", e, exc_info=True)
+            yield f"event: error\n"
+            yield f"data: API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.\n\n"
         except Exception as e:
             logger.error("Agent Context 오류: %s", e, exc_info=True)
             yield f"event: error\n"
