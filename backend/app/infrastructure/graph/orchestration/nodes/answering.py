@@ -33,11 +33,36 @@ async def generate_answer(state: OrchestrationState):
     """최종 응답을 생성하는 노드
 
     Contract:
-        reads: messages, plan, tool_results
-        writes: response
+        reads: messages, plan, tool_results, is_simple_query, response
+        writes: response (필요한 경우만)
         side-effects: LLM API 호출, stdout 출력 (스트리밍)
     """
     logger.info("최종 응답 생성 단계 진입")
+
+    # 간단한 쿼리는 이미 응답이 설정되어 있음 - planning, tool execution 스킵됨
+    # LLM 스트리밍을 통해 SSE 이벤트를 생성하여 클라이언트에 전달
+    if state.get("is_simple_query", False):
+        response = state.get("response", "")
+        logger.info(f"간단한 쿼리 스트리밍 응답: {response[:50]}...")
+
+        # Stream through LLM to generate on_chat_model_stream events
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "다음 텍스트를 정확히 그대로 반환하세요. 추가 설명이나 수정 없이 그대로 출력하세요."),
+            ("human", "{text}")
+        ])
+        chain = prompt | get_answer_generator_llm()
+
+        # Stream to trigger events that event_stream_manager can capture
+        response_chunks = []
+        async for chunk in chain.astream({"text": response}):
+            chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
+            response_chunks.append(chunk_text)
+
+        # Verify streamed response matches (for logging/debugging)
+        final_response = "".join(response_chunks)
+        logger.info(f"스트리밍 완료 (길이: {len(final_response)}자)")
+
+        return {"response": final_response}
 
     messages = state.get('messages', [])
     query = messages[-1].content if messages else ""

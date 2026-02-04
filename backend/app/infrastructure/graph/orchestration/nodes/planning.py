@@ -9,6 +9,21 @@ from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
+
+class SimpleRouterOutput(BaseModel):
+    """간단한 쿼리 라우터의 판정 결과"""
+    is_simple_query: bool = Field(description="간단한 쿼리 여부 (True면 planning 스킵)")
+    category: str = Field(
+        description="쿼리 카테고리 (greeting, sentiment, acknowledgment, nonsense, general_knowledge, unavailable, other)"
+    )
+    simple_response: str | None = Field(
+        default=None,
+        description="간단한 쿼리일 경우 직접 응답 (None이면 생성기가 처리)"
+    )
+    confidence: float = Field(description="판정 신뢰도 (0.0-1.0)")
+    reasoning: str = Field(description="판정 근거")
+
+
 class PlanningOutput(BaseModel):
     plan: str = Field(description="사용자의 질문을 해결하기 위한 단계별 계획")
     need_tools: bool = Field(description="검색이나 추가 정보가 필요하면 True, 아니면 False")
