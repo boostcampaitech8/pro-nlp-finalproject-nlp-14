@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     action_items,
+    activity_logs,
     agendas,
     agent,
     auth,
@@ -46,3 +47,6 @@ api_router.include_router(minutes.meetings_minutes_router)
 
 # Context API - Real-time topic feed
 api_router.include_router(context.router)
+
+# Activity Logs API - User activity tracking
+api_router.include_router(activity_logs.router)
