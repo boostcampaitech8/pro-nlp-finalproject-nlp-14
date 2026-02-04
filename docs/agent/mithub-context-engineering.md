@@ -129,7 +129,15 @@
 - 현재 실서비스/테스트 모두 시맨틱 서치 기반 `additional_context`를 사용함.
 - Planning 결과는 plan/need_tools/can_answer/next_subquery/missing_requirements 중심으로 사용됨.
 
-### 5.3 실제 서비스 워크플로우 (RealtimeWorker ↔ API)
+### 5.3 PR 생성 연계 (실시간 L1 토픽 전달)
+1. 사용자가 `POST /meetings/{id}/generate-pr` 호출
+2. API가 활성 `ContextRuntime`에서 최신 transcript를 반영하고, 가능한 범위에서 `await_l1_idle()`로 L1 토픽 완료 대기
+3. L1 토픽 스냅샷을 ARQ `generate_pr_task` payload에 함께 enqueue
+4. Worker의 `generate_pr` extractor가 토픽 스냅샷을 보조 컨텍스트로 사용해 Agenda/Decision 추출 정확도 향상
+
+> 주의: L1 자체 DB 영속화는 아직 없고, 현재는 **enqueue 시점 payload handoff**로 워커-API 프로세스 경계를 넘겨 전달한다.
+
+### 5.4 실제 서비스 워크플로우 (RealtimeWorker ↔ API)
 
 ```
 ┌──────────────┐        ┌────────────────────┐        ┌─────────────────────────────┐
@@ -168,6 +176,10 @@
 - API 엔드포인트:
   - `/agent/meeting/call`: `backend/app/api/v1/endpoints/agent.py`
   - `/agent/meeting`: `backend/app/api/v1/endpoints/agent.py`
+  - `/meetings/{id}/generate-pr`: `backend/app/api/v1/endpoints/transcripts.py`
+- Worker PR 생성:
+  - `generate_pr_task`: `backend/app/workers/arq_worker.py`
+  - extractor: `backend/app/infrastructure/graph/workflows/generate_pr/nodes/extraction.py`
 
 ---
 
@@ -257,7 +269,7 @@ ttl = 3600       # 1시간 미접근 시 자동 삭제
 |------|------|---------|
 | JSON 깨짐 | HCX-003 구조화 출력 미지원 | 프롬프트 강화 + 파서 보정으로 완화 |
 | 토픽 섞임 | 토픽 전환 감지 없음 | 25턴 배치 기준으로만 분리 |
-| L1 영속화 없음 | 메모리 기반 | 재로드 시 L1 재생성 필요 |
+| L1 영속화 없음 | 메모리 기반 | 재로드 시 L1 재생성 필요 (단, generate-pr는 enqueue payload로 최근 L1 전달) |
 | 임베딩 API 의존 | CLOVA Studio API 필요 | API 키 미설정 시 fallback |
 | 실시간 캐시 유실 | 서버 재시작 시 캐시 초기화 | TTL Cache로 메모리 관리 (1시간 미접근 시 삭제) |
 | Planning fallback 잔여 필드 | required_topics는 legacy인데 fallback return에 잔존 | Planning 예외 경로에서 키 정리 필요 |
