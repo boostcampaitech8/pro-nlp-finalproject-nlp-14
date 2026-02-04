@@ -76,16 +76,74 @@ class ExtractionOutput(BaseModel):
     )
 
 
+def _format_realtime_topics_for_prompt(
+    realtime_topics: list[dict],
+    max_chars: int = 3000,
+) -> str:
+    """PR 추출 프롬프트에 주입할 실시간 토픽 컨텍스트 포맷팅."""
+    if not realtime_topics:
+        return "(없음)"
+
+    def _to_int(value: object, fallback: int) -> int:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return fallback
+        return fallback
+
+    sorted_topics = sorted(
+        realtime_topics,
+        key=lambda item: (
+            _to_int(item.get("startTurn", item.get("start_turn")), 0),
+            _to_int(item.get("endTurn", item.get("end_turn")), 0),
+        ),
+    )
+
+    lines: list[str] = []
+    char_count = 0
+
+    for topic in sorted_topics:
+        name = str(topic.get("name", "")).strip() or "Untitled"
+        summary = str(topic.get("summary", "")).strip() or "(요약 없음)"
+        start_turn = _to_int(topic.get("startTurn", topic.get("start_turn")), 0)
+        end_turn = _to_int(topic.get("endTurn", topic.get("end_turn")), 0)
+
+        keywords_raw = topic.get("keywords", [])
+        if isinstance(keywords_raw, list):
+            keywords = [str(keyword).strip() for keyword in keywords_raw if str(keyword).strip()]
+        else:
+            keywords = []
+        keywords_text = f" | 키워드: {', '.join(keywords[:5])}" if keywords else ""
+
+        line = (
+            f"- [Turn {start_turn}~{end_turn}] {name}: "
+            f"{summary[:180]}{keywords_text}"
+        )
+
+        if char_count + len(line) + 1 > max_chars:
+            break
+
+        lines.append(line)
+        char_count += len(line) + 1
+
+    return "\n".join(lines) if lines else "(없음)"
+
+
 async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
     """트랜스크립트에서 Agenda와 Decision 추출
 
     Contract:
-        reads: generate_pr_transcript_text
+        reads: generate_pr_transcript_text, generate_pr_realtime_topics
         writes: generate_pr_agendas, generate_pr_summary
         side-effects: LLM API 호출 (Clova Studio)
         failures: 추출 실패 시 빈 결과 반환
     """
     transcript = state.get("generate_pr_transcript_text", "")
+    realtime_topics = state.get("generate_pr_realtime_topics", [])
+    realtime_topics_text = _format_realtime_topics_for_prompt(realtime_topics)
 
     if not transcript:
         logger.warning("트랜스크립트가 비어있습니다")
@@ -109,6 +167,7 @@ async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
             logger.warning(f"트랜스크립트가 {max_length}자로 truncated됨")
 
         result = chain.invoke({
+            "realtime_topics": realtime_topics_text,
             "transcript": truncated_transcript,
             "format_instructions": parser.get_format_instructions(),
         })
