@@ -9,8 +9,9 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from app.infrastructure.graph.integration.llm import get_generator_llm
+from app.infrastructure.graph.integration.llm import get_pr_generator_llm
 from app.infrastructure.graph.workflows.generate_pr.state import GeneratePrState
+from app.prompts.v1.workflows.generate_pr import AGENDA_EXTRACTION_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -18,23 +19,61 @@ logger = logging.getLogger(__name__)
 class DecisionData(BaseModel):
     """추출된 결정사항"""
 
-    content: str = Field(description="결정 내용")
-    context: str = Field(default="", description="결정 맥락/근거")
+    content: str = Field(
+        description=(
+            "해당 아젠다에서 최종 합의된 단일 결정 내용. "
+            "명시적 확정/합의/보류 결정만 포함하고, 액션 아이템/제안/단순 의견은 제외."
+        )
+    )
+    context: str = Field(
+        default="",
+        description=(
+            "결정의 근거/맥락/제약. "
+            "결정이 그렇게 정해진 이유를 서술하며 status/승인 정보는 포함하지 않음."
+        ),
+    )
 
 
 class AgendaData(BaseModel):
     """추출된 아젠다"""
 
-    topic: str = Field(description="아젠다 주제")
-    description: str = Field(default="", description="아젠다 설명")
-    decision: DecisionData | None = Field(default=None, description="결정사항 (한 회의에서 한 안건당 최대 1개)")
+    topic: str = Field(
+        description=(
+            "작고 구체적인 아젠다 주제(한 가지 핵심). "
+            "커밋 메시지처럼 논의 단위를 잘게 쪼갠 제목."
+        )
+    )
+    description: str = Field(
+        default="",
+        description=(
+            "아젠다의 핵심 논의 내용 요약(1문장 권장). "
+            "트랜스크립트 근거 기반으로 작성."
+        ),
+    )
+    decision: DecisionData | None = Field(
+        default=None,
+        description=(
+            "해당 아젠다의 결정사항(Agenda당 최대 1개). "
+            "명시적 합의가 없으면 null."
+        ),
+    )
 
 
 class ExtractionOutput(BaseModel):
     """LLM 추출 결과"""
 
-    summary: str = Field(description="회의 전체 요약 (2-3문장)")
-    agendas: list[AgendaData] = Field(description="추출된 아젠다 목록")
+    summary: str = Field(
+        description=(
+            "회의 전체 요약(3-7문장). "
+            "핵심 논의 흐름과 결론을 포함."
+        )
+    )
+    agendas: list[AgendaData] = Field(
+        description=(
+            "트랜스크립트 등장 순으로 정렬된 아젠다 목록. "
+            "유사 표현은 병합하고, 근거 없는 항목은 제외."
+        )
+    )
 
 
 async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
@@ -57,28 +96,13 @@ async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
 
     parser = PydanticOutputParser(pydantic_object=ExtractionOutput)
 
-    prompt = ChatPromptTemplate.from_template(
-        "당신은 회의록 분석 AI입니다. 반드시 JSON 형식으로만 응답해야 합니다.\n\n"
-        "다음 회의 트랜스크립트를 분석하여 아젠다와 결정사항을 추출하세요.\n\n"
-        "트랜스크립트:\n{transcript}\n\n"
-        "분석 지침:\n"
-        "1. 회의에서 논의된 주요 주제(아젠다)를 식별하세요\n"
-        "2. 각 아젠다에서 합의된 결정사항을 추출하세요 (한 안건당 최대 1개)\n"
-        "3. 결정사항이 없는 아젠다는 decision을 null로 두세요\n"
-        "4. 전체 회의를 2-3문장으로 요약하세요\n\n"
-        "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
-        "{format_instructions}\n\n"
-        "예시:\n"
-        '{{"summary": "프로젝트 진행 상황과 다음 스프린트 계획을 논의했습니다.", '
-        '"agendas": [{{"topic": "스프린트 리뷰", "description": "지난 스프린트 결과 검토", '
-        '"decision": {{"content": "다음 스프린트에서 성능 개선 우선", "context": "사용자 피드백 기반"}}}}]}}'
-    )
+    prompt = ChatPromptTemplate.from_template(AGENDA_EXTRACTION_PROMPT)
 
-    chain = prompt | get_generator_llm() | parser
+    chain = prompt | get_pr_generator_llm() | parser
 
     try:
         # 트랜스크립트가 너무 길면 truncate
-        max_length = 8000  # 토큰 제한 고려
+        max_length = 100000  # 토큰 제한 고려
         truncated_transcript = transcript[:max_length]
         if len(transcript) > max_length:
             truncated_transcript += "\n... (truncated)"
