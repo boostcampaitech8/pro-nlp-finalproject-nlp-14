@@ -39,28 +39,46 @@ async def generate_answer(state: OrchestrationState):
     """
     logger.info("최종 응답 생성 단계 진입")
 
-    # 간단한 쿼리는 이미 응답이 설정되어 있음 - planning, tool execution 스킵됨
-    # LLM 스트리밍을 통해 SSE 이벤트를 생성하여 클라이언트에 전달
+    # 간단한 쿼리는 simple_router_output을 보고 응답 생성
     if state.get("is_simple_query", False):
-        response = state.get("response", "")
-        logger.info(f"간단한 쿼리 스트리밍 응답: {response[:50]}...")
+        simple_router_output = state.get("simple_router_output", {})
+        category = simple_router_output.get("category", "other")
+        simple_response = simple_router_output.get("simple_response")
 
-        # Stream through LLM to generate on_chat_model_stream events
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "다음 텍스트를 정확히 그대로 반환하세요. 추가 설명이나 수정 없이 그대로 출력하세요."),
-            ("human", "{text}")
-        ])
+        messages = state.get('messages', [])
+        query = messages[-1].content if messages else ""
+
+        logger.info(f"간단한 쿼리 응답 생성: category={category}, query={query[:50]}...")
+
+        # 카테고리별 프롬프트 설정
+        if simple_response:
+            # simple_router에서 제안한 응답이 있으면 참고
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "당신은 친절한 AI 비서입니다. 사용자의 질문에 자연스럽고 친근하게 답변하세요."),
+                ("human", "사용자 질문: {query}\n\n제안 응답: {suggested_response}\n\n위 제안을 참고하여 자연스럽게 답변하세요.")
+            ])
+            input_data = {"query": query, "suggested_response": simple_response}
+        else:
+            # 제안 응답이 없으면 카테고리 기반 응답
+            prompt = ChatPromptTemplate.from_messages([
+                ("system",
+                 "당신은 친절한 AI 비서입니다.\n"
+                 "사용자의 인사나 감정 표현에 자연스럽고 친근하게 응답하세요.\n"
+                 "간단하고 따뜻한 한두 문장으로 답변하세요."),
+                ("human", "{query}")
+            ])
+            input_data = {"query": query}
+
         chain = prompt | get_answer_generator_llm()
 
-        # Stream to trigger events that event_stream_manager can capture
+        # 스트리밍으로 응답 생성
         response_chunks = []
-        async for chunk in chain.astream({"text": response}):
+        async for chunk in chain.astream(input_data):
             chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
             response_chunks.append(chunk_text)
 
-        # Verify streamed response matches (for logging/debugging)
         final_response = "".join(response_chunks)
-        logger.info(f"스트리밍 완료 (길이: {len(final_response)}자)")
+        logger.info(f"간단한 쿼리 응답 생성 완료 (길이: {len(final_response)}자)")
 
         return {"response": final_response}
 
