@@ -82,9 +82,6 @@ class Settings(BaseSettings):
     langfuse_base_url: str = "https://cloud.langfuse.com"
     langfuse_enabled: bool = True
 
-    # Worker 인증
-    backend_api_key: str = ""
-
     # 팀 제한 설정
     max_team_members: int = 7  # AI Agent 미포함
 
