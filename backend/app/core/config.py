@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     # 팀 제한 설정
     max_team_members: int = 7  # AI Agent 미포함
 
+    # 초대 링크 설정
+    frontend_base_url: str = "http://localhost:3000"  # 초대 링크 URL 생성용
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
