@@ -42,3 +42,6 @@ class OrchestrationState(TypedDict):
     planning_context: NotRequired[str]
     additional_context: NotRequired[str]
     skip_planning: NotRequired[bool]
+
+    # Channel (voice or text)
+    channel: NotRequired[str]  # "voice" or "text", default: "voice"

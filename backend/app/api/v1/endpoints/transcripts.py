@@ -1,5 +1,6 @@
 """Transcript API 엔드포인트 (실시간 STT)"""
 
+import asyncio
 import logging
 from typing import Annotated
 from uuid import UUID
@@ -17,6 +18,11 @@ from app.schemas.transcript import (
     CreateTranscriptResponse,
     GetMeetingTranscriptsResponse,
 )
+from app.services.context_runtime import (
+    ContextRuntimeState,
+    get_runtime_if_exists,
+    update_runtime_from_db,
+)
 from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
@@ -27,6 +33,23 @@ router = APIRouter(prefix="/meetings", tags=["Transcripts"])
 def get_transcript_service(db: Annotated[AsyncSession, Depends(get_db)]) -> TranscriptService:
     """TranscriptService 의존성"""
     return TranscriptService(db)
+
+
+def _serialize_runtime_topics(runtime: ContextRuntimeState) -> list[dict]:
+    """ARQ payload 전달용 L1 토픽 스냅샷 직렬화."""
+    topics = [
+        {
+            "id": seg.id,
+            "name": seg.name,
+            "summary": seg.summary,
+            "startTurn": seg.start_utterance_id,
+            "endTurn": seg.end_utterance_id,
+            "keywords": seg.keywords,
+        }
+        for seg in runtime.manager.get_l1_segments()
+    ]
+    topics.sort(key=lambda topic: topic["startTurn"])
+    return topics
 
 
 @router.post(
@@ -185,11 +208,43 @@ async def generate_pr(
                 detail={"error": "NOT_FOUND", "message": "트랜스크립트를 찾을 수 없습니다. 먼저 실시간 STT 변환을 완료해주세요."},
             )
 
+        # 실시간 L1 토픽 스냅샷 추출 (best-effort)
+        realtime_topics: list[dict] = []
+        runtime = get_runtime_if_exists(str(meeting.id))
+        if runtime is not None:
+            async with runtime.lock:
+                await update_runtime_from_db(
+                    runtime=runtime,
+                    db=transcript_service.db,
+                    meeting_id=str(meeting.id),
+                    cutoff_start_ms=None,
+                )
+
+            # L1이 진행 중이면 짧게 대기 후 현재 스냅샷 사용
+            if runtime.manager.has_pending_l1 or runtime.manager.is_l1_running:
+                try:
+                    await asyncio.wait_for(runtime.manager.await_l1_idle(), timeout=6.0)
+                except asyncio.TimeoutError:
+                    logger.info(
+                        "generate_pr 토픽 스냅샷 대기 타임아웃: meeting_id=%s",
+                        meeting.id,
+                    )
+
+            async with runtime.lock:
+                realtime_topics = _serialize_runtime_topics(runtime)
+
+        logger.info(
+            "generate_pr enqueue 준비: meeting_id=%s, realtime_topics=%d",
+            meeting.id,
+            len(realtime_topics),
+        )
+
         # ARQ 작업 큐잉 (job_id로 중복 방지)
         pool = await get_arq_pool()
         await pool.enqueue_job(
             "generate_pr_task",
             str(meeting.id),
+            realtime_topics,
             _job_id=f"generate_pr:{meeting.id}",
         )
         await pool.close()
