@@ -81,3 +81,26 @@ export type {
 
 // Context/Topic types (local)
 export type { TopicItem, TopicFeedResponse } from './context';
+
+// Invite Link types (local)
+export interface InviteLinkResponse {
+  code: string;
+  inviteUrl: string;
+  teamId: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface InvitePreviewResponse {
+  teamName: string;
+  teamDescription: string | null;
+  memberCount: number;
+  maxMembers: number;
+}
+
+export interface AcceptInviteResponse {
+  teamId: string;
+  role: string;
+  message: string;
+}

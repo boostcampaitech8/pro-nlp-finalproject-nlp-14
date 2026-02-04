@@ -41,8 +41,15 @@ export function GoogleCallbackPage() {
 
       try {
         await handleGoogleCallback(code, state);
-        logger.log('[GoogleCallback] Login successful, navigating to /');
-        navigate('/', { replace: true });
+        logger.log('[GoogleCallback] Login successful');
+        const pendingInviteCode = sessionStorage.getItem('pendingInviteCode');
+        if (pendingInviteCode) {
+          sessionStorage.removeItem('pendingInviteCode');
+          logger.log('[GoogleCallback] Redirecting to invite page:', pendingInviteCode);
+          navigate(`/invite/${pendingInviteCode}`, { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
       } catch (err) {
         logger.error('[GoogleCallback] Login failed:', err);
         setIsProcessing(false);

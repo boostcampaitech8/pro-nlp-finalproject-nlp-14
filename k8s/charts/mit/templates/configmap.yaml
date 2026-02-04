@@ -21,6 +21,9 @@ data:
   # CORS
   CORS_ORIGINS: {{ include "mit.corsOrigins" . | quote }}
 
+  # Frontend
+  FRONTEND_BASE_URL: {{ .Values.app.frontendBaseUrl | quote }}
+
   # LiveKit
   LIVEKIT_WS_URL: {{ include "mit.livekitWsUrl" . | quote }}
   LIVEKIT_EXTERNAL_URL: {{ .Values.livekit.externalUrl | quote }}

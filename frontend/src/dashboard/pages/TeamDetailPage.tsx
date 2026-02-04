@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Home } from 'lucide-react';
 
+import { InviteLinkSection } from '@/components/team/InviteLinkSection';
 import { MeetingListSection } from '@/components/team/MeetingListSection';
 import { TeamInfoCard } from '@/components/team/TeamInfoCard';
 import { TeamMemberSection } from '@/components/team/TeamMemberSection';
@@ -175,15 +176,23 @@ export function TeamDetailPage() {
 
         {/* 팀 멤버 섹션 */}
         {currentTeam && (
-          <TeamMemberSection
-            members={currentTeam.members}
-            currentUserId={user?.id}
-            isOwner={isOwner}
-            canManageMembers={canManageMembers}
-            onInvite={handleInviteMember}
-            onUpdateRole={handleUpdateMemberRole}
-            onRemove={handleRemoveMember}
-          />
+          <>
+            <TeamMemberSection
+              members={currentTeam.members}
+              currentUserId={user?.id}
+              isOwner={isOwner}
+              canManageMembers={canManageMembers}
+              onInvite={handleInviteMember}
+              onUpdateRole={handleUpdateMemberRole}
+              onRemove={handleRemoveMember}
+            />
+            {canManageMembers && teamId && (
+              <InviteLinkSection
+                teamId={teamId}
+                canManageMembers={canManageMembers}
+              />
+            )}
+          </>
         )}
       </main>
     </div>
