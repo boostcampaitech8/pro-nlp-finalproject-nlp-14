@@ -54,5 +54,6 @@ api_router.include_router(context.router)
 
 # Activity Logs API - User activity tracking
 api_router.include_router(activity_logs.router)
+
 # Spotlight API - Independent text chat
 api_router.include_router(spotlight.router)
