@@ -3,8 +3,8 @@
  * 회의 목록 표시 및 생성 폼
  */
 
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -12,7 +12,6 @@ import {
   MEETING_STATUS_COLORS,
   MEETING_STATUS_LABELS,
 } from '@/constants';
-import { kgService } from '@/services/kgService';
 import type { Meeting, MeetingStatus } from '@/types';
 
 interface MeetingListSectionProps {
@@ -28,67 +27,11 @@ export function MeetingListSection({
   meetingError,
   onCreate,
 }: MeetingListSectionProps) {
-  const navigate = useNavigate();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [creating, setCreating] = useState(false);
-
-  // 회의별 결정사항 존재 여부
-  const [decisionsMap, setDecisionsMap] = useState<Record<string, boolean | null>>({});
-  // 회의별 Generate PR 로딩 상태
-  const [generatingMap, setGeneratingMap] = useState<Record<string, boolean>>({});
-
-  // 진행된 회의들의 결정사항 존재 여부 확인
-  useEffect(() => {
-    const checkDecisions = async () => {
-      const nonScheduledMeetings = meetings.filter((m) => m.status !== 'scheduled');
-
-      for (const meeting of nonScheduledMeetings) {
-        // 이미 확인된 경우 스킵
-        if (decisionsMap[meeting.id] !== undefined) continue;
-
-        // 로딩 중으로 표시
-        setDecisionsMap((prev) => ({ ...prev, [meeting.id]: null }));
-
-        try {
-          const hasDecisions = await kgService.hasDecisions(meeting.id);
-          setDecisionsMap((prev) => ({ ...prev, [meeting.id]: hasDecisions }));
-        } catch {
-          setDecisionsMap((prev) => ({ ...prev, [meeting.id]: false }));
-        }
-      }
-    };
-
-    if (meetings.length > 0) {
-      checkDecisions();
-    }
-  }, [meetings]);
-
-  // Generate PR 핸들러
-  const handleGeneratePR = async (e: React.MouseEvent, meetingId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    setGeneratingMap((prev) => ({ ...prev, [meetingId]: true }));
-    try {
-      await kgService.generatePR(meetingId);
-      alert('PR 생성 작업이 시작되었습니다. 잠시 후 회의록에서 확인하세요.');
-    } catch (error) {
-      console.error('Failed to generate PR:', error);
-      alert('PR 생성에 실패했습니다.');
-    } finally {
-      setGeneratingMap((prev) => ({ ...prev, [meetingId]: false }));
-    }
-  };
-
-  // Minutes 페이지 이동
-  const handleGoToMinutes = (e: React.MouseEvent, meetingId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    navigate(`/dashboard/meetings/${meetingId}/minutes`);
-  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,33 +165,6 @@ export function MeetingListSection({
                   </div>
                 </div>
                 <div className="flex items-center gap-3 ml-4">
-                  {/* PR Review / Generate PR 버튼 - scheduled가 아닌 회의만 표시 */}
-                  {meeting.status !== 'scheduled' && (
-                    <>
-                      {decisionsMap[meeting.id] === null ? (
-                        <Button variant="outline" size="sm" disabled>
-                          확인 중...
-                        </Button>
-                      ) : decisionsMap[meeting.id] ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => handleGoToMinutes(e, meeting.id)}
-                        >
-                          View Minutes
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={(e) => handleGeneratePR(e, meeting.id)}
-                          isLoading={generatingMap[meeting.id]}
-                        >
-                          Generate PR
-                        </Button>
-                      )}
-                    </>
-                  )}
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
                       MEETING_STATUS_COLORS[meeting.status as MeetingStatus]
