@@ -186,6 +186,7 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
 
     happy path: Worker가 이미 /complete 호출 → COMPLETED 상태 → Job 삭제만 수행
     fallback: Worker 크래시 등으로 미완료 → 전체 완료 처리 + Job 삭제
+    항상 수행: Clova API 키 반환, VAD 메타데이터 저장, Job 삭제
     """
     room = body.get("room", {})
     room_name = room.get("name", "")
@@ -198,6 +199,17 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
 
     meeting_id = room_name  # meeting-{uuid} 전체를 사용
     meeting_id_str = room_name[8:]
+
+    # Clova API 키 반환 (항상 실행)
+    try:
+        from app.services.clova_key_manager import get_clova_key_manager
+
+        key_manager = await get_clova_key_manager()
+        released = await key_manager.release_key(meeting_id)
+        if released:
+            logger.info(f"[LiveKit] Clova API key released: meeting={meeting_id}")
+    except Exception as e:
+        logger.error(f"[LiveKit] Failed to release Clova API key: {e}")
 
     # VAD 메타데이터 저장
     try:

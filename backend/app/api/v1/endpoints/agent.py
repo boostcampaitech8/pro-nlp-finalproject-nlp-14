@@ -15,12 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import AGENT_USER_ID
-from app.core.database import get_db
+from app.core.database import async_session_maker, get_db
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.models.transcript import Transcript
 from app.schemas.transcript import CreateTranscriptRequest
 from app.services.agent_service import AgentService
 from app.services.context_runtime import (
+    get_latest_start_ms,
     get_or_create_runtime,
     get_transcript_start_ms,
     update_runtime_from_db,
@@ -127,39 +128,55 @@ async def update_agent_context(
 )
 async def run_agent_with_context(
     request: AgentMeetingRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
     agent_service: Annotated[AgentService, Depends(get_agent_service)],
 ):
-    # transcriptId로 현재 발화 조회
-    query = select(Transcript).where(Transcript.id == request.transcript_id)
-    result = await db.execute(query)
-    transcript = result.scalar_one_or_none()
+    # ===== 1. 스트리밍 전 DB 작업 완료 (자체 세션 - 즉시 반환) =====
+    async with async_session_maker() as db:
+        # transcriptId로 현재 발화 조회
+        query = select(Transcript).where(Transcript.id == request.transcript_id)
+        result = await db.execute(query)
+        transcript = result.scalar_one_or_none()
 
-    if not transcript:
-        raise HTTPException(status_code=404, detail="Transcript not found")
+        if not transcript:
+            raise HTTPException(status_code=404, detail="Transcript not found")
 
-    settings = get_settings()
-    raw_text = transcript.transcript_text
-    user_input = _strip_wake_word(raw_text, settings.agent_wake_word)
+        settings = get_settings()
+        raw_text = transcript.transcript_text
+        user_input = _strip_wake_word(raw_text, settings.agent_wake_word)
 
-    logger.info(
-        "Agent Context 요청: meeting_id=%s, transcript_id=%s, raw='%s', cleaned='%s'",
-        request.meeting_id,
-        request.transcript_id,
-        raw_text[:50] if raw_text else "",
-        user_input[:50] if user_input else "",
-    )
+        # 스트리밍 전에 필요한 데이터 추출 (DB 세션 종료 전)
+        transcript_user_id = str(transcript.user_id)
+        response_start_ms = transcript.end_ms
+        meeting_id_str = str(request.meeting_id)
 
-    # 응답 저장용 변수
+        logger.info(
+            "Agent Context 요청: meeting_id=%s, transcript_id=%s, raw='%s', cleaned='%s'",
+            request.meeting_id,
+            request.transcript_id,
+            raw_text[:50] if raw_text else "",
+            user_input[:50] if user_input else "",
+        )
+
+        # ===== 2. Context Runtime 업데이트 (스트리밍 전에 완료) =====
+        runtime = await get_or_create_runtime(meeting_id_str)
+        async with runtime.lock:
+            latest_start_ms = await get_latest_start_ms(db, meeting_id_str)
+            if latest_start_ms is not None:
+                await update_runtime_from_db(
+                    runtime,
+                    db,
+                    meeting_id_str,
+                    latest_start_ms,
+                )
+            ctx_manager = runtime.manager
+            loaded = runtime.last_utterance_id
+        logger.info("Context runtime 로드됨: %d개 발화", loaded)
+    # ← async with 종료: DB 세션 즉시 반환!
+
+    # ===== 3. 스트리밍용 변수 준비 (DB 세션 불필요) =====
     full_response = ""
     is_completed = False
     response_start_time = datetime.now(timezone.utc)
-
-    # 호출한 STT의 end_ms를 기준으로 타임스탬프 설정
-    # STT 발화 직후부터 LLM 응답이 시작되는 것으로 처리
-    response_start_ms = transcript.end_ms
-
-    transcript_service = TranscriptService(db)
 
     async def event_generator():
         """표준 SSE 포맷으로 이벤트 스트리밍
@@ -177,17 +194,17 @@ async def run_agent_with_context(
             if settings.enable_agent_streaming:
                 # 프로토타입: astream_events() 사용
                 logger.info("Using astream_events() for streaming")
-                import json
 
+                # ctx_manager 전달 (DB 세션 대신)
                 async for event in agent_service.process_with_context_streaming(
                     user_input=user_input,
-                    meeting_id=str(request.meeting_id),
-                    user_id=str(transcript.user_id),
-                    db=db,
+                    meeting_id=meeting_id_str,
+                    user_id=transcript_user_id,
+                    ctx_manager=ctx_manager,
                 ):
                     event_type = event.get("type")
                     tag = event.get("tag")
-                    
+
                     # ===== 최종 답변 텍스트: TTS도 읽음 =====
                     if event_type == "token" and tag == "generator_token":
                         content = event.get("content", "")
@@ -199,7 +216,7 @@ async def run_agent_with_context(
                             )
                             yield f"event: message\n"
                             yield f"data: {content}\n\n"
-                    
+
                     # ===== 상태 메시지: UI만 표시 =====
                     elif event_type == "node_start" and tag == "status":
                         node = event.get("node")
@@ -213,31 +230,31 @@ async def run_agent_with_context(
                         if status_msg:
                             yield f"event: status\n"
                             yield f"data: {status_msg}\n\n"
-                    
+
                     # ===== 도구 실행: UI에만 표시 =====
                     elif event_type == "tool_start" and tag == "tool_event":
                         tool_name = event.get("tool_name", "unknown")
                         yield f"event: status\n"
                         yield f"data: 🔧 '{tool_name}' 도구를 실행하고 있어요…\n\n"
-                    
+
                     elif event_type == "tool_end" and tag == "tool_event":
                         tool_name = event.get("tool_name", "unknown")
                         yield f"event: status\n"
                         yield f"data: ✅ '{tool_name}' 검색 완료\n\n"
-                    
+
                     # 기타 이벤트는 무시
 
                 yield f"event: done\n"
                 yield f"data: [DONE]\n\n"
                 is_completed = True
             else:
-                # 기존 방식: ainvoke() 사용
+                # 기존 방식: ainvoke() 사용 (non-streaming도 ctx_manager 사용)
                 logger.info("Using ainvoke() for non-streaming")
                 response = await agent_service.process_with_context(
                     user_input=user_input,
-                    meeting_id=str(request.meeting_id),
-                    user_id=str(transcript.user_id),
-                    db=db,
+                    meeting_id=meeting_id_str,
+                    user_id=transcript_user_id,
+                    ctx_manager=ctx_manager,
                 )
                 # SSE는 data 필드가 줄마다 분리되어야 하므로 줄 단위로 전송
                 response_text = "" if response is None else str(response)
@@ -258,7 +275,7 @@ async def run_agent_with_context(
             yield f"event: error\n"
             yield f"data: {str(e)}\n\n"
         finally:
-            # 응답이 있거나 인터럽트 시 저장
+            # ===== 4. 저장 시 새 세션 사용 (커넥션 풀 고갈 방지) =====
             if full_response.strip() or not is_completed:
                 response_end_time = datetime.now(timezone.utc)
                 # 응답 생성에 소요된 시간 계산
@@ -271,29 +288,31 @@ async def run_agent_with_context(
                     full_response.strip() if full_response.strip() else "[응답 생성 중 중단됨]"
                 )
 
+                # 새 세션으로 저장 (스트리밍 종료 후 짧게 사용)
                 try:
-                    await transcript_service.create_transcript(
-                        meeting_id=request.meeting_id,
-                        request=CreateTranscriptRequest(
+                    async with async_session_maker() as save_db:
+                        transcript_service = TranscriptService(save_db)
+                        await transcript_service.create_transcript(
                             meeting_id=request.meeting_id,
-                            user_id=AGENT_USER_ID,
-                            start_ms=response_start_ms,
-                            end_ms=response_end_ms,
-                            text=text_to_save,
-                            confidence=1.0,
-                            min_confidence=1.0,
-                            status="completed" if is_completed else "interrupted",
-                        ),
-                    )
-                    await db.commit()
-                    logger.info(
-                        "Agent 응답 저장 완료: meeting_id=%s, status=%s, length=%d",
-                        request.meeting_id,
-                        "completed" if is_completed else "interrupted",
-                        len(text_to_save),
-                    )
+                            request=CreateTranscriptRequest(
+                                meeting_id=request.meeting_id,
+                                user_id=AGENT_USER_ID,
+                                start_ms=response_start_ms,
+                                end_ms=response_end_ms,
+                                text=text_to_save,
+                                confidence=1.0,
+                                min_confidence=1.0,
+                                status="completed" if is_completed else "interrupted",
+                            ),
+                        )
+                        await save_db.commit()
+                        logger.info(
+                            "Agent 응답 저장 완료: meeting_id=%s, status=%s, length=%d",
+                            request.meeting_id,
+                            "completed" if is_completed else "interrupted",
+                            len(text_to_save),
+                        )
                 except Exception as save_error:
-                    await db.rollback()
                     logger.error("Agent 응답 저장 실패: %s", save_error, exc_info=True)
 
     return StreamingResponse(
