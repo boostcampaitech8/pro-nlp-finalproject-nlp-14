@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     agent_wake_word: str = "부덕"
     enable_agent_streaming: bool = True  # astream_events() 활성화 (프로토타입)
 
+    # Clova STT 키 관리 설정
+    clova_stt_key_count: int = 5  # 사용 가능한 API 키 총 개수
+      
     # Langfuse (LLM Observability)
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

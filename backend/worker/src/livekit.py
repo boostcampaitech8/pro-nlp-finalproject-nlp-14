@@ -457,11 +457,6 @@ class LiveKitBot:
             if self.on_participant_left:
                 self.on_participant_left(p_audio.user_id)
 
-            # 마지막 실제 참여자가 나가면 worker도 퇴장
-            if not self._ctx.participants:
-                logger.info("마지막 참여자 퇴장, Worker 종료")
-                await self.disconnect()
-
     async def _handle_audio_track_subscribed(
         self,
         track: rtc.Track,

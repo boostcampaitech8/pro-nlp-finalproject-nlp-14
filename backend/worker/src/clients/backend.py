@@ -314,3 +314,30 @@ class BackendAPIClient:
                 elif current_event_type == "error":
                     logger.error(f"[SSE] error: {data}")
                     yield {"type": "error", "content": data}
+
+    async def complete_meeting(self, meeting_id: str) -> bool:
+        """회의 완료 요청 (모든 참여자 퇴장 시)
+
+        Args:
+            meeting_id: 회의 ID (meeting-{uuid} 형식)
+
+        Returns:
+            성공 여부
+        """
+        if self._client is None:
+            await self.connect()
+
+        if self._client is None:
+            return False
+
+        try:
+            # meeting_id에서 "meeting-" 접두사 제거
+            pure_meeting_id = meeting_id.replace("meeting-", "")
+
+            response = await self._client.post(
+                f"/api/v1/meetings/{pure_meeting_id}/complete",
+            )
+            return response.status_code == 200
+        except Exception as e:
+            logger.exception(f"Failed to complete meeting: {e}")
+            return False

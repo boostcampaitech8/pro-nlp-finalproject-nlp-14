@@ -1,9 +1,16 @@
+import logging
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.dependencies import get_current_user
+
+from app.api.dependencies import get_arq_pool, get_current_user
 from app.core.database import get_db
+from app.core.neo4j_sync import neo4j_sync
+from app.models.meeting import Meeting, MeetingStatus
 from app.models.user import User
 from app.schemas import ErrorResponse
 from app.schemas.meeting import (
@@ -14,6 +21,9 @@ from app.schemas.meeting import (
     UpdateMeetingRequest,
 )
 from app.services.meeting_service import MeetingService
+from app.services.transcript_service import TranscriptService
+
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Meetings"])
 def get_meeting_service(db: Annotated[AsyncSession, Depends(get_db)]) -> MeetingService:
     """MeetingService 의존성"""
@@ -196,3 +206,70 @@ async def delete_meeting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "VALIDATION_ERROR", "message": str(e)},
         )
+
+
+@router.post(
+    "/meetings/{meeting_id}/complete",
+    responses={
+        404: {"model": ErrorResponse},
+    },
+)
+async def complete_meeting_by_worker(
+    meeting_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Worker가 회의 완료 요청 (모든 참여자 퇴장 시)"""
+    # Meeting 조회
+    query = select(Meeting).where(Meeting.id == meeting_id)
+    result = await db.execute(query)
+    meeting = result.scalar_one_or_none()
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # 멱등성 체크
+    if meeting.status == MeetingStatus.COMPLETED.value:
+        logger.info(f"Meeting already completed: {meeting_id}")
+        return {"status": "already_completed"}
+
+    # Meeting 상태 변경
+    now = datetime.now(timezone.utc)
+    meeting.status = MeetingStatus.COMPLETED.value
+    meeting.ended_at = now
+    await db.commit()
+    await db.refresh(meeting)
+
+    # Neo4j 동기화
+    await neo4j_sync.sync_meeting_update(
+        str(meeting.id),
+        str(meeting.team_id),
+        meeting.title,
+        meeting.status,
+        meeting.created_at,
+    )
+
+    # PR 생성 태스크 큐잉 (트랜스크립트 확인 후 — Worker가 이미 5초 대기 완료)
+    try:
+        transcript_service = TranscriptService(db)
+        transcript_response = await transcript_service.get_meeting_transcripts(
+            meeting.id
+        )
+
+        if transcript_response.full_text:
+            pool = await get_arq_pool()
+            await pool.enqueue_job(
+                "generate_pr_task",
+                str(meeting.id),
+                _job_id=f"generate_pr:{meeting.id}",
+            )
+            await pool.close()
+            logger.info(f"PR generation task queued: meeting={meeting.id}")
+        else:
+            logger.info(
+                f"No transcript yet, skipping PR generation: meeting={meeting.id}"
+            )
+    except Exception as e:
+        logger.error(f"Failed to enqueue PR task: {e}")
+
+    # Job 삭제는 room_finished 웹훅에서 처리
+    return {"status": "completed", "meeting_id": str(meeting.id)}
