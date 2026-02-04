@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     comments,
     context,
     decisions,
+    invite_links,
     livekit_webhooks,
     meeting_participants,
     meetings,
@@ -27,6 +28,8 @@ api_router.include_router(agent.router)
 api_router.include_router(auth.router)
 api_router.include_router(teams.router)
 api_router.include_router(team_members.router)
+api_router.include_router(invite_links.router)
+api_router.include_router(invite_links.public_router)
 api_router.include_router(meetings.team_meetings_router)
 api_router.include_router(meetings.router)
 api_router.include_router(meeting_participants.router)
