@@ -59,8 +59,10 @@ app:
 
 worker:
   clovaSttEndpoint: ""
-  clovaSttSecret: ""
+  # API 키 배열 (동적 할당용) - helmfile에서 오버라이드
+  clovaSttSecrets: []
   backendApiKey: ""
+  ttsServerUrl: ""
 
 # NCP Clova Studio
 ncp:

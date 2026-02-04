@@ -88,6 +88,8 @@ class DockerWorkerManager:
 
         docker compose run -d --name <name> -e MEETING_ID=<id> realtime-worker
         """
+        from app.services.clova_key_manager import get_clova_key_manager
+
         container_name = self._get_container_name(meeting_id)
 
         # 이미 실행 중인지 확인
@@ -95,6 +97,12 @@ class DockerWorkerManager:
         if existing.status == WorkerStatusEnum.RUNNING:
             logger.warning(f"워커가 이미 실행 중: {container_name}")
             return container_name
+
+        # Clova API 키 할당
+        key_manager = await get_clova_key_manager()
+        api_key_index = await key_manager.allocate_key(meeting_id)
+        if api_key_index is None:
+            raise WorkerStartError("사용 가능한 Clova API 키가 없습니다")
 
         # 기존 컨테이너가 있으면 삭제
         if existing.status in (WorkerStatusEnum.STOPPED, WorkerStatusEnum.FAILED):
@@ -118,21 +126,32 @@ class DockerWorkerManager:
 
         # .env에서 필요한 환경변수 전달
         for key in ["LIVEKIT_WS_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
-                    "CLOVA_STT_ENDPOINT", "CLOVA_STT_SECRET",
+                    "CLOVA_STT_ENDPOINT",
                     "BACKEND_API_URL", "BACKEND_API_KEY", "LOG_LEVEL"]:
             if key in env_vars:
                 docker_args.extend(["-e", f"{key}={env_vars[key]}"])
+
+        # 할당된 키 인덱스에 해당하는 Clova STT Secret 전달
+        clova_key = env_vars.get(f"CLOVA_STT_SECRET_{api_key_index}", "")
+        if clova_key:
+            docker_args.extend(["-e", f"CLOVA_STT_SECRET={clova_key}"])
+        else:
+            # 키가 없으면 키 반환 후 에러
+            await key_manager.release_key(meeting_id)
+            raise WorkerStartError(f"CLOVA_STT_SECRET_{api_key_index} 환경변수가 설정되지 않았습니다")
 
         docker_args.append("docker-realtime-worker:latest")
 
         return_code, stdout, stderr = await self._run_docker_command(*docker_args)
 
         if return_code != 0:
+            # 컨테이너 시작 실패 시 키 반환
+            await key_manager.release_key(meeting_id)
             error_msg = f"워커 시작 실패: {stderr}"
             logger.error(error_msg)
             raise WorkerStartError(error_msg)
 
-        logger.info(f"워커 시작됨: {container_name} (meeting={meeting_id})")
+        logger.info(f"워커 시작됨: {container_name} (meeting={meeting_id}, key_index={api_key_index})")
         return container_name
 
     async def stop_worker(self, worker_id: str) -> bool:
