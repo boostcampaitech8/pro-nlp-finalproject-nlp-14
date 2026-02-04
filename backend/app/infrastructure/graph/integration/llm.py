@@ -100,6 +100,27 @@ def get_evaluator_llm() -> ChatClovaX:
     ).with_config(run_name="evaluator")
 
 
+def get_fast_llm() -> ChatClovaX:
+    """Fast LLM (경량 처리용) - 간단한 쿼리 라우터 전용
+
+    Model: HCX-DASH-002
+    Use Case: 간단한 쿼리 사전 필터링, 빠른 판정 필요
+    temperature: 0.2 (일관된 결정)
+    max_tokens: 512 (짧은 응답)
+
+    Why HCX-DASH-002?
+    - 빠른 응답 속도 (전처리 용도)
+    - 비용 효율성 (모든 요청에 적용)
+    - 간단한 분류/판정 작업에 최적화
+    """
+    return ChatClovaX(
+        model="HCX-DASH-002",
+        temperature=0.2,
+        max_tokens=512,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+    ).with_config(run_name="simple_router")
+
+
 # ============================================================================
 # Context Engineering용 LLM 인스턴스
 # ============================================================================
