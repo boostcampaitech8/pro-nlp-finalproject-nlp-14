@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     meeting_participants,
     meetings,
     minutes,
+    spotlight,
     suggestions,
     team_members,
     teams,
@@ -46,3 +47,6 @@ api_router.include_router(minutes.meetings_minutes_router)
 
 # Context API - Real-time topic feed
 api_router.include_router(context.router)
+
+# Spotlight API - Independent text chat
+api_router.include_router(spotlight.router)

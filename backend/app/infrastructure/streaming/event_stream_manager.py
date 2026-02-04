@@ -61,7 +61,7 @@ async def stream_llm_tokens_only(
 
                     # Planner: 항상 상태 전송 (Skip 감지 로직 제거)
                     if event_name == "planner":
-                        logger.info(f"[PLANNER] 진입 → 즉시 상태 전송")
+                        logger.info("[PLANNER] 진입 → 즉시 상태 전송")
                         node_status_sent.add("planner")
                         yield {
                             "type": "node_start",
@@ -72,7 +72,7 @@ async def stream_llm_tokens_only(
 
                     # Generator: 항상 상태 전송
                     elif event_name == "generator":
-                        logger.info(f"[GENERATOR] 진입 → 즉시 상태 전송")
+                        logger.info("[GENERATOR] 진입 → 즉시 상태 전송")
                         node_status_sent.add("generator")
                         yield {
                             "type": "node_start",
