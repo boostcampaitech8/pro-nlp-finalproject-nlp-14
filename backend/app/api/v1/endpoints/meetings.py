@@ -21,7 +21,6 @@ from app.schemas.meeting import (
     UpdateMeetingRequest,
 )
 from app.services.meeting_service import MeetingService
-from app.services.transcript_service import TranscriptService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Meetings"])
@@ -248,26 +247,16 @@ async def complete_meeting_by_worker(
         meeting.created_at,
     )
 
-    # PR 생성 태스크 큐잉 (트랜스크립트 확인 후 — Worker가 이미 5초 대기 완료)
+    # PR 생성 태스크 큐잉 (Worker가 transcript 유무를 확인)
     try:
-        transcript_service = TranscriptService(db)
-        transcript_response = await transcript_service.get_meeting_transcripts(
-            meeting.id
+        pool = await get_arq_pool()
+        await pool.enqueue_job(
+            "generate_pr_task",
+            str(meeting.id),
+            _job_id=f"generate_pr:{meeting.id}",
         )
-
-        if transcript_response.full_text:
-            pool = await get_arq_pool()
-            await pool.enqueue_job(
-                "generate_pr_task",
-                str(meeting.id),
-                _job_id=f"generate_pr:{meeting.id}",
-            )
-            await pool.close()
-            logger.info(f"PR generation task queued: meeting={meeting.id}")
-        else:
-            logger.info(
-                f"No transcript yet, skipping PR generation: meeting={meeting.id}"
-            )
+        await pool.close()
+        logger.info(f"PR generation task queued: meeting={meeting.id}")
     except Exception as e:
         logger.error(f"Failed to enqueue PR task: {e}")
 

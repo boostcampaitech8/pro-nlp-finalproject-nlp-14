@@ -23,7 +23,6 @@ from app.core.neo4j_sync import neo4j_sync
 from app.core.telemetry import get_mit_metrics
 from app.infrastructure.worker_manager import get_worker_manager
 from app.models.meeting import Meeting, MeetingStatus
-from app.services.transcript_service import TranscriptService
 from app.services.vad_event_service import vad_event_service
 
 logger = logging.getLogger(__name__)
@@ -255,28 +254,18 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
                 meeting.created_at,
             )
 
-            # PR 큐잉
+            # PR 큐잉 (Worker가 transcript 유무를 확인)
             try:
-                transcript_service = TranscriptService(db)
-                transcript_response = await transcript_service.get_meeting_transcripts(
-                    meeting.id
+                pool = await get_arq_pool()
+                await pool.enqueue_job(
+                    "generate_pr_task",
+                    str(meeting.id),
+                    _job_id=f"generate_pr:{meeting.id}",
                 )
-
-                if transcript_response.full_text:
-                    pool = await get_arq_pool()
-                    await pool.enqueue_job(
-                        "generate_pr_task",
-                        str(meeting.id),
-                        _job_id=f"generate_pr:{meeting.id}",
-                    )
-                    await pool.close()
-                    logger.info(
-                        f"[LiveKit] PR generation task queued (fallback): meeting={meeting.id}"
-                    )
-                else:
-                    logger.info(
-                        f"[LiveKit] No transcript, skipping PR: meeting={meeting.id}"
-                    )
+                await pool.close()
+                logger.info(
+                    f"[LiveKit] PR generation task queued (fallback): meeting={meeting.id}"
+                )
             except Exception as e:
                 logger.error(f"[LiveKit] Failed to enqueue PR task (fallback): {e}")
 
