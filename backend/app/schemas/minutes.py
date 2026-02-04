@@ -84,3 +84,9 @@ class MinutesResponse(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+class MinutesStatusResponse(BaseModel):
+    """Minutes 생성 상태 응답"""
+
+    status: str  # "not_started" | "generating" | "completed" | "failed"

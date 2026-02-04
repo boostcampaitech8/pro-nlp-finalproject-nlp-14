@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from neo4j import AsyncDriver, READ_ACCESS
 from neo4j.time import DateTime as Neo4jDateTime
 
 from app.constants.agents import DEFAULT_AI_AGENT
@@ -22,6 +21,8 @@ from app.models.kg import (
     KGMinutesDecision,
     KGSuggestion,
 )
+from neo4j import READ_ACCESS, AsyncDriver
+
 
 def _convert_neo4j_datetime(value: Any) -> datetime:
     """Neo4j DateTime을 Python datetime으로 변환"""
@@ -782,7 +783,7 @@ class KGRepository:
         })
 
         if not records:
-            raise ValueError(f"Suggestion or Decision not found")
+            raise ValueError("Suggestion or Decision not found")
 
         r = records[0]
         return KGDecision(
@@ -1242,6 +1243,19 @@ class KGRepository:
     # =========================================================================
     # Minutes View
     # =========================================================================
+
+    async def has_minutes(self, meeting_id: str) -> bool:
+        """회의록 존재 여부 경량 확인 (summary 또는 decision 존재)"""
+        query = """
+        MATCH (m:Meeting {id: $meeting_id})
+        OPTIONAL MATCH (m)-[:CONTAINS]->(:Agenda)-[:HAS_DECISION]->(d:Decision)
+        WITH m, count(d) AS decision_count
+        RETURN (m.summary IS NOT NULL AND m.summary <> '') OR decision_count > 0 AS has_minutes
+        """
+        records = await self._execute_read(query, {"meeting_id": meeting_id})
+        if not records:
+            return False
+        return bool(records[0]["has_minutes"])
 
     async def get_minutes_view(self, meeting_id: str) -> dict:
         """Minutes 전체 View 조회 (중첩 구조)"""

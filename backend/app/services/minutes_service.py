@@ -18,6 +18,10 @@ class MinutesService:
     def __init__(self, driver: AsyncDriver):
         self.kg_repo = KGRepository(driver)
 
+    async def has_minutes(self, meeting_id: str) -> bool:
+        """회의록 존재 여부 경량 확인"""
+        return await self.kg_repo.has_minutes(meeting_id)
+
     async def get_minutes(self, meeting_id: str) -> MinutesResponse:
         """Minutes View 조회 (중첩 구조)
 
