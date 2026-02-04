@@ -339,6 +339,18 @@ export const kgService = {
   },
 
   /**
+   * 회의록 생성 상태 확인
+   */
+  async getMinutesStatus(
+    meetingId: string,
+  ): Promise<'not_started' | 'generating' | 'completed' | 'failed'> {
+    const response = await api.get<{ status: 'not_started' | 'generating' | 'completed' | 'failed' }>(
+      `/meetings/${meetingId}/minutes/status`,
+    );
+    return response.data.status;
+  },
+
+  /**
    * 결정사항 존재 여부 확인
    */
   async hasDecisions(meetingId: string): Promise<boolean> {
