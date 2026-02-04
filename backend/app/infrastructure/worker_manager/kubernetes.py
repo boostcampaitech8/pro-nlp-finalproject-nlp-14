@@ -236,6 +236,9 @@ class K8sWorkerManager:
                 body=job,
             )
         except ApiException as e:
+            if e.status == 409:
+                logger.info(f"워커 Job 이미 존재 (다른 인스턴스가 생성): {job_name}")
+                return job_name
             # Job 생성 실패 시 키 반환
             await key_manager.release_key(meeting_id)
             error_msg = f"워커 Job 생성 실패: {e.reason} (status={e.status})"

@@ -6,6 +6,12 @@ global:
   environment: development
   registry: "ghcr.io/teamatoi"
 
+# 복제본 수
+replicas:
+  backend: 1
+  frontend: 1
+  arqWorker: 1
+
 # 이미지 태그 설정 (CI에서 SHA 기반 태그 사용)
 images:
   backend:
