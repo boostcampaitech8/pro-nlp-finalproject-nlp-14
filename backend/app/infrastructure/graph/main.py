@@ -3,7 +3,11 @@ from datetime import datetime
 
 from langchain_core.messages import HumanMessage
 
-from app.infrastructure.graph.integration.langfuse import get_runnable_config
+from app.infrastructure.graph.integration.langfuse import (
+    get_langfuse_base_url,
+    get_runnable_config,
+    is_langfuse_enabled,
+)
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.core.config import get_settings
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
@@ -14,11 +18,16 @@ async def main():
     import uuid
     settings = get_settings()
 
-    os.environ['LANGFUSE_PUBLIC_KEY'] = settings.langfuse_public_key
-    os.environ['LANGFUSE_SECRET_KEY'] = settings.langfuse_secret_key
-    os.environ['LANGFUSE_HOST'] = settings.langfuse_host
-    os.environ["LANGFUSE_ENABLED"] = "true" if settings.langfuse_enabled else "false"
+    # Langfuse 환경변수 설정 (외부 SDK 호환)
+    os.environ["LANGFUSE_PUBLIC_KEY"] = settings.langfuse_public_key
+    os.environ["LANGFUSE_SECRET_KEY"] = settings.langfuse_secret_key
 
+    langfuse_base_url = get_langfuse_base_url(settings)
+    os.environ["LANGFUSE_BASE_URL"] = langfuse_base_url
+    os.environ["LANGFUSE_HOST"] = langfuse_base_url
+
+    os.environ["LANGFUSE_TRACING_ENABLED"] = "true" if is_langfuse_enabled(settings) else "false"
+    
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--query", type=str, default=None)
     parser.add_argument("--no-checkpointer", action="store_true", help="Disable checkpointer")

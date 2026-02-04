@@ -25,6 +25,9 @@ interface CommandState {
   sessionsLoading: boolean;
   messagesLoading: boolean;
 
+  // SSE 스트림 관리 (세션 전환 시 cleanup용)
+  currentAbortController: AbortController | null;
+
   // Actions
   setInputValue: (value: string) => void;
   setInputFocused: (focused: boolean) => void;
@@ -47,14 +50,24 @@ interface CommandState {
   setStreaming: (streaming: boolean) => void;
   setStatusMessage: (message: string | null) => void;
 
+  // SSE 스트림 관리 Actions
+  setAbortController: (controller: AbortController | null) => void;
+  abortCurrentStream: () => void;
+
   // 세션 Actions
   setCurrentSession: (id: string | null) => void;
   loadSessionMessages: (id: string) => Promise<void>;
+  syncSessionMessages: (id: string) => Promise<void>;
   setSessions: (sessions: SpotlightSession[]) => void;
   addSession: (session: SpotlightSession) => void;
   removeSession: (id: string) => void;
   loadSessions: () => Promise<void>;
   createNewSession: () => Promise<SpotlightSession | null>;
+
+  // 새 응답이 있는 세션 표시
+  sessionsWithNewResponse: Set<string>;
+  markSessionNewResponse: (sessionId: string) => void;
+  clearSessionNewResponse: (sessionId: string) => void;
 }
 
 export const useCommandStore = create<CommandState>((set) => ({
@@ -77,6 +90,12 @@ export const useCommandStore = create<CommandState>((set) => ({
   sessions: [],
   sessionsLoading: false,
   messagesLoading: false,
+
+  // SSE 스트림 관리 초기 상태
+  currentAbortController: null,
+
+  // 새 응답이 있는 세션 초기 상태
+  sessionsWithNewResponse: new Set<string>(),
 
   // Actions
   setInputValue: (value) => set({ inputValue: value }),
@@ -114,7 +133,7 @@ export const useCommandStore = create<CommandState>((set) => ({
   enterChatMode: () => set({ isChatMode: true, chatMessages: [] }),
 
   exitChatMode: () =>
-    set({ isChatMode: false, chatMessages: [], isStreaming: false }),
+    set({ isChatMode: false, chatMessages: [], isStreaming: false, currentSessionId: null }),
 
   addChatMessage: (msg) =>
     set((state) => ({ chatMessages: [...state.chatMessages, msg] })),
@@ -141,25 +160,135 @@ export const useCommandStore = create<CommandState>((set) => ({
 
   setStatusMessage: (message) => set({ statusMessage: message }),
 
+  // SSE 스트림 관리 Actions
+  setAbortController: (controller) => set({ currentAbortController: controller }),
+
+  abortCurrentStream: () =>
+    set((state) => {
+      if (state.currentAbortController) {
+        state.currentAbortController.abort();
+      }
+      return {
+        currentAbortController: null,
+        isStreaming: false,
+        statusMessage: null,
+      };
+    }),
+
   // 세션 Actions
   setCurrentSession: (id) => {
-    set({ currentSessionId: id, chatMessages: [] });
+    // 기존 스트림 정리 후 세션 전환
+    set((state) => {
+      if (state.currentAbortController) {
+        state.currentAbortController.abort();
+      }
+      // 새 응답 표시 제거
+      const newSet = new Set(state.sessionsWithNewResponse);
+      if (id) newSet.delete(id);
+      return {
+        currentSessionId: id,
+        chatMessages: [],
+        currentAbortController: null,
+        isStreaming: false,
+        statusMessage: null,
+        sessionsWithNewResponse: newSet,
+      };
+    });
   },
 
   loadSessionMessages: async (id) => {
     set({ messagesLoading: true });
     try {
       const messages = await spotlightApi.getSessionMessages(id);
-      const chatMessages = messages.map((msg, index) => ({
-        id: `history-${id}-${index}`,
-        role: msg.role === 'user' ? 'user' : 'agent',
-        content: msg.content,
-        timestamp: new Date(),
-      })) as ChatMessage[];
+      const chatMessages = messages.map((msg, index) => {
+        const baseMsg = {
+          id: `history-${id}-${index}`,
+          role: msg.role === 'user' ? 'user' : 'agent',
+          content: msg.content,
+          timestamp: new Date(),
+        };
+
+        // HITL 메시지 복원
+        if (msg.type === 'hitl' && msg.hitl_data) {
+          return {
+            ...baseMsg,
+            type: 'hitl' as const,
+            hitlStatus: msg.hitl_status,
+            hitlData: {
+              tool_name: msg.hitl_data.tool_name,
+              params: msg.hitl_data.params,
+              params_display: msg.hitl_data.params_display,
+              message: msg.hitl_data.message,
+              required_fields: msg.hitl_data.required_fields,
+              display_template: msg.hitl_data.display_template,
+            },
+          };
+        }
+
+        return { ...baseMsg, type: 'text' as const };
+      }) as ChatMessage[];
       set({ chatMessages, messagesLoading: false });
     } catch (error) {
       console.error('Failed to load session messages:', error);
       set({ messagesLoading: false });
+    }
+  },
+
+  syncSessionMessages: async (id) => {
+    try {
+      const messages = await spotlightApi.getSessionMessages(id);
+
+      set((state) => {
+        // 현재 세션이 아니면 무시
+        if (state.currentSessionId !== id) return state;
+
+        const serverMessages = messages.map((msg, index) => {
+          const baseMsg = {
+            id: `history-${id}-${index}`,
+            role: msg.role === 'user' ? 'user' : 'agent',
+            content: msg.content,
+            timestamp: new Date(),
+          };
+
+          if (msg.type === 'hitl' && msg.hitl_data) {
+            return {
+              ...baseMsg,
+              type: 'hitl' as const,
+              hitlStatus: msg.hitl_status,
+              hitlData: {
+                tool_name: msg.hitl_data.tool_name,
+                params: msg.hitl_data.params,
+                params_display: msg.hitl_data.params_display,
+                message: msg.hitl_data.message,
+                required_fields: msg.hitl_data.required_fields,
+                display_template: msg.hitl_data.display_template,
+              },
+            };
+          }
+          return { ...baseMsg, type: 'text' as const };
+        }) as ChatMessage[];
+
+        // 마지막 메시지 비교
+        const lastLocal = state.chatMessages[state.chatMessages.length - 1];
+        const lastServer = serverMessages[serverMessages.length - 1];
+
+        // 서버 메시지가 더 많거나 내용이 다르면 새 응답으로 표시
+        if (serverMessages.length > state.chatMessages.length ||
+            (lastLocal && lastServer && lastLocal.content !== lastServer.content)) {
+          // 현재 보고 있는 세션이 아닌 경우에만 새 응답 표시
+          if (state.currentSessionId !== id) {
+            return {
+              chatMessages: serverMessages,
+              sessionsWithNewResponse: new Set([...state.sessionsWithNewResponse, id]),
+            };
+          }
+          return { chatMessages: serverMessages };
+        }
+
+        return state;
+      });
+    } catch (error) {
+      console.error('Failed to sync session messages:', error);
     }
   },
 
@@ -200,4 +329,17 @@ export const useCommandStore = create<CommandState>((set) => ({
       return null;
     }
   },
+
+  // 새 응답 표시 Actions
+  markSessionNewResponse: (sessionId) =>
+    set((state) => ({
+      sessionsWithNewResponse: new Set([...state.sessionsWithNewResponse, sessionId]),
+    })),
+
+  clearSessionNewResponse: (sessionId) =>
+    set((state) => {
+      const newSet = new Set(state.sessionsWithNewResponse);
+      newSet.delete(sessionId);
+      return { sessionsWithNewResponse: newSet };
+    }),
 }));

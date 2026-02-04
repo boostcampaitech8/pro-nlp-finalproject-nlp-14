@@ -1,6 +1,6 @@
 // 네비게이션 컴포넌트
 import { useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home,
   Search,
@@ -50,6 +50,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export function Navigation() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { teams, fetchTeams, teamsLoading } = useTeamStore();
   const { openModal: openMeetingModal } = useMeetingModalStore();
   const { logout, isLoading: authLoading } = useAuth();
@@ -57,12 +58,10 @@ export function Navigation() {
     sessions,
     sessionsLoading,
     currentSessionId,
-    setCurrentSession,
-    loadSessionMessages,
     removeSession,
     loadSessions,
     createNewSession,
-    enterChatMode,
+    abortCurrentStream,
   } = useCommandStore();
 
   useEffect(() => {
@@ -103,16 +102,20 @@ export function Navigation() {
   };
 
   const handleNewSpotlightSession = async () => {
+    // 기존 스트림 정리
+    abortCurrentStream();
     const session = await createNewSession();
     if (session) {
-      enterChatMode();
+      // URL 기반 라우팅 - MainPage의 useEffect가 세션 로드 처리
+      navigate(`/spotlight/${session.id}`);
     }
   };
 
-  const handleSpotlightSessionClick = async (sessionId: string) => {
-    setCurrentSession(sessionId);
-    enterChatMode();
-    await loadSessionMessages(sessionId);
+  const handleSpotlightSessionClick = (sessionId: string) => {
+    // 기존 스트림 정리 후 URL 이동
+    // URL 변경 시 MainPage의 useEffect가 세션 전환 처리
+    abortCurrentStream();
+    navigate(`/spotlight/${sessionId}`);
   };
 
   const handleDeleteSpotlightSession = async (e: React.MouseEvent, sessionId: string) => {

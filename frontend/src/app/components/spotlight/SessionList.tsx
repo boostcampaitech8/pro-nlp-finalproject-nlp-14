@@ -1,5 +1,6 @@
 // 세션 목록 컴포넌트
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, MessageSquare } from 'lucide-react';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { spotlightApi } from '@/app/services/spotlightApi';
@@ -7,15 +8,16 @@ import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/app/utils/dateUtils';
 
 export function SessionList() {
+  const navigate = useNavigate();
   const {
     sessions,
     sessionsLoading,
     currentSessionId,
-    setCurrentSession,
     removeSession,
     loadSessions,
     createNewSession,
-    enterChatMode,
+    abortCurrentStream,
+    sessionsWithNewResponse,
   } = useCommandStore();
 
   // 컴포넌트 마운트 시 세션 목록 로드
@@ -24,8 +26,10 @@ export function SessionList() {
   }, [loadSessions]);
 
   const handleSessionClick = (sessionId: string) => {
-    setCurrentSession(sessionId);
-    enterChatMode();
+    // URL 이동만 수행 (abort는 setCurrentSession에서 처리됨)
+    if (currentSessionId !== sessionId) {
+      navigate(`/spotlight/${sessionId}`);
+    }
   };
 
   const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
@@ -39,9 +43,10 @@ export function SessionList() {
   };
 
   const handleNewSession = async () => {
+    abortCurrentStream();
     const session = await createNewSession();
     if (session) {
-      enterChatMode();
+      navigate(`/spotlight/${session.id}`);
     }
   };
 
@@ -87,6 +92,11 @@ export function SessionList() {
               <div className="icon-container-sm">
                 <MessageSquare className="w-4 h-4 text-white/60" />
               </div>
+
+              {/* 새 응답 표시 (초록색 점) */}
+              {sessionsWithNewResponse.has(session.id) && (
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              )}
 
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-white truncate">{session.title}</p>

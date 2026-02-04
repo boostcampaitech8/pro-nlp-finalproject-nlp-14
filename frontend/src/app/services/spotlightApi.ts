@@ -17,12 +17,41 @@ export interface SpotlightSession {
 export interface SpotlightMessage {
   role: 'user' | 'assistant';
   content: string;
+  type?: 'text' | 'hitl';
+  hitl_status?: 'pending' | 'confirmed' | 'cancelled';
+  hitl_data?: {
+    tool_name: string;
+    params: Record<string, unknown>;
+    params_display?: Record<string, string>;
+    message: string;
+    required_fields?: Array<{
+      name: string;
+      description: string;
+      type: string;
+      required: boolean;
+    }>;
+    display_template?: string;
+  };
+}
+
+export interface HITLRequiredField {
+  name: string;
+  description: string;
+  type: string;
+  required: boolean;
 }
 
 export interface SSEEvent {
-  type: 'message' | 'status' | 'done' | 'error';
+  type: 'message' | 'status' | 'done' | 'error' | 'hitl_request';
   data?: string;
   error?: string;
+  // HITL 전용 필드 (hitl_request 이벤트에서 사용)
+  tool_name?: string;
+  params?: Record<string, unknown>;
+  params_display?: Record<string, string>; // UUID → 이름 변환된 표시용 값
+  message?: string;
+  required_fields?: HITLRequiredField[];
+  display_template?: string; // 자연어 템플릿 ({{param}}이 input으로 대체됨)
 }
 
 const API_BASE = '/spotlight';
@@ -71,6 +100,20 @@ class SSEParser {
       }
 
       if (event.type) {
+        // hitl_request 이벤트는 JSON 파싱
+        if (event.type === 'hitl_request' && event.data) {
+          try {
+            const hitlData = JSON.parse(event.data);
+            event.tool_name = hitlData.tool_name;
+            event.params = hitlData.params;
+            event.params_display = hitlData.params_display; // UUID → 이름 변환된 표시용 값
+            event.message = hitlData.message;
+            event.required_fields = hitlData.required_fields;
+            event.display_template = hitlData.display_template; // 자연어 템플릿
+          } catch {
+            console.error('Failed to parse HITL data:', event.data);
+          }
+        }
         events.push(event as SSEEvent);
       }
     }
@@ -119,16 +162,27 @@ export const spotlightApi = {
     sessionId: string,
     message: string,
     onEvent: (event: SSEEvent) => void,
+    hitlAction?: 'confirm' | 'cancel',
+    hitlParams?: Record<string, unknown>,
   ): Promise<AbortController> {
     const controller = new AbortController();
     const token = getAuthToken();
+
+    // HITL 응답 시 hitl_action 및 hitl_params 포함
+    const body: { message: string; hitl_action?: string; hitl_params?: Record<string, unknown> } = { message };
+    if (hitlAction) {
+      body.hitl_action = hitlAction;
+    }
+    if (hitlParams) {
+      body.hitl_params = hitlParams;
+    }
 
     const response = await fetch(
       `/api/v1${API_BASE}/sessions/${sessionId}/chat?token=${encodeURIComponent(token)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       }
     );
@@ -137,6 +191,10 @@ export const spotlightApi = {
       if (response.status === 404) {
         onEvent({ type: 'error', error: '세션이 만료되었습니다.' });
         throw new Error('SESSION_NOT_FOUND');
+      }
+      if (response.status === 401) {
+        onEvent({ type: 'error', error: '인증이 만료되었습니다. 다시 로그인해주세요.' });
+        throw new Error('UNAUTHORIZED');
       }
       throw new Error(`HTTP ${response.status}`);
     }
@@ -172,13 +230,17 @@ export const spotlightApi = {
     sessionId: string,
     message: string,
     onEvent: (event: SSEEvent) => void,
+    hitlAction?: 'confirm' | 'cancel',
+    hitlParams?: Record<string, unknown>,
     retryCount = 0,
   ): Promise<void> {
     try {
-      await this.chatStream(sessionId, message, onEvent);
+      await this.chatStream(sessionId, message, onEvent, hitlAction, hitlParams);
     } catch (error) {
-      if ((error as Error).message === 'SESSION_NOT_FOUND') {
-        return; // Don't retry on session expiration
+      const errorMessage = (error as Error).message;
+      // Don't retry on auth errors
+      if (errorMessage === 'SESSION_NOT_FOUND' || errorMessage === 'UNAUTHORIZED') {
+        return;
       }
 
       if (retryCount >= SSE_RECONNECT_CONFIG.maxRetries) {
@@ -193,7 +255,7 @@ export const spotlightApi = {
 
       onEvent({ type: 'status', data: `재연결 중... (${retryCount + 1}/${SSE_RECONNECT_CONFIG.maxRetries})` });
       await sleep(delay);
-      return this.chatStreamWithRetry(sessionId, message, onEvent, retryCount + 1);
+      return this.chatStreamWithRetry(sessionId, message, onEvent, hitlAction, hitlParams, retryCount + 1);
     }
   },
 };
