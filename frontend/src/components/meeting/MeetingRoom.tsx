@@ -30,6 +30,10 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
   const [showRecordingNotice, setShowRecordingNotice] = useState(false);
   const prevRecordingRef = useRef(false);
 
+  // MIT 에이전트 대기 관련 상태
+  const [isInitialJoin, setIsInitialJoin] = useState(true);
+  const [agentWaitTimedOut, setAgentWaitTimedOut] = useState(false);
+
   const {
     connectionState,
     participants,
@@ -60,6 +64,11 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     chatMessages,
     sendChatMessage,
   } = useLiveKit(meetingId);
+
+  // MIT 에이전트 참여 여부 확인
+  const MIT_AGENT_IDENTITY = `mit-agent-meeting-${meetingId}`;
+  const isAgentPresent = participants.has(MIT_AGENT_IDENTITY);
+  const shouldShowLoading = isInitialJoin && connectionState !== 'failed';
 
   // 현재 사용자가 Host인지 확인
   const currentParticipant = participants.get(userId);
@@ -105,6 +114,25 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  // MIT 에이전트 대기 타임아웃 (초기 접속 시에만)
+  useEffect(() => {
+    if (!isInitialJoin) return;
+    if (connectionState !== 'connected') return;
+
+    if (isAgentPresent) {
+      setIsInitialJoin(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      logger.warn('[MeetingRoom] MIT agent wait timeout - entering meeting without agent');
+      setAgentWaitTimedOut(true);
+      setIsInitialJoin(false);
+    }, 20_000);
+
+    return () => clearTimeout(timer);
+  }, [isInitialJoin, connectionState, isAgentPresent]);
+
   // 녹음 시작 알림 (녹음이 false -> true로 변경될 때만)
   useEffect(() => {
     if (isRecording && !prevRecordingRef.current) {
@@ -132,8 +160,8 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     }
   };
 
-  // 연결 상태에 따른 UI
-  if (connectionState === 'connecting') {
+  // 연결 상태에 따른 UI (에이전트 대기 포함)
+  if (shouldShowLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -165,6 +193,16 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
 
   return (
     <div className="h-screen bg-gray-900 flex flex-col overflow-hidden">
+      {/* MIT 에이전트 연결 실패 경고 */}
+      {agentWaitTimedOut && !isAgentPresent && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50
+                        bg-yellow-600 text-white px-4 py-2 rounded-lg shadow-lg
+                        flex items-center gap-2 animate-fade-in">
+          <span className="text-yellow-200">&#9888;</span>
+          서버가 불안정합니다. 회의를 다시 시작해주세요.
+        </div>
+      )}
+
       {/* 녹음 시작 알림 토스트 */}
       {showRecordingNotice && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50
