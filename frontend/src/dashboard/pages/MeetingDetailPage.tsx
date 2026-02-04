@@ -9,7 +9,6 @@ import { ArrowLeft, Home } from 'lucide-react';
 
 import { MeetingInfoCard } from '@/components/meeting/MeetingInfoCard';
 import { ParticipantSection } from '@/components/meeting/ParticipantSection';
-import { RecordingList } from '@/components/meeting/RecordingList';
 import { TranscriptSection } from '@/components/meeting/TranscriptSection';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -364,26 +363,13 @@ export function MeetingDetailPage() {
           </div>
         )}
 
-        {/* 녹음 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
-        {currentMeeting && currentMeeting.status !== 'scheduled' && (
-          <div className="mt-8">
-            <h3 className="text-xl font-bold text-white mb-4">
-              Recordings
-            </h3>
-            <RecordingList meetingId={currentMeeting.id} />
-          </div>
-        )}
-
-        {/* 회의록(트랜스크립트) 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
-        {currentMeeting && currentMeeting.status !== 'scheduled' && (
+        {/* 회의록(트랜스크립트) 섹션 - 회의가 완료된 경우에만 표시 */}
+        {currentMeeting && currentMeeting.status === 'completed' && (
           <div className="mt-8">
             <h3 className="text-xl font-bold text-white mb-4">
               Transcript
             </h3>
-            <TranscriptSection
-              meetingId={currentMeeting.id}
-              meetingStatus={currentMeeting.status}
-            />
+            <TranscriptSection meetingId={currentMeeting.id} />
           </div>
         )}
 
