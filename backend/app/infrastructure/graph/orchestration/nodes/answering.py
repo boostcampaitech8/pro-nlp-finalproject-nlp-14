@@ -158,6 +158,21 @@ async def generate_answer(state: OrchestrationState):
     # 스트리밍으로 응답 생성
     response_chunks = []
 
+    # tool_results가 있을 때와 없을 때 다른 입력 사용
+    if tool_results and tool_results.strip():
+        input_data = {
+            "query": query,
+            "tool_results": tool_results,
+            "additional_context": additional_context or "없음",
+            "conversation_history": conversation_history or "없음",
+        }
+    else:
+        input_data = {
+            "query": query,
+            "additional_context": additional_context or "없음",
+            "conversation_history": conversation_history or "없음",
+        }
+
     async for chunk in chain.astream(input_data):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
         response_chunks.append(chunk_text)
@@ -165,5 +180,5 @@ async def generate_answer(state: OrchestrationState):
     response_text = "".join(response_chunks)
     logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
 
-    return OrchestrationState(response=response_text)
+    return OrchestrationState(response=response_text, messages=[AIMessage(content=response_text)])
 
