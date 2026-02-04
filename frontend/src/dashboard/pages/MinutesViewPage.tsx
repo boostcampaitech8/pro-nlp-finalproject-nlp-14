@@ -5,7 +5,7 @@
  * Agenda/Decision 인라인 수정, Comments, Suggestions, ActionItems 통합
  */
 
-import { useEffect, useState, useMemo, memo } from 'react';
+import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -24,20 +24,153 @@ import {
   X,
   Lock,
   Sparkles,
+  Link2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
+import { transcriptService } from '@/services/transcriptService';
 import { useKGStore } from '@/stores/kgStore';
-import type { DecisionWithReview, AgendaWithDecisions } from '@/types';
+import type { DecisionWithReview, AgendaWithDecisions, SpanRef } from '@/types';
 
 import { UnifiedInput, CommentItem } from '../components/review/comments';
 import { SuggestionItem } from '../components/review/suggestions';
 import { ActionItemList } from '../components/review/actionitems';
 import { EditableText } from '../components/review/EditableText';
 import { PRStatusBadge } from '../components/review/PRStatusBadge';
+
+type EvidenceSource = 'agenda' | 'decision';
+
+interface EvidenceSelection {
+  source: EvidenceSource;
+  sourceId: string;
+  title: string;
+  spans: SpanRef[];
+}
+
+interface TranscriptUtterance {
+  id: string;
+  speakerName: string;
+  text: string;
+  startMs: number | null;
+  endMs: number | null;
+}
+
+interface TranscriptUtteranceRaw {
+  id: string | number;
+  speakerName?: string;
+  speaker_name?: string;
+  text?: string;
+  startMs?: number;
+  start_ms?: number;
+  endMs?: number;
+  end_ms?: number;
+}
+
+function buildEvidenceKey(source: EvidenceSource, sourceId: string): string {
+  return `${source}:${sourceId}`;
+}
+
+function normalizeTranscriptUtterances(raw: unknown): TranscriptUtterance[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item, index) => {
+    const utterance = (item || {}) as Partial<TranscriptUtteranceRaw>;
+    const startMs = utterance.startMs ?? utterance.start_ms ?? null;
+    const endMs = utterance.endMs ?? utterance.end_ms ?? null;
+    return {
+      id: String(utterance.id ?? index + 1),
+      speakerName: utterance.speakerName ?? utterance.speaker_name ?? 'Unknown',
+      text: utterance.text ?? '',
+      startMs: typeof startMs === 'number' ? startMs : null,
+      endMs: typeof endMs === 'number' ? endMs : null,
+    };
+  });
+}
+
+function formatMs(ms: number | null): string {
+  if (ms === null) return '-';
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60).toString().padStart(2, '0');
+  const sec = (totalSec % 60).toString().padStart(2, '0');
+  return `${min}:${sec}`;
+}
+
+function parseTurnLikeId(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const direct = Number(trimmed);
+  if (Number.isInteger(direct) && direct > 0) {
+    return direct;
+  }
+
+  const uttMatch = trimmed.match(/^utt-(\d+)$/);
+  if (uttMatch) {
+    const parsed = Number(uttMatch[1]);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+
+  return null;
+}
+
+function resolveSpanUtterances(span: SpanRef, utterances: TranscriptUtterance[]): TranscriptUtterance[] {
+  const startIndex = utterances.findIndex((u) => u.id === span.start_utt_id);
+  const endIndex = utterances.findIndex((u) => u.id === span.end_utt_id);
+
+  if (startIndex >= 0 && endIndex >= 0) {
+    const from = Math.min(startIndex, endIndex);
+    const to = Math.max(startIndex, endIndex);
+    return utterances.slice(from, to + 1);
+  }
+
+  // ID가 turn 번호(예: "52")로 내려온 경우 1-based index로 fallback
+  const startTurn = parseTurnLikeId(span.start_utt_id);
+  const endTurn = parseTurnLikeId(span.end_utt_id);
+  if (startTurn !== null && endTurn !== null) {
+    const from = Math.min(startTurn, endTurn) - 1;
+    const to = Math.max(startTurn, endTurn) - 1;
+    if (from >= 0 && to < utterances.length) {
+      return utterances.slice(from, to + 1);
+    }
+  }
+
+  // ID 매칭 실패 시 시간 기반 fallback
+  if (span.start_ms === null && span.end_ms === null) return [];
+  return utterances.filter((u) => {
+    if (span.start_ms !== null && u.endMs !== null && u.endMs < span.start_ms) return false;
+    if (span.end_ms !== null && u.startMs !== null && u.startMs > span.end_ms) return false;
+    return true;
+  });
+}
+
+function getSpanRefKey(span: SpanRef): string {
+  return [
+    span.transcript_id,
+    span.start_utt_id,
+    span.end_utt_id,
+    String(span.start_ms ?? ''),
+    String(span.end_ms ?? ''),
+    String(span.sub_start ?? ''),
+    String(span.sub_end ?? ''),
+  ].join('|');
+}
+
+function mergeUniqueSpans(spans: SpanRef[]): SpanRef[] {
+  const unique = new Map<string, SpanRef>();
+  spans.forEach((span) => {
+    const key = getSpanRefKey(span);
+    if (!unique.has(key)) unique.set(key, span);
+  });
+  return Array.from(unique.values());
+}
+
+function getAgendaBundledEvidence(agenda: AgendaWithDecisions): SpanRef[] {
+  const agendaEvidence = agenda.evidence || [];
+  const decisionEvidence = agenda.decisions.flatMap((decision) => decision.evidence || []);
+  return mergeUniqueSpans([...agendaEvidence, ...decisionEvidence]);
+}
 
 // Decision 상태 배지 (glassmorphism 적용)
 const DecisionStatusBadge = ({ status }: { status: string }) => {
@@ -440,15 +573,21 @@ function AgendaSection({
   meetingId,
   currentUserId,
   isReviewClosed,
+  onViewEvidence,
+  activeEvidenceKey,
 }: {
   agenda: AgendaWithDecisions;
   index: number;
   meetingId: string;
   currentUserId?: string;
   isReviewClosed: boolean;
+  onViewEvidence: (selection: EvidenceSelection) => void;
+  activeEvidenceKey: string | null;
 }) {
   const { updateAgenda, removeAgenda } = useKGStore();
   const [isDeleting, setIsDeleting] = useState(false);
+  const bundledEvidence = useMemo(() => getAgendaBundledEvidence(agenda), [agenda]);
+  const bundledEvidenceCount = bundledEvidence.length;
 
   const handleDelete = async () => {
     if (!confirm('이 안건을 삭제하시겠습니까? 하위 결정사항도 모두 삭제됩니다.')) return;
@@ -465,29 +604,54 @@ function AgendaSection({
       {/* Agenda 헤더 - 마크다운 스타일 */}
       <div className="group flex items-start gap-3 mb-4">
         <span className="text-3xl font-bold text-white/80">#{index + 1}</span>
-        <div className="flex-1">
-          <EditableText
-            value={agenda.topic}
-            onSave={async (topic) => updateAgenda(agenda.id, { topic })}
-            className="text-2xl font-bold text-white"
-          />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <EditableText
+              value={agenda.topic}
+              onSave={async (topic) => updateAgenda(agenda.id, { topic })}
+              className="text-2xl font-bold text-white"
+            />
+            <div className="flex items-center gap-2 shrink-0">
+              {bundledEvidenceCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onViewEvidence({
+                      source: 'agenda',
+                      sourceId: agenda.id,
+                      title: `Agenda 근거 · ${agenda.topic}`,
+                      spans: bundledEvidence,
+                    })
+                  }
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                    activeEvidenceKey === buildEvidenceKey('agenda', agenda.id)
+                      ? 'bg-mit-primary/30 text-mit-primary border-mit-primary/40'
+                      : 'bg-white/5 text-white/80 border-white/20 hover:bg-white/10'
+                  }`}
+                >
+                  <Link2 className="w-3 h-3" />
+                  근거 보기 ({bundledEvidenceCount})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="p-2 text-white/30 hover:text-red-400 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                title="안건 삭제"
+              >
+                {isDeleting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
           {agenda.description && (
             <p className="mt-1 text-white/80">{agenda.description}</p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="p-2 text-white/30 hover:text-red-400 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-          title="안건 삭제"
-        >
-          {isDeleting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Trash2 className="w-4 h-4" />
-          )}
-        </button>
       </div>
 
       {/* Decisions */}
@@ -525,13 +689,42 @@ export function MinutesViewPage() {
     isAllDecisionsLatest,
     reset,
   } = useKGStore();
+  const [transcriptUtterances, setTranscriptUtterances] = useState<TranscriptUtterance[]>([]);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [evidenceSelection, setEvidenceSelection] = useState<EvidenceSelection | null>(null);
 
   useEffect(() => {
+    setEvidenceSelection(null);
+    setTranscriptUtterances([]);
+    setTranscriptError(null);
     if (meetingId) {
       fetchMinutes(meetingId);
     }
     return () => reset();
   }, [meetingId, fetchMinutes, reset]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!meetingId) return undefined;
+
+    const loadTranscript = async () => {
+      try {
+        const transcript = await transcriptService.getTranscript(meetingId);
+        if (cancelled) return;
+        setTranscriptUtterances(normalizeTranscriptUtterances(transcript.utterances));
+        setTranscriptError(null);
+      } catch {
+        if (cancelled) return;
+        setTranscriptUtterances([]);
+        setTranscriptError('원문 발화를 불러오지 못했습니다.');
+      }
+    };
+
+    loadTranscript();
+    return () => {
+      cancelled = true;
+    };
+  }, [meetingId]);
 
   // Minutes SSE 구독 - 실시간 업데이트
   useEffect(() => {
@@ -569,6 +762,31 @@ export function MinutesViewPage() {
 
   // 모든 Decision이 latest 상태인지 확인 (리뷰 비활성화용)
   const isReviewClosed = useMemo(() => isAllDecisionsLatest(), [minutes]);
+  const isEvidencePanelOpen = evidenceSelection !== null;
+  const activeEvidenceKey = evidenceSelection
+    ? buildEvidenceKey(evidenceSelection.source, evidenceSelection.sourceId)
+    : null;
+
+  const handleViewEvidence = useCallback((selection: EvidenceSelection) => {
+    setEvidenceSelection((current) => {
+      if (
+        current &&
+        current.source === selection.source &&
+        current.sourceId === selection.sourceId
+      ) {
+        return null;
+      }
+      return selection;
+    });
+  }, []);
+
+  const resolvedEvidence = useMemo(() => {
+    if (!evidenceSelection) return [];
+    return evidenceSelection.spans.map((span) => ({
+      span,
+      utterances: resolveSpanUtterances(span, transcriptUtterances),
+    }));
+  }, [evidenceSelection, transcriptUtterances]);
 
   // 로딩 상태
   if (minutesLoading && !minutes) {
@@ -607,7 +825,7 @@ export function MinutesViewPage() {
     <div className="min-h-screen gradient-bg">
       {/* 헤더 */}
       <header className="sticky top-0 z-10 glass-sidebar border-b border-white/10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               to="/"
@@ -641,84 +859,144 @@ export function MinutesViewPage() {
       </header>
 
       {/* 메인 컨텐츠 */}
-      <main className="max-w-4xl mx-auto px-4 pt-8 pb-24">
+      <main className={`${isEvidencePanelOpen ? 'max-w-7xl' : 'max-w-4xl'} mx-auto px-4 pt-8 pb-24`}>
         {minutes && (
-          <>
-            {/* 제목 영역 - 마크다운 스타일 */}
-            <div className="mb-8 pb-6 border-b border-white/10">
-              <div className="flex items-center gap-2 text-sm text-white/70 mb-2">
-                <FileText className="w-4 h-4" />
-                <span>Meeting Minutes</span>
-              </div>
-              <h1 className="text-3xl font-bold text-white mb-4">
-                {minutes.agendas[0]?.decisions[0]?.meetingTitle || 'Meeting Minutes'}
-              </h1>
+          <div className={isEvidencePanelOpen ? "lg:grid lg:grid-cols-[minmax(0,1fr)_28rem] xl:grid-cols-[minmax(0,1fr)_32rem] lg:gap-8" : ""}>
+            <div>
+              {/* 제목 영역 - 마크다운 스타일 */}
+              <div className="mb-8 pb-6 border-b border-white/10">
+                <div className="flex items-center gap-2 text-sm text-white/70 mb-2">
+                  <FileText className="w-4 h-4" />
+                  <span>Meeting Minutes</span>
+                </div>
+                <h1 className="text-3xl font-bold text-white mb-4">
+                  {minutes.agendas[0]?.decisions[0]?.meetingTitle || 'Meeting Minutes'}
+                </h1>
 
-              {/* 통계 */}
-              <div className="flex items-center gap-6 text-sm text-white/80">
-                <span className="flex items-center gap-1">
-                  <ListTodo className="w-4 h-4" />
-                  {minutes.agendas.length} agendas
-                </span>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4" />
-                  {totalDecisions} decisions
-                </span>
-                <span className="flex items-center gap-1">
-                  <MessageSquare className="w-4 h-4" />
-                  {totalComments} comments
-                </span>
-              </div>
+                {/* 통계 */}
+                <div className="flex items-center gap-6 text-sm text-white/80">
+                  <span className="flex items-center gap-1">
+                    <ListTodo className="w-4 h-4" />
+                    {minutes.agendas.length} agendas
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {totalDecisions} decisions
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MessageSquare className="w-4 h-4" />
+                    {totalComments} comments
+                  </span>
+                </div>
 
-              {/* 요약 */}
-              {minutes.summary && (
-                <div className="mt-6 p-4 bg-mit-primary/10 rounded-xl border border-mit-primary/20">
-                  <h3 className="text-sm font-medium text-mit-primary mb-2">Summary</h3>
-                  <div className="prose prose-sm prose-invert max-w-none text-white/80">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {minutes.summary}
-                    </ReactMarkdown>
+                {/* 요약 */}
+                {minutes.summary && (
+                  <div className="mt-6 p-4 bg-mit-primary/10 rounded-xl border border-mit-primary/20">
+                    <h3 className="text-sm font-medium text-mit-primary mb-2">Summary</h3>
+                    <div className="prose prose-sm prose-invert max-w-none text-white/80">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {minutes.summary}
+                      </ReactMarkdown>
+                    </div>
                   </div>
-                </div>
+                )}
+              </div>
+
+              {/* Agendas */}
+              <div className="mb-12">
+                {minutes.agendas.map((agenda, index) => (
+                  <AgendaSection
+                    key={agenda.id}
+                    agenda={agenda}
+                    index={index}
+                    meetingId={minutes.meetingId}
+                    currentUserId={user?.id}
+                    isReviewClosed={isReviewClosed}
+                    onViewEvidence={handleViewEvidence}
+                    activeEvidenceKey={activeEvidenceKey}
+                  />
+                ))}
+
+                {minutes.agendas.length === 0 && (
+                  <div className="text-center py-12 text-white/80">
+                    <FileText className="w-12 h-12 mx-auto mb-3 text-white/80" />
+                    <p>등록된 안건이 없습니다</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Items 섹션 */}
+              {minutes.actionItems.length > 0 && (
+                <section className="pt-8 border-t border-white/10">
+                  <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <ListTodo className="w-5 h-5" />
+                    Action Items
+                  </h2>
+                  <ActionItemList
+                    items={minutes.actionItems}
+                    onUpdate={updateActionItem}
+                    onDelete={removeActionItem}
+                  />
+                </section>
               )}
             </div>
 
-            {/* Agendas */}
-            <div className="mb-12">
-              {minutes.agendas.map((agenda, index) => (
-                <AgendaSection
-                  key={agenda.id}
-                  agenda={agenda}
-                  index={index}
-                  meetingId={minutes.meetingId}
-                  currentUserId={user?.id}
-                  isReviewClosed={isReviewClosed}
-                />
-              ))}
-
-              {minutes.agendas.length === 0 && (
-                <div className="text-center py-12 text-white/80">
-                  <FileText className="w-12 h-12 mx-auto mb-3 text-white/80" />
-                  <p>등록된 안건이 없습니다</p>
+            {isEvidencePanelOpen && evidenceSelection && (
+            <aside className="mt-8 lg:mt-0">
+              <div className="glass-card lg:sticky lg:top-24 overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/10">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Link2 className="w-4 h-4 text-mit-primary" />
+                    SpanRef 근거 원문
+                  </h3>
+                  <p className="text-xs text-white/60 mt-1">
+                    아젠다 우측 &apos;근거 보기&apos;를 누르면 관련 발화를 확인할 수 있습니다.
+                  </p>
                 </div>
-              )}
-            </div>
 
-            {/* Action Items 섹션 */}
-            {minutes.actionItems.length > 0 && (
-              <section className="pt-8 border-t border-white/10">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <ListTodo className="w-5 h-5" />
-                  Action Items
-                </h2>
-                <ActionItemList
-                  items={minutes.actionItems}
-                  onUpdate={updateActionItem}
-                  onDelete={removeActionItem}
-                />
-              </section>
+                <div className="p-4 space-y-3 max-h-[calc(100vh-10rem)] overflow-y-auto">
+                  {transcriptError && (
+                    <div className="text-xs text-red-300 bg-red-500/15 border border-red-500/30 rounded-lg px-3 py-2">
+                      {transcriptError}
+                    </div>
+                  )}
+
+                  <>
+                    <div className="text-sm text-white font-medium">{evidenceSelection.title}</div>
+                    <div className="text-xs text-white/60">
+                      SpanRef {evidenceSelection.spans.length}개
+                    </div>
+
+                    {resolvedEvidence.map((entry, index) => (
+                      <div
+                        key={`${entry.span.start_utt_id}-${entry.span.end_utt_id}-${index}`}
+                        className="rounded-lg border border-white/15 bg-white/5"
+                      >
+                        <div className="px-3 py-2 border-b border-white/10 text-xs text-white/70">
+                          <div>{entry.span.start_utt_id} → {entry.span.end_utt_id}</div>
+                          <div>
+                            {formatMs(entry.span.start_ms ?? entry.utterances[0]?.startMs ?? null)} ~ {formatMs(entry.span.end_ms ?? entry.utterances[entry.utterances.length - 1]?.endMs ?? null)}
+                          </div>
+                        </div>
+                        <div className="px-3 py-2 space-y-2">
+                          {entry.utterances.length === 0 && (
+                            <p className="text-xs text-white/50 italic">원문 발화를 찾지 못했습니다.</p>
+                          )}
+                          {entry.utterances.map((utt) => (
+                            <div key={utt.id} className="text-sm">
+                              <p className="text-xs text-mit-primary mb-0.5">{utt.speakerName}</p>
+                              <p className="text-white/80 leading-relaxed">{utt.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                </div>
+              </div>
+            </aside>
             )}
-          </>
+          </div>
         )}
       </main>
     </div>

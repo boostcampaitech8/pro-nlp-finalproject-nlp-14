@@ -47,6 +47,18 @@ export interface DecisionHistoryItem {
   createdAt: string;
 }
 
+export interface SpanRef {
+  transcript_id: string;
+  start_utt_id: string;
+  end_utt_id: string;
+  sub_start: number | null;
+  sub_end: number | null;
+  start_ms: number | null;
+  end_ms: number | null;
+  topic_id: string | null;
+  topic_name: string | null;
+}
+
 // === Comment Types ===
 
 export interface Comment {
@@ -117,6 +129,7 @@ export interface DecisionWithReview {
   id: string;
   content: string;
   context: string | null;
+  evidence: SpanRef[];
   status: DecisionStatus;
   meetingId: string | null;
   agendaTopic: string | null;
@@ -140,6 +153,7 @@ export interface AgendaWithDecisions {
   topic: string;
   description: string | null;
   order: number;
+  evidence: SpanRef[];
   decisions: DecisionWithReview[];
 }
 

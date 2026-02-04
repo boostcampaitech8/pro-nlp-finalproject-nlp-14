@@ -64,6 +64,7 @@ export type {
 // KG CRUD types (local)
 export type {
   UserBrief,
+  SpanRef,
   DecisionBrief,
   Comment,
   CreateCommentRequest,
