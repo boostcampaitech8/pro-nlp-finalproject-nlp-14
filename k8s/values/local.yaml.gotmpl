@@ -69,6 +69,7 @@ livekit:
     tcpPort: 7881
     portRangeStart: 50000
     portRangeEnd: 50020
+  nodeSelector: {}
 
 # JWT - Secret, ConfigMap에서 공유
 jwt:
@@ -161,3 +162,7 @@ observability:
 # Cloudflare Tunnel (로컬에서는 비활성화)
 cloudflare:
   enabled: false
+
+# Node Selector (로컬에서는 비활성화)
+redisNodeSelector: {}
+statefulNodeSelector: {}

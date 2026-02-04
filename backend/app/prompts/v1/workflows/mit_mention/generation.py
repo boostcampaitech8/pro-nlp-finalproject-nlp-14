@@ -127,9 +127,15 @@ MENTION_RESPONSE_PROMPT = ChatPromptTemplate.from_messages([
 
 {{history_section}}
 
+{{search_section}}
+
 {{retry_section}}
 
 위 정보를 바탕으로 사용자 질문에 답변해 주세요.
-마크다운 형식을 활용하여 구조화된 답변을 작성하세요."""),
+마크다운 형식을 활용하여 구조화된 답변을 작성하세요.
+
+**참고사항**
+- [관련 지식] 섹션이 있다면 추가 정보로 활용하되, 현재 결정사항과의 연관성을 명확히 설명하세요.
+- 검색된 정보가 질문과 직접적 관련이 없다면 무시하고 현재 컨텍스트만 사용하세요."""),
     ("human", "{user_question}"),
 ])

@@ -302,15 +302,43 @@ def get_decision_generator_llm() -> ChatClovaX:
 def get_mention_generator_llm() -> ChatClovaX:
     """멘션 응답 생성 LLM (자연스러운 대화체).
 
+    Model: HCX-007
+    Use Case: @mit 멘션에 대한 사용자 대면 답변 생성
     temperature: 0.6 (자연스러운 대화)
-    max_tokens: 512 (응답 길이 제한)
+    max_tokens: 2048 (충분한 설명 + 컨텍스트 반영)
+
+    Why 2048?
+    - 사용자 대면 응답이므로 answer_generator와 동일 수준
+    - 복잡한 Decision 배경 설명 시 충분한 길이 필요
+    - Validator 제한(2000 chars)보다 여유있게 설정
     """
     return ChatClovaX(
         model="HCX-007",
         temperature=0.6,
-        max_tokens=512,
+        max_tokens=2048,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
+    )
+
+
+def get_search_router_llm() -> ChatClovaX:
+    """멘션 검색 라우터 LLM (검색 필요 여부 판단).
+
+    Model: HCX-DASH-002
+    Use Case: 멘션 질문이 지식 그래프 검색이 필요한지 빠르게 판단
+    temperature: 0.0 (일관된 분류)
+    max_tokens: 256 (짧은 응답)
+
+    Why HCX-DASH-002?
+    - 빠른 응답 속도 (실시간 라우팅)
+    - 비용 효율성 (모든 멘션에서 실행)
+    - 간단한 분류 작업에 충분한 성능
+    """
+    return ChatClovaX(
+        model="HCX-DASH-002",
+        temperature=0.0,
+        max_tokens=256,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
     )
 
 

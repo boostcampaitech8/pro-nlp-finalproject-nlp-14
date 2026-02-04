@@ -36,3 +36,8 @@ class MitMentionState(TypedDict, total=False):
 
     # 출력 필드
     mit_mention_response: Annotated[str | None, "최종 AI 응답"]
+
+    # 지식 그래프 검색 필드
+    mit_mention_needs_search: Annotated[bool, "KG 검색 필요 여부"]
+    mit_mention_search_query: Annotated[str | None, "검색 쿼리 (추출된)"]
+    mit_mention_search_results: Annotated[list[dict] | None, "KG 검색 결과"]
