@@ -15,6 +15,10 @@ class OrchestrationState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     user_id: Annotated[str, "user_id"]
 
+    # Simple Query Routing 관련
+    is_simple_query: NotRequired[bool]  # 간단한 쿼리 여부
+    simple_router_output: NotRequired[dict]  # 라우터 분석 결과 (category, confidence, reasoning)
+
     # Planning 관련
     plan: Annotated[str, "current plan"]  # 현재 계획
     need_tools: Annotated[bool, "tools needed"]  # 도구 필요 여부

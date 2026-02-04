@@ -23,9 +23,18 @@ from .nodes.answering import generate_answer
 from .nodes.evaluation import evaluate_result
 from .nodes.mit_tools import execute_mit_tools
 from .nodes.planning import create_plan
+from .nodes.simple_router import route_simple_query
 from .state import OrchestrationState
 
 logger = logging.getLogger(__name__)
+
+# Simple Router 후 라우팅: 간단한 쿼리면 generator로, 복잡하면 planner로
+def route_after_simple_check(state: OrchestrationState) -> str:
+    """간단한 쿼리 여부에 따라 라우팅"""
+    if state.get("is_simple_query", False):
+        return "generator"  # 간단한 쿼리면 직접 응답 생성
+    return "planner"  # 복잡한 쿼리면 계획 수립
+
 
 # Planning -> 도구 필요 여부에 따라 라우팅
 def route_by_tool_need(state: OrchestrationState) -> str:
@@ -53,13 +62,21 @@ def build_orchestration_workflow() -> StateGraph:
     workflow = StateGraph(OrchestrationState)
 
     # 노드 등록
+    workflow.add_node("simple_router", route_simple_query)  # 새로운 라우터 노드
     workflow.add_node("planner", create_plan)
     workflow.add_node("mit_tools", execute_mit_tools)
     workflow.add_node("evaluator", evaluate_result)
     workflow.add_node("generator", generate_answer)
 
     # 엣지 연결
-    workflow.set_entry_point("planner")
+    workflow.set_entry_point("simple_router")  # Simple Router로 시작
+
+    # Simple Router -> 조건부 라우팅
+    workflow.add_conditional_edges(
+        "simple_router",
+        route_after_simple_check,
+        {"generator": "generator", "planner": "planner"},
+    )
 
     # Planning -> 도구 필요 여부에 따라 라우팅
     workflow.add_conditional_edges(

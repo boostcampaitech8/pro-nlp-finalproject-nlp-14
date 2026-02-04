@@ -9,6 +9,7 @@ from app.infrastructure.graph.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
+
 class PlanningOutput(BaseModel):
     plan: str = Field(description="사용자의 질문을 해결하기 위한 단계별 계획")
     need_tools: bool = Field(description="검색이나 추가 정보가 필요하면 True, 아니면 False")
