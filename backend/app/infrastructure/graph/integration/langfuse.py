@@ -1,10 +1,34 @@
 """Langfuse LLM Observability 통합."""
 
+from functools import lru_cache
 from typing import Optional
 
+from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
+from opentelemetry.sdk.trace import TracerProvider
 
 from app.core.config import get_settings
+
+
+@lru_cache
+def _initialize_langfuse_client() -> None:
+    """Langfuse 클라이언트를 한 번만 초기화."""
+    settings = get_settings()
+
+    if not settings.langfuse_tracing_enabled:
+        return
+
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        return
+
+    # 전역 OTel Provider와 분리하여 과도한 OTel span이 Langfuse로 전송되지 않도록 함
+    Langfuse(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        base_url=settings.langfuse_base_url,
+        tracing_enabled=settings.langfuse_tracing_enabled,
+        tracer_provider=TracerProvider(),
+    )
 
 
 def get_runnable_config(
@@ -33,11 +57,13 @@ def get_runnable_config(
     """
     settings = get_settings()
 
-    if not settings.langfuse_enabled:
+    if not settings.langfuse_tracing_enabled:
         return {}
 
     if not settings.langfuse_public_key or not settings.langfuse_secret_key:
         return {}
+
+    _initialize_langfuse_client()
 
     langfuse_metadata = {
         **({"langfuse_user_id": user_id} if user_id else {}),
@@ -46,7 +72,7 @@ def get_runnable_config(
     }
 
     return {
-        "callbacks": [CallbackHandler()],
+        "callbacks": [CallbackHandler(public_key=settings.langfuse_public_key)],
         **({"run_name": trace_name} if trace_name else {}),
         **({"metadata": langfuse_metadata} if langfuse_metadata else {}),
     }

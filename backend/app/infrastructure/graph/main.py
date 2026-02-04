@@ -16,8 +16,10 @@ async def main():
 
     os.environ['LANGFUSE_PUBLIC_KEY'] = settings.langfuse_public_key
     os.environ['LANGFUSE_SECRET_KEY'] = settings.langfuse_secret_key
-    os.environ['LANGFUSE_HOST'] = settings.langfuse_host
-    os.environ["LANGFUSE_ENABLED"] = "true" if settings.langfuse_enabled else "false"
+    os.environ['LANGFUSE_BASE_URL'] = settings.langfuse_base_url
+    os.environ["LANGFUSE_TRACING_ENABLED"] = (
+        "true" if settings.langfuse_tracing_enabled else "false"
+    )
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--query", type=str, default=None)
