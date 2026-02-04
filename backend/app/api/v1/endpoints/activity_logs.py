@@ -32,6 +32,7 @@ class ActivityEventInput(BaseModel):
 class ActivityLogBatchInput(BaseModel):
     """활동 로그 배치 입력"""
     session_id: str = Field(..., max_length=64)
+    user_id: str | None = Field(None, description="로그인된 사용자 ID (JWT에서 추출)")
     events: list[ActivityEventInput] = Field(..., max_length=100)
 
 
@@ -68,8 +69,8 @@ async def create_activity_logs(
 
     프론트엔드에서 수집한 사용자 활동 이벤트를 배치로 저장합니다.
     """
-    # Get user_id from JWT if authenticated
-    user_id = getattr(request.state, "user_id", None)
+    # Get user_id from request body (frontend extracts from JWT)
+    user_id = UUID(data.user_id) if data.user_id else None
 
     # Get client info
     user_agent = request.headers.get("user-agent", "")[:512]

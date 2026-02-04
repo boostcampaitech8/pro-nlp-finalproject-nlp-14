@@ -8,6 +8,21 @@ interface ActivityEvent {
   timestamp: string;
 }
 
+/**
+ * JWT 토큰에서 user_id (sub claim) 추출
+ */
+function getUserIdFromToken(): string | null {
+  const token = localStorage.getItem('accessToken');
+  if (!token) return null;
+
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.sub || null;
+  } catch {
+    return null;
+  }
+}
+
 class AnalyticsService {
   private queue: ActivityEvent[] = [];
   private sessionId: string = '';
@@ -188,6 +203,7 @@ class AnalyticsService {
     try {
       await api.post('/logs/activity', {
         session_id: this.sessionId,
+        user_id: getUserIdFromToken(),
         events,
       });
     } catch (error) {
