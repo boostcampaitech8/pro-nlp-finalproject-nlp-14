@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { HISTORY_LIMIT } from '@/app/constants';
 import type { ActiveCommand, ChatMessage, HistoryItem, Suggestion } from '@/app/types/command';
+import { spotlightApi, SpotlightSession } from '@/app/services/spotlightApi';
 
 interface CommandState {
   // 상태
@@ -16,6 +17,13 @@ interface CommandState {
   isChatMode: boolean;
   chatMessages: ChatMessage[];
   isStreaming: boolean;
+  statusMessage: string | null; // 현재 상태 메시지 (회색 텍스트로 표시)
+
+  // 세션 상태
+  currentSessionId: string | null;
+  sessions: SpotlightSession[];
+  sessionsLoading: boolean;
+  messagesLoading: boolean;
 
   // Actions
   setInputValue: (value: string) => void;
@@ -32,8 +40,21 @@ interface CommandState {
   enterChatMode: () => void;
   exitChatMode: () => void;
   addChatMessage: (msg: ChatMessage) => void;
-  updateChatMessage: (id: string, updates: Partial<ChatMessage>) => void;
+  updateChatMessage: (
+    id: string,
+    updates: Partial<Omit<ChatMessage, 'content'>> & { content?: string | ((prev: string) => string) }
+  ) => void;
   setStreaming: (streaming: boolean) => void;
+  setStatusMessage: (message: string | null) => void;
+
+  // 세션 Actions
+  setCurrentSession: (id: string | null) => void;
+  loadSessionMessages: (id: string) => Promise<void>;
+  setSessions: (sessions: SpotlightSession[]) => void;
+  addSession: (session: SpotlightSession) => void;
+  removeSession: (id: string) => void;
+  loadSessions: () => Promise<void>;
+  createNewSession: () => Promise<SpotlightSession | null>;
 }
 
 export const useCommandStore = create<CommandState>((set) => ({
@@ -49,6 +70,13 @@ export const useCommandStore = create<CommandState>((set) => ({
   isChatMode: false,
   chatMessages: [],
   isStreaming: false,
+  statusMessage: null,
+
+  // 세션 초기 상태
+  currentSessionId: null,
+  sessions: [],
+  sessionsLoading: false,
+  messagesLoading: false,
 
   // Actions
   setInputValue: (value) => set({ inputValue: value }),
@@ -93,10 +121,83 @@ export const useCommandStore = create<CommandState>((set) => ({
 
   updateChatMessage: (id, updates) =>
     set((state) => ({
-      chatMessages: state.chatMessages.map((msg) =>
-        msg.id === id ? { ...msg, ...updates } : msg
-      ),
+      chatMessages: state.chatMessages.map((msg): ChatMessage => {
+        if (msg.id !== id) return msg;
+
+        // Handle content update with function
+        if ('content' in updates && typeof updates.content === 'function') {
+          const contentUpdater = updates.content;
+          return {
+            ...msg,
+            content: contentUpdater(msg.content),
+          };
+        }
+
+        return { ...msg, ...updates } as ChatMessage;
+      }),
     })),
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
+
+  setStatusMessage: (message) => set({ statusMessage: message }),
+
+  // 세션 Actions
+  setCurrentSession: (id) => {
+    set({ currentSessionId: id, chatMessages: [] });
+  },
+
+  loadSessionMessages: async (id) => {
+    set({ messagesLoading: true });
+    try {
+      const messages = await spotlightApi.getSessionMessages(id);
+      const chatMessages = messages.map((msg, index) => ({
+        id: `history-${id}-${index}`,
+        role: msg.role === 'user' ? 'user' : 'agent',
+        content: msg.content,
+        timestamp: new Date(),
+      })) as ChatMessage[];
+      set({ chatMessages, messagesLoading: false });
+    } catch (error) {
+      console.error('Failed to load session messages:', error);
+      set({ messagesLoading: false });
+    }
+  },
+
+  setSessions: (sessions) => set({ sessions }),
+
+  addSession: (session) =>
+    set((state) => ({ sessions: [session, ...state.sessions] })),
+
+  removeSession: (id) =>
+    set((state) => ({
+      sessions: state.sessions.filter((s) => s.id !== id),
+      currentSessionId: state.currentSessionId === id ? null : state.currentSessionId,
+    })),
+
+  loadSessions: async () => {
+    set({ sessionsLoading: true });
+    try {
+      const sessions = await spotlightApi.listSessions();
+      set({ sessions, sessionsLoading: false });
+    } catch (error) {
+      console.error('Failed to load sessions:', error);
+      set({ sessionsLoading: false });
+    }
+  },
+
+  createNewSession: async () => {
+    try {
+      const session = await spotlightApi.createSession();
+      set((state) => ({
+        sessions: [session, ...state.sessions],
+        currentSessionId: session.id,
+        chatMessages: [],
+        isChatMode: true,
+      }));
+      return session;
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      return null;
+    }
+  },
 }));
