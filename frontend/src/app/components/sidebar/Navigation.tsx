@@ -10,10 +10,12 @@ import {
   Users,
   Plus,
   ChevronRight,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTeamStore } from '@/stores/teamStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
+import { useAuth } from '@/hooks/useAuth';
 import { ScrollArea } from '@/app/components/ui';
 
 interface NavItem {
@@ -44,6 +46,7 @@ export function Navigation() {
   const location = useLocation();
   const { teams, fetchTeams, teamsLoading } = useTeamStore();
   const { openModal: openMeetingModal } = useMeetingModalStore();
+  const { logout, isLoading: authLoading } = useAuth();
 
   // 팀 목록 로드
   useEffect(() => {
@@ -141,6 +144,21 @@ export function Navigation() {
       <div className="mt-4 space-y-1 pt-4 border-t border-white/5">
         <SectionTitle>System</SectionTitle>
         {bottomNavItems.map(renderNavItem)}
+      </div>
+
+      {/* 로그아웃 버튼 */}
+      <div className="mt-4 pt-4 border-t border-white/5">
+        <button
+          onClick={logout}
+          disabled={authLoading}
+          className={cn(
+            'nav-item w-full',
+            authLoading && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          <LogOut className="w-[18px] h-[18px]" />
+          <span className="text-[14px]">Logout</span>
+        </button>
       </div>
     </div>
   );
