@@ -10,11 +10,17 @@ import {
   Users,
   Plus,
   ChevronRight,
+  MessageSquare,
+  Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTeamStore } from '@/stores/teamStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
+import { useCommandStore } from '@/app/stores/commandStore';
+import { spotlightApi } from '@/app/services/spotlightApi';
 import { ScrollArea } from '@/app/components/ui';
+import { formatRelativeTime } from '@/app/utils/dateUtils';
 
 interface NavItem {
   id: string;
@@ -44,6 +50,17 @@ export function Navigation() {
   const location = useLocation();
   const { teams, fetchTeams, teamsLoading } = useTeamStore();
   const { openModal: openMeetingModal } = useMeetingModalStore();
+  const {
+    sessions,
+    sessionsLoading,
+    currentSessionId,
+    setCurrentSession,
+    loadSessionMessages,
+    removeSession,
+    loadSessions,
+    createNewSession,
+    enterChatMode,
+  } = useCommandStore();
 
   // 팀 목록 로드
   useEffect(() => {
@@ -51,6 +68,11 @@ export function Navigation() {
       fetchTeams();
     }
   }, [teams.length, fetchTeams]);
+
+  // Spotlight 세션 목록 로드
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   const renderNavItem = (item: NavItem) => {
     const isActive = location.pathname === item.href;
@@ -76,6 +98,29 @@ export function Navigation() {
 
   const handleNewMeeting = () => {
     openMeetingModal();
+  };
+
+  const handleNewSpotlightSession = async () => {
+    const session = await createNewSession();
+    if (session) {
+      enterChatMode();
+    }
+  };
+
+  const handleSpotlightSessionClick = async (sessionId: string) => {
+    setCurrentSession(sessionId);
+    enterChatMode();
+    await loadSessionMessages(sessionId);
+  };
+
+  const handleDeleteSpotlightSession = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    try {
+      await spotlightApi.deleteSession(sessionId);
+      removeSession(sessionId);
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+    }
   };
 
   return (
@@ -135,6 +180,63 @@ export function Navigation() {
             )}
           </div>
         </ScrollArea>
+      </div>
+
+      {/* Spotlight 세션 섹션 */}
+      <div className="mt-4 pt-4 border-t border-white/5">
+        <div className="flex items-center justify-between px-3 mb-2">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-mit-primary" />
+            <p className="text-nav-title">Spotlight</p>
+          </div>
+          <button
+            onClick={handleNewSpotlightSession}
+            className="w-5 h-5 rounded flex items-center justify-center text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+            title="새 대화 시작"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="space-y-0.5">
+          {sessionsLoading ? (
+            <div className="px-3 py-2 text-white/30 text-sm">Loading...</div>
+          ) : sessions.length === 0 ? (
+            <button
+              onClick={handleNewSpotlightSession}
+              className="w-full px-3 py-2 text-white/50 text-sm hover:text-white/70 text-left"
+            >
+              새 대화 시작하기
+            </button>
+          ) : (
+            sessions.slice(0, 5).map((session) => (
+              <div
+                key={session.id}
+                onClick={() => handleSpotlightSessionClick(session.id)}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer group',
+                  currentSessionId === session.id
+                    ? 'bg-white/10 text-white'
+                    : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+                )}
+              >
+                <MessageSquare className="w-4 h-4 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="truncate block">{session.title}</span>
+                  <span className="text-[10px] text-white/40">
+                    {formatRelativeTime(new Date(session.updated_at))}
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => handleDeleteSpotlightSession(e, session.id)}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded transition-all"
+                >
+                  <Trash2 className="w-3 h-3 text-white/40 hover:text-red-400" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* 하단 네비게이션 */}

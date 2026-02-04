@@ -1,13 +1,14 @@
 // 명령 처리 훅
 import { useCallback } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
-import { agentService } from '@/app/services/agentService';
+import { spotlightApi, type SSEEvent } from '@/app/services/spotlightApi';
 import type { ChatMessage } from '@/app/types/command';
 
 export function useCommand() {
   const {
     inputValue,
     isChatMode,
+    currentSessionId,
     setInputValue,
     setProcessing,
     enterChatMode,
@@ -15,11 +16,31 @@ export function useCommand() {
     addChatMessage,
     updateChatMessage,
     setStreaming,
+    setStatusMessage,
+    createNewSession,
   } = useCommandStore();
 
-  // 채팅 메시지 전송 (후속 대화용 - 항상 text 응답)
+  // 채팅 메시지 전송 (세션 기반 SSE 스트림)
   const sendChatMessage = useCallback(
     async (text: string) => {
+      // 세션이 없으면 새로 생성
+      let sessionId = currentSessionId;
+      if (!sessionId) {
+        const session = await createNewSession();
+        if (!session) {
+          // 세션 생성 실패
+          const errorMsg: ChatMessage = {
+            id: `chat-${Date.now()}-error`,
+            role: 'agent',
+            content: '세션 생성에 실패했습니다. 다시 시도해주세요.',
+            timestamp: new Date(),
+          };
+          addChatMessage(errorMsg);
+          return;
+        }
+        sessionId = session.id;
+      }
+
       // 사용자 메시지 추가
       const userMsg: ChatMessage = {
         id: `chat-${Date.now()}`,
@@ -29,36 +50,53 @@ export function useCommand() {
       };
       addChatMessage(userMsg);
 
-      // 에이전트 응답 요청
+      // 에이전트 응답 placeholder
+      const agentMsgId = `chat-${Date.now()}-agent`;
+      const agentMsg: ChatMessage = {
+        id: agentMsgId,
+        role: 'agent',
+        type: 'text',
+        content: '',
+        timestamp: new Date(),
+      };
+      setStreaming(true);
+      addChatMessage(agentMsg);
+
+      // SSE 스트림 시작
       try {
-        const response = await agentService.processChatMessage(text);
-        const agentMsg: ChatMessage = {
-          id: `chat-${Date.now()}-agent`,
-          role: 'agent',
-          type: response.type,
-          content: response.message,
-          timestamp: new Date(),
-        };
-        setStreaming(true);
-        addChatMessage(agentMsg);
-        // 응답 완료 후 스트리밍 종료
+        await spotlightApi.chatStreamWithRetry(sessionId, text, (event: SSEEvent) => {
+          if (event.type === 'message' && event.data) {
+            // 토큰 수신 시 상태 메시지 즉시 제거 + 토큰 누적
+            setStatusMessage(null);
+            updateChatMessage(agentMsgId, {
+              content: (prev: string) => prev + event.data,
+            });
+          } else if (event.type === 'status' && event.data) {
+            // 상태 메시지 (회색 텍스트로 덮어쓰기)
+            setStatusMessage(event.data);
+          } else if (event.type === 'done') {
+            setStatusMessage(null); // 완료 시 상태 메시지 제거
+            setStreaming(false);
+          } else if (event.type === 'error') {
+            setStatusMessage(null); // 에러 시 상태 메시지 제거
+            updateChatMessage(agentMsgId, {
+              content: event.error || '응답 처리 중 오류가 발생했습니다.',
+            });
+            setStreaming(false);
+          }
+        });
+      } catch (error) {
+        setStatusMessage(null);
         setStreaming(false);
-      } catch {
-        const errorMsg: ChatMessage = {
-          id: `chat-${Date.now()}-error`,
-          role: 'agent',
+        updateChatMessage(agentMsgId, {
           content: '응답 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
-          timestamp: new Date(),
-        };
-        setStreaming(true);
-        addChatMessage(errorMsg);
-        setStreaming(false);
+        });
       }
     },
-    [addChatMessage, setStreaming]
+    [currentSessionId, createNewSession, addChatMessage, updateChatMessage, setStreaming, setStatusMessage]
   );
 
-  // 명령 제출 (항상 채팅 모드 진입)
+  // 명령 제출 (항상 Spotlight API 사용)
   const submitCommand = useCallback(
     async (command?: string) => {
       const cmd = command || inputValue;
@@ -72,63 +110,12 @@ export function useCommand() {
         return;
       }
 
-      // 채팅 모드 진입
+      // 채팅 모드 진입 후 첫 메시지도 Spotlight API로 전송
       setProcessing(true);
+      enterChatMode();
 
       try {
-        enterChatMode();
-
-        // 사용자 메시지 추가
-        const userMsg: ChatMessage = {
-          id: `chat-${Date.now()}`,
-          role: 'user',
-          content: cmd,
-          timestamp: new Date(),
-        };
-        addChatMessage(userMsg);
-
-        // 명령 처리 (text 또는 plan 응답)
-        const response = await agentService.processCommand(cmd);
-
-        // text 타입이면서 '채팅 모드로 전환합니다' 응답인 경우, 실제 채팅 응답을 요청
-        if (response.type === 'text' && response.message === '채팅 모드로 전환합니다.') {
-          const chatResponse = await agentService.processChatMessage(cmd);
-          const agentMsg: ChatMessage = {
-            id: `chat-${Date.now()}-agent`,
-            role: 'agent',
-            type: chatResponse.type,
-            content: chatResponse.message,
-            timestamp: new Date(),
-          };
-          setStreaming(true);
-          addChatMessage(agentMsg);
-          // 응답 완료 후 스트리밍 종료
-          setStreaming(false);
-        } else {
-          // text 또는 plan 응답 추가
-          const agentMsg: ChatMessage = {
-            id: `chat-${Date.now()}-agent`,
-            role: 'agent',
-            type: response.type,
-            content: response.message,
-            timestamp: new Date(),
-          };
-          setStreaming(true);
-          addChatMessage(agentMsg);
-          // 응답 완료 후 스트리밍 종료
-          setStreaming(false);
-        }
-      } catch (error) {
-        const errorMsg: ChatMessage = {
-          id: `chat-${Date.now()}-error`,
-          role: 'agent',
-          content: '명령 처리 중 오류가 발생했습니다.',
-          timestamp: new Date(),
-        };
-        setStreaming(true);
-        addChatMessage(errorMsg);
-        setStreaming(false);
-        console.error('Command processing error:', error);
+        await sendChatMessage(cmd);
       } finally {
         setProcessing(false);
       }
@@ -139,54 +126,20 @@ export function useCommand() {
       setInputValue,
       setProcessing,
       enterChatMode,
-      addChatMessage,
-      setStreaming,
       sendChatMessage,
     ]
   );
 
-  // Plan 승인
+  // Plan 승인 (Spotlight API로 전송)
   const approvePlan = useCallback(
     async (messageId: string) => {
       // plan 메시지를 승인 상태로 업데이트
       updateChatMessage(messageId, { approved: true });
 
-      // 승인 메시지 추가
-      const userMsg: ChatMessage = {
-        id: `chat-${Date.now()}-approve`,
-        role: 'user',
-        content: '승인합니다',
-        timestamp: new Date(),
-      };
-      addChatMessage(userMsg);
-
-      // 승인 결과 응답 요청
-      try {
-        const response = await agentService.processChatMessage('승인합니다');
-        const agentMsg: ChatMessage = {
-          id: `chat-${Date.now()}-approve-result`,
-          role: 'agent',
-          type: response.type,
-          content: response.message,
-          timestamp: new Date(),
-        };
-        setStreaming(true);
-        addChatMessage(agentMsg);
-        // 응답 완료 후 스트리밍 종료
-        setStreaming(false);
-      } catch {
-        const errorMsg: ChatMessage = {
-          id: `chat-${Date.now()}-approve-error`,
-          role: 'agent',
-          content: '승인 처리 중 오류가 발생했습니다.',
-          timestamp: new Date(),
-        };
-        setStreaming(true);
-        addChatMessage(errorMsg);
-        setStreaming(false);
-      }
+      // 승인 메시지를 Spotlight API로 전송
+      await sendChatMessage('승인합니다');
     },
-    [updateChatMessage, addChatMessage, setStreaming]
+    [updateChatMessage, sendChatMessage]
   );
 
   return {
