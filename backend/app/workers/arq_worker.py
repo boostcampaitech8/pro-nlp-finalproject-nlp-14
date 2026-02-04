@@ -123,6 +123,16 @@ async def generate_pr_task(
                 {
                     "generate_pr_meeting_id": meeting_id,
                     "generate_pr_transcript_text": transcript_response.full_text,
+                    "generate_pr_transcript_utterances": [
+                        {
+                            "id": str(utterance.id),
+                            "speaker_name": utterance.speaker_name,
+                            "text": utterance.text,
+                            "start_ms": utterance.start_ms,
+                            "end_ms": utterance.end_ms,
+                        }
+                        for utterance in transcript_response.utterances
+                    ],
                     "generate_pr_realtime_topics": realtime_topics or [],
                 },
                 config=get_runnable_config(
