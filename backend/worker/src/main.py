@@ -107,6 +107,7 @@ class RealtimeWorker:
         )
 
         self._is_running = False
+        self._stop_event = asyncio.Event()
         self._meeting_start_time: datetime | None = None
 
         # Agent 호출용 이전 transcript ID
@@ -170,21 +171,18 @@ class RealtimeWorker:
         logger.info(f"Realtime Worker 종료: meeting={self.meeting_id}")
 
     async def run_forever(self) -> None:
-        """무한 실행 (시그널 대기)"""
+        """무한 실행 (시그널 또는 완료 이벤트 대기)"""
         await self.start()
-
-        # 종료 시그널 대기
-        stop_event = asyncio.Event()
 
         def signal_handler():
             logger.info("종료 시그널 수신")
-            stop_event.set()
+            self._stop_event.set()
 
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, signal_handler)
 
-        await stop_event.wait()
+        await self._stop_event.wait()
         await self.stop()
 
     def _on_participant_joined(self, user_id: str, participant_name: str) -> None:
@@ -230,8 +228,13 @@ class RealtimeWorker:
         return len(self._stt_clients) == 0
 
     async def _complete_meeting(self) -> None:
-        """Backend에 회의 완료 요청"""
+        """회의 완료 처리: transcript flush 대기 → POST /complete → graceful shutdown"""
         try:
+            # 1) 마지막 transcript 전송 완료 대기
+            logger.info("마지막 transcript 플러시 대기 (5초)...")
+            await asyncio.sleep(5)
+
+            # 2) Backend에 회의 완료 요청
             success = await self.api_client.complete_meeting(self.meeting_id)
             if success:
                 logger.info("Meeting completed successfully by worker")
@@ -239,6 +242,11 @@ class RealtimeWorker:
                 logger.error("Failed to complete meeting")
         except Exception as e:
             logger.exception(f"Error completing meeting: {e}")
+        finally:
+            # 3) 성공/실패 무관하게 graceful shutdown 트리거
+            #    run_forever() → self.stop() → bot.disconnect() → process exit
+            logger.info("Graceful shutdown 시작")
+            self._stop_event.set()
 
     def _on_vad_event(self, user_id: str, event_type: str, payload: dict) -> None:
         """VAD 이벤트 수신 처리"""

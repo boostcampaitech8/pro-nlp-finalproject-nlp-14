@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Annotated
@@ -12,7 +11,6 @@ from app.api.dependencies import get_arq_pool, get_current_user
 from app.core.database import get_db
 from app.core.neo4j_sync import neo4j_sync
 from app.core.settings import get_settings
-from app.infrastructure.worker_manager import get_worker_manager
 from app.models.meeting import Meeting, MeetingStatus
 from app.models.user import User
 from app.schemas import ErrorResponse
@@ -261,11 +259,7 @@ async def complete_meeting_by_worker(
         meeting.created_at,
     )
 
-    # Worker의 마지막 transcript 전송 대기 (Grace Period)
-    logger.info(f"Waiting 3 seconds for final transcripts: meeting={meeting.id}")
-    await asyncio.sleep(3)
-
-    # PR 생성 태스크 큐잉 (트랜스크립트 확인 후)
+    # PR 생성 태스크 큐잉 (트랜스크립트 확인 후 — Worker가 이미 5초 대기 완료)
     try:
         transcript_service = TranscriptService(db)
         transcript_response = await transcript_service.get_meeting_transcripts(
@@ -288,17 +282,5 @@ async def complete_meeting_by_worker(
     except Exception as e:
         logger.error(f"Failed to enqueue PR task: {e}")
 
-    # Worker Job 삭제 (백그라운드로 실행하여 응답 먼저 보내기)
-    async def delete_worker_job():
-        try:
-            worker_manager = get_worker_manager()
-            worker_id = f"realtime-worker-meeting-{meeting_id}"
-            await worker_manager.stop_worker(worker_id)
-            logger.info(f"Worker job deleted: {worker_id}")
-        except Exception as e:
-            logger.error(f"Failed to delete worker job: {e}")
-
-    # 백그라운드 태스크로 실행
-    asyncio.create_task(delete_worker_job())
-
+    # Job 삭제는 room_finished 웹훅에서 처리
     return {"status": "completed", "meeting_id": str(meeting.id)}

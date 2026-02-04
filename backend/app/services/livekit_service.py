@@ -26,7 +26,7 @@ class LiveKitService:
         self._api_secret = settings.livekit_api_secret
         self._ws_url = settings.livekit_ws_url
         self._external_url = settings.livekit_external_url
-        self._empty_timeout = int(os.getenv("LIVEKIT_EMPTY_TIMEOUT", "5"))
+        self._empty_timeout = int(os.getenv("LIVEKIT_EMPTY_TIMEOUT", "0"))
 
     @property
     def is_configured(self) -> bool:
