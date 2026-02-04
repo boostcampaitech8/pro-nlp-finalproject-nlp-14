@@ -25,6 +25,10 @@ class OrchestrationState(TypedDict):
     tool_results: Annotated[str, operator.add]  # mit-Tools 실행 결과 (누적) - mit_search 결과 포함
     retry_count: Annotated[int, "retry count"]  # 재시도 횟수
 
+    # MIT Search 의도 분석 결과 (event streaming용)
+    mit_search_primary_entity: NotRequired[str]  # 검색 대상 엔티티
+    mit_search_query_intent: NotRequired[dict]  # 전체 의도 분석 결과
+
     # Evaluation 관련
     evaluation: Annotated[str, "evaluation result"]  # 평가 내용
     evaluation_status: Annotated[str, "evaluation status"]  # "retry", "success", "replanning"

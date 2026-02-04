@@ -21,7 +21,8 @@ from app.infrastructure.graph.checkpointer import get_checkpointer
 
 from .nodes.answering import generate_answer
 from .nodes.evaluation import evaluate_result
-from .nodes.mit_tools import execute_mit_tools
+from .nodes.mit_tools_analyze import execute_mit_tools_analyze
+from .nodes.mit_tools_search import execute_mit_tools_search
 from .nodes.planning import create_plan
 from .state import OrchestrationState
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Planning -> 도구 필요 여부에 따라 라우팅
 def route_by_tool_need(state: OrchestrationState) -> str:
     """도구 필요 여부에 따라 라우팅"""
-    return "mit_tools" if state.get("need_tools", False) else "generator"
+    return "mit_tools_analyze" if state.get("need_tools", False) else "generator"
 
 
 def route_by_evaluation(state: OrchestrationState) -> str:
@@ -38,7 +39,7 @@ def route_by_evaluation(state: OrchestrationState) -> str:
     status = state.get("evaluation_status", "success")
 
     if status == "retry":
-        return "mit_tools"
+        return "mit_tools_analyze"
     elif status == "replanning":
         return "planner"
     return "generator"
@@ -54,7 +55,8 @@ def build_orchestration_workflow() -> StateGraph:
 
     # 노드 등록
     workflow.add_node("planner", create_plan)
-    workflow.add_node("mit_tools", execute_mit_tools)
+    workflow.add_node("mit_tools_analyze", execute_mit_tools_analyze)
+    workflow.add_node("mit_tools_search", execute_mit_tools_search)
     workflow.add_node("evaluator", evaluate_result)
     workflow.add_node("generator", generate_answer)
 
@@ -65,17 +67,20 @@ def build_orchestration_workflow() -> StateGraph:
     workflow.add_conditional_edges(
         "planner",
         route_by_tool_need,
-        {"mit_tools": "mit_tools", "generator": "generator"},
+        {"mit_tools_analyze": "mit_tools_analyze", "generator": "generator"},
     )
 
-    # MIT-Tools -> Evaluator
-    workflow.add_edge("mit_tools", "evaluator")
+    # MIT-Tools Analyze -> MIT-Tools Search (항상)
+    workflow.add_edge("mit_tools_analyze", "mit_tools_search")
+
+    # MIT-Tools Search -> Evaluator
+    workflow.add_edge("mit_tools_search", "evaluator")
 
     # Evaluator -> 평가 결과에 따라 라우팅
     workflow.add_conditional_edges(
         "evaluator",
         route_by_evaluation,
-        {"mit_tools": "mit_tools", "planner": "planner", "generator": "generator"},
+        {"mit_tools_analyze": "mit_tools_analyze", "planner": "planner", "generator": "generator"},
     )
 
     # Generator -> END

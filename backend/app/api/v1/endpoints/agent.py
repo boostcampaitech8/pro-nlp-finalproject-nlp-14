@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.constants import AGENT_USER_ID
 from app.core.database import async_session_maker, get_db
 from app.infrastructure.agent import ClovaStudioLLMClient
+from app.infrastructure.context import ContextBuilder
 from app.models.transcript import Transcript
 from app.schemas.transcript import CreateTranscriptRequest
 from app.services.agent_service import AgentService
@@ -188,6 +189,9 @@ async def run_agent_with_context(
         """
         nonlocal full_response, is_completed
 
+        # Planning 결과 저장용
+        planning_info = {}
+
         try:
             # Feature flag에 따라 streaming vs non-streaming 선택
             settings = get_settings()
@@ -205,6 +209,25 @@ async def run_agent_with_context(
                     event_type = event.get("type")
                     tag = event.get("tag")
 
+                    # ===== Planning 완료 이벤트 캡처 =====
+                    if event_type == "planning_complete":
+                        planning_info["next_subquery"] = event.get("next_subquery")
+                        planning_info["plan"] = event.get("plan")
+                        continue  # 사용자에게 전송하지 않음 (내부 처리만)
+
+                    # ===== MIT 검색 시작 이벤트 캡처 =====
+                    if event_type == "mit_search_start":
+                        primary_entity = event.get("primary_entity")
+                        if primary_entity:
+                            # 30자 제한 적용
+                            display_entity = primary_entity
+                            if len(display_entity) > 30:
+                                display_entity = display_entity[:27] + "..."
+                            status_msg = f"🔍 '{display_entity}'에 대한 정보를 찾고 있어요…"
+                            yield f"event: status\n"
+                            yield f"data: {status_msg}\n\n"
+                        continue  # 다른 처리 스킵
+
                     # ===== 최종 답변 텍스트: TTS도 읽음 =====
                     if event_type == "token" and tag == "generator_token":
                         content = event.get("content", "")
@@ -217,16 +240,29 @@ async def run_agent_with_context(
                             yield f"event: message\n"
                             yield f"data: {content}\n\n"
 
-                    # ===== 상태 메시지: UI만 표시 =====
+                    # ===== 상태 메시지: UI만 표시 (노드별 맞춤 정보) =====
                     elif event_type == "node_start" and tag == "status":
                         node = event.get("node")
-                        status_map = {
-                            "planner": "🧠 생각을 정리하고 있어요…",
-                            "mit_tools": "🔍 관련 정보를 찾고 있어요…",
-                            "evaluator": "✓ 답변을 다듬고 있어요…",
-                            "generator": "💬 답변을 준비 중입니다…",
-                        }
-                        status_msg = status_map.get(node)
+                        status_msg = None
+
+                        # Planner: user_input 표시
+                        if node == "planner":
+                            display_text = user_input
+                            if display_text:
+                                display_text = display_text.replace('\n', ' ').replace('\r', ' ').strip()
+                                if len(display_text) > 30:
+                                    display_text = display_text[:27] + "..."
+                                status_msg = f"🧠 '{display_text}'에 대해 생각을 정리하고 있어요…"
+                            else:
+                                status_msg = "🧠 생각을 정리하고 있어요…"
+
+                        # Evaluator: 답변 준비 메시지
+                        elif node == "evaluator":
+                            status_msg = "💬 답변을 준비 중입니다…"
+
+                        # Generator: 표시 안함
+                        # (최종 답변 토큰만 전송, 상태 메시지 없음)
+
                         if status_msg:
                             yield f"event: status\n"
                             yield f"data: {status_msg}\n\n"
