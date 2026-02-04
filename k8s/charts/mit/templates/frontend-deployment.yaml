@@ -4,7 +4,7 @@ metadata:
   name: frontend
   namespace: {{ .Values.global.namespace }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicas.frontend | default 1 }}
   selector:
     matchLabels:
       app: frontend
@@ -14,6 +14,16 @@ spec:
         app: frontend
     spec:
       {{- include "mit.imagePullSecrets" . | nindent 6 }}
+      # HA: Pod를 다른 노드에 분산 배치
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: frontend
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: frontend
           image: {{ include "mit.image" (dict "Values" .Values "name" "frontend") }}

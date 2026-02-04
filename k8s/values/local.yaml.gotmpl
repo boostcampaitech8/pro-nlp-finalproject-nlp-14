@@ -5,6 +5,12 @@ global:
   environment: development
   registry: mit-registry:5000
 
+# HA 설정 (로컬은 단일 복제본)
+replicas:
+  backend: 1
+  frontend: 1
+  arqWorker: 1
+
 # 이미지 태그 (로컬은 항상 latest)
 images:
   backend:

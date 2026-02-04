@@ -4,7 +4,7 @@ metadata:
   name: arq-worker
   namespace: {{ .Values.global.namespace }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicas.arqWorker | default 1 }}
   selector:
     matchLabels:
       app: arq-worker
@@ -17,6 +17,16 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- include "mit.imagePullSecrets" . | nindent 6 }}
+      # HA: Pod를 다른 노드에 분산 배치
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: arq-worker
+                topologyKey: kubernetes.io/hostname
       initContainers:
         - name: wait-for-alloy
           image: busybox:1.36
