@@ -22,6 +22,7 @@ from src.clients.stt import ClovaSpeechSTTClient, STTSegment
 from src.clients.tts import TTSClient
 from src.config import get_config
 from src.livekit import LiveKitBot
+from src.utils.tts_normalize import normalize_tts_text
 from src.telemetry import (
     RealtimeWorkerMetrics,
     get_realtime_metrics,
@@ -686,7 +687,7 @@ class RealtimeWorker:
         if not self._tts_queue or not self._tts_client:
             return
 
-        message = text.strip()
+        message = normalize_tts_text(text)
         if not message:
             return
 
