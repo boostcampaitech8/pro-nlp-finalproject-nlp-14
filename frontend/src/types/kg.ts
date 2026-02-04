@@ -161,6 +161,7 @@ export interface AgendaWithDecisions {
 
 export interface MinutesResponse {
   meetingId: string;
+  meetingTitle: string | null;
   summary: string;
   agendas: AgendaWithDecisions[];
   actionItems: ActionItem[];

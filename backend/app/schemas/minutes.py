@@ -92,6 +92,7 @@ class MinutesResponse(BaseModel):
     """Minutes View 전체 응답 (중첩 구조)"""
 
     meeting_id: str = Field(serialization_alias="meetingId")
+    meeting_title: str | None = Field(default=None, serialization_alias="meetingTitle")
     summary: str
     agendas: list[AgendaWithDecisionsResponse]
     action_items: list[ActionItemBriefResponse] = Field(

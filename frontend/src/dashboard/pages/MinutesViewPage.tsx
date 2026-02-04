@@ -870,7 +870,7 @@ export function MinutesViewPage() {
                   <span>Meeting Minutes</span>
                 </div>
                 <h1 className="text-3xl font-bold text-white mb-4">
-                  {minutes.agendas[0]?.decisions[0]?.meetingTitle || 'Meeting Minutes'}
+                  {minutes.meetingTitle || minutes.agendas[0]?.decisions[0]?.meetingTitle || 'Meeting Minutes'}
                 </h1>
 
                 {/* 통계 */}
@@ -944,16 +944,6 @@ export function MinutesViewPage() {
             {isEvidencePanelOpen && evidenceSelection && (
             <aside className="mt-8 lg:mt-0">
               <div className="glass-card lg:sticky lg:top-24 overflow-hidden">
-                <div className="px-4 py-3 border-b border-white/10">
-                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                    <Link2 className="w-4 h-4 text-mit-primary" />
-                    SpanRef 근거 원문
-                  </h3>
-                  <p className="text-xs text-white/60 mt-1">
-                    아젠다 우측 &apos;근거 보기&apos;를 누르면 관련 발화를 확인할 수 있습니다.
-                  </p>
-                </div>
-
                 <div className="p-4 space-y-3 max-h-[calc(100vh-10rem)] overflow-y-auto">
                   {transcriptError && (
                     <div className="text-xs text-red-300 bg-red-500/15 border border-red-500/30 rounded-lg px-3 py-2">
@@ -973,7 +963,6 @@ export function MinutesViewPage() {
                         className="rounded-lg border border-white/15 bg-white/5"
                       >
                         <div className="px-3 py-2 border-b border-white/10 text-xs text-white/70">
-                          <div>{entry.span.start_utt_id} → {entry.span.end_utt_id}</div>
                           <div>
                             {formatMs(entry.span.start_ms ?? entry.utterances[0]?.startMs ?? null)} ~ {formatMs(entry.span.end_ms ?? entry.utterances[entry.utterances.length - 1]?.endMs ?? null)}
                           </div>

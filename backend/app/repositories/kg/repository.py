@@ -1345,7 +1345,7 @@ class KGRepository:
         # 1. Meeting + Summary 조회
         meeting_query = """
         MATCH (m:Meeting {id: $meeting_id})
-        RETURN m.id as meeting_id, m.summary as summary
+        RETURN m.id as meeting_id, m.title as meeting_title, m.summary as summary
         """
         meeting_records = await self._execute_read(meeting_query, {"meeting_id": meeting_id})
         if not meeting_records:
@@ -1528,6 +1528,7 @@ class KGRepository:
 
         return {
             "meeting_id": meeting["meeting_id"],
+            "meeting_title": meeting.get("meeting_title"),
             "summary": meeting["summary"] or "",
             "agendas": agendas,
             "action_items": action_items,

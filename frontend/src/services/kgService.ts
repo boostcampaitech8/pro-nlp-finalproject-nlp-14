@@ -121,6 +121,7 @@ interface AgendaWithDecisionsRaw {
 
 interface MinutesResponseRaw {
   meetingId: string;
+  meetingTitle?: string | null;
   summary: string;
   agendas: AgendaWithDecisionsRaw[];
   actionItems: ActionItemRaw[];
@@ -181,6 +182,7 @@ function transformSpanRef(raw: SpanRefRaw): SpanRef {
 function transformMinutes(raw: MinutesResponseRaw): MinutesResponse {
   return {
     meetingId: raw.meetingId,
+    meetingTitle: raw.meetingTitle ?? null,
     summary: raw.summary,
     agendas: raw.agendas.map((agenda) => ({
       id: agenda.id,
