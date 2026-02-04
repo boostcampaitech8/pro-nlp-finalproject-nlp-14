@@ -13,6 +13,20 @@ from .review import DecisionResponse
 from .suggestion import SuggestionResponse
 
 
+class SpanRefResponse(BaseModel):
+    """회의록 근거 span"""
+
+    transcript_id: str
+    start_utt_id: str
+    end_utt_id: str
+    sub_start: int | None = None
+    sub_end: int | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
+    topic_id: str | None = None
+    topic_name: str | None = None
+
+
 class DecisionHistoryItemResponse(BaseModel):
     """Decision 히스토리 아이템 (superseded 체인)"""
 
@@ -47,6 +61,7 @@ class DecisionWithReviewResponse(DecisionResponse):
     updated_at: datetime | None = Field(default=None, serialization_alias="updatedAt")
     supersedes: SupersedesResponse | None = None
     history: list[DecisionHistoryItemResponse] = []
+    evidence: list[SpanRefResponse] = []
 
 
 class AgendaWithDecisionsResponse(BaseModel):
@@ -57,6 +72,7 @@ class AgendaWithDecisionsResponse(BaseModel):
     description: str | None = None
     order: int
     decisions: list[DecisionWithReviewResponse] = []
+    evidence: list[SpanRefResponse] = []
 
 
 class ActionItemBriefResponse(BaseModel):
