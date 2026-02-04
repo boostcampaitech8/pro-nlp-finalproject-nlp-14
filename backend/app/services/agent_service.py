@@ -18,7 +18,6 @@ from app.infrastructure.agent import ClovaStudioLLMClient
 from app.infrastructure.context import ContextBuilder, ContextManager
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration import get_compiled_app
-from app.infrastructure.graph.orchestration.nodes.planning import create_plan
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
 
 logger = logging.getLogger(__name__)
@@ -86,13 +85,22 @@ class AgentService:
         if l1_was_busy:
             logger.info("L1 처리 완료: %d개 세그먼트", len(ctx_manager.l1_segments))
 
-        # 3. ContextBuilder로 planning context 구성 (질문 포함)
+        # ContextBuilder로 컨텍스트 구성
         builder = ContextBuilder()
         planning_context = builder.build_planning_input_context(
             ctx_manager, user_query=user_input
         )
 
-        # 4. Orchestration Graph 초기 상태 구성
+        # Semantic Search 기반 추가 컨텍스트 구성 (비동기 배치 임베딩)
+        additional_context = await builder.build_additional_context_with_search_async(
+            ctx_manager,
+            user_input,
+            top_k=ctx_manager.config.topic_search_top_k,
+            threshold=ctx_manager.config.topic_search_threshold,
+        )
+
+        # Orchestration Graph 초기 상태 구성
+        # 주의: messages에 현재 질문만 넣음 → checkpointer가 이전 대화를 복원하여 병합
         initial_state = {
             "messages": [HumanMessage(content=user_input)],
             "run_id": str(uuid.uuid4()),
@@ -100,9 +108,10 @@ class AgentService:
             "executed_at": datetime.now(timezone.utc),
             "retry_count": 0,
             "planning_context": planning_context,
+            "additional_context": additional_context,
         }
 
-        # 5. thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
+        # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
         langfuse_config = get_runnable_config(
             trace_name=f"voice_in_meeting:{meeting_id}",
             user_id=user_id,
@@ -116,28 +125,11 @@ class AgentService:
         }
 
         try:
-            # 6. Planning 실행 (1단계: 컨텍스트 기반 계획 수립)
-            planning_result = await create_plan(initial_state)
-            # 7. Semantic Search 기반 추가 컨텍스트 구성 (비동기 배치 임베딩)
-            additional_context = await builder.build_additional_context_with_search_async(
-                ctx_manager,
-                user_input,
-                top_k=ctx_manager.config.topic_search_top_k,
-                threshold=ctx_manager.config.topic_search_threshold,
-            )
-
-            # 8. 최종 상태 구성 후 Orchestration 실행
-            orchestration_payload = dict(planning_result)
-            full_state = {
-                **initial_state,
-                **orchestration_payload,
-                "additional_context": additional_context,
-                "skip_planning": True,  # 이미 planning 완료
-            }
-
-            # 9. checkpointer 포함된 앱으로 실행 (thread_id config 전달)
+            # checkpointer 포함된 앱으로 실행 (thread_id config 전달)
+            # 그래프가 전체 플로우 실행: planner → mit_tools → evaluator → generator
+            # checkpointer가 이전 messages를 복원하여 멀티턴 대화 유지
             app = await self._get_app()
-            final_state = await app.ainvoke(full_state, config)
+            final_state = await app.ainvoke(initial_state, config)
             response = final_state.get("response", "")
 
             logger.info("Agent Context 처리 완료 (thread_id=%s)", meeting_id)

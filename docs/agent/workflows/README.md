@@ -20,15 +20,17 @@
 
 ## 1. 워크플로우 개요
 
-MitHub는 회의 트랜스크립트에서 지식을 추출하고 구조화하는 3개의 LangGraph 워크플로우를 운영합니다.
+MitHub는 회의 트랜스크립트에서 지식을 추출하고 구조화하는 5개의 LangGraph 워크플로우를 운영합니다.
 
 ### 1.1 워크플로우 목록
 
 | 워크플로우 | 목적 | 입력 | 출력 | 트리거 |
 |-----------|------|------|------|--------|
 | `orchestration` | 사용자 질의에 대한 Agent 응답 생성 | 사용자 메시지 (Chat) | Agent 응답 | Chat API 호출 |
-| `generate_pr` | 트랜스크립트에서 Agenda와 Decision 추출 | 회의 트랜스크립트 | Agenda + Decision IDs | POST /meetings/{id}/generate-pr |
+| `generate_pr` | 트랜스크립트에서 Agenda와 Decision 추출 | 회의 트랜스크립트 + 실시간 L1 토픽 | Agenda + Decision IDs | POST /meetings/{id}/generate-pr |
 | `mit_action` | Decision에서 Action Item 추출 (예정) | Decision 데이터 | Action Items | Decision 머지 완료 시 |
+| `mit_suggestion` | Suggestion 기반 새 Decision 생성 | Suggestion + Decision 컨텍스트 | 새 Decision 내용 | Suggestion 생성 시 |
+| `mit_mention` | @mit 멘션에 대한 AI 응답 생성 | Comment + Decision 컨텍스트 | AI 응답 (Reply) | Comment에서 @mit 멘션 시 |
 
 ### 1.2 워크플로우 통합 구조
 
@@ -82,6 +84,7 @@ class GeneratePrState(TypedDict, total=False):
     # 입력 필드
     generate_pr_meeting_id: str              # 회의 ID
     generate_pr_transcript_text: str         # 트랜스크립트 전문
+    generate_pr_realtime_topics: list[dict]  # API에서 전달한 실시간 L1 토픽 스냅샷
 
     # 중간 상태 필드 (LLM 추출 결과)
     generate_pr_agendas: list[dict]          # 추출된 Agenda+Decision 데이터
@@ -101,7 +104,7 @@ class GeneratePrState(TypedDict, total=False):
 **책임**: 트랜스크립트에서 Agenda와 Decision을 LLM으로 추출
 
 **Contract**:
-- **reads**: `generate_pr_transcript_text`
+- **reads**: `generate_pr_transcript_text`, `generate_pr_realtime_topics`
 - **writes**: `generate_pr_agendas`, `generate_pr_summary`
 - **side-effects**: LLM API 호출 (Clova Studio)
 - **failures**: 추출 실패 시 빈 결과 반환 (`[]`)
@@ -134,7 +137,7 @@ class GeneratePrState(TypedDict, total=False):
 - `KGRepository.create_minutes()`는 Minutes 노드를 생성하는 것이 아니라, Meeting-Agenda-Decision 그래프를 생성하고 이를 조회하여 KGMinutes 객체로 반환
 
 **주요 로직**:
-1. 트랜스크립트 길이 제한 (8000자, 토큰 제한 고려)
+1. 트랜스크립트 길이 제한 (100000자, 토큰 제한 고려)
 2. Pydantic 출력 파서 사용 (구조화된 추출)
 3. LangChain 체인: `prompt | llm | parser`
 4. 추출 실패 시 에러 로깅 + 빈 결과 반환 (워크플로우 중단하지 않음)
@@ -184,6 +187,9 @@ generate_pr_graph = get_graph()
 result = await generate_pr_graph.ainvoke({
     "generate_pr_meeting_id": "meeting-uuid",
     "generate_pr_transcript_text": "트랜스크립트 전문...",
+    "generate_pr_realtime_topics": [
+        {"name": "API 설계", "summary": "엔드포인트 규칙 합의", "startTurn": 1, "endTurn": 25}
+    ],
 })
 
 # result:
@@ -414,6 +420,8 @@ LangGraph 워크플로우는 ARQ Worker를 통해 비동기 백그라운드 작�
 | `merge_utterances_task` | 화자별 발화 병합 | 모든 녹음 STT 완료 시 | - |
 | `generate_pr_task` | PR 생성 | 수동 트리거 (POST /meetings/{id}/generate-pr) | **generate_pr 워크플로우** |
 | `mit_action_task` | Action Item 추출 | Decision 머지 완료 시 | **mit_action 워크플로우** |
+| `process_suggestion_task` | Suggestion AI 분석 | Suggestion 생성 시 | **mit_suggestion 워크플로우** |
+| `process_mit_mention` | @mit 멘션 응답 생성 | Comment에서 @mit 멘션 시 | **mit_mention 워크플로우** |
 
 ### 4.2 generate_pr_task
 
@@ -421,7 +429,9 @@ LangGraph 워크플로우는 ARQ Worker를 통해 비동기 백그라운드 작�
 
 **실행 흐름**:
 ```python
-async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
+async def generate_pr_task(
+    ctx: dict, meeting_id: str, realtime_topics: list[dict] | None = None
+) -> dict:
     # 1. 트랜스크립트 조회
     transcript = await transcript_service.get_transcript(meeting_uuid)
 
@@ -429,6 +439,7 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
     result = await generate_pr_graph.ainvoke({
         "generate_pr_meeting_id": meeting_id,
         "generate_pr_transcript_text": transcript.full_text or "",
+        "generate_pr_realtime_topics": realtime_topics or [],
     })
 
     # 3. 결과 로깅 및 반환
@@ -441,6 +452,7 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
 
 **트리거 방식**: 수동 (API 엔드포인트)
 - `POST /api/v1/meetings/{meeting_id}/generate-pr`
+- enqueue 시점에 API runtime 캐시의 L1 토픽 스냅샷을 payload로 함께 전달
 - STT 자동 트리거 제거됨 (race condition 방지)
 
 **에러 처리**:
@@ -492,6 +504,8 @@ class WorkerSettings:
         merge_utterances_task,
         generate_pr_task,
         mit_action_task,
+        process_suggestion_task,
+        process_mit_mention,
     ]
 
     max_tries = 3                    # 최대 재시도 횟수
@@ -516,6 +530,28 @@ if all_processed:
 # generate_pr_task 완료 후
 # Decision 머지 이벤트 수신 시
 await arq_pool.enqueue_job("mit_action_task", decision_id=decision_id)
+```
+
+**Suggestion 처리**:
+```python
+# Suggestion 생성 시
+await arq_pool.enqueue_job(
+    "process_suggestion_task",
+    suggestion_id=suggestion_id,
+    decision_id=decision_id,
+    content=content,
+)
+```
+
+**@mit 멘션 처리**:
+```python
+# Comment에서 @mit 멘션 시
+await arq_pool.enqueue_job(
+    "process_mit_mention",
+    comment_id=comment_id,
+    decision_id=decision_id,
+    content=content,
+)
 ```
 
 ---
@@ -793,15 +829,25 @@ backend/app/
 │           │   └── nodes/
 │           │       ├── extraction.py                   # extract_agendas
 │           │       └── persistence.py                  # save_to_kg
-│           └── mit_action/
-│               ├── state.py                            # MitActionState
-│               ├── connect.py                          # 그래프 빌더 (순환형)
+│           ├── mit_action/
+│           │   ├── state.py                            # MitActionState
+│           │   ├── connect.py                          # 그래프 빌더 (순환형)
+│           │   ├── graph.py                            # 컴파일된 그래프 인스턴스
+│           │   └── nodes/
+│           │       ├── extraction.py                   # extract_actions
+│           │       ├── evaluation.py                   # evaluate_actions
+│           │       ├── routing.py                      # route_eval
+│           │       └── persistence.py                  # save_actions
+│           ├── mit_suggestion/
+│           │   ├── state.py                            # MitSuggestionState
+│           │   ├── graph.py                            # 컴파일된 그래프 인스턴스
+│           │   └── nodes/
+│           │       └── generation.py                   # generate_new_decision
+│           └── mit_mention/
+│               ├── state.py                            # MitMentionState
 │               ├── graph.py                            # 컴파일된 그래프 인스턴스
 │               └── nodes/
-│                   ├── extraction.py                   # extract_actions
-│                   ├── evaluation.py                   # evaluate_actions
-│                   ├── routing.py                      # route_eval
-│                   └── persistence.py                  # save_actions
+│                   └── response.py                     # generate_response
 ├── workers/
 │   └── arq_worker.py                                   # Worker 태스크 정의
 ├── repositories/
