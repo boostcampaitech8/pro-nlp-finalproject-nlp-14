@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db, require_meeting_participant, require_meeting_participant_sse
+from app.core.database import async_session_maker
 from app.core.topic_pubsub import subscribe_topic_updates
 from app.models.meeting import Meeting
 from app.schemas.context import TopicFeedResponse, TopicItem
@@ -133,7 +134,6 @@ async def get_meeting_topics(
 async def stream_meeting_topics(
     request: Request,
     meeting: Annotated[Meeting, Depends(require_meeting_participant_sse)],
-    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StreamingResponse:
     """회의의 L1 토픽을 SSE로 스트리밍합니다.
 
@@ -151,9 +151,9 @@ async def stream_meeting_topics(
     """
     meeting_id = str(meeting.id)
 
-    # DB 세션은 초기 데이터 조회에만 사용하고 즉시 반환
-    # (SSE 스트림 동안 DB 커넥션 점유 방지)
-    initial_data = await _build_topic_response(meeting_id, db)
+    # 초기 데이터 조회 (자체 세션 사용 - 스트리밍 중 커넥션 풀 고갈 방지)
+    async with async_session_maker() as db:
+        initial_data = await _build_topic_response(meeting_id, db)
 
     async def event_generator():
         try:

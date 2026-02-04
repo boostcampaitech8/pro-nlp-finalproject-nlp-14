@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph.state import CompiledStateGraph
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.infrastructure.context import ContextBuilder, ContextManager
@@ -21,11 +20,6 @@ from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.infrastructure.graph.orchestration.nodes.planning import create_plan
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
-from app.services.context_runtime import (
-    get_latest_start_ms,
-    get_or_create_runtime,
-    update_runtime_from_db,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +61,7 @@ class AgentService:
         user_input: str,
         meeting_id: str,
         user_id: str,
-        db: AsyncSession,
+        ctx_manager: ContextManager,
     ) -> str:
         """Context Engineering + Orchestration Graph + Checkpointer 기반 처리
 
@@ -75,7 +69,7 @@ class AgentService:
             user_input: 사용자 질의
             meeting_id: 회의 ID (thread_id로 사용하여 멀티턴 유지)
             user_id: 사용자 ID
-            db: DB 세션
+            ctx_manager: 이미 업데이트된 ContextManager
 
         Returns:
             str: 에이전트 응답
@@ -86,22 +80,7 @@ class AgentService:
             user_input[:50] if user_input else "",
         )
 
-        # 1. ContextManager runtime 갱신 (실시간 업데이트 반영)
-        runtime = await get_or_create_runtime(meeting_id)
-        async with runtime.lock:
-            latest_start_ms = await get_latest_start_ms(db, meeting_id)
-            if latest_start_ms is not None:
-                await update_runtime_from_db(
-                    runtime,
-                    db,
-                    meeting_id,
-                    latest_start_ms,
-                )
-            ctx_manager = runtime.manager
-            loaded = runtime.last_utterance_id
-        logger.info("Context runtime 로드됨: %d개 발화", loaded)
-
-        # 2. 대기 중/실행 중인 L1 처리 완료 대기
+        # 대기 중/실행 중인 L1 처리 완료 대기
         l1_was_busy = ctx_manager.has_pending_l1 or ctx_manager.is_l1_running
         await ctx_manager.await_l1_idle()
         if l1_was_busy:
@@ -173,7 +152,7 @@ class AgentService:
         user_input: str,
         meeting_id: str,
         user_id: str,
-        planning_context: str,
+        ctx_manager: ContextManager,
     ) -> AsyncGenerator[dict, None]:
         """Context Engineering + Orchestration + Event Streaming
 
@@ -184,7 +163,7 @@ class AgentService:
             user_input: 사용자 질의
             meeting_id: 회의 ID (thread_id로 사용하여 멀티턴 유지)
             user_id: 사용자 ID
-            planning_context: 미리 구성된 planning context 문자열
+            ctx_manager: 이미 업데이트된 ContextManager
 
         Yields:
             dict: SSE 이벤트 ({'type': 'token', 'content': str} or {'type': 'done'})
@@ -195,7 +174,19 @@ class AgentService:
             user_input[:50] if user_input else "",
         )
 
-        # Orchestration Graph 초기 상태 구성 (DB 작업 없음)
+        # 대기 중/실행 중인 L1 처리 완료 대기
+        l1_was_busy = ctx_manager.has_pending_l1 or ctx_manager.is_l1_running
+        await ctx_manager.await_l1_idle()
+        if l1_was_busy:
+            logger.info("L1 처리 완료: %d개 세그먼트", len(ctx_manager.l1_segments))
+
+        # 3. ContextBuilder로 planning context 구성
+        builder = ContextBuilder()
+        planning_context = builder.build_planning_input_context(
+            ctx_manager, user_query=user_input
+        )
+
+        # 4. Orchestration Graph 초기 상태 구성
         initial_state = {
             "messages": [HumanMessage(content=user_input)],
             "run_id": str(uuid.uuid4()),
