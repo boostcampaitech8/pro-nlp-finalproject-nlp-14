@@ -16,6 +16,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.infrastructure.context import ContextBuilder, ContextManager
+from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.infrastructure.graph.orchestration.nodes.planning import create_plan
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
@@ -101,11 +102,17 @@ class AgentService:
             "planning_context": planning_context,
         }
 
-        # 5. thread_id 기반 config (멀티턴 핵심)
+        # 5. thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
+        langfuse_config = get_runnable_config(
+            trace_name=f"voice_in_meeting:{meeting_id}",
+            user_id=user_id,
+            session_id=meeting_id,
+        )
         config = {
+            **langfuse_config,
             "configurable": {
                 "thread_id": meeting_id,  # 회의별 대화 컨텍스트 유지
-            }
+            },
         }
 
         try:
@@ -147,7 +154,10 @@ class AgentService:
         user_id: str,
         ctx_manager: ContextManager,
     ) -> AsyncGenerator[dict, None]:
-        """Context Engineering + Orchestration + Event Streaming (프로토타입)
+        """Context Engineering + Orchestration + Event Streaming
+
+        DB 세션 없이 스트리밍만 수행합니다.
+        Context 로드는 호출 전에 미리 완료되어야 합니다.
 
         Args:
             user_input: 사용자 질의
@@ -186,16 +196,21 @@ class AgentService:
             "planning_context": planning_context,
         }
 
-        # 5. thread_id 기반 config (멀티턴 핵심)
+        # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
+        langfuse_config = get_runnable_config(
+            trace_name=f"voice_in_meeting:{meeting_id}",
+            user_id=user_id,
+            session_id=meeting_id,
+        )
         config = {
+            **langfuse_config,
             "configurable": {
                 "thread_id": meeting_id,
-            }
+            },
         }
 
         try:
-            # 6. astream_events()로 실행 (Planning 포함)
-            # Planning을 Graph 내부에서 실행하여 즉시 스트리밍 시작
+            # astream_events()로 실행 (Planning 포함)
             app = await self._get_app()
             async for event in stream_llm_tokens_only(app, initial_state, config):
                 yield event
