@@ -3,14 +3,13 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_arq_pool, get_current_user
 from app.core.database import get_db
 from app.core.neo4j_sync import neo4j_sync
-from app.core.settings import get_settings
 from app.models.meeting import Meeting, MeetingStatus
 from app.models.user import User
 from app.schemas import ErrorResponse
@@ -212,24 +211,14 @@ async def delete_meeting(
 @router.post(
     "/meetings/{meeting_id}/complete",
     responses={
-        401: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
     },
 )
 async def complete_meeting_by_worker(
     meeting_id: UUID,
-    worker_key: str = Header(..., alias="X-Worker-Key"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Worker가 회의 완료 요청 (모든 참여자 퇴장 시)
-
-    Worker 전용 엔드포인트. Worker 인증 필요.
-    """
-    # Worker 인증
-    settings = get_settings()
-    if worker_key != settings.backend_api_key:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
+    """Worker가 회의 완료 요청 (모든 참여자 퇴장 시)"""
     # Meeting 조회
     query = select(Meeting).where(Meeting.id == meeting_id)
     result = await db.execute(query)

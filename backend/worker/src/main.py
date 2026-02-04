@@ -110,6 +110,9 @@ class RealtimeWorker:
         self._stop_event = asyncio.Event()
         self._meeting_start_time: datetime | None = None
 
+        # 회의 완료 태스크 (재입장 시 취소 가능)
+        self._complete_task: asyncio.Task | None = None
+
         # Agent 호출용 이전 transcript ID
         self._pre_transcript_id: str | None = None
 
@@ -187,6 +190,12 @@ class RealtimeWorker:
 
     def _on_participant_joined(self, user_id: str, participant_name: str) -> None:
         """참여자 입장 처리 - STT 클라이언트 생성"""
+        # 재입장 시 pending 회의 완료 취소
+        if self._complete_task and not self._complete_task.done():
+            logger.info(f"참여자 재입장, 회의 완료 취소: user={user_id}")
+            self._complete_task.cancel()
+            self._complete_task = None
+
         if user_id in self._stt_clients:
             logger.warning(f"이미 STT 클라이언트가 존재: user={user_id}")
             return
@@ -218,7 +227,7 @@ class RealtimeWorker:
 
         # 모든 일반 참여자가 퇴장했는지 확인
         if self._all_real_participants_left():
-            asyncio.create_task(self._complete_meeting())
+            self._complete_task = asyncio.create_task(self._complete_meeting())
 
     def _all_real_participants_left(self) -> bool:
         """모든 일반 참여자가 퇴장했는지 확인 (Bot 제외)
@@ -228,25 +237,37 @@ class RealtimeWorker:
         return len(self._stt_clients) == 0
 
     async def _complete_meeting(self) -> None:
-        """회의 완료 처리: transcript flush 대기 → POST /complete → graceful shutdown"""
+        """회의 완료 처리: 재입장 대기(5초) → POST /complete → graceful shutdown
+
+        5초 grace period 동안 참여자가 재입장하면 태스크가 취소되어
+        회의 완료/PR 생성/Job 삭제가 실행되지 않습니다.
+        """
         try:
-            # 1) 마지막 transcript 전송 완료 대기
-            logger.info("마지막 transcript 플러시 대기 (5초)...")
+            # 1) 재입장 대기 겸 transcript flush (5초)
+            logger.info("재입장 대기 및 transcript 플러시 (5초)...")
             await asyncio.sleep(5)
 
-            # 2) Backend에 회의 완료 요청
+            # 2) 5초 후 재확인: 참여자가 다시 들어왔으면 중단
+            if not self._all_real_participants_left():
+                logger.info("참여자 재입장 감지, 회의 완료 중단")
+                return
+
+            # 3) Backend에 회의 완료 요청
             success = await self.api_client.complete_meeting(self.meeting_id)
             if success:
                 logger.info("Meeting completed successfully by worker")
             else:
                 logger.error("Failed to complete meeting")
+        except asyncio.CancelledError:
+            logger.info("회의 완료 취소됨 (참여자 재입장)")
+            return
         except Exception as e:
             logger.exception(f"Error completing meeting: {e}")
-        finally:
-            # 3) 성공/실패 무관하게 graceful shutdown 트리거
-            #    run_forever() → self.stop() → bot.disconnect() → process exit
-            logger.info("Graceful shutdown 시작")
-            self._stop_event.set()
+
+        # 4) 성공/실패 무관하게 graceful shutdown 트리거
+        #    run_forever() → self.stop() → bot.disconnect() → process exit
+        logger.info("Graceful shutdown 시작")
+        self._stop_event.set()
 
     def _on_vad_event(self, user_id: str, event_type: str, payload: dict) -> None:
         """VAD 이벤트 수신 처리"""
