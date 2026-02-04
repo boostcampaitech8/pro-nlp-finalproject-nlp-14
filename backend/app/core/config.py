@@ -80,7 +80,6 @@ class Settings(BaseSettings):
     # Clova Studio Router 설정
     clova_router_id: str = ""  # Clova Studio Router ID
     clova_router_version: int = 1  # Router 버전 (1 이상)
-    clova_router_enabled: bool = False  # Router 사용 여부 (기본: LLM Fallback)
 
     # Langfuse (LLM Observability)
     langfuse_public_key: str = ""
