@@ -39,9 +39,10 @@ def build_conversation_history(messages: list) -> str:
 async def generate_answer(state: OrchestrationState):
     """최종 응답을 생성하는 노드
 
-    Contract:
-        reads: messages, plan, tool_results, is_simple_query, response, channel
-        writes: response (필요한 경우만)
+        Contract:
+        reads: messages, plan, tool_results, is_simple_query, simple_router_output,
+               additional_context, planning_context, channel
+        writes: response
         side-effects: LLM API 호출, stdout 출력 (스트리밍)
     """
     logger.info("최종 응답 생성 단계 진입")

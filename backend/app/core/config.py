@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,7 +9,7 @@ class Settings(BaseSettings):
     """애플리케이션 설정"""
 
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file=str(Path(__file__).parent.parent.parent / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -75,7 +76,12 @@ class Settings(BaseSettings):
 
     # Clova STT 키 관리 설정
     clova_stt_key_count: int = 5  # 사용 가능한 API 키 총 개수
-      
+
+    # Clova Studio Router 설정
+    clova_router_id: str = ""  # Clova Studio Router ID
+    clova_router_version: int = 1  # Router 버전 (1 이상)
+    clova_router_enabled: bool = False  # Router 사용 여부 (기본: LLM Fallback)
+
     # Langfuse (LLM Observability)
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

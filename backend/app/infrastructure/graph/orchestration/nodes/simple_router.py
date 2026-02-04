@@ -1,12 +1,9 @@
 import logging
 
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from app.infrastructure.graph.integration.llm import get_fast_llm
+from app.core.config import get_settings
 from app.infrastructure.graph.orchestration.state import OrchestrationState
-from app.prompts.v1.orchestration.simple_router import SIMPLE_QUERY_ROUTER_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -28,82 +25,157 @@ class SimpleRouterOutput(BaseModel):
 async def route_simple_query(state: OrchestrationState) -> OrchestrationState:
     """간단한 쿼리 사전 필터링 노드 (Planning 이전)
 
+    Clova Router API를 사용하여 쿼리를 분류합니다.
+
     Contract:
         reads: messages
-        writes: is_simple_query, simple_router_output, response (간단한 쿼리면 직접 설정)
-        side-effects: LLM API 호출 (DASH-002, 경량 처리)
+        writes: is_simple_query, simple_router_output, need_tools, plan
+        side-effects: Clova Router API 호출
 
     Returns:
         OrchestrationState: 간단한 쿼리 판정 결과 포함
     """
     logger.info("간단한 쿼리 라우팅 단계 진입")
 
+    settings = get_settings()
     messages = state.get("messages", [])
     query = messages[-1].content if messages else ""
 
     if not query:
         logger.warning("쿼리가 비어있습니다")
-        return {
-            "is_simple_query": False,
-            "simple_router_output": {
-                "is_simple_query": False,
-                "category": "other",
-                "simple_response": None,
-                "confidence": 0.0,
-                "reasoning": "쿼리가 비어있음"
-            }
-        }
+        return _create_empty_router_output()
 
+    # Clova Router 필수 설정 확인
+    if not settings.clova_router_id:
+        error_msg = "CLOVA_ROUTER_ID가 설정되지 않았습니다"
+        logger.error(error_msg)
+        return _create_error_router_output(error_msg)
+
+    if not settings.ncp_clovastudio_api_key:
+        error_msg = "NCP_CLOVASTUDIO_API_KEY가 설정되지 않았습니다"
+        logger.error(error_msg)
+        return _create_error_router_output(error_msg)
+
+    # Clova Router 호출
     try:
-        # DASH-002 모델 사용 (빠른 응답, 경량 처리)
-        parser = PydanticOutputParser(pydantic_object=SimpleRouterOutput)
-        prompt = ChatPromptTemplate.from_template(SIMPLE_QUERY_ROUTER_PROMPT)
-        chain = prompt | get_fast_llm() | parser
-
-        result = await chain.ainvoke({
-            "query": query,
-            "format_instructions": parser.get_format_instructions()
-        })
-
-        logger.info(f"Simple Router 판정: is_simple={result.is_simple_query}, category={result.category}")
-
-        # 간단한 쿼리인 경우 - 응답 생성기로 라우팅
-        if result.is_simple_query:
-            return {
-                "is_simple_query": True,
-                "simple_router_output": {
-                    "is_simple_query": result.is_simple_query,
-                    "category": result.category,
-                    "simple_response": result.simple_response,
-                    "confidence": result.confidence,
-                    "reasoning": result.reasoning,
-                },
-                "need_tools": False,  # 도구 불필요
-                "plan": f"간단한 쿼리: {result.category}",
-            }
-        else:
-            # 복잡한 쿼리 - planning으로 보냄
-            return {
-                "is_simple_query": False,
-                "simple_router_output": {
-                    "is_simple_query": result.is_simple_query,
-                    "category": result.category,
-                    "simple_response": None,
-                    "confidence": result.confidence,
-                    "reasoning": result.reasoning,
-                }
-            }
-
+        result = await _route_with_clova(query, messages)
+        logger.info(
+            f"Clova Router 성공: is_simple={result.is_simple_query}, "
+            f"category={result.category}, confidence={result.confidence:.2f}"
+        )
+        return _create_router_state(result)
     except Exception as e:
-        logger.error(f"Simple Router 오류: {e}")
-        # 오류 발생 시 planning으로 보냄
+        logger.error(f"Clova Router 실패: {e}")
+        return _create_error_router_output(str(e))
+
+
+async def _route_with_clova(query: str, messages: list) -> SimpleRouterOutput:
+    """Clova Router API 호출
+
+    Args:
+        query: 사용자 쿼리
+        messages: 대화 메시지 이력
+
+    Returns:
+        SimpleRouterOutput: 라우팅 결과
+
+    Raises:
+        Exception: Clova Router API 호출 실패
+    """
+    from app.infrastructure.graph.integration.clova_router import ClovaRouterClient
+    from app.infrastructure.graph.integration.router_mapper import RouterResponseMapper
+
+    settings = get_settings()
+
+    # Chat history 구성 (최근 5개만 사용)
+    chat_history = []
+    for i, msg in enumerate(messages[-5:]):
+        # BaseMessage 객체를 dict로 변환
+        role = "user" if hasattr(msg, "type") and msg.type == "human" else "assistant"
+        chat_history.append({"role": role, "content": msg.content})
+
+    async with ClovaRouterClient(
+        router_id=settings.clova_router_id,
+        version=settings.clova_router_version,
+        api_key=settings.ncp_clovastudio_api_key,
+    ) as client:
+        clova_response = await client.route(query, chat_history)
+
+    # 응답 매핑
+    return RouterResponseMapper.map_response(clova_response, query)
+
+
+
+
+def _create_router_state(result: SimpleRouterOutput) -> dict:
+    """라우터 결과를 OrchestrationState로 변환
+
+    Args:
+        result: SimpleRouterOutput 인스턴스
+
+    Returns:
+        OrchestrationState 업데이트 딕셔너리
+    """
+    if result.is_simple_query:
+        return {
+            "is_simple_query": True,
+            "simple_router_output": {
+                "is_simple_query": result.is_simple_query,
+                "category": result.category,
+                "simple_response": result.simple_response,
+                "confidence": result.confidence,
+                "reasoning": result.reasoning,
+            },
+            "need_tools": False,
+            "plan": f"간단한 쿼리: {result.category}",
+        }
+    else:
         return {
             "is_simple_query": False,
             "simple_router_output": {
-                "is_simple_query": False,
-                "category": "error",
+                "is_simple_query": result.is_simple_query,
+                "category": result.category,
                 "simple_response": None,
-                "confidence": 0.0,
-                "reasoning": f"라우터 오류: {str(e)}"
-            }
+                "confidence": result.confidence,
+                "reasoning": result.reasoning,
+            },
         }
+
+
+def _create_empty_router_output() -> dict:
+    """빈 쿼리 처리
+
+    Returns:
+        OrchestrationState 업데이트 딕셔너리
+    """
+    return {
+        "is_simple_query": False,
+        "simple_router_output": {
+            "is_simple_query": False,
+            "category": "other",
+            "simple_response": None,
+            "confidence": 0.0,
+            "reasoning": "쿼리가 비어있음",
+        },
+    }
+
+
+def _create_error_router_output(error_msg: str) -> dict:
+    """에러 상황 처리
+
+    Args:
+        error_msg: 에러 메시지
+
+    Returns:
+        OrchestrationState 업데이트 딕셔너리
+    """
+    return {
+        "is_simple_query": False,
+        "simple_router_output": {
+            "is_simple_query": False,
+            "category": "error",
+            "simple_response": None,
+            "confidence": 0.0,
+            "reasoning": f"라우터 오류: {error_msg}",
+        },
+    }
