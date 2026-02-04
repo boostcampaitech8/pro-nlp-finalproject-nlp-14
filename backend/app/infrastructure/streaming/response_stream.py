@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-from typing import AsyncIterator, Optional
 from datetime import datetime
+from typing import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
