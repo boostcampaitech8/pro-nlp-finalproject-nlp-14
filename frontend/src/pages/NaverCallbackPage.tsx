@@ -41,8 +41,15 @@ export function NaverCallbackPage() {
 
       try {
         await handleNaverCallback(code, state);
-        logger.log('[NaverCallback] Login successful, navigating to /');
-        navigate('/', { replace: true });
+        logger.log('[NaverCallback] Login successful');
+        const pendingInviteCode = sessionStorage.getItem('pendingInviteCode');
+        if (pendingInviteCode) {
+          sessionStorage.removeItem('pendingInviteCode');
+          logger.log('[NaverCallback] Redirecting to invite page:', pendingInviteCode);
+          navigate(`/invite/${pendingInviteCode}`, { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
       } catch (err) {
         logger.error('[NaverCallback] Login failed:', err);
         setIsProcessing(false);
