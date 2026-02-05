@@ -106,11 +106,43 @@ async def generate_answer(state: OrchestrationState):
     plan = state.get("plan", "")
     channel = state.get("channel", ChannelType.VOICE)  # 기본값: 음성
 
+    # ✅ 안전 장치: Mutation 요청인데 도구가 실행되지 않은 경우 거부
+    query_lower = query.lower()
+    mutation_keywords = ["만들어", "생성", "추가", "등록", "수정", "변경", "삭제", "취소", "잡아"]
+    meeting_keywords = ["회의", "미팅", "meeting"]
+    is_mutation_request = any(kw in query_lower for kw in mutation_keywords)
+    is_meeting_related = any(kw in query_lower for kw in meeting_keywords)
+
+    # Mutation 도구 실행 결과 확인 (생성/수정/삭제 성공 메시지)
+    mutation_success_markers = [
+        "성공적으로 생성", "생성되었습니다", "생성 완료",
+        "성공적으로 수정", "수정되었습니다", "수정 완료",
+        "성공적으로 삭제", "삭제되었습니다", "삭제 완료",
+        "created", "updated", "deleted"
+    ]
+    has_mutation_result = tool_results and any(marker in tool_results for marker in mutation_success_markers)
+
+    # 회의 관련 mutation 요청인데 mutation 결과가 없으면 거부
+    if is_mutation_request and is_meeting_related and not has_mutation_result:
+        # tool_results가 조회 결과(팀 목록, 회의 목록)만 있는 경우는 허용 (다음 단계 진행 중)
+        is_query_result_only = tool_results and ("teams" in tool_results or "meetings" in tool_results or "팀" in tool_results)
+
+        if not is_query_result_only:
+            logger.warning(f"Mutation 요청이지만 도구 실행 결과가 없음: {query}")
+            # 도구 실행 없이 허위 응답 생성 방지
+            response_text = "죄송합니다. 요청하신 작업을 처리하는 중 문제가 발생했습니다. 다시 한 번 시도해 주세요."
+            return OrchestrationState(response=response_text, messages=[AIMessage(content=response_text)])
+
     logger.info(f"tool_results 확인: {bool(tool_results)}, 길이: {len(tool_results) if tool_results else 0}")
     logger.info(f"planning_context 길이: {len(planning_context)}자")
     logger.info(f"channel: {channel}")
 
-    # tool_results가 있으면 추가 context로 활용
+    # interaction_mode를 channel로 매핑
+    interaction_mode = state.get("interaction_mode", "voice")
+    channel = ChannelType.TEXT if interaction_mode == "spotlight" else ChannelType.VOICE
+    plan = state.get("plan", "")
+
+    # 프롬프트 빌더 사용
     if tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
 
@@ -143,11 +175,10 @@ async def generate_answer(state: OrchestrationState):
             channel=channel,
         )
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", user_prompt),
-        ])
-        input_data = {}  # 이미 포맷팅됨
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", user_prompt),
+    ])
 
     chain = prompt | get_answer_generator_llm()
 
@@ -157,13 +188,12 @@ async def generate_answer(state: OrchestrationState):
 
     # 스트리밍으로 응답 생성
     response_chunks = []
-
-    async for chunk in chain.astream(input_data):
+    async for chunk in chain.astream({}):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
         response_chunks.append(chunk_text)
 
     response_text = "".join(response_chunks)
     logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
 
-    return OrchestrationState(response=response_text)
+    return OrchestrationState(response=response_text, messages=[AIMessage(content=response_text)])
 

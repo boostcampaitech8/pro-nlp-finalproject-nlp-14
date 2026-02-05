@@ -51,6 +51,8 @@ function App() {
         }
       >
         <Route index element={<MainPage />} />
+        {/* 세션 ID가 URL에 노출되는 라우트 */}
+        <Route path="spotlight/:sessionId" element={<MainPage />} />
       </Route>
 
       {/* 기존 Dashboard 페이지 */}

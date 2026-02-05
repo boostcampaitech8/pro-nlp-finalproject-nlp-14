@@ -73,9 +73,10 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
     plan = state.get('plan', '')
     tool_results = state.get('tool_results', '')
     retry_count = state.get('retry_count', 0)
+    hitl_status = state.get('hitl_status', 'none')
 
-    logger.info(f"Evaluator 단계: retry_count={retry_count}, tool_results={bool(tool_results)}")
-    
+    logger.info(f"Evaluator 단계: retry_count={retry_count}, tool_results={bool(tool_results)}, hitl_status={hitl_status}")
+
     # 무한 루프 방지: MAX_RETRY 이상 재시도 시 강제로 success 처리
     if retry_count >= MAX_RETRY:
         logger.warning(f"최대 재시도 횟수({MAX_RETRY}) 도달 - 강제 완료 처리")
@@ -84,7 +85,20 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
             evaluation_status="success",
             evaluation_reason="더 이상 재시도하지 않고 현재 결과로 응답 생성"
         )
-    
+
+    # Mutation 도구 실행 완료 시 바로 success 처리 (HITL 중복 방지)
+    mutation_success_markers = [
+        "생성되었습니다", "수정되었습니다", "삭제되었습니다",
+        '"success": true', "'success': True"
+    ]
+    if tool_results and any(marker in tool_results for marker in mutation_success_markers):
+        logger.info("✓ Mutation 도구 실행 완료 → success")
+        return OrchestrationState(
+            evaluation="Mutation 도구 실행 완료",
+            evaluation_status="success",
+            evaluation_reason="Mutation 작업이 성공적으로 완료됨"
+        )
+
     # MIT Search 결과가 있으면 일반적으로 success 처리
     if tool_results and "[MIT Search 결과" in tool_results:
         logger.info("✓ MIT Search 결과 수신 → success")
@@ -103,17 +117,27 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
         "도구 실행 결과: {tool_results}\n"
         "현재 재시도 횟수: {retry_count}\n\n"
         "도구 실행 결과를 평가하고 다음 단계를 결정하세요:\n\n"
-        "1. **success**: 도구 실행 결과가 충분하고 사용자 질문에 답변 가능\n"
+        "1. **success**: 사용자의 원래 요청이 **완전히** 완료됨\n"
+        "   - 조회 요청: 필요한 정보를 모두 얻음\n"
+        "   - 생성/수정/삭제 요청: 해당 작업이 실제로 완료됨\n"
         "2. **retry**: 도구 실행 실패 또는 결과 불충분 (같은 도구 재실행)\n"
-        "3. **replanning**: 계획 자체가 잘못됨 (다른 접근 방법 필요)\n\n"
+        "3. **replanning**: 다음 단계가 필요함 (다른 도구 사용 필요)\n"
+        "   - 계획에 여러 단계가 있고, 현재 단계만 완료된 경우\n"
+        "   - 예: 팀 조회 완료 → 회의 생성 필요 → replanning\n\n"
+        "**중요 - 멀티스텝 태스크 판단:**\n"
+        "- 사용자가 '생성', '만들어', '추가해' 등 **변경 작업**을 요청했는가?\n"
+        "- 현재 도구 결과가 **조회**만 했다면, 실제 변경 작업이 아직 안 된 것\n"
+        "- 이 경우 반드시 **replanning**으로 다음 단계 진행\n\n"
         "평가 기준:\n"
-        "- 계획과 실행 결과가 일치하는가?\n"
-        "- 결과가 질문에 답하기에 충분한가?\n"
-        "- 추가 정보나 다른 도구가 필요한가?\n\n"
+        "- 사용자의 **최종 목표**가 달성되었는가? (중간 단계가 아닌 최종 목표)\n"
+        "- 계획에 '먼저 ... 후 ...' 같은 다단계 표현이 있다면 모든 단계가 완료되었는가?\n"
+        "- 추가 도구 호출이 필요한가?\n\n"
         "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
         "{format_instructions}\n\n"
-        "예시:\n"
-        '{{"evaluation": "결과가 충분함", "status": "success", "reason": "질문에 답변 가능"}}'
+        "예시 1 (조회 완료):\n"
+        '{{"evaluation": "검색 결과 충분", "status": "success", "reason": "사용자가 조회를 요청했고 결과 획득"}}\n\n'
+        "예시 2 (다음 단계 필요):\n"
+        '{{"evaluation": "회의 생성 필요", "status": "replanning", "reason": "팀 조회는 완료했으나 회의 생성이 아직 필요함"}}'
     )
 
     chain = prompt | get_evaluator_llm() | parser
@@ -141,8 +165,8 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
             logger.warning(f"잘못된 status: {result.status}, 'success'로 변경")
             result.status = "success"
 
-        # retry인 경우 카운트 증가
-        new_retry_count = retry_count + 1 if result.status == "retry" else retry_count
+        # retry 또는 replanning인 경우 카운트 증가 (무한 루프 방지)
+        new_retry_count = retry_count + 1 if result.status in ["retry", "replanning"] else retry_count
 
         return OrchestrationState(
             evaluation=result.evaluation,
