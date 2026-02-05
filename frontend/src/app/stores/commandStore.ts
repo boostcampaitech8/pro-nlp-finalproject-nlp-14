@@ -309,6 +309,14 @@ export const useCommandStore = create<CommandState>((set) => ({
       const sessions = await spotlightApi.listSessions();
       set({ sessions, sessionsLoading: false });
     } catch (error) {
+      const status = (error as { response?: { status?: number; data?: { error?: string } } })
+        ?.response?.status;
+      const errorCode = (error as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error;
+      if (status === 404 && errorCode === 'DISABLED_IN_BETA') {
+        set({ sessions: [], sessionsLoading: false });
+        return;
+      }
       console.error('Failed to load sessions:', error);
       set({ sessionsLoading: false });
     }

@@ -71,6 +71,14 @@ class HITLData(BaseModel):
     params_display: dict = {}  # UUID → 이름 변환된 표시용 값
     message: str = ""
     required_fields: list[HITLRequiredField] = []
+    hitl_request_id: str | None = None
+
+
+class DraftData(BaseModel):
+    """스트리밍 중간 응답 (draft) 데이터"""
+
+    request_id: str
+    updated_at: datetime
 
 
 class SpotlightMessageResponse(BaseModel):
@@ -78,6 +86,7 @@ class SpotlightMessageResponse(BaseModel):
 
     role: str  # "user" | "assistant"
     content: str
-    type: Literal["text", "hitl"] = "text"  # 메시지 타입
+    type: Literal["text", "hitl", "draft"] = "text"  # 메시지 타입
     hitl_status: Literal["pending", "confirmed", "cancelled"] | None = None
     hitl_data: HITLData | None = None
+    draft_data: DraftData | None = None
