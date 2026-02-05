@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "https://cloud.langfuse.com"
-    langfuse_tracing_enabled: bool = False
+    langfuse_tracing_enabled: bool = True
 
     # 팀 제한 설정
     max_team_members: int = 7  # AI Agent 미포함
