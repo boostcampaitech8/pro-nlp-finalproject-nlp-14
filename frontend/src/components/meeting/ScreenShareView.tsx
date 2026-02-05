@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import type { RemoteTrack } from 'livekit-client';
 
 interface ScreenShareViewProps {
   // 로컬 화면공유
@@ -14,6 +15,8 @@ interface ScreenShareViewProps {
   getUserName: (userId: string) => string;
   // 현재 사용자 ID
   currentUserId: string;
+  // 원격 화면공유 RemoteTrack 조회 (attach/detach용)
+  getRemoteScreenTrack?: (userId: string) => RemoteTrack | undefined;
 }
 
 /**
@@ -23,18 +26,30 @@ function ScreenVideo({
   stream,
   label,
   isLocal,
+  track,
 }: {
   stream: MediaStream;
   label: string;
   isLocal?: boolean;
+  track?: RemoteTrack;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+    const el = videoRef.current;
+    if (!el) return;
+
+    if (track && !isLocal) {
+      // 원격: LiveKit SDK의 attach() 사용 (adaptiveStream 호환)
+      track.attach(el);
+      return () => {
+        track.detach(el);
+      };
+    } else if (stream) {
+      // 로컬: 기존 srcObject 방식
+      el.srcObject = stream;
     }
-  }, [stream]);
+  }, [stream, track, isLocal]);
 
   return (
     <div className="relative bg-gray-900 rounded-lg overflow-hidden">
@@ -42,7 +57,7 @@ function ScreenVideo({
         ref={videoRef}
         autoPlay
         playsInline
-        muted={isLocal}
+        muted
         className="w-full h-full object-contain"
       />
       {/* 라벨 */}
@@ -59,6 +74,7 @@ export function ScreenShareView({
   remoteScreenStreams,
   getUserName,
   currentUserId,
+  getRemoteScreenTrack,
 }: ScreenShareViewProps) {
   // 모든 화면공유 스트림 수집
   const allStreams: { userId: string; stream: MediaStream; isLocal: boolean }[] = [];
@@ -103,6 +119,7 @@ export function ScreenShareView({
             stream={stream}
             label={getUserName(userId)}
             isLocal={isLocal}
+            track={!isLocal ? getRemoteScreenTrack?.(userId) : undefined}
           />
         ))}
       </div>

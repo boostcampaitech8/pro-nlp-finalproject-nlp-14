@@ -94,29 +94,20 @@ def get_runnable_config(
         base_url=base_url,
     )
 
-    # CallbackHandler 생성 (Langfuse SDK 버전별 인자 차이 대응)
-    try:
-        callback_handler = CallbackHandler(
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-            host=base_url,
-            user_id=user_id,
-            session_id=session_id,
-        )
-    except TypeError:
-        logger.warning(
-            "Langfuse CallbackHandler arg mismatch; falling back to public_key only."
-        )
-        callback_handler = CallbackHandler(public_key=settings.langfuse_public_key)
 
-    metadata_payload = dict(metadata or {})
-    if user_id is not None:
-        metadata_payload.setdefault("user_id", user_id)
-    if session_id is not None:
-        metadata_payload.setdefault("session_id", session_id)
+    # Langfuse v3+: CallbackHandler는 생성자 인자를 받지 않음
+    # 이미 초기화된 Langfuse 클라이언트를 자동으로 사용함
+    callback_handler = CallbackHandler()
+
+    # SDK v3: trace_name, user_id, session_id는 메타데이터로 전달
+    langfuse_metadata = {
+        **(metadata or {}),
+        **({"langfuse_trace_name": trace_name} if trace_name else {}),
+        **({"langfuse_user_id": user_id} if user_id else {}),
+        **({"langfuse_session_id": session_id} if session_id else {}),
+    }
 
     return {
         "callbacks": [callback_handler],
-        **({"run_name": trace_name} if trace_name else {}),
-        **({"metadata": metadata_payload} if metadata_payload else {}),
+        **({"metadata": langfuse_metadata} if langfuse_metadata else {}),
     }

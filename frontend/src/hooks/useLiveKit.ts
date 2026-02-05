@@ -20,11 +20,13 @@ import {
   RemoteTrackPublication,
   TrackPublication,
   LocalTrack,
+  LocalTrackPublication,
   createLocalTracks,
   LocalAudioTrack,
   DisconnectReason,
   LogLevel,
   setLogLevel,
+  ScreenSharePresets,
 } from 'livekit-client';
 import api, { ensureValidToken } from '@/services/api';
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
@@ -148,6 +150,9 @@ export function useLiveKit(meetingId: string) {
   const gainNodeRef = useRef<GainNode | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const destinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+
+  // 원격 화면공유 RemoteTrack 객체 보존 (attach/detach용)
+  const remoteScreenTracksRef = useRef<Map<string, RemoteTrack>>(new Map());
 
   /**
    * VAD 훅 - 발화 감지
@@ -346,6 +351,7 @@ export function useLiveKit(meetingId: string) {
       } else if (track.kind === Track.Kind.Video) {
         // 비디오 트랙 (화면공유)
         if (publication.source === Track.Source.ScreenShare) {
+          remoteScreenTracksRef.current.set(participant.identity, track);
           const screenMediaStream = new MediaStream([track.mediaStreamTrack]);
           addRemoteScreenStream(participant.identity, screenMediaStream);
           updateParticipantScreenSharing(participant.identity, true);
@@ -368,6 +374,7 @@ export function useLiveKit(meetingId: string) {
         track.kind === Track.Kind.Video &&
         publication.source === Track.Source.ScreenShare
       ) {
+        remoteScreenTracksRef.current.delete(participant.identity);
         removeRemoteScreenStream(participant.identity);
         updateParticipantScreenSharing(participant.identity, false);
       }
@@ -396,6 +403,7 @@ export function useLiveKit(meetingId: string) {
 
       // LiveKit SDK가 자동으로 트랙을 정리하므로 우리는 스토어 상태만 정리
       // detach()나 stop()을 호출하면 SDK 내부 상태가 꼬여서 재접속 시 문제 발생
+      remoteScreenTracksRef.current.delete(participant.identity);
       removeParticipant(participant.identity);
       removeRemoteStream(participant.identity);
       removeRemoteScreenStream(participant.identity);
@@ -553,6 +561,18 @@ export function useLiveKit(meetingId: string) {
         setConnectionState('connected');
       });
 
+      // 로컬 화면공유 트랙 해제 (브라우저 "공유 중지" 버튼 등)
+      room.on(
+        RoomEvent.LocalTrackUnpublished,
+        (publication: LocalTrackPublication) => {
+          if (publication.source === Track.Source.ScreenShare) {
+            logger.log('[useLiveKit] Local screen share track unpublished');
+            setScreenStream(null);
+            setScreenSharing(false);
+          }
+        }
+      );
+
       // 데이터 수신
       room.on(RoomEvent.DataReceived, handleDataReceived);
     },
@@ -565,6 +585,8 @@ export function useLiveKit(meetingId: string) {
       handleDataReceived,
       updateParticipantMute,
       setConnectionState,
+      setScreenStream,
+      setScreenSharing,
     ]
   );
 
@@ -917,28 +939,6 @@ export function useLiveKit(meetingId: string) {
   );
 
   /**
-   * 화면공유 시작
-   */
-  const startScreenShare = useCallback(async () => {
-    const room = roomRef.current;
-    if (!room) return;
-
-    try {
-      await room.localParticipant.setScreenShareEnabled(true);
-      const screenPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
-      if (screenPub?.track) {
-        const stream = new MediaStream([screenPub.track.mediaStreamTrack]);
-        setScreenStream(stream);
-        setScreenSharing(true);
-      }
-      logger.log('[useLiveKit] Screen share started');
-    } catch (err) {
-      logger.error('[useLiveKit] Failed to start screen share:', err);
-      throw err;
-    }
-  }, [setScreenStream, setScreenSharing]);
-
-  /**
    * 화면공유 중지
    */
   const stopScreenShare = useCallback(() => {
@@ -950,6 +950,63 @@ export function useLiveKit(meetingId: string) {
     setScreenSharing(false);
     logger.log('[useLiveKit] Screen share stopped');
   }, [setScreenStream, setScreenSharing]);
+
+  /**
+   * 화면공유 시작
+   */
+  const startScreenShare = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    // 룸당 화면공유 1명 제한
+    const currentRemoteScreenStreams = useMeetingRoomStore.getState().remoteScreenStreams;
+    if (currentRemoteScreenStreams.size > 0) {
+      throw new Error('SCREEN_SHARE_LIMIT');
+    }
+
+    try {
+      // setScreenShareEnabled의 반환값(LocalTrackPublication)을 직접 사용하여
+      // getTrackPublication() 호출 시 발생하는 race condition 제거
+      const publication = await room.localParticipant.setScreenShareEnabled(
+        true,
+        // ScreenShareCaptureOptions: HD 해상도
+        {
+          audio: false,
+          resolution: { width: 1920, height: 1080, frameRate: 15 },
+        },
+        // TrackPublishOptions: 인코딩 품질
+        {
+          screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
+          videoCodec: 'vp9',
+        }
+      );
+
+      if (publication?.track) {
+        const stream = new MediaStream([publication.track.mediaStreamTrack]);
+        setScreenStream(stream);
+        setScreenSharing(true);
+
+        // 브라우저 "공유 중지" 버튼 클릭 시 상태 정리
+        publication.track.mediaStreamTrack.addEventListener('ended', () => {
+          logger.log('[useLiveKit] Screen share track ended (browser stop button)');
+          stopScreenShare();
+        });
+      } else {
+        logger.warn('[useLiveKit] Screen share publication returned undefined (user cancelled?)');
+      }
+      logger.log('[useLiveKit] Screen share started');
+    } catch (err) {
+      logger.error('[useLiveKit] Failed to start screen share:', err);
+      throw err;
+    }
+  }, [setScreenStream, setScreenSharing, stopScreenShare]);
+
+  /**
+   * 원격 화면공유 RemoteTrack 조회 (attach/detach용)
+   */
+  const getRemoteScreenTrack = useCallback((userId: string): RemoteTrack | undefined => {
+    return remoteScreenTracksRef.current.get(userId);
+  }, []);
 
   /**
    * 채팅 메시지 전송
@@ -1095,6 +1152,7 @@ export function useLiveKit(meetingId: string) {
     // 화면공유 액션
     startScreenShare,
     stopScreenShare,
+    getRemoteScreenTrack,
     // 채팅 액션
     sendChatMessage,
   };

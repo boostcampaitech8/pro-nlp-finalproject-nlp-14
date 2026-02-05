@@ -5,18 +5,22 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
-from app.prompt.v1.orchestration.answering import (
-    ChannelType,
-    build_system_prompt_with_tools,
-    build_system_prompt_without_tools,
-    build_user_prompt_with_tools,
-    build_user_prompt_without_tools,
+from app.infrastructure.graph.orchestration.tools.registry import (
+    InteractionMode,
+    normalize_interaction_mode,
 )
 from app.prompt.v1.orchestration.simple_answering import (
     SIMPLE_QUERY_DEFAULT_SYSTEM_PROMPT,
     SIMPLE_QUERY_DEFAULT_USER_PROMPT,
     SIMPLE_QUERY_SUGGESTED_SYSTEM_PROMPT,
     SIMPLE_QUERY_SUGGESTED_USER_PROMPT,
+)
+from app.prompts.v1.orchestration.answering import (
+    ChannelType,
+    build_system_prompt_with_tools,
+    build_system_prompt_without_tools,
+    build_user_prompt_with_tools,
+    build_user_prompt_without_tools,
 )
 
 logger = logging.getLogger("AgentLogger")
@@ -107,8 +111,6 @@ async def generate_answer(state: OrchestrationState):
     additional_context = state.get("additional_context", "")
     planning_context = state.get("planning_context", "")  # L0 회의 대화 + L1 토픽
     plan = state.get("plan", "")
-    channel = state.get("channel", ChannelType.VOICE)  # 기본값: 음성
-
     # ✅ 안전 장치: Mutation 요청인데 도구가 실행되지 않은 경우 거부
     query_lower = query.lower()
     mutation_keywords = ["만들어", "생성", "추가", "등록", "수정", "변경", "삭제", "취소", "잡아"]
@@ -138,11 +140,10 @@ async def generate_answer(state: OrchestrationState):
 
     logger.info(f"tool_results 확인: {bool(tool_results)}, 길이: {len(tool_results) if tool_results else 0}")
     logger.info(f"planning_context 길이: {len(planning_context)}자")
-    logger.info(f"channel: {channel}")
-
     # interaction_mode를 channel로 매핑
-    interaction_mode = state.get("interaction_mode", "voice")
-    channel = ChannelType.TEXT if interaction_mode == "spotlight" else ChannelType.VOICE
+    interaction_mode = normalize_interaction_mode(state.get("interaction_mode", "voice"))
+    channel = ChannelType.TEXT if interaction_mode == InteractionMode.SPOTLIGHT else ChannelType.VOICE
+    logger.info(f"interaction_mode: {interaction_mode.value}, channel: {channel}")
     plan = state.get("plan", "")
 
     # 프롬프트 빌더 사용
@@ -159,12 +160,6 @@ async def generate_answer(state: OrchestrationState):
             meeting_context=planning_context or "없음",
             channel=channel,
         )
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", user_prompt),
-        ])
-        input_data = {}  # 이미 포맷팅됨
     else:
         logger.info("도구 없이 직접 응답 생성")
 
@@ -178,10 +173,15 @@ async def generate_answer(state: OrchestrationState):
             channel=channel,
         )
 
+    # 이미 포맷팅된 문자열에 포함된 JSON/중괄호가 변수로 해석되지 않도록 변수로 전달
     prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", user_prompt),
+        ("system", "{system_prompt}"),
+        ("human", "{user_prompt}"),
     ])
+    input_data = {
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+    }
 
     chain = prompt | get_answer_generator_llm()
 
@@ -191,7 +191,7 @@ async def generate_answer(state: OrchestrationState):
 
     # 스트리밍으로 응답 생성
     response_chunks = []
-    async for chunk in chain.astream({}):
+    async for chunk in chain.astream(input_data):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
         response_chunks.append(chunk_text)
 
@@ -199,4 +199,3 @@ async def generate_answer(state: OrchestrationState):
     logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
 
     return OrchestrationState(response=response_text, messages=[AIMessage(content=response_text)])
-

@@ -10,6 +10,7 @@ from app.infrastructure.graph.orchestration.tools.registry import (
     InteractionMode,
     get_langchain_tools_for_mode,
     get_tool_category,
+    normalize_interaction_mode,
 )
 from app.prompt.v1.orchestration.planning import (
     TOOL_UNAVAILABLE_MESSAGES,  # noqa: F401  # Re-export for other modules
@@ -51,11 +52,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
         )
 
     # 모드 및 도구 설정
-    mode_str = state.get("interaction_mode", "voice")
-    try:
-        mode = InteractionMode(mode_str)
-    except ValueError:
-        mode = InteractionMode.VOICE
+    mode = normalize_interaction_mode(state.get("interaction_mode", "voice"))
 
     langchain_tools = get_langchain_tools_for_mode(mode)
     logger.info(f"Interaction mode: {mode.value}, tools count: {len(langchain_tools)}")

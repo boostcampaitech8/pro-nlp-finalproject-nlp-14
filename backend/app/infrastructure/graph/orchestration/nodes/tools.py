@@ -5,7 +5,7 @@ For Mutation tools in Spotlight mode, it initiates HITL flow.
 """
 
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -15,7 +15,7 @@ from app.models.team import TeamMember
 
 from ..state import OrchestrationState
 from ..tools.base import ToolCategory
-from ..tools.registry import InteractionMode, get_tool_by_name, get_tool_metadata
+from ..tools.registry import InteractionMode, get_tool_by_name, get_tool_metadata, normalize_interaction_mode
 
 logger = logging.getLogger(__name__)
 
@@ -127,20 +127,33 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
 
     selected_tool = state.get("selected_tool")
     hitl_status = state.get("hitl_status", "none")
-    interaction_mode = state.get("interaction_mode", "spotlight")
+    hitl_request_id = state.get("hitl_request_id")
+    interaction_mode = normalize_interaction_mode(state.get("interaction_mode", "spotlight"))
     user_id = state.get("user_id")
     tool_args = state.get("tool_args", {})
 
     # No tool selected - return early
     if not selected_tool:
         logger.warning("No tool selected")
-        return OrchestrationState(tool_results="도구가 선택되지 않았습니다.")
+        return OrchestrationState(
+            tool_results="도구가 선택되지 않았습니다.",
+            selected_tool=None,
+            tool_args={},
+            tool_category=None,
+            skip_planning=False,
+        )
 
     # Get the tool (StructuredTool)
     tool = get_tool_by_name(selected_tool)
     if not tool:
         logger.error(f"Tool not found: {selected_tool}")
-        return OrchestrationState(tool_results=f"'{selected_tool}' 도구를 찾을 수 없습니다.")
+        return OrchestrationState(
+            tool_results=f"'{selected_tool}' 도구를 찾을 수 없습니다.",
+            selected_tool=None,
+            tool_args={},
+            tool_category=None,
+            skip_planning=False,
+        )
 
     # Get tool metadata
     metadata = get_tool_metadata(selected_tool)
@@ -148,13 +161,13 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
 
     logger.info(
         f"Executing tool: {selected_tool}, category: {tool_category_from_meta}, "
-        f"hitl_status: {hitl_status}, mode: {interaction_mode}"
+        f"hitl_status: {hitl_status}, mode: {interaction_mode.value}"
     )
 
     # === HITL Flow for Mutation Tools ===
     if tool_category_from_meta == ToolCategory.MUTATION.value:
         # Check if Mutation tool is allowed in current mode
-        if interaction_mode == InteractionMode.VOICE.value:
+        if interaction_mode == InteractionMode.VOICE:
             logger.warning(f"Mutation tool {selected_tool} not allowed in Voice mode")
             return OrchestrationState(
                 tool_results=f"'{tool.description}' 작업은 Spotlight 모드에서만 가능합니다."
@@ -168,6 +181,9 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             confirmation_message = generate_confirmation_message(
                 selected_tool, tool_args, metadata, tool.description
             )
+            if not hitl_request_id:
+                hitl_request_id = str(uuid4())
+            logger.info(f"HITL request id generated: {hitl_request_id} for tool={selected_tool}")
 
             # Generate required fields schema for frontend input form
             # Only include fields NOT already extracted by LLM
@@ -247,6 +263,7 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
                 hitl_confirmation_message=confirmation_message,
                 hitl_required_fields=required_fields,
                 hitl_display_template=display_template,  # 자연어 템플릿
+                hitl_request_id=hitl_request_id,
                 tool_results="",  # No results yet
             )
 
@@ -258,7 +275,12 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
                 hitl_tool_name=None,
                 hitl_extracted_params=None,
                 hitl_confirmation_message=None,
+                hitl_request_id=None,
                 tool_results="작업이 취소되었습니다.",
+                selected_tool=None,
+                tool_args={},
+                tool_category=None,
+                skip_planning=False,
             )
 
         # HITL pending - should not reach here (graph routes to END)
@@ -304,6 +326,11 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             hitl_tool_name=None,
             hitl_extracted_params=None,
             hitl_confirmation_message=None,
+            hitl_request_id=None,
+            selected_tool=None,
+            tool_args={},
+            tool_category=None,
+            skip_planning=False,
         )
 
     except Exception as e:
@@ -314,4 +341,9 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             hitl_tool_name=None,
             hitl_extracted_params=None,
             hitl_confirmation_message=None,
+            hitl_request_id=None,
+            selected_tool=None,
+            tool_args={},
+            tool_category=None,
+            skip_planning=False,
         )

@@ -22,8 +22,14 @@ class MitSuggestionState(TypedDict, total=False):
     mit_suggestion_decision_context: Annotated[str | None, "원본 Decision 맥락 (회의 컨텍스트)"]
     mit_suggestion_agenda_topic: Annotated[str | None, "Agenda 주제"]
     mit_suggestion_meeting_id: Annotated[str | None, "Meeting ID"]
+    mit_suggestion_utterances: Annotated[
+        list[dict] | None,
+        "회의 발화 목록 [{speaker_name, text, start_ms, end_ms}, ...]",
+    ]
 
     # 컨텍스트 수집 결과 (context_gatherer 출력)
+    # - meeting_context, thread_history, sibling_decisions
+    # - decision_evidence/agenda_evidence (SpanRef list)
     mit_suggestion_gathered_context: Annotated[dict | None, "수집된 컨텍스트"]
 
     # 출력 필드 (새 Decision 생성용)

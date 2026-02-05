@@ -248,6 +248,7 @@ async def stream_llm_tokens_only(
                             "message": output.get("hitl_confirmation_message", ""),
                             "required_fields": output.get("hitl_required_fields", []),
                             "display_template": output.get("hitl_display_template"),  # 자연어 템플릿
+                            "hitl_request_id": output.get("hitl_request_id"),
                             "tag": "hitl",
                             "timestamp": datetime.now().isoformat(),
                         }

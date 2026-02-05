@@ -102,6 +102,8 @@ worker:
 # NCP Clova Studio
 ncp:
   clovaStudioApiKey: {{ env "NCP_CLOVASTUDIO_API_KEY" | default "" }}
+  clovaRouterId: {{ env "CLOVA_ROUTER_ID" | default "" }}
+  clovaRouterVersion: {{ env "CLOVA_ROUTER_VERSION" | default "1" }}
 
 # OAuth - 외부 환경변수에서 주입
 oauth:

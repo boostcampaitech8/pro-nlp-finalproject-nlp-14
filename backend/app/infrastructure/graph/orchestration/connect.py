@@ -13,7 +13,9 @@
     result = await app.ainvoke(state)
 """
 import logging
+from typing import Literal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -159,7 +161,12 @@ def build_orchestration_workflow() -> StateGraph:
     return workflow
 
 
-async def get_compiled_app(*, with_checkpointer: bool = True) -> CompiledStateGraph:
+async def get_compiled_app(
+    *,
+    with_checkpointer: bool = True,
+    checkpointer_kind: Literal["memory"] = "memory",
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CompiledStateGraph:
     """컴파일된 그래프 반환 (checkpointer 선택적 적용)
 
     Args:
@@ -171,7 +178,8 @@ async def get_compiled_app(*, with_checkpointer: bool = True) -> CompiledStateGr
     workflow = build_orchestration_workflow()
 
     if with_checkpointer:
-        checkpointer = await get_checkpointer()
+        if checkpointer is None:
+            checkpointer = await get_checkpointer(kind=checkpointer_kind)
         return workflow.compile(checkpointer=checkpointer)
 
     return workflow.compile()

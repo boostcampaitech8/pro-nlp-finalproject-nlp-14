@@ -74,7 +74,7 @@ releases:
           persistence:
             enabled: true
             size: {{ .Values.resources.redis.storage }}
-          {{- if .Values.redisNodeSelector }}
+          {{- if index .Values "redisNodeSelector" }}
           nodeSelector: {{ .Values.redisNodeSelector | toYaml | nindent 12 }}
           {{- end }}
           resources:
@@ -132,7 +132,7 @@ releases:
         service:
           type: ClusterIP
         replicaCount: 1  # WebRTC 특성상 단일 인스턴스 + 노드 고정
-        {{- if .Values.livekit.nodeSelector }}
+        {{- if index .Values.livekit "nodeSelector" }}
         nodeSelector: {{ .Values.livekit.nodeSelector | toYaml | nindent 10 }}
         {{- end }}
         turn:
@@ -158,7 +158,7 @@ releases:
           persistentVolume:
             enabled: true
             size: {{ .Values.observability.prometheus.storage | default "10Gi" }}
-          {{- if .Values.statefulNodeSelector }}
+          {{- if index .Values "statefulNodeSelector" }}
           nodeSelector: {{ .Values.statefulNodeSelector | toYaml | nindent 12 }}
           {{- end }}
           resources:
@@ -219,7 +219,7 @@ releases:
           persistence:
             enabled: true
             size: {{ .Values.observability.loki.storage | default "10Gi" }}
-          {{- if .Values.statefulNodeSelector }}
+          {{- if index .Values "statefulNodeSelector" }}
           nodeSelector: {{ .Values.statefulNodeSelector | toYaml | nindent 12 }}
           {{- end }}
           resources:
@@ -280,7 +280,7 @@ releases:
       - persistence:
           enabled: true
           size: {{ .Values.observability.grafana.storage | default "5Gi" }}
-        {{- if .Values.statefulNodeSelector }}
+        {{- if index .Values "statefulNodeSelector" }}
         nodeSelector: {{ .Values.statefulNodeSelector | toYaml | nindent 10 }}
         {{- end }}
         adminUser: admin

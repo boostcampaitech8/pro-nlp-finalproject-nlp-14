@@ -1,8 +1,24 @@
 // 명령 처리 훅
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useCommandStore } from '@/app/stores/commandStore';
-import { spotlightApi, type SSEEvent } from '@/app/services/spotlightApi';
+import { spotlightApi, type SSEEvent, type SpotlightSession } from '@/app/services/spotlightApi';
 import type { ChatMessage, HITLData } from '@/app/types/command';
+
+type QueueItem =
+  | { kind: 'message'; text: string; sessionId: string }
+  | { kind: 'hitl'; action: 'confirm' | 'cancel'; params?: Record<string, unknown>; sessionId: string };
+
+const requestQueue: QueueItem[] = [];
+let queueProcessing = false;
+let hitlPending = false;
+let queueSessionId: string | null = null;
+
+const resetQueueState = () => {
+  requestQueue.length = 0;
+  queueProcessing = false;
+  hitlPending = false;
+  queueSessionId = null;
+};
 
 export function useCommand() {
   const {
@@ -27,40 +43,94 @@ export function useCommand() {
   // 현재 세션 ID를 ref로 추적 (콜백에서 최신 값 참조용)
   const currentSessionIdRef = useRef(currentSessionId);
   currentSessionIdRef.current = currentSessionId;
+  const sessionCreationRef = useRef<Promise<SpotlightSession | null> | null>(null);
 
-  // 채팅 메시지 전송 (세션 기반 SSE 스트림)
-  const sendChatMessage = useCallback(
-    async (text: string) => {
-      // 세션이 없으면 새로 생성
-      let sessionId = currentSessionId;
-      if (!sessionId) {
-        const session = await createNewSession();
-        if (!session) {
-          // 세션 생성 실패
-          const errorMsg: ChatMessage = {
-            id: `chat-${Date.now()}-error`,
-            role: 'agent',
-            content: '세션 생성에 실패했습니다. 다시 시도해주세요.',
-            timestamp: new Date(),
-          };
-          addChatMessage(errorMsg);
-          return;
-        }
-        sessionId = session.id;
-        // ref도 즉시 업데이트하여 race condition 방지
-        currentSessionIdRef.current = sessionId;
+  useEffect(() => {
+    if (!currentSessionId) {
+      resetQueueState();
+      return;
+    }
+    if (queueSessionId && queueSessionId !== currentSessionId) {
+      resetQueueState();
+    }
+    queueSessionId = currentSessionId;
+  }, [currentSessionId]);
+
+  const processQueue = useCallback(() => {
+    if (queueProcessing) return;
+    if (requestQueue.length === 0) return;
+
+    let nextIndex = 0;
+    if (hitlPending) {
+      nextIndex = requestQueue.findIndex((item) => item.kind === 'hitl');
+      if (nextIndex === -1) return;
+    }
+
+    const [nextItem] = requestQueue.splice(nextIndex, 1);
+    if (!nextItem) return;
+
+    queueProcessing = true;
+
+    const completeItem = (options?: { setHitlPending?: boolean }) => {
+      if (typeof options?.setHitlPending === 'boolean') {
+        hitlPending = options.setHitlPending;
       }
+      queueProcessing = false;
+      processQueue();
+    };
 
-      // 사용자 메시지 추가
-      const userMsg: ChatMessage = {
-        id: `chat-${Date.now()}`,
-        role: 'user',
-        content: text,
-        timestamp: new Date(),
+    if (nextItem.kind === 'message') {
+      startMessageStream(nextItem, completeItem);
+    } else {
+      startHitlStream(nextItem, completeItem);
+    }
+  }, []);
+
+  const enqueueMessage = useCallback(
+    (text: string, sessionId: string) => {
+      requestQueue.push({ kind: 'message', text, sessionId });
+      processQueue();
+    },
+    [processQueue]
+  );
+
+  const enqueueHitl = useCallback(
+    (action: 'confirm' | 'cancel', sessionId: string, params?: Record<string, unknown>) => {
+      requestQueue.unshift({ kind: 'hitl', action, params, sessionId });
+      processQueue();
+    },
+    [processQueue]
+  );
+
+  const ensureSessionId = useCallback(async () => {
+    if (currentSessionIdRef.current) return currentSessionIdRef.current;
+
+    if (!sessionCreationRef.current) {
+      setProcessing(true);
+      enterChatMode();
+      sessionCreationRef.current = createNewSession();
+    }
+
+    const session = await sessionCreationRef.current;
+    sessionCreationRef.current = null;
+    setProcessing(false);
+
+    return session?.id ?? null;
+  }, [createNewSession, setProcessing, enterChatMode]);
+
+  const startMessageStream = useCallback(
+    async (
+      item: QueueItem & { kind: 'message' },
+      completeItem: (options?: { setHitlPending?: boolean }) => void
+    ) => {
+      const streamSessionId = item.sessionId;
+      let completed = false;
+      const finish = (options?: { setHitlPending?: boolean }) => {
+        if (completed) return;
+        completed = true;
+        completeItem(options);
       };
-      addChatMessage(userMsg);
 
-      // 에이전트 응답 placeholder
       const agentMsgId = `chat-${Date.now()}-agent`;
       const agentMsg: ChatMessage = {
         id: agentMsgId,
@@ -72,115 +142,234 @@ export function useCommand() {
       setStreaming(true);
       addChatMessage(agentMsg);
 
-      // SSE 스트림 시작 (세션 ID 캡처하여 이벤트 격리)
-      const streamSessionId = sessionId;
       try {
-        // 기존 스트림 정리
         abortCurrentStream();
 
         const controller = await spotlightApi.chatStream(
-          sessionId,
-          text,
+          streamSessionId,
+          item.text,
           (event: SSEEvent) => {
-            // 세션 ID가 변경되었으면 이벤트 무시 (세션 전환 시 격리)
-            if (currentSessionIdRef.current !== streamSessionId) {
-              console.log('[SSE] Ignoring event from different session:', streamSessionId);
-              return;
-            }
+            const isCurrentSession = currentSessionIdRef.current === streamSessionId;
 
             if (event.type === 'message' && event.data) {
-              // 토큰 수신 시 상태 메시지 즉시 제거 + 토큰 누적
+              if (!isCurrentSession) return;
               setStatusMessage(null);
               updateChatMessage(agentMsgId, {
                 content: (prev: string) => prev + event.data,
               });
             } else if (event.type === 'status' && event.data) {
-              // 상태 메시지 (회색 텍스트로 덮어쓰기)
+              if (!isCurrentSession) return;
               setStatusMessage(event.data);
             } else if (event.type === 'done') {
-              setStatusMessage(null); // 완료 시 상태 메시지 제거
-              setStreaming(false);
-              setAbortController(null); // 스트림 완료 시 컨트롤러 정리
-              // 현재 보고 있는 세션이 아니면 새 응답 표시 (세션 전환 후 완료된 경우)
-              if (currentSessionIdRef.current !== streamSessionId) {
+              if (isCurrentSession) {
+                setStatusMessage(null);
+                setStreaming(false);
+                setAbortController(null);
+              } else {
                 markSessionNewResponse(streamSessionId);
               }
+              finish();
             } else if (event.type === 'error') {
-              setStatusMessage(null);
+              if (isCurrentSession) {
+                setStatusMessage(null);
+                if (event.error !== '세션이 만료되었습니다.' && streamSessionId) {
+                  setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
+                  setTimeout(async () => {
+                    await syncSessionMessages(streamSessionId);
+                    setStatusMessage(null);
+                  }, 2000);
+                } else {
+                  updateChatMessage(agentMsgId, {
+                    content: event.error || '응답 처리 중 오류가 발생했습니다.',
+                  });
+                }
 
-              // 세션 만료 에러가 아닌 경우 자동 동기화 시도
-              if (event.error !== '세션이 만료되었습니다.' && streamSessionId) {
-                setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
-                setTimeout(async () => {
-                  await syncSessionMessages(streamSessionId);
-                  setStatusMessage(null);
-                }, 2000);
-              } else {
-                updateChatMessage(agentMsgId, {
-                  content: event.error || '응답 처리 중 오류가 발생했습니다.',
-                });
+                setStreaming(false);
+                setAbortController(null);
               }
-
-              setStreaming(false);
-              setAbortController(null);
+              finish();
             } else if (event.type === 'hitl_request') {
-              // HITL 확인 요청 - 별도 메시지로 추가
-              setStatusMessage(null);
-              setStreaming(false);
-              setAbortController(null);
+              if (isCurrentSession) {
+                setStatusMessage(null);
+                setStreaming(false);
+                setAbortController(null);
 
-              const hitlData: HITLData = {
-                tool_name: event.tool_name || '',
-                params: event.params || {},
-                params_display: event.params_display || {}, // UUID → 이름 변환된 표시용 값
-                message: event.message || '',
-                required_fields: event.required_fields || [],
-                display_template: event.display_template, // 자연어 템플릿
-              };
+                const hitlData: HITLData = {
+                  tool_name: event.tool_name || '',
+                  params: event.params || {},
+                  params_display: event.params_display || {},
+                  message: event.message || '',
+                  required_fields: event.required_fields || [],
+                  display_template: event.display_template,
+                };
 
-              const hitlMsg: ChatMessage = {
-                id: `hitl-${Date.now()}`,
-                role: 'agent',
-                type: 'hitl',
-                content: event.message || '작업을 수행할까요?',
-                timestamp: new Date(),
-                hitlData,
-                hitlStatus: 'pending',
-              };
-              addChatMessage(hitlMsg);
+                const hitlMsg: ChatMessage = {
+                  id: `hitl-${Date.now()}`,
+                  role: 'agent',
+                  type: 'hitl',
+                  content: event.message || '작업을 수행할까요?',
+                  timestamp: new Date(),
+                  hitlData,
+                  hitlStatus: 'pending',
+                };
+                addChatMessage(hitlMsg);
+                finish({ setHitlPending: true });
+              } else {
+                finish();
+              }
             }
           }
         );
 
-        // AbortController 저장 (세션 전환 시 취소용)
         setAbortController(controller);
       } catch (error) {
-        // AbortError는 정상적인 취소이므로 무시
         if ((error as Error).name === 'AbortError') {
-          console.log('[SSE] Stream aborted (session switch or cleanup)');
+          finish();
           return;
         }
 
-        // 네트워크 에러 시 자동 동기화 시도
         setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
         setStreaming(false);
         setAbortController(null);
 
-        // 3초 후 서버에서 최신 메시지 동기화
-        if (sessionId) {
-          setTimeout(async () => {
-            await syncSessionMessages(sessionId);
-            setStatusMessage(null);
-          }, 3000);
-        } else {
-          updateChatMessage(agentMsgId, {
-            content: '응답 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
-          });
+        setTimeout(async () => {
+          await syncSessionMessages(streamSessionId);
           setStatusMessage(null);
-        }
+        }, 3000);
+
+        finish();
       }
     },
-    [currentSessionId, createNewSession, addChatMessage, updateChatMessage, setStreaming, setStatusMessage, setAbortController, abortCurrentStream, syncSessionMessages, markSessionNewResponse]
+    [addChatMessage, updateChatMessage, setStreaming, setStatusMessage, setAbortController, abortCurrentStream, syncSessionMessages, markSessionNewResponse]
+  );
+
+  const startHitlStream = useCallback(
+    async (
+      item: QueueItem & { kind: 'hitl' },
+      completeItem: (options?: { setHitlPending?: boolean }) => void
+    ) => {
+      const streamSessionId = item.sessionId;
+      let completed = false;
+      const finish = (options?: { setHitlPending?: boolean }) => {
+        if (completed) return;
+        completed = true;
+        completeItem(options);
+      };
+
+      const agentMsgId = `chat-${Date.now()}-agent`;
+      const agentMsg: ChatMessage = {
+        id: agentMsgId,
+        role: 'agent',
+        type: 'text',
+        content: '',
+        timestamp: new Date(),
+      };
+      setStreaming(true);
+      addChatMessage(agentMsg);
+
+      try {
+        abortCurrentStream();
+
+        const controller = await spotlightApi.chatStream(
+          streamSessionId,
+          '',
+          (event: SSEEvent) => {
+            const isCurrentSession = currentSessionIdRef.current === streamSessionId;
+
+            if (event.type === 'message' && event.data) {
+              if (!isCurrentSession) return;
+              setStatusMessage(null);
+              updateChatMessage(agentMsgId, {
+                content: (prev: string) => prev + event.data,
+              });
+            } else if (event.type === 'status' && event.data) {
+              if (!isCurrentSession) return;
+              setStatusMessage(event.data);
+            } else if (event.type === 'done') {
+              if (isCurrentSession) {
+                setStatusMessage(null);
+                setStreaming(false);
+                setAbortController(null);
+              } else {
+                markSessionNewResponse(streamSessionId);
+              }
+              finish(isCurrentSession ? { setHitlPending: false } : undefined);
+            } else if (event.type === 'error') {
+              if (isCurrentSession) {
+                setStatusMessage(null);
+                if (event.error !== '세션이 만료되었습니다.' && streamSessionId) {
+                  setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
+                  setTimeout(async () => {
+                    await syncSessionMessages(streamSessionId);
+                    setStatusMessage(null);
+                  }, 2000);
+                } else {
+                  updateChatMessage(agentMsgId, {
+                    content: event.error || '작업 처리 중 오류가 발생했습니다.',
+                  });
+                }
+
+                setStreaming(false);
+                setAbortController(null);
+                finish({ setHitlPending: true });
+              } else {
+                finish();
+              }
+            } else if (event.type === 'hitl_request') {
+              if (isCurrentSession) {
+                setStatusMessage(null);
+                setStreaming(false);
+                setAbortController(null);
+
+                const hitlData: HITLData = {
+                  tool_name: event.tool_name || '',
+                  params: event.params || {},
+                  params_display: event.params_display || {},
+                  message: event.message || '',
+                  required_fields: event.required_fields || [],
+                  display_template: event.display_template,
+                };
+
+                const hitlMsg: ChatMessage = {
+                  id: `hitl-${Date.now()}`,
+                  role: 'agent',
+                  type: 'hitl',
+                  content: event.message || '작업을 수행할까요?',
+                  timestamp: new Date(),
+                  hitlData,
+                  hitlStatus: 'pending',
+                };
+                addChatMessage(hitlMsg);
+                finish({ setHitlPending: true });
+              } else {
+                finish();
+              }
+            }
+          },
+          item.action,
+          item.params
+        );
+
+        setAbortController(controller);
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') {
+          finish();
+          return;
+        }
+
+        setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
+        setStreaming(false);
+        setAbortController(null);
+
+        setTimeout(async () => {
+          await syncSessionMessages(streamSessionId);
+          setStatusMessage(null);
+        }, 3000);
+
+        finish({ setHitlPending: true });
+      }
+    },
+    [addChatMessage, updateChatMessage, setStreaming, setStatusMessage, setAbortController, abortCurrentStream, syncSessionMessages, markSessionNewResponse]
   );
 
   // 명령 제출 (항상 Spotlight API 사용)
@@ -191,29 +380,31 @@ export function useCommand() {
 
       setInputValue('');
 
-      // 이미 채팅 모드 -> 후속 메시지 전송
-      if (isChatMode) {
-        await sendChatMessage(cmd);
-        return;
+      if (!isChatMode) {
+        enterChatMode();
       }
 
-      // 채팅 모드 진입 후 첫 메시지도 Spotlight API로 전송
-      setProcessing(true);
-      enterChatMode();
+      const sessionId = await ensureSessionId();
+      if (!sessionId) return;
 
-      try {
-        await sendChatMessage(cmd);
-      } finally {
-        setProcessing(false);
-      }
+      const userMsg: ChatMessage = {
+        id: `chat-${Date.now()}-user`,
+        role: 'user',
+        type: 'text',
+        content: cmd,
+        timestamp: new Date(),
+      };
+      addChatMessage(userMsg);
+      enqueueMessage(cmd, sessionId);
     },
     [
       inputValue,
       isChatMode,
       setInputValue,
-      setProcessing,
       enterChatMode,
-      sendChatMessage,
+      ensureSessionId,
+      addChatMessage,
+      enqueueMessage,
     ]
   );
 
@@ -223,209 +414,50 @@ export function useCommand() {
       // plan 메시지를 승인 상태로 업데이트
       updateChatMessage(messageId, { approved: true });
 
-      // 승인 메시지를 Spotlight API로 전송
-      await sendChatMessage('승인합니다');
+      const sessionId = await ensureSessionId();
+      if (!sessionId) return;
+
+      const userMsg: ChatMessage = {
+        id: `chat-${Date.now()}-user`,
+        role: 'user',
+        type: 'text',
+        content: '승인합니다',
+        timestamp: new Date(),
+      };
+      addChatMessage(userMsg);
+      enqueueMessage('승인합니다', sessionId);
     },
-    [updateChatMessage, sendChatMessage]
+    [updateChatMessage, ensureSessionId, addChatMessage, enqueueMessage]
   );
 
   // HITL 확인 (Confirm)
   const confirmHITL = useCallback(
     async (messageId: string, params?: Record<string, unknown>) => {
       // 세션 확인
-      if (!currentSessionId) return;
+      const sessionId = currentSessionIdRef.current;
+      if (!sessionId) return;
 
       // HITL 메시지 상태 업데이트
       updateChatMessage(messageId, { hitlStatus: 'confirmed' });
 
-      // 에이전트 응답 placeholder
-      const agentMsgId = `chat-${Date.now()}-agent`;
-      const agentMsg: ChatMessage = {
-        id: agentMsgId,
-        role: 'agent',
-        type: 'text',
-        content: '',
-        timestamp: new Date(),
-      };
-      setStreaming(true);
-      addChatMessage(agentMsg);
-
-      // HITL confirm 액션과 함께 API 호출 (사용자 입력 파라미터 포함)
-      const streamSessionId = currentSessionId;
-      try {
-        // 기존 스트림 정리
-        abortCurrentStream();
-
-        const controller = await spotlightApi.chatStream(
-          currentSessionId,
-          '', // 빈 메시지 (HITL 응답이므로)
-          (event: SSEEvent) => {
-            // 세션 ID가 변경되었으면 이벤트 무시
-            if (currentSessionIdRef.current !== streamSessionId) {
-              return;
-            }
-
-            if (event.type === 'message' && event.data) {
-              setStatusMessage(null);
-              updateChatMessage(agentMsgId, {
-                content: (prev: string) => prev + event.data,
-              });
-            } else if (event.type === 'status' && event.data) {
-              setStatusMessage(event.data);
-            } else if (event.type === 'done') {
-              setStatusMessage(null);
-              setStreaming(false);
-              setAbortController(null);
-              // 현재 보고 있는 세션이 아니면 새 응답 표시
-              if (currentSessionIdRef.current !== streamSessionId) {
-                markSessionNewResponse(streamSessionId);
-              }
-            } else if (event.type === 'error') {
-              setStatusMessage(null);
-
-              // 세션 만료 에러가 아닌 경우 자동 동기화 시도
-              if (event.error !== '세션이 만료되었습니다.' && streamSessionId) {
-                setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
-                setTimeout(async () => {
-                  await syncSessionMessages(streamSessionId);
-                  setStatusMessage(null);
-                }, 2000);
-              } else {
-                updateChatMessage(agentMsgId, {
-                  content: event.error || '작업 처리 중 오류가 발생했습니다.',
-                });
-              }
-
-              setStreaming(false);
-              setAbortController(null);
-            }
-          },
-          'confirm',
-          params, // 사용자 입력 파라미터 전달
-        );
-
-        setAbortController(controller);
-      } catch (error) {
-        if ((error as Error).name === 'AbortError') return;
-
-        // 네트워크 에러 시 자동 동기화 시도
-        setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
-        setStreaming(false);
-        setAbortController(null);
-
-        if (currentSessionId) {
-          setTimeout(async () => {
-            await syncSessionMessages(currentSessionId);
-            setStatusMessage(null);
-          }, 3000);
-        } else {
-          updateChatMessage(agentMsgId, {
-            content: '작업 처리 중 오류가 발생했습니다.',
-          });
-          setStatusMessage(null);
-        }
-      }
+      enqueueHitl('confirm', sessionId, params);
     },
-    [currentSessionId, addChatMessage, updateChatMessage, setStreaming, setStatusMessage, setAbortController, abortCurrentStream, syncSessionMessages, markSessionNewResponse]
+    [updateChatMessage, enqueueHitl]
   );
 
   // HITL 취소 (Cancel)
   const cancelHITL = useCallback(
     async (messageId: string) => {
       // 세션 확인
-      if (!currentSessionId) return;
+      const sessionId = currentSessionIdRef.current;
+      if (!sessionId) return;
 
       // HITL 메시지 상태 업데이트
       updateChatMessage(messageId, { hitlStatus: 'cancelled' });
 
-      // 에이전트 응답 placeholder
-      const agentMsgId = `chat-${Date.now()}-agent`;
-      const agentMsg: ChatMessage = {
-        id: agentMsgId,
-        role: 'agent',
-        type: 'text',
-        content: '',
-        timestamp: new Date(),
-      };
-      setStreaming(true);
-      addChatMessage(agentMsg);
-
-      // HITL cancel 액션과 함께 API 호출
-      const streamSessionId = currentSessionId;
-      try {
-        // 기존 스트림 정리
-        abortCurrentStream();
-
-        const controller = await spotlightApi.chatStream(
-          currentSessionId,
-          '',
-          (event: SSEEvent) => {
-            // 세션 ID가 변경되었으면 이벤트 무시
-            if (currentSessionIdRef.current !== streamSessionId) {
-              return;
-            }
-
-            if (event.type === 'message' && event.data) {
-              setStatusMessage(null);
-              updateChatMessage(agentMsgId, {
-                content: (prev: string) => prev + event.data,
-              });
-            } else if (event.type === 'status' && event.data) {
-              setStatusMessage(event.data);
-            } else if (event.type === 'done') {
-              setStatusMessage(null);
-              setStreaming(false);
-              setAbortController(null);
-              // 현재 보고 있는 세션이 아니면 새 응답 표시
-              if (currentSessionIdRef.current !== streamSessionId) {
-                markSessionNewResponse(streamSessionId);
-              }
-            } else if (event.type === 'error') {
-              setStatusMessage(null);
-
-              // 세션 만료 에러가 아닌 경우 자동 동기화 시도
-              if (event.error !== '세션이 만료되었습니다.' && streamSessionId) {
-                setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
-                setTimeout(async () => {
-                  await syncSessionMessages(streamSessionId);
-                  setStatusMessage(null);
-                }, 2000);
-              } else {
-                updateChatMessage(agentMsgId, {
-                  content: event.error || '취소 처리 중 오류가 발생했습니다.',
-                });
-              }
-
-              setStreaming(false);
-              setAbortController(null);
-            }
-          },
-          'cancel'
-        );
-
-        setAbortController(controller);
-      } catch (error) {
-        if ((error as Error).name === 'AbortError') return;
-
-        // 네트워크 에러 시 자동 동기화 시도
-        setStatusMessage('연결이 끊어졌습니다. 결과를 확인하는 중...');
-        setStreaming(false);
-        setAbortController(null);
-
-        if (currentSessionId) {
-          setTimeout(async () => {
-            await syncSessionMessages(currentSessionId);
-            setStatusMessage(null);
-          }, 3000);
-        } else {
-          updateChatMessage(agentMsgId, {
-            content: '취소 처리 중 오류가 발생했습니다.',
-          });
-          setStatusMessage(null);
-        }
-      }
+      enqueueHitl('cancel', sessionId);
     },
-    [currentSessionId, addChatMessage, updateChatMessage, setStreaming, setStatusMessage, setAbortController, abortCurrentStream, syncSessionMessages, markSessionNewResponse]
+    [updateChatMessage, enqueueHitl]
   );
 
   return {

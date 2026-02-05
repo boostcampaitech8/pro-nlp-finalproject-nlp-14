@@ -141,9 +141,8 @@ async def run_agent_with_context(
         if not transcript:
             raise HTTPException(status_code=404, detail="Transcript not found")
 
-        settings = get_settings()
         raw_text = transcript.transcript_text
-        user_input = _strip_wake_word(raw_text, settings.agent_wake_word)
+        user_input = raw_text
 
         # 스트리밍 전에 필요한 데이터 추출 (DB 세션 종료 전)
         transcript_user_id = str(transcript.user_id)
@@ -151,10 +150,9 @@ async def run_agent_with_context(
         meeting_id_str = str(request.meeting_id)
 
         logger.info(
-            "Agent Context 요청: meeting_id=%s, transcript_id=%s, raw='%s', cleaned='%s'",
+            "Agent Context 요청: meeting_id=%s, transcript_id=%s, input='%s'",
             request.meeting_id,
             request.transcript_id,
-            raw_text[:50] if raw_text else "",
             user_input[:50] if user_input else "",
         )
 
