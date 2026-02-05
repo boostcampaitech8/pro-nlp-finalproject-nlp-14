@@ -9,18 +9,18 @@ from app.infrastructure.graph.orchestration.tools.registry import (
     InteractionMode,
     normalize_interaction_mode,
 )
-from app.prompt.v1.orchestration.simple_answering import (
-    SIMPLE_QUERY_DEFAULT_SYSTEM_PROMPT,
-    SIMPLE_QUERY_DEFAULT_USER_PROMPT,
-    SIMPLE_QUERY_SUGGESTED_SYSTEM_PROMPT,
-    SIMPLE_QUERY_SUGGESTED_USER_PROMPT,
-)
-from app.prompts.v1.orchestration.answering import (
+from app.prompt.v1.orchestration.answering import (
     ChannelType,
     build_system_prompt_with_tools,
     build_system_prompt_without_tools,
     build_user_prompt_with_tools,
     build_user_prompt_without_tools,
+)
+from app.prompt.v1.orchestration.simple_answering import (
+    SIMPLE_QUERY_DEFAULT_SYSTEM_PROMPT,
+    SIMPLE_QUERY_DEFAULT_USER_PROMPT,
+    SIMPLE_QUERY_SUGGESTED_SYSTEM_PROMPT,
+    SIMPLE_QUERY_SUGGESTED_USER_PROMPT
 )
 
 logger = logging.getLogger("AgentLogger")
