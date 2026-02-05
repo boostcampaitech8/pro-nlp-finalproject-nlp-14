@@ -43,6 +43,10 @@ data:
   CLOVA_ROUTER_ID: {{ .Values.ncp.clovaRouterId | quote }}
   CLOVA_ROUTER_VERSION: {{ .Values.ncp.clovaRouterVersion | quote }}
 
+  # Langfuse (LLM Observability)
+  LANGFUSE_BASE_URL: {{ .Values.langfuse.baseUrl | quote }}
+  LANGFUSE_TRACING_ENABLED: {{ .Values.langfuse.tracingEnabled | quote }}
+
   # OpenTelemetry (Service Name은 각 컴포넌트 코드에서 설정)
   # gRPC exporter는 scheme 없이 host:port 형식 권장
   OTEL_EXPORTER_OTLP_ENDPOINT: "alloy:4317"

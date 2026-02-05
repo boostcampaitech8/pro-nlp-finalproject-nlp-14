@@ -45,6 +45,7 @@ releases:
         worker: {{ .Values.worker | toYaml | nindent 10 }}
         neo4j: {{ .Values.neo4j | toYaml | nindent 10 }}
         ncp: {{ .Values.ncp | toYaml | nindent 10 }}
+        langfuse: {{ .Values.langfuse | toYaml | nindent 10 }}
         oauth: {{ .Values.oauth | toYaml | nindent 10 }}
         ingress: {{ .Values.ingress | toYaml | nindent 10 }}
         cloudflare: {{ .Values.cloudflare | toYaml | nindent 10 }}
