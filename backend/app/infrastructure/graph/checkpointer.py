@@ -18,6 +18,8 @@ import logging
 from contextlib import AsyncExitStack
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 
 from app.core.config import get_settings
 
@@ -52,22 +54,25 @@ async def get_checkpointer() -> AsyncPostgresSaver:
                 # AsyncExitStack으로 context manager 관리
                 _exit_stack = AsyncExitStack()
 
-                # from_conn_string은 async context manager 반환
-                # TCP keepalive로 stale 커넥션 감지 및 자동 정리
-                _checkpointer = await _exit_stack.enter_async_context(
-                    AsyncPostgresSaver.from_conn_string(
-                        settings.checkpointer_database_url,
-                        pool_kwargs={
-                            "max_size": 10,
-                            "kwargs": {
-                                "keepalives": 1,
-                                "keepalives_idle": 30,
-                                "keepalives_interval": 10,
-                                "keepalives_count": 5,
-                            },
-                        },
-                    )
+                # AsyncConnectionPool을 직접 생성하여 TCP keepalive 설정 적용
+                # stale 커넥션 감지 및 자동 정리
+                pool = AsyncConnectionPool(
+                    settings.checkpointer_database_url,
+                    max_size=10,
+                    kwargs={
+                        "autocommit": True,
+                        "prepare_threshold": 0,
+                        "row_factory": dict_row,
+                        "keepalives": 1,
+                        "keepalives_idle": 30,
+                        "keepalives_interval": 10,
+                        "keepalives_count": 5,
+                    },
                 )
+                await pool.open()
+                _exit_stack.push_async_callback(pool.close)
+
+                _checkpointer = AsyncPostgresSaver(conn=pool)
 
                 # 스키마 초기화 (idempotent - 이미 존재하면 무시)
                 await _checkpointer.setup()
