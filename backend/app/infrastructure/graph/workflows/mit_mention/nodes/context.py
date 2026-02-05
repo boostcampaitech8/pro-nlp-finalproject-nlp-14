@@ -15,7 +15,8 @@ async def gather_context(state: MitMentionState) -> dict:
     """Decision 컨텍스트 수집
 
     Contract:
-        reads: mit_mention_decision_content, mit_mention_decision_context, mit_mention_thread_history, mit_mention_meeting_id
+        reads: mit_mention_decision_content, mit_mention_decision_context, 
+               mit_mention_thread_history, mit_mention_meeting_id, mit_mention_search_results
         writes: mit_mention_gathered_context
         side-effects: Neo4j 쿼리 (Meeting 컨텍스트 조회)
         failures: None (always succeeds with available data)
@@ -23,6 +24,7 @@ async def gather_context(state: MitMentionState) -> dict:
     decision_content = state.get("mit_mention_decision_content", "")
     decision_context = state.get("mit_mention_decision_context") or ""
     thread_history = state.get("mit_mention_thread_history") or []
+    search_results = state.get("mit_mention_search_results")  # 검색 결과 추가
 
     # Meeting 컨텍스트 추가
     meeting_id = state.get("mit_mention_meeting_id")
@@ -38,15 +40,20 @@ async def gather_context(state: MitMentionState) -> dict:
             meeting_context = None
 
     gathered = {
-        "decision_summary": decision_content[:500],  # 요약
-        "decision_context": decision_context[:300] if decision_context else None,
+        "decision_summary": decision_content[:800],  # 요약 (500→800자로 확대)
+        "decision_context": decision_context[:500] if decision_context else None,  # 300→500자로 확대
         "conversation_history": [
             {"role": h.get("role", "user"), "content": h.get("content", "")}
-            for h in thread_history[-5:]  # 최근 5개만
+            for h in thread_history[-10:]  # 최근 5개→10개로 확대
         ],
         "meeting_context": meeting_context,
+        "search_results": search_results,  # 검색 결과 포함
     }
 
-    logger.info(f"[gather_context] Context gathered: {len(gathered['conversation_history'])} history items, meeting_context={'present' if meeting_context else 'absent'}")
+    logger.info(
+        f"[gather_context] Context gathered: {len(gathered['conversation_history'])} history items, "
+        f"meeting_context={'present' if meeting_context else 'absent'}, "
+        f"search_results={'present' if search_results else 'absent'}"
+    )
 
     return {"mit_mention_gathered_context": gathered}

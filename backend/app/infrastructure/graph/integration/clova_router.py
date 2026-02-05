@@ -11,7 +11,7 @@ import uuid
 from typing import Optional
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 class ClovaRouterRequest(BaseModel):
     """Clova Router API 요청 모델"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     query: str
-    chatHistory: list[dict] = Field(default_factory=list)
+    chat_history: list[dict] = Field(default_factory=list, alias="chatHistory")
 
 
 class ClovaRouterDomainResult(BaseModel):
@@ -47,16 +49,20 @@ class ClovaRouterSafetyResult(BaseModel):
 class ClovaRouterUsage(BaseModel):
     """토큰 사용량"""
 
-    promptTokens: int
-    completionTokens: int
-    totalTokens: int
+    model_config = ConfigDict(populate_by_name=True)
+
+    prompt_tokens: int = Field(alias="promptTokens")
+    completion_tokens: int = Field(alias="completionTokens")
+    total_tokens: int = Field(alias="totalTokens")
 
 
 class ClovaRouterResultData(BaseModel):
     """Router 결과 데이터"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     domain: ClovaRouterDomainResult
-    blockedContent: ClovaRouterContentResult
+    blocked_content: ClovaRouterContentResult = Field(alias="blockedContent")
     safety: ClovaRouterSafetyResult
     usage: ClovaRouterUsage
 
@@ -212,3 +218,4 @@ async def create_clova_router_client(
         초기화된 ClovaRouterClient 인스턴스
     """
     return ClovaRouterClient(router_id=router_id, version=version, api_key=api_key)
+

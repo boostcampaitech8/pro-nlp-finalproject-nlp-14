@@ -322,12 +322,12 @@ def get_mention_generator_llm() -> ChatClovaX:
     """멘션 응답 생성 LLM (자연스러운 대화체).
 
     temperature: 0.6 (자연스러운 대화)
-    max_tokens: 512 (응답 길이 제한)
+    max_tokens: 4096 (충분한 응답 길이, 한국어 고려, 문장 완성 보장)
     """
     return ChatClovaX(
         model="HCX-007",
         temperature=0.6,
-        max_tokens=512,
+        max_tokens=4096,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
     )
