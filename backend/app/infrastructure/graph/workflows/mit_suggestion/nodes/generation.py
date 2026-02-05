@@ -124,6 +124,8 @@ async def generate_new_decision(state: MitSuggestionState) -> dict:
         meeting_parts = []
         if mc.get("meeting_title"):
             meeting_parts.append(f"- 회의 제목: {mc['meeting_title']}")
+        if mc.get("meeting_date"):
+            meeting_parts.append(f"- 회의 날짜: {mc['meeting_date']}")
         if mc.get("agenda_topics"):
             topics = ", ".join(mc["agenda_topics"][:5])  # 최대 5개
             meeting_parts.append(f"- 전체 안건: {topics}")
