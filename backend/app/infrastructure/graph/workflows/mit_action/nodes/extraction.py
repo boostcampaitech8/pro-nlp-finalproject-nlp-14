@@ -13,6 +13,10 @@ from app.infrastructure.graph.integration.llm import get_generator_llm
 from app.infrastructure.graph.workflows.mit_action.state import (
     MitActionState,
 )
+from app.prompt.v1.workflows.mit_action.extraction import (
+    ACTION_EXTRACTION_PROMPT,
+    ACTION_RETRY_INSTRUCTION,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,26 +65,9 @@ async def extract_actions(state: MitActionState) -> MitActionState:
     retry_instruction = ""
     if retry_reason:
         logger.info(f"재시도 사유: {retry_reason}")
-        retry_instruction = f"\n\n이전 추출이 거부되었습니다. 사유: {retry_reason}\n이 점을 개선하여 다시 추출하세요."
+        retry_instruction = ACTION_RETRY_INSTRUCTION.format(retry_reason=retry_reason)
 
-    prompt = ChatPromptTemplate.from_template(
-        "당신은 회의 결정사항에서 Action Item을 추출하는 AI입니다. "
-        "반드시 JSON 형식으로만 응답해야 합니다.\n\n"
-        "다음 결정사항에서 실행 가능한 Action Item을 추출하세요.\n\n"
-        "결정사항:\n{decision_content}\n\n"
-        "맥락:\n{decision_context}\n\n"
-        "추출 지침:\n"
-        "1. 구체적인 할 일만 추출하세요 (모호한 내용 제외)\n"
-        "2. 담당자가 언급되면 assignee_name에 기록하세요\n"
-        "3. 기한이 언급되면 YYYY-MM-DD 형식으로 due_date에 기록하세요\n"
-        "4. Action Item이 없으면 빈 배열을 반환하세요\n"
-        "{retry_instruction}\n\n"
-        "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
-        "{format_instructions}\n\n"
-        "예시:\n"
-        '{{"action_items": [{{"content": "API 문서 작성", '
-        '"due_date": "2026-02-01", "assignee_name": "김철수"}}]}}'
-    )
+    prompt = ChatPromptTemplate.from_template(ACTION_EXTRACTION_PROMPT)
 
     chain = prompt | get_generator_llm() | parser
 

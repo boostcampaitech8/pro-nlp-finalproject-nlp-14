@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from app.infrastructure.graph.integration.llm import get_pr_generator_llm
 from app.infrastructure.graph.workflows.generate_pr.state import GeneratePrState
-from app.prompts.v1.workflows.generate_pr import (
+from app.prompt.v1.workflows.generate_pr import (
     AGENDA_EXTRACTION_PROMPT,
     AGENDA_MERGE_PROMPT,
     SUMMARY_REFINEMENT_PROMPT,

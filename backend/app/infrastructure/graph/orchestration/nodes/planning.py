@@ -11,7 +11,7 @@ from app.infrastructure.graph.orchestration.tools.registry import (
     get_langchain_tools_for_mode,
     get_tool_category,
 )
-from app.prompts.v1.orchestration.planning import (
+from app.prompt.v1.orchestration.planning import (
     TOOL_UNAVAILABLE_MESSAGES,  # noqa: F401  # Re-export for other modules
     build_spotlight_system_prompt,
     build_voice_system_prompt,

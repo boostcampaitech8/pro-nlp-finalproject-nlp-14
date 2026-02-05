@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.infrastructure.graph.config import MAX_RETRY
 from app.infrastructure.graph.integration.llm import get_evaluator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
+from app.prompt.v1.orchestration.evaluation_node import EVALUATION_NODE_PROMPT
 
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
@@ -110,35 +111,7 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
 
     parser = PydanticOutputParser(pydantic_object=EvaluationOutput)
 
-    prompt = ChatPromptTemplate.from_template(
-        "당신은 도구 실행 결과를 평가하는 AI입니다. 반드시 JSON 형식으로만 응답해야 합니다.\n\n"
-        "사용자 질문: {query}\n"
-        "원래 계획: {plan}\n"
-        "도구 실행 결과: {tool_results}\n"
-        "현재 재시도 횟수: {retry_count}\n\n"
-        "도구 실행 결과를 평가하고 다음 단계를 결정하세요:\n\n"
-        "1. **success**: 사용자의 원래 요청이 **완전히** 완료됨\n"
-        "   - 조회 요청: 필요한 정보를 모두 얻음\n"
-        "   - 생성/수정/삭제 요청: 해당 작업이 실제로 완료됨\n"
-        "2. **retry**: 도구 실행 실패 또는 결과 불충분 (같은 도구 재실행)\n"
-        "3. **replanning**: 다음 단계가 필요함 (다른 도구 사용 필요)\n"
-        "   - 계획에 여러 단계가 있고, 현재 단계만 완료된 경우\n"
-        "   - 예: 팀 조회 완료 → 회의 생성 필요 → replanning\n\n"
-        "**중요 - 멀티스텝 태스크 판단:**\n"
-        "- 사용자가 '생성', '만들어', '추가해' 등 **변경 작업**을 요청했는가?\n"
-        "- 현재 도구 결과가 **조회**만 했다면, 실제 변경 작업이 아직 안 된 것\n"
-        "- 이 경우 반드시 **replanning**으로 다음 단계 진행\n\n"
-        "평가 기준:\n"
-        "- 사용자의 **최종 목표**가 달성되었는가? (중간 단계가 아닌 최종 목표)\n"
-        "- 계획에 '먼저 ... 후 ...' 같은 다단계 표현이 있다면 모든 단계가 완료되었는가?\n"
-        "- 추가 도구 호출이 필요한가?\n\n"
-        "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
-        "{format_instructions}\n\n"
-        "예시 1 (조회 완료):\n"
-        '{{"evaluation": "검색 결과 충분", "status": "success", "reason": "사용자가 조회를 요청했고 결과 획득"}}\n\n'
-        "예시 2 (다음 단계 필요):\n"
-        '{{"evaluation": "회의 생성 필요", "status": "replanning", "reason": "팀 조회는 완료했으나 회의 생성이 아직 필요함"}}'
-    )
+    prompt = ChatPromptTemplate.from_template(EVALUATION_NODE_PROMPT)
 
     chain = prompt | get_evaluator_llm() | parser
 

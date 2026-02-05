@@ -25,8 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.infrastructure.context.config import ContextConfig
 from app.infrastructure.context.models import TopicSegment, Utterance
-from app.infrastructure.context.prompts.topic_merging import TOPIC_MERGE_PROMPT
-from app.infrastructure.context.prompts.topic_separation import (
+from app.prompt.v1.context.topic_merging import TOPIC_MERGE_PROMPT
+from app.prompt.v1.context.topic_separation import (
     RECURSIVE_TOPIC_SEPARATION_PROMPT,
     TOPIC_SEPARATION_PROMPT,
 )

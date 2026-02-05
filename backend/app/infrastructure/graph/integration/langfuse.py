@@ -94,17 +94,29 @@ def get_runnable_config(
         base_url=base_url,
     )
 
-    # CallbackHandler에 user_id, session_id 직접 전달 (Langfuse 대시보드 필터링 지원)
-    callback_handler = CallbackHandler(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=base_url,
-        user_id=user_id,
-        session_id=session_id,
-    )
+    # CallbackHandler 생성 (Langfuse SDK 버전별 인자 차이 대응)
+    try:
+        callback_handler = CallbackHandler(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key,
+            host=base_url,
+            user_id=user_id,
+            session_id=session_id,
+        )
+    except TypeError:
+        logger.warning(
+            "Langfuse CallbackHandler arg mismatch; falling back to public_key only."
+        )
+        callback_handler = CallbackHandler(public_key=settings.langfuse_public_key)
+
+    metadata_payload = dict(metadata or {})
+    if user_id is not None:
+        metadata_payload.setdefault("user_id", user_id)
+    if session_id is not None:
+        metadata_payload.setdefault("session_id", session_id)
 
     return {
         "callbacks": [callback_handler],
         **({"run_name": trace_name} if trace_name else {}),
-        **({"metadata": metadata} if metadata else {}),
+        **({"metadata": metadata_payload} if metadata_payload else {}),
     }
