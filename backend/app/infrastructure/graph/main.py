@@ -108,7 +108,6 @@ async def main():
                 # 노드 시작 메시지 매핑
                 NODE_STATUS_MESSAGES = {
                     "planner": "🧠 계획 수립 중...",
-                    "mit_tools": "🔍 데이터 검색 중...",
                     "evaluator": "✅ 결과 평가 중...",
                     "generator": "✍️ 답변 생성 중...",
                 }

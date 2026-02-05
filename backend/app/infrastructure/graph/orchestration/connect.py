@@ -23,7 +23,6 @@ from .nodes.answering import generate_answer
 from .nodes.evaluation import evaluate_result
 from .nodes.mit_tools_analyze import execute_mit_tools_analyze
 from .nodes.mit_tools_search import execute_mit_tools_search
-from .nodes.mit_tools import execute_mit_tools
 from .nodes.planning import create_plan
 from .nodes.simple_router import route_simple_query
 from .nodes.tools import execute_tools
@@ -45,7 +44,7 @@ def route_by_tool_need(state: OrchestrationState) -> str:
     Returns:
         str: 다음 노드 이름
             - "tools": selected_tool이 있는 경우 (새 Tool 시스템)
-            - "mit_tools": need_tools=True인 경우 (기존 MIT 검색 도구)
+            - "mit_tools_analyze": need_tools=True인 경우 (MIT 검색 분석/검색 경로)
             - "generator": 그 외 경우 (직접 응답 생성)
     """
     # HITL 확인 대기 중이면 END (SSE로 클라이언트에 알림)
@@ -88,10 +87,10 @@ def build_orchestration_workflow() -> StateGraph:
         StateGraph: 컴파일 전 워크플로우 그래프
 
     Workflow:
-        planner -> [tools | mit_tools | generator | END]
+        planner -> [tools | mit_tools_analyze | generator | END]
         tools -> [evaluator | END (HITL pending)]
-        mit_tools -> evaluator
-        evaluator -> [mit_tools | planner | generator]
+        mit_tools_analyze -> mit_tools_search -> evaluator
+        evaluator -> [mit_tools_analyze | planner | generator]
         generator -> END
     """
     workflow = StateGraph(OrchestrationState)
@@ -102,7 +101,6 @@ def build_orchestration_workflow() -> StateGraph:
     workflow.add_node("mit_tools_analyze", execute_mit_tools_analyze)
     workflow.add_node("mit_tools_search", execute_mit_tools_search)
     workflow.add_node("tools", execute_tools)  # 새 Tool 시스템 (HITL 지원)
-    workflow.add_node("mit_tools", execute_mit_tools)  # 기존 MIT 검색 도구
     workflow.add_node("evaluator", evaluate_result)
     workflow.add_node("generator", generate_answer)
 
@@ -122,7 +120,6 @@ def build_orchestration_workflow() -> StateGraph:
         route_by_tool_need,
         {
             "tools": "tools",
-            "mit_tools": "mit_tools",
             "mit_tools_analyze": "mit_tools_analyze",
             "generator": "generator",
             END: END,  # HITL pending 상태
