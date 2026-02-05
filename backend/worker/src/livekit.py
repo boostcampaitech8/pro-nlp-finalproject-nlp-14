@@ -79,7 +79,7 @@ class LiveKitBot:
             self.config.livekit_api_secret,
         )
         token.with_identity(f"mit-agent-{self.meeting_id}")
-        token.with_name("Mit Agent")
+        token.with_name("부덕이")
         token.with_grants(
             api.VideoGrants(
                 room_join=True,
