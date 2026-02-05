@@ -1,8 +1,10 @@
 import type {
+  AcceptInviteResponse,
   AddMeetingParticipantRequest,
   CreateMeetingRequest,
   CreateTeamRequest,
   ErrorResponse,
+  InviteLinkResponse,
   InviteTeamMemberRequest,
   Meeting,
   MeetingParticipant,
@@ -61,6 +63,16 @@ interface TeamState {
   updateMemberRole: (teamId: string, userId: string, data: UpdateTeamMemberRequest) => Promise<void>;
   removeMember: (teamId: string, userId: string) => Promise<void>;
 
+  // 초대 링크 상태
+  inviteLink: InviteLinkResponse | null;
+  inviteLinkLoading: boolean;
+
+  // 초대 링크 액션
+  generateInviteLink: (teamId: string) => Promise<InviteLinkResponse>;
+  fetchInviteLink: (teamId: string) => Promise<void>;
+  deactivateInviteLink: (teamId: string) => Promise<void>;
+  acceptInvite: (code: string) => Promise<AcceptInviteResponse>;
+
   // 회의 액션
   fetchMeetings: (teamId: string, status?: MeetingStatus) => Promise<void>;
   fetchMeeting: (meetingId: string) => Promise<void>;
@@ -88,6 +100,9 @@ export const useTeamStore = create<TeamState>((set) => ({
   currentMeeting: null,
   meetingsLoading: false,
   meetingError: null,
+
+  inviteLink: null,
+  inviteLinkLoading: false,
 
   // 팀 액션
   fetchTeams: async () => {
@@ -366,6 +381,55 @@ export const useTeamStore = create<TeamState>((set) => ({
     } catch (error) {
       const message = getErrorMessage(error, 'Failed to remove participant');
       set({ meetingError: message, meetingsLoading: false });
+      throw error;
+    }
+  },
+
+  // 초대 링크 액션
+  generateInviteLink: async (teamId: string) => {
+    set({ inviteLinkLoading: true, teamError: null });
+    try {
+      const link = await teamService.generateInviteLink(teamId);
+      set({ inviteLink: link, inviteLinkLoading: false });
+      return link;
+    } catch (error) {
+      const message = getErrorMessage(error, 'Failed to generate invite link');
+      set({ teamError: message, inviteLinkLoading: false });
+      throw error;
+    }
+  },
+
+  fetchInviteLink: async (teamId: string) => {
+    set({ inviteLinkLoading: true });
+    try {
+      const link = await teamService.getInviteLink(teamId);
+      set({ inviteLink: link, inviteLinkLoading: false });
+    } catch (error) {
+      set({ inviteLink: null, inviteLinkLoading: false });
+    }
+  },
+
+  deactivateInviteLink: async (teamId: string) => {
+    set({ inviteLinkLoading: true, teamError: null });
+    try {
+      await teamService.deactivateInviteLink(teamId);
+      set({ inviteLink: null, inviteLinkLoading: false });
+    } catch (error) {
+      const message = getErrorMessage(error, 'Failed to deactivate invite link');
+      set({ teamError: message, inviteLinkLoading: false });
+      throw error;
+    }
+  },
+
+  acceptInvite: async (code: string) => {
+    set({ teamsLoading: true, teamError: null });
+    try {
+      const result = await teamService.acceptInvite(code);
+      set({ teamsLoading: false });
+      return result;
+    } catch (error) {
+      const message = getErrorMessage(error, 'Failed to accept invite');
+      set({ teamError: message, teamsLoading: false });
       throw error;
     }
   },

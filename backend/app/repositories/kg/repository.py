@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from neo4j import AsyncDriver, READ_ACCESS
 from neo4j.time import DateTime as Neo4jDateTime
 
 from app.constants.agents import DEFAULT_AI_AGENT
@@ -19,9 +18,13 @@ from app.models.kg import (
     KGMeeting,
     KGMinutes,
     KGMinutesActionItem,
+    KGMinutesAgenda,
     KGMinutesDecision,
+    KGSpanRef,
     KGSuggestion,
 )
+from neo4j import READ_ACCESS, AsyncDriver
+
 
 def _convert_neo4j_datetime(value: Any) -> datetime:
     """Neo4j DateTime을 Python datetime으로 변환"""
@@ -197,12 +200,34 @@ class KGRepository:
         Args:
             meeting_id: 회의 ID
             summary: 회의 요약
-            agendas: [{topic, description, decision: {content, context} | null}]
+            agendas: [{topic, description, evidence, decision: {content, context, evidence} | null}]
 
         Returns:
             KGMinutes (Projection - 생성된 데이터로 구성)
         """
+        import json
+
         now = datetime.now(timezone.utc).isoformat()
+
+        # evidence를 JSON 문자열로 직렬화
+        agendas_with_serialized_evidence = []
+        for agenda in agendas:
+            serialized = {
+                "topic": agenda.get("topic", ""),
+                "description": agenda.get("description", ""),
+                "evidence_json": json.dumps(agenda.get("evidence", []), ensure_ascii=False),
+            }
+            if agenda.get("decision"):
+                serialized["decision"] = {
+                    "content": agenda["decision"].get("content", ""),
+                    "context": agenda["decision"].get("context", ""),
+                    "evidence_json": json.dumps(
+                        agenda["decision"].get("evidence", []), ensure_ascii=False
+                    ),
+                }
+            else:
+                serialized["decision"] = None
+            agendas_with_serialized_evidence.append(serialized)
 
         query = """
         MATCH (m:Meeting {id: $meeting_id})
@@ -218,6 +243,7 @@ class KGRepository:
             id: 'agenda-' + randomUUID(),
             topic: agenda_data.topic,
             description: coalesce(agenda_data.description, ''),
+            evidence: agenda_data.evidence_json,
             created_at: datetime($created_at)
         })
         CREATE (m)-[:CONTAINS {order: idx}]->(a)
@@ -230,6 +256,7 @@ class KGRepository:
             id: 'decision-' + randomUUID(),
             content: agenda_data.decision.content,
             context: coalesce(agenda_data.decision.context, ''),
+            evidence: agenda_data.decision.evidence_json,
             status: 'draft',
             meeting_id: m.id,
             created_at: datetime($created_at)
@@ -247,7 +274,7 @@ class KGRepository:
                 "meeting_id": meeting_id,
                 "summary": summary,
                 "created_at": now,
-                "agendas": agendas,
+                "agendas": agendas_with_serialized_evidence,
             },
         )
 
@@ -259,19 +286,27 @@ class KGRepository:
 
         Minutes는 별도 노드가 아닌, 세 노드의 관계를 조합한 뷰
         """
+        import json
+
         query = """
         MATCH (m:Meeting {id: $meeting_id})
-        OPTIONAL MATCH (m)-[:CONTAINS]->(a:Agenda)
+        OPTIONAL MATCH (m)-[r:CONTAINS]->(a:Agenda)
         OPTIONAL MATCH (a)-[:HAS_DECISION]->(d:Decision)
         OPTIONAL MATCH (d)-[:TRIGGERS]->(ai:ActionItem)
         OPTIONAL MATCH (ai)<-[:ASSIGNED_TO]-(assignee:User)
+        WITH m, a, d, ai, assignee, r
+        ORDER BY r.order
         RETURN m,
                collect(DISTINCT {
-                   id: d.id,
-                   content: d.content,
-                   context: d.context,
-                   agenda_topic: a.topic
-               }) as decisions,
+                   id: a.id,
+                   topic: a.topic,
+                   description: a.description,
+                   evidence: a.evidence,
+                   decision_id: d.id,
+                   decision_content: d.content,
+                   decision_context: d.context,
+                   decision_evidence: d.evidence
+               }) as agendas,
                collect(DISTINCT {
                    id: ai.id,
                    content: ai.content,
@@ -286,11 +321,46 @@ class KGRepository:
         record = records[0]
         m = dict(record["m"])
 
-        decisions = [
-            KGMinutesDecision(**d)
-            for d in record["decisions"]
-            if d.get("id") is not None
-        ]
+        def _parse_evidence(evidence_json: str | None) -> list[KGSpanRef]:
+            """JSON 문자열에서 evidence 파싱"""
+            if not evidence_json:
+                return []
+            try:
+                evidence_list = json.loads(evidence_json)
+                return [KGSpanRef(**e) for e in evidence_list]
+            except (json.JSONDecodeError, TypeError):
+                return []
+
+        # Agenda + Decision 파싱
+        agendas: list[KGMinutesAgenda] = []
+        decisions: list[KGMinutesDecision] = []
+
+        for a in record["agendas"]:
+            if a.get("id") is None:
+                continue
+
+            agenda_evidence = _parse_evidence(a.get("evidence"))
+
+            decision = None
+            if a.get("decision_id"):
+                decision_evidence = _parse_evidence(a.get("decision_evidence"))
+                decision = KGMinutesDecision(
+                    id=a["decision_id"],
+                    content=a.get("decision_content", ""),
+                    context=a.get("decision_context"),
+                    agenda_topic=a.get("topic"),
+                    evidence=decision_evidence,
+                )
+                decisions.append(decision)
+
+            agendas.append(KGMinutesAgenda(
+                id=a["id"],
+                topic=a.get("topic", ""),
+                description=a.get("description"),
+                evidence=agenda_evidence,
+                decision=decision,
+            ))
+
         action_items = [
             KGMinutesActionItem(**ai)
             for ai in record["action_items"]
@@ -303,6 +373,7 @@ class KGRepository:
             meeting_id=meeting_id,
             summary=m.get("summary", ""),
             created_at=_convert_neo4j_datetime(m.get("created_at")),
+            agendas=agendas,
             decisions=decisions,
             action_items=action_items,
         )
@@ -782,7 +853,7 @@ class KGRepository:
         })
 
         if not records:
-            raise ValueError(f"Suggestion or Decision not found")
+            raise ValueError("Suggestion or Decision not found")
 
         r = records[0]
         return KGDecision(
@@ -1243,12 +1314,38 @@ class KGRepository:
     # Minutes View
     # =========================================================================
 
+    async def has_minutes(self, meeting_id: str) -> bool:
+        """회의록 존재 여부 경량 확인 (summary 또는 decision 존재)"""
+        query = """
+        MATCH (m:Meeting {id: $meeting_id})
+        OPTIONAL MATCH (m)-[:CONTAINS]->(:Agenda)-[:HAS_DECISION]->(d:Decision)
+        WITH m, count(d) AS decision_count
+        RETURN (m.summary IS NOT NULL AND m.summary <> '') OR decision_count > 0 AS has_minutes
+        """
+        records = await self._execute_read(query, {"meeting_id": meeting_id})
+        if not records:
+            return False
+        return bool(records[0]["has_minutes"])
+
     async def get_minutes_view(self, meeting_id: str) -> dict:
         """Minutes 전체 View 조회 (중첩 구조)"""
+        import json
+
+        def _parse_evidence(evidence_json: str | None) -> list[dict]:
+            if not evidence_json:
+                return []
+            try:
+                parsed = json.loads(evidence_json)
+            except (TypeError, json.JSONDecodeError):
+                return []
+            if not isinstance(parsed, list):
+                return []
+            return [item for item in parsed if isinstance(item, dict)]
+
         # 1. Meeting + Summary 조회
         meeting_query = """
         MATCH (m:Meeting {id: $meeting_id})
-        RETURN m.id as meeting_id, m.summary as summary
+        RETURN m.id as meeting_id, m.title as meeting_title, m.summary as summary
         """
         meeting_records = await self._execute_read(meeting_query, {"meeting_id": meeting_id})
         if not meeting_records:
@@ -1259,7 +1356,7 @@ class KGRepository:
         # 2. Agendas 조회
         agenda_query = """
         MATCH (m:Meeting {id: $meeting_id})-[rel:CONTAINS]->(a:Agenda)
-        RETURN a.id as id, a.topic as topic, a.description as description, rel.order as order
+        RETURN a.id as id, a.topic as topic, a.description as description, a.evidence as evidence, rel.order as order
         ORDER BY rel.order
         """
         agenda_records = await self._execute_read(agenda_query, {"meeting_id": meeting_id})
@@ -1279,6 +1376,7 @@ class KGRepository:
             RETURN d.id as id, d.content as content, d.context as context,
                    d.status as status, d.meeting_id as meeting_id,
                    d.created_at as created_at, d.updated_at as updated_at,
+                   d.evidence as evidence,
                    [x IN collect(DISTINCT approver.id) WHERE x IS NOT NULL] as approvers,
                    [x IN collect(DISTINCT rejector.id) WHERE x IS NOT NULL] as rejectors,
                    prev.id as supersedes_id, prev.content as supersedes_content,
@@ -1385,6 +1483,7 @@ class KGRepository:
                     "meeting_id": d["meeting_id"],
                     "approvers": d["approvers"] or [],
                     "rejectors": d["rejectors"] or [],
+                    "evidence": _parse_evidence(d.get("evidence")),
                     "created_at": _convert_neo4j_datetime(d["created_at"]).isoformat(),
                     "updated_at": _convert_neo4j_datetime(d["updated_at"]).isoformat() if d.get("updated_at") else None,
                     "suggestions": suggestions,
@@ -1405,6 +1504,7 @@ class KGRepository:
                 "description": a["description"],
                 "order": a["order"] or 0,
                 "decisions": decisions,
+                "evidence": _parse_evidence(a.get("evidence")),
             })
 
         # 7. ActionItems 조회
@@ -1428,6 +1528,7 @@ class KGRepository:
 
         return {
             "meeting_id": meeting["meeting_id"],
+            "meeting_title": meeting.get("meeting_title"),
             "summary": meeting["summary"] or "",
             "agendas": agendas,
             "action_items": action_items,

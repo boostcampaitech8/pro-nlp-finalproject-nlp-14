@@ -2,9 +2,12 @@ import asyncio
 import os
 from logging.config import fileConfig
 
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# 프로젝트 루트의 .env 로드 (main/.env)
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
+# backend/.env 로드 (있으면 우선순위)
 
 from alembic import context
 from sqlalchemy import pool

@@ -66,21 +66,57 @@ def get_planner_llm() -> ChatClovaX:
     ).with_config(run_name="planner")
 
 
+def get_planner_llm_for_tools() -> ChatClovaX:
+    """bind_tools용 Planning LLM (Function Calling 지원 모델)
+
+    Model: HCX-005 (Function Calling 지원)
+    Use Case: bind_tools를 사용한 도구 선택
+    temperature: 0.3 (일관성 우선)
+    max_tokens: 1024
+
+    Note: ClovaStudio Function Calling은 HCX-005, HCX-DASH-002에서만 지원
+    https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-fc
+    """
+    return ChatClovaX(
+        model="HCX-005",
+        temperature=0.3,
+        max_tokens=1024,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+    ).with_config(run_name="planner_tools")
+
+
 def get_generator_llm() -> ChatClovaX:
-    """Generator 전용 LLM (기본 temperature)
+    """Generator 전용 LLM (일반 추출/생성용)
 
     Model: HCX-003
-    Use Case: 일반적인 텍스트 생성
+    Use Case: mit_action 등 일반적인 구조화 추출/텍스트 생성
     temperature: 0.5 (자연스러운 생성)
-    max_tokens: 512
+    max_tokens: 1024 (짧은/중간 길이 결과에 최적화)
     """
     return ChatClovaX(
         model="HCX-007",
         temperature=0.5,
-        max_tokens=512,
+        max_tokens=1024,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
     ).with_config(run_name="generator")
+
+
+def get_pr_generator_llm() -> ChatClovaX:
+    """Generate PR 전용 LLM (긴 구조화 출력 대응).
+
+    Model: HCX-007
+    Use Case: 회의 트랜스크립트에서 Agenda/Decision 대량 추출
+    temperature: 0.5 (자연스러운 생성 + 일관성 균형)
+    max_tokens: 4096 (다수 Agenda/Decision JSON 출력 대응)
+    """
+    return ChatClovaX(
+        model="HCX-007",
+        temperature=0.5,
+        max_tokens=4096,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        thinking={"effort": "low"},
+    ).with_config(run_name="pr_generator")
 
 
 def get_evaluator_llm() -> ChatClovaX:

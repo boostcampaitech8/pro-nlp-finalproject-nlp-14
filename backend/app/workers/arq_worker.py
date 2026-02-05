@@ -75,7 +75,11 @@ def traced_task(task_name: str) -> Callable[[Callable[..., T]], Callable[..., T]
 
 
 @traced_task("generate_pr_task")
-async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
+async def generate_pr_task(
+    ctx: dict,
+    meeting_id: str,
+    realtime_topics: list[dict] | None = None,
+) -> dict:
     """PR 생성 태스크
 
     실시간 STT 완료 후 호출되어 Agenda + Decision을 생성합니다.
@@ -83,6 +87,7 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
     Args:
         ctx: ARQ 컨텍스트
         meeting_id: 회의 ID
+        realtime_topics: API에서 전달받은 실시간 L1 토픽 스냅샷
 
     Returns:
         dict: 작업 결과
@@ -108,12 +113,27 @@ async def generate_pr_task(ctx: dict, meeting_id: str) -> dict:
                 generate_pr_graph,
             )
 
-            logger.info(f"Starting generate_pr workflow: meeting={meeting_id}")
+            logger.info(
+                "Starting generate_pr workflow: meeting=%s, realtime_topics=%d",
+                meeting_id,
+                len(realtime_topics or []),
+            )
 
             result = await generate_pr_graph.ainvoke(
                 {
                     "generate_pr_meeting_id": meeting_id,
                     "generate_pr_transcript_text": transcript_response.full_text,
+                    "generate_pr_transcript_utterances": [
+                        {
+                            "id": str(utterance.id),
+                            "speaker_name": utterance.speaker_name,
+                            "text": utterance.text,
+                            "start_ms": utterance.start_ms,
+                            "end_ms": utterance.end_ms,
+                        }
+                        for utterance in transcript_response.utterances
+                    ],
+                    "generate_pr_realtime_topics": realtime_topics or [],
                 },
                 config=get_runnable_config(
                     trace_name="generate_pr",

@@ -6,6 +6,14 @@ global:
   environment: production
   registry: "ghcr.io/teamatoi"
 
+# HA 설정 (3노드 클러스터)
+# backend: context_runtime이 인메모리 캐시(TTLCache)라 멀티 인스턴스 시 토픽 정합성 깨짐
+# TODO: context_runtime을 Redis 기반으로 전환 후 replicas 증가
+replicas:
+  backend: 1
+  frontend: 2
+  arqWorker: 2
+
 # 이미지 태그 (CI에서 SHA 기반, 환경변수로 오버라이드 가능)
 images:
   backend:
@@ -35,7 +43,7 @@ frontend:
 database:
   url: {{ requiredEnv "DATABASE_URL" }}
 
-# Redis
+# Redis (standalone - 앱 레벨 Sentinel 미지원으로 단일 인스턴스 유지)
 redis:
   host: redis-master
   port: 6379
@@ -56,13 +64,17 @@ livekit:
   externalUrl: "wss://www.mit-hub.com/livekit"
   webhookUrls:
     - "http://backend:8000/api/v1/livekit/webhook"
+  # 노드 1 고정 (WebRTC는 외부 IP가 고정되어야 함)
+  # 배포 후: kubectl label node <노드1> mit/livekit=true
+  nodeSelector:
+    mit/livekit: "true"
   # RTC 설정 (프로덕션: 서버 외부 IP 사용)
   rtc:
     nodeIp: ""  # 빈 문자열 = 자동 감지
     useExternalIp: true
     tcpPort: 7881
     portRangeStart: 50000
-    portRangeEnd: 50020
+    portRangeEnd: 51000
 
 # JWT
 jwt:
@@ -77,11 +89,18 @@ app:
   corsOrigins:
     - "https://mit-hub.com"
     - "https://www.mit-hub.com"
+  frontendBaseUrl: "https://www.mit-hub.com"  # 초대 링크 생성용
 
 # Worker
 worker:
   clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
-  clovaSttSecret: {{ requiredEnv "CLOVA_STT_SECRET" }}
+  # Clova STT API 키 배열 (동적 할당용)
+  clovaSttSecrets:
+    - {{ requiredEnv "CLOVA_STT_SECRET_0" }}
+    - {{ requiredEnv "CLOVA_STT_SECRET_1" }}
+    - {{ requiredEnv "CLOVA_STT_SECRET_2" }}
+    - {{ requiredEnv "CLOVA_STT_SECRET_3" }}
+    - {{ requiredEnv "CLOVA_STT_SECRET_4" }}
   backendApiKey: {{ requiredEnv "BACKEND_API_KEY" }}
   ttsServerUrl: {{ requiredEnv "TTS_SERVER_URL" }}
 
@@ -144,6 +163,17 @@ observability:
   grafana:
     storage: 5Gi
     adminPassword: {{ requiredEnv "GRAFANA_ADMIN_PASSWORD" }}
+
+# Redis 노드 고정 (노드1: LiveKit과 동일 노드)
+# 배포 후: kubectl label node <노드1> mit/redis=true
+redisNodeSelector:
+  mit/redis: "true"
+
+# Observability 스택 노드 고정 (local-path PV는 노드 로컬 디스크 사용)
+# Pod이 다른 노드로 재스케줄되면 기존 PV 데이터에 접근 불가 → 같은 노드 고정
+# 배포 후: kubectl label node <노드2 또는 노드3> mit/stateful=true
+statefulNodeSelector:
+  mit/stateful: "true"
 
 # Cloudflare Tunnel (Grafana 접근용)
 cloudflare:

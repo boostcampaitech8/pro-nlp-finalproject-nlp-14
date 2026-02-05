@@ -6,14 +6,15 @@ Meeting의 Minutes View 조회 (중첩 구조).
 import json
 from typing import Annotated
 
+from arq.jobs import Job, JobStatus
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import get_current_user, handle_service_error
+from app.api.dependencies import get_arq_pool, get_current_user, handle_service_error
 from app.core.neo4j import get_neo4j_driver
 from app.models.user import User
 from app.schemas import ErrorResponse
-from app.schemas.minutes import MinutesResponse
+from app.schemas.minutes import MinutesResponse, MinutesStatusResponse
 from app.services.minutes_events import minutes_event_manager
 from app.services.minutes_service import MinutesService
 
@@ -45,6 +46,40 @@ async def get_minutes(
         return await service.get_minutes(meeting_id)
     except ValueError as e:
         handle_service_error(e)
+
+
+@meetings_minutes_router.get(
+    "/{meeting_id}/minutes/status",
+    response_model=MinutesStatusResponse,
+    summary="Minutes 생성 상태 확인",
+    description="ARQ 작업 상태와 KG 데이터를 기반으로 회의록 생성 상태를 반환합니다.",
+    responses={
+        401: {"model": ErrorResponse},
+    },
+)
+async def get_minutes_status(
+    meeting_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[MinutesService, Depends(get_minutes_service)],
+) -> MinutesStatusResponse:
+    # 1) KG에서 회의록 존재 여부 경량 확인
+    if await service.has_minutes(meeting_id):
+        return MinutesStatusResponse(status="completed")
+
+    # 2) ARQ job 상태 확인
+    pool = await get_arq_pool()
+    try:
+        job = Job(job_id=f"generate_pr:{meeting_id}", redis=pool)
+        job_status = await job.status()
+        if job_status in (JobStatus.queued, JobStatus.deferred, JobStatus.in_progress):
+            return MinutesStatusResponse(status="generating")
+        if job_status == JobStatus.complete:
+            # job은 완료됐지만 KG에 결과가 없음 → 추출 실패
+            return MinutesStatusResponse(status="failed")
+    finally:
+        await pool.close()
+
+    return MinutesStatusResponse(status="not_started")
 
 
 @meetings_minutes_router.get(

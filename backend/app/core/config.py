@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,7 +9,7 @@ class Settings(BaseSettings):
     """애플리케이션 설정"""
 
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file=str(Path(__file__).parent.parent.parent / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -73,14 +74,24 @@ class Settings(BaseSettings):
     agent_wake_word: str = "부덕"
     enable_agent_streaming: bool = True  # astream_events() 활성화 (프로토타입)
 
+    # Clova STT 키 관리 설정
+    clova_stt_key_count: int = 5  # 사용 가능한 API 키 총 개수
+
+    # Clova Studio Router 설정
+    clova_router_id: str = ""  # Clova Studio Router ID
+    clova_router_version: int = 1  # Router 버전 (1 이상)
+
     # Langfuse (LLM Observability)
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_host: str = "https://cloud.langfuse.com"
-    langfuse_enabled: bool = True
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+    langfuse_tracing_enabled: bool = True
 
     # 팀 제한 설정
     max_team_members: int = 7  # AI Agent 미포함
+
+    # 초대 링크 설정
+    frontend_base_url: str = "http://localhost:3000"  # 초대 링크 URL 생성용
 
     @field_validator("cors_origins", mode="before")
     @classmethod

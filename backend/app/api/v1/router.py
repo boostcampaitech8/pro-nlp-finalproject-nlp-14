@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     action_items,
+    activity_logs,
     agendas,
     agent,
     auth,
@@ -9,10 +10,12 @@ from app.api.v1.endpoints import (
     comments,
     context,
     decisions,
+    invite_links,
     livekit_webhooks,
     meeting_participants,
     meetings,
     minutes,
+    spotlight,
     suggestions,
     team_members,
     teams,
@@ -26,6 +29,8 @@ api_router.include_router(agent.router)
 api_router.include_router(auth.router)
 api_router.include_router(teams.router)
 api_router.include_router(team_members.router)
+api_router.include_router(invite_links.router)
+api_router.include_router(invite_links.public_router)
 api_router.include_router(meetings.team_meetings_router)
 api_router.include_router(meetings.router)
 api_router.include_router(meeting_participants.router)
@@ -46,3 +51,8 @@ api_router.include_router(minutes.meetings_minutes_router)
 
 # Context API - Real-time topic feed
 api_router.include_router(context.router)
+
+# Activity Logs API - User activity tracking
+api_router.include_router(activity_logs.router)
+# Spotlight API - Independent text chat
+api_router.include_router(spotlight.router)

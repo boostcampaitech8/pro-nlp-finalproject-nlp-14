@@ -11,6 +11,7 @@ import type {
   DecisionReviewResponse,
   MinutesResponse,
   PRStatus,
+  SpanRef,
   Suggestion,
   UpdateActionItemRequest,
   UpdateAgendaRequest,
@@ -56,7 +57,8 @@ interface AgendaRaw {
 interface SupersedesRaw {
   id: string;
   content: string;
-  meeting_id: string | null;
+  meeting_id?: string | null;
+  meetingId?: string | null;
 }
 
 interface DecisionHistoryItemRaw {
@@ -66,18 +68,42 @@ interface DecisionHistoryItemRaw {
   createdAt: string;
 }
 
+interface SpanRefRaw {
+  transcript_id?: string;
+  transcriptId?: string;
+  start_utt_id?: string;
+  startUttId?: string;
+  end_utt_id?: string;
+  endUttId?: string;
+  sub_start?: number | null;
+  subStart?: number | null;
+  sub_end?: number | null;
+  subEnd?: number | null;
+  start_ms?: number | null;
+  startMs?: number | null;
+  end_ms?: number | null;
+  endMs?: number | null;
+  topic_id?: string | null;
+  topicId?: string | null;
+  topic_name?: string | null;
+  topicName?: string | null;
+}
+
 interface DecisionRaw {
   id: string;
   content: string;
   context: string | null;
   status: string;
-  meeting_id: string | null;
-  agendaTopic: string | null;
-  meetingTitle: string | null;
+  meeting_id?: string | null;
+  meetingId?: string | null;
+  agendaTopic?: string | null;
+  meetingTitle?: string | null;
   approvers: string[];
   rejectors: string[];
   createdAt: string;
-  updated_at: string | null;
+  updated_at?: string | null;
+  updatedAt?: string | null;
+  evidence?: SpanRefRaw[];
   suggestions: SuggestionRaw[];
   comments: CommentRaw[];
   supersedes: SupersedesRaw | null;
@@ -89,11 +115,13 @@ interface AgendaWithDecisionsRaw {
   topic: string;
   description: string | null;
   order: number;
+  evidence?: SpanRefRaw[];
   decisions: DecisionRaw[];
 }
 
 interface MinutesResponseRaw {
   meetingId: string;
+  meetingTitle?: string | null;
   summary: string;
   agendas: AgendaWithDecisionsRaw[];
   actionItems: ActionItemRaw[];
@@ -137,31 +165,48 @@ function transformActionItem(raw: ActionItemRaw): ActionItem {
   };
 }
 
+function transformSpanRef(raw: SpanRefRaw): SpanRef {
+  return {
+    transcript_id: raw.transcript_id ?? raw.transcriptId ?? 'meeting-transcript',
+    start_utt_id: raw.start_utt_id ?? raw.startUttId ?? '',
+    end_utt_id: raw.end_utt_id ?? raw.endUttId ?? '',
+    sub_start: raw.sub_start ?? raw.subStart ?? null,
+    sub_end: raw.sub_end ?? raw.subEnd ?? null,
+    start_ms: raw.start_ms ?? raw.startMs ?? null,
+    end_ms: raw.end_ms ?? raw.endMs ?? null,
+    topic_id: raw.topic_id ?? raw.topicId ?? null,
+    topic_name: raw.topic_name ?? raw.topicName ?? null,
+  };
+}
+
 function transformMinutes(raw: MinutesResponseRaw): MinutesResponse {
   return {
     meetingId: raw.meetingId,
+    meetingTitle: raw.meetingTitle ?? null,
     summary: raw.summary,
     agendas: raw.agendas.map((agenda) => ({
       id: agenda.id,
       topic: agenda.topic,
       description: agenda.description,
       order: agenda.order,
+      evidence: (agenda.evidence || []).map(transformSpanRef),
       decisions: agenda.decisions.map((decision) => ({
         id: decision.id,
         content: decision.content,
         context: decision.context,
+        evidence: (decision.evidence || []).map(transformSpanRef),
         status: decision.status as DecisionStatus,
-        meetingId: decision.meeting_id,
-        agendaTopic: decision.agendaTopic,
-        meetingTitle: decision.meetingTitle,
+        meetingId: decision.meeting_id ?? decision.meetingId ?? null,
+        agendaTopic: decision.agendaTopic ?? null,
+        meetingTitle: decision.meetingTitle ?? null,
         approvers: decision.approvers,
         rejectors: decision.rejectors,
         createdAt: decision.createdAt,
-        updatedAt: decision.updated_at,
+        updatedAt: decision.updated_at ?? decision.updatedAt ?? null,
         supersedes: decision.supersedes ? {
           id: decision.supersedes.id,
           content: decision.supersedes.content,
-          meetingId: decision.supersedes.meeting_id,
+          meetingId: decision.supersedes.meeting_id ?? decision.supersedes.meetingId ?? null,
         } : null,
         suggestions: decision.suggestions.map(transformSuggestion),
         comments: decision.comments.map(transformComment),
@@ -336,6 +381,18 @@ export const kgService = {
    */
   async generatePR(meetingId: string): Promise<void> {
     await api.post(`/meetings/${meetingId}/generate-pr`);
+  },
+
+  /**
+   * 회의록 생성 상태 확인
+   */
+  async getMinutesStatus(
+    meetingId: string,
+  ): Promise<'not_started' | 'generating' | 'completed' | 'failed'> {
+    const response = await api.get<{ status: 'not_started' | 'generating' | 'completed' | 'failed' }>(
+      `/meetings/${meetingId}/minutes/status`,
+    );
+    return response.data.status;
   },
 
   /**

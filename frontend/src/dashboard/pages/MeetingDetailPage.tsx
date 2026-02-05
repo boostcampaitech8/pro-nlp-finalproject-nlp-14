@@ -9,7 +9,6 @@ import { ArrowLeft, Home } from 'lucide-react';
 
 import { MeetingInfoCard } from '@/components/meeting/MeetingInfoCard';
 import { ParticipantSection } from '@/components/meeting/ParticipantSection';
-import { RecordingList } from '@/components/meeting/RecordingList';
 import { TranscriptSection } from '@/components/meeting/TranscriptSection';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
@@ -39,9 +38,9 @@ export function MeetingDetailPage() {
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [hasDecisions, setHasDecisions] = useState(false);
-  const [checkingDecisions, setCheckingDecisions] = useState(false);
-  const [generatingPR, setGeneratingPR] = useState(false);
+  const [minutesStatus, setMinutesStatus] = useState<
+    'loading' | 'not_started' | 'generating' | 'completed' | 'failed'
+  >('loading');
 
   useEffect(() => {
     if (meetingId) {
@@ -55,15 +54,54 @@ export function MeetingDetailPage() {
     }
   }, [currentMeeting]);
 
-  // 결정사항 존재 여부 확인
+  // 회의록 상태 초기 확인 (마운트 시 + 미팅 상태 변경 시 1회)
   useEffect(() => {
-    if (currentMeeting && currentMeeting.status !== 'scheduled') {
-      setCheckingDecisions(true);
-      kgService.hasDecisions(currentMeeting.id)
-        .then(setHasDecisions)
-        .finally(() => setCheckingDecisions(false));
-    }
-  }, [currentMeeting]);
+    if (!currentMeeting || currentMeeting.status === 'scheduled') return;
+
+    let cancelled = false;
+    setMinutesStatus('loading');
+
+    kgService.getMinutesStatus(currentMeeting.id)
+      .then((status) => { if (!cancelled) setMinutesStatus(status); })
+      .catch(() => { if (!cancelled) setMinutesStatus('not_started'); });
+
+    return () => { cancelled = true; };
+  }, [currentMeeting?.id, currentMeeting?.status]);
+
+  // generating이거나 ongoing(room_finished 대기)일 때만 폴링
+  useEffect(() => {
+    const shouldPoll =
+      minutesStatus === 'generating' ||
+      (currentMeeting?.status === 'ongoing' && minutesStatus !== 'completed' && minutesStatus !== 'failed');
+    if (!shouldPoll || !currentMeeting || !meetingId) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        // ongoing → completed 전환 감지용
+        if (currentMeeting.status === 'ongoing') fetchMeeting(meetingId);
+
+        const status = await kgService.getMinutesStatus(currentMeeting.id);
+        if (cancelled) return;
+        setMinutesStatus(status);
+
+        if (status === 'generating' || status === 'not_started') {
+          timeoutId = setTimeout(poll, 5000);
+        }
+      } catch {
+        if (!cancelled) setMinutesStatus('not_started');
+      }
+    };
+
+    timeoutId = setTimeout(poll, 5000);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [minutesStatus, currentMeeting?.id, currentMeeting?.status]);
 
   // 회의 시작 (host만)
   const handleStartMeeting = async () => {
@@ -153,15 +191,11 @@ export function MeetingDetailPage() {
   const handleGeneratePR = async () => {
     if (!meetingId) return;
 
-    setGeneratingPR(true);
     try {
       await kgService.generatePR(meetingId);
-      alert('PR 생성 작업이 시작되었습니다. 잠시 후 회의록에서 확인하세요.');
-    } catch (error) {
-      console.error('Failed to generate PR:', error);
-      alert('PR 생성에 실패했습니다.');
-    } finally {
-      setGeneratingPR(false);
+      setMinutesStatus('generating');
+    } catch {
+      setMinutesStatus('failed');
     }
   };
 
@@ -267,26 +301,44 @@ export function MeetingDetailPage() {
                   Meeting Review
                 </h3>
                 <p className="text-white/60">
-                  회의 트랜스크립트를 기반으로 결정사항을 생성하고 리뷰할 수 있습니다.
+                  {minutesStatus === 'generating'
+                    ? '회의록을 생성하고 있습니다. 잠시만 기다려주세요...'
+                    : minutesStatus === 'completed'
+                    ? '회의록이 생성되었습니다. 결정사항을 리뷰할 수 있습니다.'
+                    : minutesStatus === 'failed'
+                    ? '저장된 회의 내용이 부족하여 안건을 추출하지 못했습니다.'
+                    : '회의 트랜스크립트를 기반으로 결정사항을 생성하고 리뷰할 수 있습니다.'}
                 </p>
               </div>
               <div>
-                {checkingDecisions ? (
+                {minutesStatus === 'loading' && (
                   <Button variant="outline" disabled>
                     확인 중...
                   </Button>
-                ) : hasDecisions ? (
+                )}
+                {minutesStatus === 'generating' && (
+                  <Button variant="outline" disabled>
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      생성 중...
+                    </span>
+                  </Button>
+                )}
+                {minutesStatus === 'completed' && (
                   <Button
                     variant="primary"
                     onClick={() => navigate(`/dashboard/meetings/${meetingId}/minutes`)}
                   >
                     View Minutes
                   </Button>
-                ) : (
+                )}
+                {minutesStatus === 'not_started' && (
                   <Button
                     variant="primary"
                     onClick={handleGeneratePR}
-                    isLoading={generatingPR}
                   >
                     Generate PR
                   </Button>
@@ -311,26 +363,13 @@ export function MeetingDetailPage() {
           </div>
         )}
 
-        {/* 녹음 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
-        {currentMeeting && currentMeeting.status !== 'scheduled' && (
-          <div className="mt-8">
-            <h3 className="text-xl font-bold text-white mb-4">
-              Recordings
-            </h3>
-            <RecordingList meetingId={currentMeeting.id} />
-          </div>
-        )}
-
-        {/* 회의록(트랜스크립트) 섹션 - 회의가 진행됐거나 완료된 경우에만 표시 */}
-        {currentMeeting && currentMeeting.status !== 'scheduled' && (
+        {/* 회의록(트랜스크립트) 섹션 - 회의가 완료된 경우에만 표시 */}
+        {currentMeeting && currentMeeting.status === 'completed' && (
           <div className="mt-8">
             <h3 className="text-xl font-bold text-white mb-4">
               Transcript
             </h3>
-            <TranscriptSection
-              meetingId={currentMeeting.id}
-              meetingStatus={currentMeeting.status}
-            />
+            <TranscriptSection meetingId={currentMeeting.id} />
           </div>
         )}
 

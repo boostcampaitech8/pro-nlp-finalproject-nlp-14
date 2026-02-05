@@ -1,6 +1,6 @@
 import datetime
 import operator
-from typing import Annotated, List, NotRequired, TypedDict
+from typing import Annotated, List, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -14,6 +14,10 @@ class OrchestrationState(TypedDict):
     # 채팅 메시지
     messages: Annotated[List[BaseMessage], add_messages]
     user_id: Annotated[str, "user_id"]
+
+    # Simple Query Routing 관련
+    is_simple_query: NotRequired[bool]  # 간단한 쿼리 여부
+    simple_router_output: NotRequired[dict]  # 라우터 분석 결과 (category, confidence, reasoning)
 
     # Planning 관련
     plan: Annotated[str, "current plan"]  # 현재 계획
@@ -42,3 +46,31 @@ class OrchestrationState(TypedDict):
     planning_context: NotRequired[str]
     additional_context: NotRequired[str]
     skip_planning: NotRequired[bool]
+
+    # Channel (voice or text)
+    channel: NotRequired[str]  # "voice" or "text", default: "voice"
+    # === NEW: Interaction Mode & Tool Selection ===
+    interaction_mode: NotRequired[Literal["voice", "spotlight"]]  # 상호작용 모드
+
+    # Tool selection (Planning에서 설정)
+    selected_tool: NotRequired[str]  # 선택된 도구 이름
+    tool_args: NotRequired[dict]  # 도구 인자 (LLM이 추출)
+    tool_category: NotRequired[Literal["query", "mutation"]]  # 도구 카테고리
+
+    # === NEW: HITL (Human-in-the-Loop) Fields ===
+    hitl_status: NotRequired[Literal["none", "pending", "confirmed", "cancelled", "executed"]]
+    hitl_tool_name: NotRequired[str]  # HITL 대기 중인 도구 이름
+    hitl_extracted_params: NotRequired[dict]  # LLM이 추출한 파라미터
+    hitl_params_display: NotRequired[dict]  # UUID → 이름 변환된 표시용 값
+    hitl_missing_params: NotRequired[list[str]]  # 누락된 필수 파라미터
+    hitl_confirmation_message: NotRequired[str]  # 사용자에게 보여줄 확인 메시지
+    hitl_required_fields: NotRequired[list[dict]]  # 필수 입력 필드 스키마
+    hitl_display_template: NotRequired[str]  # 자연어 템플릿 ({{param}}이 input으로 대체됨)
+
+    # 사용자 컨텍스트 (SPOTLIGHT 세션 시작 시 주입)
+    user_context: NotRequired[dict]
+    # {
+    #   "user_id": "...",
+    #   "teams": [{"id": "...", "name": "..."}],
+    #   "current_time": "2025-01-15T14:30:00+09:00"  # ISO 형식
+    # }

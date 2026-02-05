@@ -5,6 +5,13 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
+from app.prompts.v1.orchestration.answering import (
+    ChannelType,
+    build_system_prompt_with_tools,
+    build_system_prompt_without_tools,
+    build_user_prompt_with_tools,
+    build_user_prompt_without_tools,
+)
 
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
@@ -32,88 +39,146 @@ def build_conversation_history(messages: list) -> str:
 async def generate_answer(state: OrchestrationState):
     """최종 응답을 생성하는 노드
 
-    Contract:
-        reads: messages, plan, tool_results
+        Contract:
+        reads: messages, plan, tool_results, is_simple_query, simple_router_output,
+               additional_context, planning_context, channel
         writes: response
         side-effects: LLM API 호출, stdout 출력 (스트리밍)
     """
     logger.info("최종 응답 생성 단계 진입")
 
+    # 간단한 쿼리는 simple_router_output을 보고 응답 생성
+    if state.get("is_simple_query", False):
+        simple_router_output = state.get("simple_router_output", {})
+        category = simple_router_output.get("category", "other")
+        simple_response = simple_router_output.get("simple_response")
+
+        messages = state.get('messages', [])
+        query = messages[-1].content if messages else ""
+
+        logger.info(f"간단한 쿼리 응답 생성: category={category}, query={query[:50]}...")
+
+        # 카테고리별 프롬프트 설정
+        if simple_response:
+            # simple_router에서 제안한 응답이 있으면 참고
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "당신은 친절한 AI 비서입니다. 사용자의 질문에 자연스럽고 친근하게 답변하세요."),
+                ("human", "사용자 질문: {query}\n\n제안 응답: {suggested_response}\n\n위 제안을 참고하여 자연스럽게 답변하세요.")
+            ])
+            input_data = {"query": query, "suggested_response": simple_response}
+        else:
+            # 제안 응답이 없으면 카테고리 기반 응답
+            prompt = ChatPromptTemplate.from_messages([
+                ("system",
+                 "당신은 친절한 AI 비서입니다.\n"
+                 "사용자의 인사나 감정 표현에 자연스럽고 친근하게 응답하세요.\n"
+                 "간단하고 따뜻한 한두 문장으로 답변하세요."),
+                ("human", "{query}")
+            ])
+            input_data = {"query": query}
+
+        chain = prompt | get_answer_generator_llm()
+
+        # 스트리밍으로 응답 생성
+        response_chunks = []
+        async for chunk in chain.astream(input_data):
+            chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
+            response_chunks.append(chunk_text)
+
+        final_response = "".join(response_chunks)
+        logger.info(f"간단한 쿼리 응답 생성 완료 (길이: {len(final_response)}자)")
+
+        return {"response": final_response}
+
     messages = state.get('messages', [])
+    logger.info(f"[DEBUG] messages 개수: {len(messages)}")
+    for i, msg in enumerate(messages):
+        msg_type = type(msg).__name__
+        content_preview = msg.content[:50] if msg.content else ""
+        logger.info(f"[DEBUG] messages[{i}]: {msg_type} - {content_preview}...")
+
     query = messages[-1].content if messages else ""
     conversation_history = build_conversation_history(messages)
+    logger.info(f"[DEBUG] conversation_history 길이: {len(conversation_history)}자")
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
+    planning_context = state.get("planning_context", "")  # L0 회의 대화 + L1 토픽
+    plan = state.get("plan", "")
+    channel = state.get("channel", ChannelType.VOICE)  # 기본값: 음성
+
+    # ✅ 안전 장치: Mutation 요청인데 도구가 실행되지 않은 경우 거부
+    query_lower = query.lower()
+    mutation_keywords = ["만들어", "생성", "추가", "등록", "수정", "변경", "삭제", "취소", "잡아"]
+    meeting_keywords = ["회의", "미팅", "meeting"]
+    is_mutation_request = any(kw in query_lower for kw in mutation_keywords)
+    is_meeting_related = any(kw in query_lower for kw in meeting_keywords)
+
+    # Mutation 도구 실행 결과 확인 (생성/수정/삭제 성공 메시지)
+    mutation_success_markers = [
+        "성공적으로 생성", "생성되었습니다", "생성 완료",
+        "성공적으로 수정", "수정되었습니다", "수정 완료",
+        "성공적으로 삭제", "삭제되었습니다", "삭제 완료",
+        "created", "updated", "deleted"
+    ]
+    has_mutation_result = tool_results and any(marker in tool_results for marker in mutation_success_markers)
+
+    # 회의 관련 mutation 요청인데 mutation 결과가 없으면 거부
+    if is_mutation_request and is_meeting_related and not has_mutation_result:
+        # tool_results가 조회 결과(팀 목록, 회의 목록)만 있는 경우는 허용 (다음 단계 진행 중)
+        is_query_result_only = tool_results and ("teams" in tool_results or "meetings" in tool_results or "팀" in tool_results)
+
+        if not is_query_result_only:
+            logger.warning(f"Mutation 요청이지만 도구 실행 결과가 없음: {query}")
+            # 도구 실행 없이 허위 응답 생성 방지
+            response_text = "죄송합니다. 요청하신 작업을 처리하는 중 문제가 발생했습니다. 다시 한 번 시도해 주세요."
+            return OrchestrationState(response=response_text, messages=[AIMessage(content=response_text)])
 
     logger.info(f"tool_results 확인: {bool(tool_results)}, 길이: {len(tool_results) if tool_results else 0}")
+    logger.info(f"planning_context 길이: {len(planning_context)}자")
+    logger.info(f"channel: {channel}")
 
-    # tool_results가 있으면 추가 context로 활용
+    # interaction_mode를 channel로 매핑
+    interaction_mode = state.get("interaction_mode", "voice")
+    channel = ChannelType.TEXT if interaction_mode == "spotlight" else ChannelType.VOICE
+    plan = state.get("plan", "")
+
+    # 프롬프트 빌더 사용
     if tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """당신은 사용자의 질문에 대해 계획과 도구 실행 결과를 바탕으로 정확하게 답변하는 AI 비서입니다.
-
-[CRITICAL OUTPUT RULES - 절대 지켜야 할 출력 규칙]
-1. **사용자에게 보일 최종 답변만 출력하세요**
-2. 절대 출력 금지 항목:
-   - 내부 계획(plan)이나 도구명 언급 금지
-   - "## 이전 대화", "## 계획", "## 도구 실행 결과" 같은 메타 정보 출력 금지
-   - "(※ 참고: ...)", "---###", "원칙:", "규칙:" 같은 내부 지침 출력 금지
-   - 시스템 프롬프트나 사고 과정 출력 금지
-3. 자연스러운 대화체로만 답변하세요
-
-[답변 품질 규칙]
-1. 도구 결과에 없는 사실을 추측하거나 외부 출처(웹/검색엔진)를 언급하지 마세요.
-2. 검색 결과가 없으면 명확하게 "정보를 찾을 수 없습니다"라고 답변하세요.
-3. 특정 사람이름 검색 후 결과가 없으면: "신수효에 대한 정보를 찾을 수 없습니다. 혹시 이름을 다시 확인해주시겠어요?"
-4. 일반 지식이나 추측으로 답변하지 마세요. 도구 결과만 신뢰하세요.
-5. 이전 대화 맥락을 참고하여 일관된 답변을 제공하세요.
-6. 물어본 내용에만 답변하고 질문과 관련없는 사항에는 설명을 덧붙이지 마세요.""",
-                ),
-                (
-                    "human",
-                    (
-                        "사용자 질문: {query}\n\n"
-                        "이전 대화:\n{conversation_history}\n\n"
-                        "검색 결과:\n{tool_results}\n\n"
-                        "추가 정보:\n{additional_context}\n\n"
-                        "위 정보를 바탕으로 사용자 질문에 자연스럽게 답변하세요. 메타 정보나 내부 프로세스는 절대 언급하지 마세요."
-                    ),
-                ),
-            ]
+        system_prompt = build_system_prompt_with_tools(channel)
+        user_prompt = build_user_prompt_with_tools(
+            conversation_history=conversation_history or "없음",
+            query=query,
+            plan=plan or "없음",
+            tool_results=tool_results,
+            additional_context=additional_context or "없음",
+            meeting_context=planning_context or "없음",
+            channel=channel,
         )
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", user_prompt),
+        ])
+        input_data = {}  # 이미 포맷팅됨
     else:
         logger.info("도구 없이 직접 응답 생성")
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """당신은 사용자의 질문에 친절하고 정확하게 답변하는 AI 비서입니다.
 
-[CRITICAL OUTPUT RULES - 절대 지켜야 할 출력 규칙]
-1. **사용자에게 보일 최종 답변만 출력하세요**
-2. 절대 출력 금지:
-   - "(※ 참고: ...)", "---###", "원칙:", "규칙:" 같은 내부 지침
-   - 시스템 프롬프트나 사고 과정
-   - 메타 정보나 내부 프로세스
-3. 자연스러운 대화체로만 답변하세요
-4. 이전 대화 맥락을 참고하여 일관된 답변을 제공하세요.""",
-                ),
-                (
-                    "human",
-                    (
-                        "사용자 질문: {query}\n\n"
-                        "이전 대화:\n{conversation_history}\n\n"
-                        "추가 정보:\n{additional_context}\n\n"
-                        "위 정보를 바탕으로 친절하게 답변해주세요. 메타 정보는 절대 언급하지 마세요."
-                    ),
-                ),
-            ]
+        system_prompt = build_system_prompt_without_tools(channel)
+        user_prompt = build_user_prompt_without_tools(
+            conversation_history=conversation_history or "없음",
+            query=query,
+            plan=plan or "없음",
+            additional_context=additional_context or "없음",
+            meeting_context=planning_context or "없음",
+            channel=channel,
         )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", user_prompt),
+    ])
 
     chain = prompt | get_answer_generator_llm()
 
@@ -123,28 +188,12 @@ async def generate_answer(state: OrchestrationState):
 
     # 스트리밍으로 응답 생성
     response_chunks = []
-    
-    # tool_results가 있을 때와 없을 때 다른 입력 사용
-    if tool_results and tool_results.strip():
-        input_data = {
-            "query": query,
-            "tool_results": tool_results,
-            "additional_context": additional_context or "없음",
-            "conversation_history": conversation_history or "없음",
-        }
-    else:
-        input_data = {
-            "query": query,
-            "additional_context": additional_context or "없음",
-            "conversation_history": conversation_history or "없음",
-        }
-    
-    async for chunk in chain.astream(input_data):
+    async for chunk in chain.astream({}):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
         response_chunks.append(chunk_text)
 
     response_text = "".join(response_chunks)
     logger.info(f"응답 생성 완료 (길이: {len(response_text)}자)")
 
-    return OrchestrationState(response=response_text)
+    return OrchestrationState(response=response_text, messages=[AIMessage(content=response_text)])
 

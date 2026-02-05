@@ -5,6 +5,12 @@ global:
   environment: development
   registry: mit-registry:5000
 
+# HA 설정 (로컬은 단일 복제본)
+replicas:
+  backend: 1
+  frontend: 1
+  arqWorker: 1
+
 # 이미지 태그 (로컬은 항상 latest)
 images:
   backend:
@@ -77,12 +83,19 @@ app:
   corsOrigins:
     - "http://localhost"
     - "http://127.0.0.1"
+  frontendBaseUrl: "http://localhost"  # 초대 링크 생성용 (로컬)
 
 # Worker - Secret, ConfigMap에서 공유
 # BACKEND_API_URL은 백엔드가 Job 생성 시 동적으로 주입 (로컬/k8s 자동 감지)
 worker:
   clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
-  clovaSttSecret: {{ env "CLOVA_STT_SECRET" | default "" }}
+  # Clova STT API 키 배열 (동적 할당용)
+  clovaSttSecrets:
+    - {{ env "CLOVA_STT_SECRET_0" | default "" }}
+    - {{ env "CLOVA_STT_SECRET_1" | default "" }}
+    - {{ env "CLOVA_STT_SECRET_2" | default "" }}
+    - {{ env "CLOVA_STT_SECRET_3" | default "" }}
+    - {{ env "CLOVA_STT_SECRET_4" | default "" }}
   backendApiKey: {{ env "BACKEND_API_KEY" | default "" }}
   ttsServerUrl: {{ env "TTS_SERVER_URL" | default "" }}
 

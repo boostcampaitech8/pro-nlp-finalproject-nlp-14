@@ -8,8 +8,10 @@ from app.infrastructure.graph.orchestration.nodes.mit_tools_search import (
     execute_mit_tools_search,
 )
 from app.infrastructure.graph.orchestration.nodes.planning import create_plan
+from app.infrastructure.graph.orchestration.nodes.simple_router import route_simple_query
 
 __all__ = [
+    "route_simple_query",
     "create_plan",
     "execute_mit_tools",
     "execute_mit_tools_analyze",

@@ -7,6 +7,7 @@ import { MainPage } from '@/app/pages/MainPage';
 import { HomePage } from '@/dashboard/pages/HomePage';
 import { GoogleCallbackPage } from '@/pages/GoogleCallbackPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { InviteAcceptPage } from '@/pages/InviteAcceptPage';
 import { NaverCallbackPage } from '@/pages/NaverCallbackPage';
 import { MeetingDetailPage } from '@/dashboard/pages/MeetingDetailPage';
 import MeetingRoomPage from '@/dashboard/pages/MeetingRoomPage';
@@ -37,6 +38,9 @@ function App() {
       <Route path="/auth/naver/callback" element={<NaverCallbackPage />} />
       <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
 
+      {/* 초대 링크 수락 (비인증 상태에서도 미리보기 가능) */}
+      <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />
+
       {/* 새 서비스 페이지 (Spotlight UI) - MainLayout 사용 */}
       <Route
         path="/"
@@ -47,6 +51,8 @@ function App() {
         }
       >
         <Route index element={<MainPage />} />
+        {/* 세션 ID가 URL에 노출되는 라우트 */}
+        <Route path="spotlight/:sessionId" element={<MainPage />} />
       </Route>
 
       {/* 기존 Dashboard 페이지 */}

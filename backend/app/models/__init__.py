@@ -3,6 +3,7 @@ from app.models.meeting import Meeting, MeetingParticipant, MeetingStatus, Parti
 from app.models.team import Team, TeamMember, TeamRole
 from app.models.transcript import Transcript
 from app.models.user import User
+from app.models.user_activity_log import UserActivityLog
 
 __all__ = [
     "User",
@@ -15,4 +16,5 @@ __all__ = [
     "ParticipantRole",
     "Transcript",
     "ChatMessage",
+    "UserActivityLog",
 ]

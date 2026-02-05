@@ -1,5 +1,8 @@
 import type {
+  AcceptInviteResponse,
   CreateTeamRequest,
+  InviteLinkResponse,
+  InvitePreviewResponse,
   InviteTeamMemberRequest,
   Team,
   TeamListResponse,
@@ -8,6 +11,7 @@ import type {
   UpdateTeamMemberRequest,
   UpdateTeamRequest,
 } from '@/types';
+import axios from 'axios';
 import api from './api';
 
 export const teamService = {
@@ -60,5 +64,37 @@ export const teamService = {
 
   async removeMember(teamId: string, userId: string): Promise<void> {
     await api.delete(`/teams/${teamId}/members/${userId}`);
+  },
+
+  // Invite Links
+  async generateInviteLink(teamId: string): Promise<InviteLinkResponse> {
+    const response = await api.post<InviteLinkResponse>(`/teams/${teamId}/invite-link`);
+    return response.data;
+  },
+
+  async getInviteLink(teamId: string): Promise<InviteLinkResponse | null> {
+    try {
+      const response = await api.get<InviteLinkResponse>(`/teams/${teamId}/invite-link`);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  },
+
+  async deactivateInviteLink(teamId: string): Promise<void> {
+    await api.delete(`/teams/${teamId}/invite-link`);
+  },
+
+  async previewInvite(code: string): Promise<InvitePreviewResponse> {
+    const response = await api.get<InvitePreviewResponse>(`/invite/${code}`);
+    return response.data;
+  },
+
+  async acceptInvite(code: string): Promise<AcceptInviteResponse> {
+    const response = await api.post<AcceptInviteResponse>(`/invite/${code}/accept`);
+    return response.data;
   },
 };

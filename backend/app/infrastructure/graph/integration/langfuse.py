@@ -1,10 +1,54 @@
 """Langfuse LLM Observability 통합."""
 
+from functools import lru_cache
+import logging
 from typing import Optional
 
+from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
+from opentelemetry.sdk.trace import TracerProvider
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+
+def get_langfuse_base_url(settings) -> str:
+    """Langfuse base URL 반환 (호환성 지원: langfuse_host → langfuse_base_url)"""
+    return getattr(
+        settings,
+        "langfuse_base_url",
+        getattr(settings, "langfuse_host", "https://cloud.langfuse.com"),
+    )
+
+
+def is_langfuse_enabled(settings) -> bool:
+    """Langfuse 활성화 여부 반환 (호환성 지원: langfuse_enabled → langfuse_tracing_enabled)"""
+    return bool(
+        getattr(
+            settings,
+            "langfuse_tracing_enabled",
+            getattr(settings, "langfuse_enabled", True),
+        )
+    )
+
+
+@lru_cache(maxsize=1)
+def _initialize_langfuse_client(
+    public_key: str,
+    secret_key: str,
+    base_url: str,
+) -> None:
+    # 앱의 전역 OTel 트레이서와 분리된 Langfuse 전용 provider를 사용한다.
+    # 이렇게 하면 FastAPI/Redis/HTTPX 자동계측 스팬이 Langfuse에 중복 수집되지 않는다.
+    Langfuse(
+        public_key=public_key,
+        secret_key=secret_key,
+        base_url=base_url,
+        tracing_enabled=True,
+        tracer_provider=TracerProvider(),
+    )
+    logger.info("Langfuse client initialized with isolated tracer provider.")
 
 
 def get_runnable_config(
@@ -33,20 +77,34 @@ def get_runnable_config(
     """
     settings = get_settings()
 
-    if not settings.langfuse_enabled:
+    if not is_langfuse_enabled(settings):
+        logger.info("Langfuse tracing disabled by settings (LANGFUSE_TRACING_ENABLED=false).")
         return {}
 
     if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        logger.warning(
+            "Langfuse tracing disabled: missing LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY."
+        )
         return {}
 
-    langfuse_metadata = {
-        **({"langfuse_user_id": user_id} if user_id else {}),
-        **({"langfuse_session_id": session_id} if session_id else {}),
-        **(metadata or {}),
-    }
+    base_url = get_langfuse_base_url(settings)
+    _initialize_langfuse_client(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        base_url=base_url,
+    )
+
+    # CallbackHandler에 user_id, session_id 직접 전달 (Langfuse 대시보드 필터링 지원)
+    callback_handler = CallbackHandler(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=base_url,
+        user_id=user_id,
+        session_id=session_id,
+    )
 
     return {
-        "callbacks": [CallbackHandler()],
+        "callbacks": [callback_handler],
         **({"run_name": trace_name} if trace_name else {}),
-        **({"metadata": langfuse_metadata} if langfuse_metadata else {}),
+        **({"metadata": metadata} if metadata else {}),
     }

@@ -13,6 +13,20 @@ from .review import DecisionResponse
 from .suggestion import SuggestionResponse
 
 
+class SpanRefResponse(BaseModel):
+    """회의록 근거 span"""
+
+    transcript_id: str
+    start_utt_id: str
+    end_utt_id: str
+    sub_start: int | None = None
+    sub_end: int | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
+    topic_id: str | None = None
+    topic_name: str | None = None
+
+
 class DecisionHistoryItemResponse(BaseModel):
     """Decision 히스토리 아이템 (superseded 체인)"""
 
@@ -47,6 +61,7 @@ class DecisionWithReviewResponse(DecisionResponse):
     updated_at: datetime | None = Field(default=None, serialization_alias="updatedAt")
     supersedes: SupersedesResponse | None = None
     history: list[DecisionHistoryItemResponse] = []
+    evidence: list[SpanRefResponse] = []
 
 
 class AgendaWithDecisionsResponse(BaseModel):
@@ -57,6 +72,7 @@ class AgendaWithDecisionsResponse(BaseModel):
     description: str | None = None
     order: int
     decisions: list[DecisionWithReviewResponse] = []
+    evidence: list[SpanRefResponse] = []
 
 
 class ActionItemBriefResponse(BaseModel):
@@ -76,6 +92,7 @@ class MinutesResponse(BaseModel):
     """Minutes View 전체 응답 (중첩 구조)"""
 
     meeting_id: str = Field(serialization_alias="meetingId")
+    meeting_title: str | None = Field(default=None, serialization_alias="meetingTitle")
     summary: str
     agendas: list[AgendaWithDecisionsResponse]
     action_items: list[ActionItemBriefResponse] = Field(
@@ -84,3 +101,9 @@ class MinutesResponse(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+class MinutesStatusResponse(BaseModel):
+    """Minutes 생성 상태 응답"""
+
+    status: str  # "not_started" | "generating" | "completed" | "failed"

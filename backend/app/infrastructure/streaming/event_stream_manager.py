@@ -52,6 +52,7 @@ async def stream_llm_tokens_only(
         "planner": "planner",
         "mit_tools_analyze": "tools_analyze",
         "mit_tools_search": "tools_search",
+        "tools": "tools",  # 새 Tool 시스템 (HITL 지원)
         "evaluator": "evaluator",
         "generator": "generator",
     }
@@ -233,6 +234,25 @@ async def stream_llm_tokens_only(
 
                 elif event_name == "generator":
                     logger.info(f"Generator completed: {token_count['generator']} tokens")
+
+                # === HITL 확인 요청 감지 ===
+                elif event_name == "tools":
+                    output = event.get("data", {}).get("output", {})
+                    if output.get("hitl_status") == "pending":
+                        logger.info("[HITL] Confirmation requested")
+                        yield {
+                            "type": "hitl_request",
+                            "tool_name": output.get("hitl_tool_name"),
+                            "params": output.get("hitl_extracted_params", {}),
+                            "params_display": output.get("hitl_params_display", {}),
+                            "message": output.get("hitl_confirmation_message", ""),
+                            "required_fields": output.get("hitl_required_fields", []),
+                            "display_template": output.get("hitl_display_template"),  # 자연어 템플릿
+                            "tag": "hitl",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                        # HITL pending이면 스트림 즉시 종료 (사용자 확인 대기)
+                        return
 
         # 완료 신호
         logger.info(

@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_db
+from app.core.neo4j_sync import neo4j_sync
 from app.core.webrtc_config import MAX_PARTICIPANTS
 from app.models.meeting import Meeting, MeetingParticipant, MeetingStatus, ParticipantRole
 from app.models.team import TeamMember
@@ -132,6 +133,15 @@ async def end_meeting(
     meeting.ended_at = now
     await db.commit()
     await db.refresh(meeting)
+
+    # Neo4j 동기화
+    await neo4j_sync.sync_meeting_update(
+        str(meeting.id),
+        str(meeting.team_id),
+        meeting.title,
+        meeting.status,
+        meeting.created_at,
+    )
 
     # LiveKit 룸 정리
     if livekit_service.is_configured:
