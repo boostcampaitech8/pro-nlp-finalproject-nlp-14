@@ -282,7 +282,7 @@ class LiveKitBot:
         for frame in resampler.flush():
             yield frame
 
-    async def send_chat_message(self, content: str, user_name: str = "Mit Agent") -> None:
+    async def send_chat_message(self, content: str, user_name: str = "부덕이") -> None:
         """DataPacket으로 채팅 메시지 전송"""
         if not self._ctx.room or not self._ctx.is_connected:
             return
