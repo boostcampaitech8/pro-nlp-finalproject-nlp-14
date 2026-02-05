@@ -61,6 +61,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     // 화면공유
     startScreenShare,
     stopScreenShare,
+    getRemoteScreenTrack,
     // 채팅
     chatMessages,
     sendChatMessage,
@@ -281,6 +282,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
               remoteScreenStreams={remoteScreenStreams}
               getUserName={getUserName}
               currentUserId={userId}
+              getRemoteScreenTrack={getRemoteScreenTrack}
             />
           ) : (
             <div className="text-center">
