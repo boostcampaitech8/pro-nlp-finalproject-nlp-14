@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -26,6 +27,76 @@ DECISION_GENERATION_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+def _format_span_ref(span: dict[str, Any]) -> str:
+    """SpanRef dict를 프롬프트용 단일 라인으로 포맷한다. (fallback용)"""
+    transcript_id = span.get("transcript_id", "meeting-transcript")
+    start_utt = span.get("start_utt_id")
+    end_utt = span.get("end_utt_id")
+    if start_utt and end_utt:
+        utt_range = f"{start_utt}~{end_utt}"
+    else:
+        utt_range = start_utt or end_utt or "unknown"
+
+    parts = [f"{transcript_id}:{utt_range}"]
+    if span.get("topic_name"):
+        parts.append(f"topic={span['topic_name']}")
+    if span.get("start_ms") is not None and span.get("end_ms") is not None:
+        parts.append(f"{span['start_ms']}ms~{span['end_ms']}ms")
+    return " | ".join(parts)
+
+
+def _format_evidence_text(evidence_text: dict[str, Any]) -> str:
+    """evidence_text dict를 프롬프트용 문자열로 포맷한다.
+
+    포맷:
+        📍 근거 (2:30~3:20) [토픽명]
+        (앞 컨텍스트)
+        - 김철수: 발화 내용...
+        ▶ 근거 발화
+        - 박민수: 핵심 발화 내용...
+        (뒤 컨텍스트)
+        - 이영희: 발화 내용...
+    """
+    lines: list[str] = []
+
+    # 헤더
+    time_range = evidence_text.get("time_range", "")
+    topic_name = evidence_text.get("topic_name")
+    header = f"📍 근거 ({time_range})"
+    if topic_name:
+        header += f" [{topic_name}]"
+    lines.append(header)
+
+    # 앞 컨텍스트
+    before_context = evidence_text.get("before_context", [])
+    if before_context:
+        lines.append("  (앞 컨텍스트)")
+        for utt in before_context[-3:]:  # 최대 3개
+            speaker = utt.get("speaker", "Unknown")
+            text = utt.get("text", "")[:80]
+            lines.append(f"  - {speaker}: {text}")
+
+    # 근거 발화
+    evidence_utterances = evidence_text.get("evidence_utterances", [])
+    if evidence_utterances:
+        lines.append("  ▶ 근거 발화")
+        for utt in evidence_utterances[:5]:  # 최대 5개
+            speaker = utt.get("speaker", "Unknown")
+            text = utt.get("text", "")[:150]
+            lines.append(f"  - {speaker}: {text}")
+
+    # 뒤 컨텍스트
+    after_context = evidence_text.get("after_context", [])
+    if after_context:
+        lines.append("  (뒤 컨텍스트)")
+        for utt in after_context[:3]:  # 최대 3개
+            speaker = utt.get("speaker", "Unknown")
+            text = utt.get("text", "")[:80]
+            lines.append(f"  - {speaker}: {text}")
+
+    return "\n".join(lines)
+
+
 async def generate_new_decision(state: MitSuggestionState) -> dict:
     """Suggestion을 반영하여 새로운 Decision 내용 생성
 
@@ -43,6 +114,8 @@ async def generate_new_decision(state: MitSuggestionState) -> dict:
     decision_context = state.get("mit_suggestion_decision_context") or ""
     agenda_topic = state.get("mit_suggestion_agenda_topic") or "안건 정보 없음"
     gathered_context = state.get("mit_suggestion_gathered_context") or {}
+    if gathered_context.get("agenda_topic"):
+        agenda_topic = gathered_context.get("agenda_topic")
 
     # 회의 정보 섹션 구성
     meeting_section = ""
@@ -79,6 +152,61 @@ async def generate_new_decision(state: MitSuggestionState) -> dict:
         if sibling_items:
             sibling_section = "[관련 결정사항 (같은 안건)]\n" + "\n".join(sibling_items)
 
+    # 근거 섹션 구성 (실제 텍스트 우선, 없으면 SpanRef 메타데이터 fallback)
+    evidence_parts: list[str] = []
+
+    # 1. 원본 결정사항 근거
+    decision_evidence_texts = gathered_context.get("decision_evidence_texts") or []
+    decision_evidence = gathered_context.get("decision_evidence") or []
+
+    if decision_evidence_texts:
+        # 실제 발화 텍스트가 있는 경우
+        evidence_parts.append("[원본 결정사항 근거]")
+        for et in decision_evidence_texts[:3]:  # 최대 3개
+            evidence_parts.append(_format_evidence_text(et))
+    elif decision_evidence:
+        # fallback: SpanRef 메타데이터만
+        evidence_parts.append("[원본 결정사항 근거 SpanRef]")
+        evidence_parts.extend(
+            f"- {_format_span_ref(span)}" for span in decision_evidence[:8]
+        )
+
+    # 2. 안건 근거
+    agenda_evidence_texts = gathered_context.get("agenda_evidence_texts") or []
+    agenda_evidence = gathered_context.get("agenda_evidence") or []
+
+    if agenda_evidence_texts:
+        evidence_parts.append("\n[안건 근거]")
+        for et in agenda_evidence_texts[:2]:  # 최대 2개
+            evidence_parts.append(_format_evidence_text(et))
+    elif agenda_evidence:
+        evidence_parts.append("[안건 근거 SpanRef]")
+        evidence_parts.extend(
+            f"- {_format_span_ref(span)}" for span in agenda_evidence[:5]
+        )
+
+    # 3. 관련 결정사항 근거 (SpanRef만 - 텍스트 추출 미지원)
+    sibling_evidence_lines: list[str] = []
+    for sibling in (gathered_context.get("sibling_decisions") or [])[:3]:
+        sibling_evidence = sibling.get("evidence") or []
+        if not sibling_evidence:
+            continue
+        sibling_content = sibling.get("content", "")[:60]
+        sibling_status = sibling.get("status", "unknown")
+        sibling_evidence_lines.append(f"- [{sibling_status}] {sibling_content}...")
+        sibling_evidence_lines.extend(
+            f"  - {_format_span_ref(span)}" for span in sibling_evidence[:2]
+        )
+    if sibling_evidence_lines:
+        evidence_parts.append("\n[관련 결정사항 근거]")
+        evidence_parts.extend(sibling_evidence_lines)
+
+    evidence_section = (
+        "\n".join(evidence_parts)
+        if evidence_parts
+        else "[근거]\n제공된 근거 없음"
+    )
+
     try:
         llm = get_decision_generator_llm()
         chain = DECISION_GENERATION_PROMPT | llm
@@ -88,6 +216,7 @@ async def generate_new_decision(state: MitSuggestionState) -> dict:
             "agenda_topic": agenda_topic,
             "decision_content": decision_content,
             "decision_context": decision_context if decision_context else "맥락 정보 없음",
+            "evidence_section": evidence_section,
             "thread_section": thread_section if thread_section else "[기존 논의 내용]\n논의 내역 없음",
             "sibling_section": sibling_section if sibling_section else "",
             "suggestion_content": suggestion_content,
