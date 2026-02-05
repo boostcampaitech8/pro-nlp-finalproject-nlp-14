@@ -750,6 +750,7 @@ class KGRepository:
             id: $new_decision_id,
             content: $content,
             context: coalesce(original.context, ''),
+            evidence: coalesce(original.evidence, '[]'),
             status: 'draft',
             meeting_id: $meeting_id,
             created_at: datetime($created_at)
@@ -827,6 +828,7 @@ class KGRepository:
             id: $new_decision_id,
             content: $content,
             context: coalesce(d.context, ''),
+            evidence: coalesce(d.evidence, '[]'),
             status: 'draft',
             meeting_id: $meeting_id,
             created_at: datetime($created_at)

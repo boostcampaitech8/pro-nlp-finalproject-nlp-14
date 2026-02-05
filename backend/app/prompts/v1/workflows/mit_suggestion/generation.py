@@ -1,12 +1,14 @@
 """Decision 생성 프롬프트 - Suggestion 반영
 
-Version: 1.0.0
+Version: 1.2.0
 Description: 사용자의 Suggestion을 반영하여 새로운 Decision을 생성하는 프롬프트
 Changelog:
+    1.2.0: 실제 회의 발화 텍스트 기반 근거 섹션으로 개선
+    1.1.0: SpanRef 근거 섹션 추가, 근거 기반 생성 규칙 강화
     1.0.0: 초기 버전 (mit_suggestion/nodes/generation.py에서 분리)
 """
 
-VERSION = "1.0.0"
+VERSION = "1.2.0"
 
 # =============================================================================
 # Decision 생성 프롬프트
@@ -22,6 +24,9 @@ DECISION_GENERATION_SYSTEM = """당신은 회의 결정사항을 개선하는 AI
 3. 제안이 원본과 무관해도 최대한 연결점을 찾아 반영 → confidence: low
 4. 절대로 "생성 불가"나 거부하지 마세요. 항상 새 Decision을 생성하세요.
 5. 기존 논의 내용과 관련 결정사항을 참고하여 맥락에 맞게 작성하세요.
+6. 제공된 회의 발화 근거와 모순되는 내용을 단정하지 마세요.
+7. 근거 발화가 부족하면 보수적으로 작성하고 confidence를 낮추세요.
+8. 근거 발화의 앞뒤 컨텍스트를 참고하여 전체 맥락을 파악하세요.
 
 **응답 형식 (JSON)**
 반드시 아래 JSON 형식으로만 응답하세요:
@@ -43,6 +48,8 @@ DECISION_GENERATION_SYSTEM = """당신은 회의 결정사항을 개선하는 AI
 
 [결정 맥락]
 {decision_context}
+
+{evidence_section}
 
 {thread_section}
 

@@ -94,17 +94,19 @@ def get_runnable_config(
         base_url=base_url,
     )
 
-    # CallbackHandler에 user_id, session_id 직접 전달 (Langfuse 대시보드 필터링 지원)
-    callback_handler = CallbackHandler(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=base_url,
-        user_id=user_id,
-        session_id=session_id,
-    )
+    # Langfuse v3+: CallbackHandler는 생성자 인자를 받지 않음
+    # 이미 초기화된 Langfuse 클라이언트를 자동으로 사용함
+    callback_handler = CallbackHandler()
+
+    # SDK v3: trace_name, user_id, session_id는 메타데이터로 전달
+    langfuse_metadata = {
+        **(metadata or {}),
+        **({"langfuse_trace_name": trace_name} if trace_name else {}),
+        **({"langfuse_user_id": user_id} if user_id else {}),
+        **({"langfuse_session_id": session_id} if session_id else {}),
+    }
 
     return {
         "callbacks": [callback_handler],
-        **({"run_name": trace_name} if trace_name else {}),
-        **({"metadata": metadata} if metadata else {}),
+        **({"metadata": langfuse_metadata} if langfuse_metadata else {}),
     }

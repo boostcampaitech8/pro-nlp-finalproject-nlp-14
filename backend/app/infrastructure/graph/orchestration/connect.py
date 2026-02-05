@@ -23,6 +23,7 @@ from .nodes.answering import generate_answer
 from .nodes.evaluation import evaluate_result
 from .nodes.mit_tools_analyze import execute_mit_tools_analyze
 from .nodes.mit_tools_search import execute_mit_tools_search
+from .nodes.mit_tools import execute_mit_tools
 from .nodes.planning import create_plan
 from .nodes.simple_router import route_simple_query
 from .nodes.tools import execute_tools

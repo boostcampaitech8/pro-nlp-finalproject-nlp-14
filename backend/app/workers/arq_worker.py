@@ -245,9 +245,10 @@ async def process_suggestion_task(
 
     워크플로우:
     1. Decision 컨텍스트 조회
-    2. LangGraph mit-suggestion 워크플로우 실행 (AI가 새 Decision 내용 생성)
-    3. 생성된 draft Decision 내용 업데이트
-    4. Suggestion 상태 업데이트 (accepted)
+    2. Transcript 조회 (SpanRef 텍스트 추출용)
+    3. LangGraph mit-suggestion 워크플로우 실행 (AI가 새 Decision 내용 생성)
+    4. 생성된 draft Decision 내용 업데이트
+    5. Suggestion 상태 업데이트 (accepted)
 
     Args:
         ctx: ARQ 컨텍스트
@@ -277,7 +278,31 @@ async def process_suggestion_task(
             logger.error(f"[process_suggestion_task] Suggestion not found: {suggestion_id}")
             return {"status": "error", "message": "Suggestion not found"}
 
-        # 3. mit-suggestion 워크플로우 실행
+        # 3. Transcript 조회 (SpanRef 텍스트 추출용)
+        utterances_data: list[dict] = []
+        if decision.meeting_id:
+            try:
+                async with async_session_maker() as db:
+                    transcript_service = TranscriptService(db)
+                    transcript_response = await transcript_service.get_meeting_transcripts(
+                        UUID(decision.meeting_id)
+                    )
+                    utterances_data = [
+                        {
+                            "speaker_name": utt.speaker_name,
+                            "text": utt.text,
+                            "start_ms": utt.start_ms,
+                            "end_ms": utt.end_ms,
+                        }
+                        for utt in transcript_response.utterances
+                    ]
+                    logger.info(
+                        f"[process_suggestion_task] Loaded {len(utterances_data)} utterances"
+                    )
+            except Exception as e:
+                logger.warning(f"[process_suggestion_task] Failed to load transcripts: {e}")
+
+        # 4. mit-suggestion 워크플로우 실행
         from app.infrastructure.graph.workflows.mit_suggestion.graph import (
             mit_suggestion_graph,
         )
@@ -291,6 +316,7 @@ async def process_suggestion_task(
                 "mit_suggestion_decision_context": decision.context,
                 "mit_suggestion_agenda_topic": decision.agenda_topic,
                 "mit_suggestion_meeting_id": decision.meeting_id,
+                "mit_suggestion_utterances": utterances_data if utterances_data else None,
             },
             config=get_runnable_config(
                 trace_name=f"mit_suggestion:{suggestion_id}",
