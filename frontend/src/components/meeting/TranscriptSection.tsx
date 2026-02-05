@@ -48,7 +48,7 @@ export function TranscriptSection({ meetingId }: TranscriptSectionProps) {
           return;
         }
       }
-      setError('Failed to load transcript.');
+      setError('스크립트를 불러올 수 없습니다.');
     } finally {
       setLoading(false);
     }

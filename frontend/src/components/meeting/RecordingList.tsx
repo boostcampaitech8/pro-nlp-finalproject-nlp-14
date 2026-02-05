@@ -38,7 +38,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
         const response = await recordingService.listRecordings(meetingId);
         setRecordings(response.items);
       } catch (err) {
-        setError('Failed to load recordings');
+        setError('녹음 파일을 불러올 수 없습니다.');
         console.error('Failed to load recordings:', err);
       } finally {
         setLoading(false);
@@ -65,7 +65,7 @@ export function RecordingList({ meetingId }: RecordingListProps) {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Failed to download recording:', err);
-      alert('Failed to download recording');
+      alert('녹음 파일 다운로드에 실패했습니다.');
     } finally {
       setDownloadingId(null);
     }
