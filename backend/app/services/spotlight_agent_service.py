@@ -1,5 +1,6 @@
 """Spotlight Agent 서비스 (회의 컨텍스트 없이 동작)"""
 
+import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -10,7 +11,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration import get_compiled_app
+from app.infrastructure.graph.spotlight_checkpointer import get_spotlight_checkpointer
+from app.infrastructure.graph.orchestration.state import RESET_TOOL_RESULTS
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +30,8 @@ class SpotlightAgentService:
     async def _get_app(self) -> CompiledStateGraph:
         """컴파일된 앱 lazy 로드 (checkpointer 포함)"""
         if self._app is None:
-            self._app = await get_compiled_app(with_checkpointer=True)
+            spotlight_checkpointer = await get_spotlight_checkpointer()
+            self._app = await get_compiled_app(with_checkpointer=True, checkpointer=spotlight_checkpointer)
         return self._app
 
     def _get_thread_id(self, session_id: str) -> str:
@@ -123,6 +128,8 @@ class SpotlightAgentService:
         prev_plan = ""
         prev_retry_count = 0
         user_context = None
+        prev_hitl_status = None
+        prev_hitl_tool_name = None
 
         app = await self._get_app()
         try:
@@ -136,6 +143,8 @@ class SpotlightAgentService:
 
                 # 이전 상태에서 user_context 가져오기
                 user_context = prev_state.values.get("user_context")
+                prev_hitl_status = prev_state.values.get("hitl_status")
+                prev_hitl_tool_name = prev_state.values.get("hitl_tool_name")
 
                 # 🔧 HITL 응답 시 이전 상태의 도구 관련 필드 복원
                 if hitl_action in ("confirm", "cancel"):
@@ -171,6 +180,13 @@ class SpotlightAgentService:
 
         # 🔧 새 메시지 전송 시 (HITL 응답이 아닌 경우) 이전 HITL 상태 초기화
         if hitl_action is None:
+            if prev_hitl_status == "pending":
+                logger.info(
+                    "HITL pending 자동 취소: session_id=%s, thread_id=%s, tool=%s",
+                    session_id,
+                    thread_id,
+                    prev_hitl_tool_name,
+                )
             initial_state.update({
                 "hitl_tool_name": None,
                 "hitl_extracted_params": None,
@@ -179,6 +195,21 @@ class SpotlightAgentService:
                 "hitl_confirmation_message": None,
                 "hitl_required_fields": None,
                 "hitl_display_template": None,
+                "hitl_request_id": None,
+                "selected_tool": None,
+                "tool_args": {},
+                "tool_category": None,
+                "plan": "",
+                "skip_planning": False,
+                "need_tools": False,
+                "can_answer": False,
+                "missing_requirements": [],
+                "evaluation": "",
+                "evaluation_status": "",
+                "evaluation_reason": "",
+                "next_subquery": None,
+                "retry_count": 0,
+                "tool_results": RESET_TOOL_RESULTS,
             })
 
         # 🔧 HITL 응답 시 이전 도구 상태 복원 (planner 건너뛰기)
@@ -271,9 +302,34 @@ class SpotlightAgentService:
                         "message": hitl_message,
                         "required_fields": hitl_required_fields,
                         "display_template": state.values.get("hitl_display_template"),
+                        "hitl_request_id": state.values.get("hitl_request_id"),
                     },
                 })
                 logger.info(f"HITL pending 상태 포함: {hitl_tool_name}")
+
+            # 🔧 Draft (스트리밍 중간 응답) 복원
+            user_id = state.values.get("user_id")
+            if user_id:
+                redis = await get_redis()
+                draft_key = f"spotlight:draft:{user_id}:{session_id}"
+                draft_raw = await redis.get(draft_key)
+                if draft_raw:
+                    try:
+                        draft_payload = json.loads(draft_raw)
+                        draft_content = draft_payload.get("content", "")
+                        if draft_content:
+                            history.append({
+                                "role": "assistant",
+                                "content": draft_content,
+                                "type": "draft",
+                                "draft_data": {
+                                    "request_id": draft_payload.get("request_id", ""),
+                                    "updated_at": draft_payload.get("updated_at"),
+                                },
+                            })
+                            logger.info(f"Draft 메시지 복원: session={session_id}")
+                    except Exception as e:
+                        logger.warning(f"Draft 메시지 복원 실패: {e}")
 
             return history
 

@@ -31,29 +31,49 @@ class InteractionMode(str, Enum):
     SPOTLIGHT = "spotlight"  # Query + Mutation tools
 
 
-def get_tools_for_mode(mode: InteractionMode) -> list[StructuredTool]:
+def normalize_interaction_mode(mode: InteractionMode | str | None) -> InteractionMode:
+    """Normalize interaction mode input.
+
+    Accepts deprecated alias "text" and maps it to SPOTLIGHT.
+    Falls back to spotlight on unknown values.
+    """
+    if mode is None:
+        return InteractionMode.VOICE
+    if isinstance(mode, InteractionMode):
+        return mode
+    if isinstance(mode, str):
+        normalized = mode.lower()
+        if normalized == "text":
+            return InteractionMode.SPOTLIGHT
+        try:
+            return InteractionMode(normalized)
+        except ValueError:
+            return InteractionMode.VOICE
+    return InteractionMode.VOICE
+
+
+def get_tools_for_mode(mode: InteractionMode | str | None) -> list[StructuredTool]:
     """Get available tools based on interaction mode
 
     Args:
-        mode: InteractionMode (VOICE or SPOTLIGHT)
+        mode: InteractionMode or string ("voice" | "spotlight").
 
     Returns:
         list[StructuredTool]: List of tools available in the given mode
     """
+    mode = normalize_interaction_mode(mode)
     if mode == InteractionMode.VOICE:
         # Voice mode: only query tools
         return get_query_tools()
-    elif mode == InteractionMode.SPOTLIGHT:
-        # Spotlight mode: all tools (query + mutation)
-        return get_all_tools()
-    return []
+    # Spotlight mode: all tools (query + mutation)
+    return get_all_tools()
 
 
-def get_langchain_tools_for_mode(mode: InteractionMode) -> list[StructuredTool]:
+def get_langchain_tools_for_mode(mode: InteractionMode | str | None) -> list[StructuredTool]:
     """Get LangChain StructuredTools for bind_tools based on interaction mode
 
     Args:
-        mode: InteractionMode (VOICE or SPOTLIGHT)
+        mode: InteractionMode or string ("voice" | "spotlight").
 
     Returns:
         list[StructuredTool]: LangChain tools for bind_tools
@@ -91,6 +111,7 @@ def get_tool_category(name: str) -> str | None:
 __all__ = [
     "InteractionMode",
     "ToolCategory",
+    "normalize_interaction_mode",
     "get_tools_for_mode",
     "get_langchain_tools_for_mode",
     "get_tool_by_name",

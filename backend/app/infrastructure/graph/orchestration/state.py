@@ -1,9 +1,22 @@
 import datetime
-import operator
 from typing import Annotated, List, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+
+
+RESET_TOOL_RESULTS = "__CLEAR_TOOL_RESULTS__"
+
+
+def tool_results_reducer(current: str | None, new: str | None) -> str:
+    """tool_results 누적/리셋을 위한 reducer."""
+    if new == RESET_TOOL_RESULTS:
+        return ""
+    if current is None:
+        current = ""
+    if new is None:
+        return current
+    return current + new
 
 
 # State 정의
@@ -26,7 +39,7 @@ class OrchestrationState(TypedDict):
     missing_requirements: NotRequired[list[str]]  # 부족한 도구/정보 목록
 
     # Tool execution 관련
-    tool_results: Annotated[str, operator.add]  # mit-Tools 실행 결과 (누적) - mit_search 결과 포함
+    tool_results: Annotated[str, tool_results_reducer]  # mit-Tools 실행 결과 (누적) - mit_search 결과 포함
     retry_count: Annotated[int, "retry count"]  # 재시도 횟수
 
     # MIT Search 의도 분석 결과 (event streaming용)
@@ -47,8 +60,8 @@ class OrchestrationState(TypedDict):
     additional_context: NotRequired[str]
     skip_planning: NotRequired[bool]
 
-    # Channel (voice or text)
-    channel: NotRequired[str]  # "voice" or "text", default: "voice"
+    # Channel (voice or spotlight)
+    channel: NotRequired[str]  # "voice" or "spotlight", default: "voice"
     # === NEW: Interaction Mode & Tool Selection ===
     interaction_mode: NotRequired[Literal["voice", "spotlight"]]  # 상호작용 모드
 
@@ -66,6 +79,7 @@ class OrchestrationState(TypedDict):
     hitl_confirmation_message: NotRequired[str]  # 사용자에게 보여줄 확인 메시지
     hitl_required_fields: NotRequired[list[dict]]  # 필수 입력 필드 스키마
     hitl_display_template: NotRequired[str]  # 자연어 템플릿 ({{param}}이 input으로 대체됨)
+    hitl_request_id: NotRequired[str]  # HITL 요청 식별자 (중복 방지용)
 
     # 사용자 컨텍스트 (SPOTLIGHT 세션 시작 시 주입)
     user_context: NotRequired[dict]

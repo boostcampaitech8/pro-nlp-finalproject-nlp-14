@@ -231,10 +231,10 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
     };
 
     const baseClass = cn(
-      'inline-block px-2 py-0.5 mx-1 rounded border-b-2 border-dashed',
-      'bg-white/5 border-mit-primary/50 text-white',
-      'focus:outline-none focus:border-mit-primary focus:bg-white/10',
-      'min-w-[80px] text-center transition-colors'
+      'inline-block px-1.5 py-0.5 mx-1 rounded-md border-b border-white/20',
+      'bg-white/0 text-white/90',
+      'focus:outline-none focus:border-mit-primary/70 focus:bg-white/10',
+      'min-w-[72px] text-center transition-colors'
     );
 
     if (inputType === 'select' && field?.options) {
@@ -247,7 +247,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
           onChange={(e) => handleInputChange(paramName, e.target.value)}
           onKeyDown={(e) => handleKeyDown(e, inputIndex)}
           disabled={isSubmitting}
-          className={cn(baseClass, 'cursor-pointer appearance-none', currentValue && 'text-mit-primary font-medium')}
+          className={cn(baseClass, 'cursor-pointer appearance-none pr-5', currentValue && 'text-mit-primary font-medium')}
           title={displayHint || undefined}
         >
           <option value="" className="bg-gray-800">{field.placeholder || '선택'}</option>
@@ -270,7 +270,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
           onChange={(e) => handleInputChange(paramName, e.target.value)}
           onKeyDown={(e) => handleKeyDown(e, inputIndex)}
           disabled={isSubmitting}
-          className={cn(baseClass, 'min-w-[180px]', currentValue && 'text-mit-primary font-medium')}
+        className={cn(baseClass, 'min-w-[170px]', currentValue && 'text-mit-primary font-medium')}
         />
       );
     }
@@ -287,7 +287,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
         placeholder={field?.placeholder || paramName}
         disabled={isSubmitting}
         className={cn(baseClass, currentValue && 'text-mit-primary font-medium')}
-        style={{ width: `${Math.max(80, (currentValue.length || 6) * 12)}px` }}
+        style={{ width: `${Math.max(72, (currentValue.length || 6) * 11)}px` }}
       />
     );
   };
@@ -315,9 +315,9 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
     const inputType = getInputType(field);
     const commonClass = cn(
       'w-full px-3 py-2 rounded-lg text-sm',
-      'bg-white/10 border border-white/20',
+      'bg-white/5 border border-white/10',
       'text-white placeholder:text-white/40',
-      'focus:outline-none focus:border-mit-primary/50',
+      'focus:outline-none focus:border-mit-primary/60 focus:bg-white/10',
       'disabled:opacity-50 disabled:cursor-not-allowed'
     );
 

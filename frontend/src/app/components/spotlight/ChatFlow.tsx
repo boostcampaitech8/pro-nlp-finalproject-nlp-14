@@ -26,6 +26,11 @@ export function ChatFlow() {
           // 마지막 에이전트 메시지이면서 스트리밍 중인 경우
           const isLastAgent =
             msg.role === 'agent' && index === chatMessages.length - 1 && isStreaming;
+          const shouldHideForStatus =
+            Boolean(statusMessage) && isLastAgent && msg.type === 'text' && msg.role === 'agent';
+          if (shouldHideForStatus) {
+            return null;
+          }
 
           // plan 타입 메시지
           if (msg.type === 'plan') {

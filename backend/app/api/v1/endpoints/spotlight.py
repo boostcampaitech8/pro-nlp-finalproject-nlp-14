@@ -3,12 +3,16 @@
 import asyncio
 import json
 import logging
+import time
+import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_current_user, get_current_user_from_query
+from app.core.redis import get_redis
 from app.models.user import User
 from app.schemas.spotlight import (
     SpotlightChatRequest,
@@ -22,11 +26,43 @@ from app.services.spotlight_session import SpotlightSessionService
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/spotlight", tags=["Spotlight"])
 
-# 진행 중인 그래프 실행 태스크 추적 (세션별)
-_running_tasks: dict[str, asyncio.Task] = {}
+# 세션별 큐 워커 및 요청 이벤트 큐 추적
+_session_workers: dict[str, asyncio.Task] = {}
+_pending_event_queues: dict[str, asyncio.Queue] = {}
+_instance_id = str(uuid.uuid4())
 
 # 그래프 실행 타임아웃 (초) - LLM 응답 지연 고려하여 5분
 GRAPH_EXECUTION_TIMEOUT = 300
+QUEUE_LOCK_TTL = 900
+QUEUE_PAYLOAD_TTL = 3600
+QUEUE_IDLE_TICKS = 5
+DRAFT_TTL = 3600
+DRAFT_FLUSH_INTERVAL = 0.7
+
+
+def _queue_key(user_id: str, session_id: str, priority: bool) -> str:
+    kind = "priority" if priority else "normal"
+    return f"spotlight:queue:{user_id}:{session_id}:{kind}"
+
+
+def _payload_key(request_id: str) -> str:
+    return f"spotlight:queue:payload:{request_id}"
+
+
+def _lock_key(user_id: str, session_id: str) -> str:
+    return f"spotlight:queue:lock:{user_id}:{session_id}"
+
+
+def _worker_key(user_id: str, session_id: str) -> str:
+    return f"{user_id}:{session_id}"
+
+
+def _draft_key(user_id: str, session_id: str) -> str:
+    return f"spotlight:draft:{user_id}:{session_id}"
+
+
+def _inflight_key(user_id: str, session_id: str) -> str:
+    return f"spotlight:inflight:{user_id}:{session_id}"
 
 
 def get_session_service() -> SpotlightSessionService:
@@ -64,18 +100,13 @@ async def list_sessions(
     session_service: Annotated[SpotlightSessionService, Depends(get_session_service)],
 ):
     """세션 목록 조회"""
-    sessions = await session_service.list_sessions(str(current_user.id))
-    return [
-        SpotlightSessionResponse(
-            id=s.session_id,
-            user_id=s.user_id,
-            title=s.title,
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-            message_count=s.message_count,
-        )
-        for s in sessions
-    ]
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "error": "DISABLED_IN_BETA",
+            "message": "세션 목록은 베타에서 비활성화됩니다.",
+        },
+    )
 
 
 @router.get("/sessions/{session_id}", response_model=SpotlightSessionResponse)
@@ -170,6 +201,105 @@ async def get_session_messages(
     return [SpotlightMessageResponse(**msg) for msg in history]
 
 
+async def _enqueue_request(
+    *,
+    user_id: str,
+    session_id: str,
+    request_id: str,
+    message: str,
+    hitl_action: str | None,
+    hitl_params: dict | None,
+) -> None:
+    redis = await get_redis()
+    payload = {
+        "request_id": request_id,
+        "user_id": user_id,
+        "session_id": session_id,
+        "message": message,
+        "hitl_action": hitl_action,
+        "hitl_params": hitl_params,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await redis.set(_payload_key(request_id), json.dumps(payload), ex=QUEUE_PAYLOAD_TTL)
+    queue_key = _queue_key(user_id, session_id, priority=hitl_action is not None)
+    await redis.rpush(queue_key, request_id)
+
+
+async def _process_session_queue(
+    agent_service: SpotlightAgentService,
+    user_id: str,
+    session_id: str,
+) -> None:
+    redis = await get_redis()
+    lock_key = _lock_key(user_id, session_id)
+    lock_acquired = await redis.set(lock_key, _instance_id, nx=True, ex=QUEUE_LOCK_TTL)
+    if not lock_acquired:
+        return
+
+    try:
+        idle_ticks = 0
+        while idle_ticks < QUEUE_IDLE_TICKS:
+            await redis.expire(lock_key, QUEUE_LOCK_TTL)
+            result = await redis.blpop(
+                [
+                    _queue_key(user_id, session_id, priority=True),
+                    _queue_key(user_id, session_id, priority=False),
+                ],
+                timeout=1,
+            )
+            if not result:
+                idle_ticks += 1
+                continue
+
+            idle_ticks = 0
+            _, request_id = result
+            payload_raw = await redis.get(_payload_key(request_id))
+            if not payload_raw:
+                _pending_event_queues.pop(request_id, None)
+                continue
+
+            payload = json.loads(payload_raw)
+            event_queue = _pending_event_queues.get(request_id)
+            if event_queue is None:
+                event_queue = asyncio.Queue()
+                _pending_event_queues[request_id] = event_queue
+
+            try:
+                await _run_graph_to_queue(
+                    agent_service=agent_service,
+                    queue=event_queue,
+                    user_input=payload.get("message", ""),
+                    session_id=payload.get("session_id", session_id),
+                    user_id=payload.get("user_id", user_id),
+                    hitl_action=payload.get("hitl_action"),
+                    hitl_params=payload.get("hitl_params"),
+                    request_id=payload.get("request_id"),
+                )
+            finally:
+                await redis.delete(_payload_key(request_id))
+                _pending_event_queues.pop(request_id, None)
+
+    finally:
+        current_value = await redis.get(lock_key)
+        if current_value == _instance_id:
+            await redis.delete(lock_key)
+        _session_workers.pop(_worker_key(user_id, session_id), None)
+
+
+def _ensure_session_worker(
+    agent_service: SpotlightAgentService,
+    user_id: str,
+    session_id: str,
+) -> None:
+    key = _worker_key(user_id, session_id)
+    existing = _session_workers.get(key)
+    if existing and not existing.done():
+        return
+
+    task = asyncio.create_task(_process_session_queue(agent_service, user_id, session_id))
+    _session_workers[key] = task
+
+
 async def _run_graph_to_queue(
     agent_service: SpotlightAgentService,
     queue: asyncio.Queue,
@@ -178,11 +308,23 @@ async def _run_graph_to_queue(
     user_id: str,
     hitl_action: str | None,
     hitl_params: dict | None,
+    request_id: str | None = None,
 ):
     """그래프 실행을 별도 태스크로 분리 - 클라이언트 disconnect와 무관하게 완료
 
     타임아웃(5분)이 적용되어 hang 시에도 리소스가 정리됩니다.
     """
+    redis = await get_redis()
+    draft_content = ""
+    last_flush = 0.0
+    completed = False
+    hitl_pending = False
+    had_error = False
+
+    if request_id:
+        await redis.set(_inflight_key(user_id, session_id), request_id, ex=DRAFT_TTL)
+        logger.info("Inflight 요청 설정: session=%s, request=%s", session_id, request_id)
+
     try:
         async with asyncio.timeout(GRAPH_EXECUTION_TIMEOUT):
             async for event in agent_service.process_streaming(
@@ -192,6 +334,39 @@ async def _run_graph_to_queue(
                 hitl_action=hitl_action,
                 hitl_params=hitl_params,
             ):
+                event_type = event.get("type")
+                tag = event.get("tag")
+
+                if event_type == "token" and tag == "generator_token":
+                    content = event.get("content", "")
+                    if content:
+                        draft_content += content
+                        now = time.monotonic()
+                        if now - last_flush >= DRAFT_FLUSH_INTERVAL:
+                            payload = {
+                                "request_id": request_id,
+                                "content": draft_content,
+                                "updated_at": datetime.now(timezone.utc).isoformat(),
+                            }
+                            await redis.set(
+                                _draft_key(user_id, session_id),
+                                json.dumps(payload, ensure_ascii=False),
+                                ex=DRAFT_TTL,
+                            )
+                            logger.debug(
+                                "Draft 갱신: session=%s, request=%s, length=%d",
+                                session_id,
+                                request_id,
+                                len(draft_content),
+                            )
+                            last_flush = now
+                elif event_type == "done":
+                    completed = True
+                elif event_type == "hitl_request":
+                    hitl_pending = True
+                elif event_type == "error":
+                    had_error = True
+
                 await queue.put(event)
     except asyncio.TimeoutError:
         logger.error(
@@ -207,9 +382,30 @@ async def _run_graph_to_queue(
         logger.error("그래프 실행 오류 (session=%s): %s", session_id, e, exc_info=True)
         await queue.put({"type": "error", "error": str(e)})
     finally:
+        if had_error and draft_content:
+            payload = {
+                "request_id": request_id,
+                "content": draft_content,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await redis.set(
+                _draft_key(user_id, session_id),
+                json.dumps(payload, ensure_ascii=False),
+                ex=DRAFT_TTL,
+            )
+            logger.info(
+                "Draft 유지(에러): session=%s, request=%s, length=%d",
+                session_id,
+                request_id,
+                len(draft_content),
+            )
+        if completed or hitl_pending:
+            await redis.delete(_draft_key(user_id, session_id))
+            logger.info("Draft 삭제: session=%s, request=%s", session_id, request_id)
+        if request_id:
+            await redis.delete(_inflight_key(user_id, session_id))
+            logger.info("Inflight 해제: session=%s, request=%s", session_id, request_id)
         await queue.put(None)  # 종료 신호
-        # 태스크 추적에서 제거
-        _running_tasks.pop(session_id, None)
         logger.info("그래프 실행 완료 (session=%s)", session_id)
 
 
@@ -248,29 +444,31 @@ async def chat_stream(
         str(current_user.id), session_id, increment_message_count=True
     )
 
-    # 이전에 실행 중인 태스크가 있으면 취소하지 않음 (완료까지 실행)
-    # 새 요청에 대한 Queue와 Task 생성
+    # 새 요청을 세션 큐에 등록 (HITL 응답은 priority)
+    request_id = str(uuid.uuid4())
     queue: asyncio.Queue = asyncio.Queue()
+    _pending_event_queues[request_id] = queue
+    await queue.put({
+        "type": "status",
+        "tag": "queue",
+        "message": "요청을 접수했습니다...",
+    })
 
-    # 그래프 실행을 별도 태스크로 시작 (fire-and-complete)
-    task = asyncio.create_task(
-        _run_graph_to_queue(
-            agent_service=agent_service,
-            queue=queue,
-            user_input=request.message,
-            session_id=session_id,
-            user_id=str(current_user.id),
-            hitl_action=request.hitl_action,
-            hitl_params=request.hitl_params,
-        )
+    await _enqueue_request(
+        user_id=str(current_user.id),
+        session_id=session_id,
+        request_id=request_id,
+        message=request.message,
+        hitl_action=request.hitl_action,
+        hitl_params=request.hitl_params,
     )
-    _running_tasks[session_id] = task
+    _ensure_session_worker(agent_service, str(current_user.id), session_id)
 
     async def event_generator():
         """SSE 이벤트 스트리밍 - Queue에서 이벤트를 읽어 클라이언트에 전송
 
         클라이언트 disconnect 시 이 generator만 종료되고,
-        그래프 실행 태스크는 계속 실행되어 결과가 checkpointer에 저장됩니다.
+        그래프 실행은 계속 진행되어 결과가 checkpointer에 저장됩니다.
         """
         try:
             while True:
@@ -308,6 +506,10 @@ async def chat_stream(
                     status_msg = status_map.get(node)
                     if status_msg:
                         yield f"event: status\ndata: {status_msg}\n\n"
+                elif event_type == "status":
+                    message = event.get("message")
+                    if message:
+                        yield f"event: status\ndata: {message}\n\n"
 
                 # 도구 실행
                 elif event_type == "tool_start" and tag == "tool_event":
@@ -327,6 +529,7 @@ async def chat_stream(
                         "message": event.get("message", ""),
                         "required_fields": event.get("required_fields", []),
                         "display_template": event.get("display_template"),
+                        "hitl_request_id": event.get("hitl_request_id"),
                     }, ensure_ascii=False)
                     yield f"event: hitl_request\ndata: {hitl_data}\n\n"
                     # HITL pending 상태이므로 스트림 종료
@@ -350,6 +553,8 @@ async def chat_stream(
         except Exception as e:
             logger.error("SSE 스트리밍 오류 (session=%s): %s", session_id, e, exc_info=True)
             yield f"event: error\ndata: {str(e)}\n\n"
+        finally:
+            _pending_event_queues.pop(request_id, None)
 
     return StreamingResponse(
         event_generator(),
