@@ -42,8 +42,8 @@ class TestGatherContext:
 
         gathered = result["mit_mention_gathered_context"]
         assert "decision_summary" in gathered
-        assert gathered["decision_summary"] == "API 설계 원칙을 논의했습니다."[:500]
-        assert gathered["decision_context"] == "RESTful API 표준을 따르기로 결정"[:300]
+        assert gathered["decision_summary"] == "API 설계 원칙을 논의했습니다."[:800]
+        assert gathered["decision_context"] == "RESTful API 표준을 따르기로 결정"[:500]
         assert len(gathered["conversation_history"]) == 3
 
     @pytest.mark.asyncio
@@ -60,7 +60,7 @@ class TestGatherContext:
 
     @pytest.mark.asyncio
     async def test_gather_context_truncates_long_decision(self):
-        """긴 결정사항 요약 (500자 제한)"""
+        """긴 결정사항 요약 (800자 제한)"""
         long_content = "A" * 1000
 
         state = MitMentionState(
@@ -70,11 +70,11 @@ class TestGatherContext:
         result = await gather_context(state)
 
         gathered = result["mit_mention_gathered_context"]
-        assert len(gathered["decision_summary"]) == 500
+        assert len(gathered["decision_summary"]) == 800
 
     @pytest.mark.asyncio
     async def test_gather_context_truncates_long_context(self):
-        """긴 맥락 요약 (300자 제한)"""
+        """긴 맥락 요약 (500자 제한)"""
         long_context = "B" * 500
 
         state = MitMentionState(
@@ -85,11 +85,11 @@ class TestGatherContext:
         result = await gather_context(state)
 
         gathered = result["mit_mention_gathered_context"]
-        assert len(gathered["decision_context"]) == 300
+        assert len(gathered["decision_context"]) == 500
 
     @pytest.mark.asyncio
     async def test_gather_context_limits_thread_history(self):
-        """대화 이력 최근 5개만 수집"""
+        """대화 이력 최근 10개만 수집"""
         history = [{"role": "user", "content": f"질문{i}"} for i in range(10)]
 
         state = MitMentionState(
@@ -100,10 +100,10 @@ class TestGatherContext:
         result = await gather_context(state)
 
         gathered = result["mit_mention_gathered_context"]
-        assert len(gathered["conversation_history"]) == 5
-        # 최근 5개 확인
-        assert gathered["conversation_history"][0]["content"] == "질문5"
-        assert gathered["conversation_history"][4]["content"] == "질문9"
+        assert len(gathered["conversation_history"]) == 10
+        # 최근 10개 확인
+        assert gathered["conversation_history"][0]["content"] == "질문0"
+        assert gathered["conversation_history"][9]["content"] == "질문9"
 
     @pytest.mark.asyncio
     async def test_gather_context_handles_malformed_history(self):
@@ -291,8 +291,8 @@ class TestValidateResponse:
         assert result["mit_mention_retry_reason"] == "응답이 너무 짧습니다"
 
     @pytest.mark.asyncio
-    async def test_validate_response_too_long(self):
-        """응답이 너무 김 (2000자 초과)"""
+    async def test_validate_response_long_passes(self):
+        """응답이 길어도 통과"""
         state = MitMentionState(
             mit_mention_raw_response="A" * 2001,
             mit_mention_retry_count=0,
@@ -300,9 +300,9 @@ class TestValidateResponse:
 
         result = await validate_response(state)
 
-        assert result["mit_mention_validation"]["passed"] is False
-        assert "응답이 너무 깁니다" in result["mit_mention_validation"]["issues"]
-        assert result["mit_mention_retry_count"] == 1
+        assert result["mit_mention_validation"]["passed"] is True
+        assert result["mit_mention_response"] == "A" * 2001
+        assert result["mit_mention_retry_count"] == 0
 
     @pytest.mark.asyncio
     async def test_validate_response_empty(self):
@@ -360,6 +360,20 @@ class TestValidateResponse:
         issues = result["mit_mention_validation"]["issues"]
         assert len(issues) >= 1
         assert result["mit_mention_retry_reason"] is not None
+
+    @pytest.mark.asyncio
+    async def test_validate_response_capability_question_short(self):
+        """기능 안내 질문인데 응답이 빈약하면 재시도"""
+        state = MitMentionState(
+            mit_mention_content="너가 할 수 있는 일 알려줘",
+            mit_mention_raw_response="제가 할 수 있는 일은 많아요.",
+            mit_mention_retry_count=0,
+        )
+
+        result = await validate_response(state)
+
+        assert result["mit_mention_validation"]["passed"] is False
+        assert "기능 안내가 충분하지 않습니다" in result["mit_mention_validation"]["issues"]
 
 
 class TestRouteValidation:

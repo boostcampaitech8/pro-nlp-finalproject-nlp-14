@@ -24,6 +24,11 @@ class MitMentionState(TypedDict, total=False):
     # 컨텍스트 수집 결과
     mit_mention_gathered_context: Annotated[dict | None, "수집된 컨텍스트"]
 
+    # 검색 관련 필드
+    mit_mention_needs_search: Annotated[bool | None, "검색 필요 여부"]
+    mit_mention_search_query: Annotated[str | None, "검색 쿼리"]
+    mit_mention_search_results: Annotated[str | None, "검색 결과"]
+
     # 생성 결과 필드
     mit_mention_raw_response: Annotated[str | None, "LLM 생성 응답 (raw)"]
 
