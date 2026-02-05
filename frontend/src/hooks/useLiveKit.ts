@@ -151,6 +151,9 @@ export function useLiveKit(meetingId: string) {
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const destinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
 
+  // 원격 화면공유 RemoteTrack 객체 보존 (attach/detach용)
+  const remoteScreenTracksRef = useRef<Map<string, RemoteTrack>>(new Map());
+
   /**
    * VAD 훅 - 발화 감지
    */
@@ -348,6 +351,7 @@ export function useLiveKit(meetingId: string) {
       } else if (track.kind === Track.Kind.Video) {
         // 비디오 트랙 (화면공유)
         if (publication.source === Track.Source.ScreenShare) {
+          remoteScreenTracksRef.current.set(participant.identity, track);
           const screenMediaStream = new MediaStream([track.mediaStreamTrack]);
           addRemoteScreenStream(participant.identity, screenMediaStream);
           updateParticipantScreenSharing(participant.identity, true);
@@ -370,6 +374,7 @@ export function useLiveKit(meetingId: string) {
         track.kind === Track.Kind.Video &&
         publication.source === Track.Source.ScreenShare
       ) {
+        remoteScreenTracksRef.current.delete(participant.identity);
         removeRemoteScreenStream(participant.identity);
         updateParticipantScreenSharing(participant.identity, false);
       }
@@ -398,6 +403,7 @@ export function useLiveKit(meetingId: string) {
 
       // LiveKit SDK가 자동으로 트랙을 정리하므로 우리는 스토어 상태만 정리
       // detach()나 stop()을 호출하면 SDK 내부 상태가 꼬여서 재접속 시 문제 발생
+      remoteScreenTracksRef.current.delete(participant.identity);
       removeParticipant(participant.identity);
       removeRemoteStream(participant.identity);
       removeRemoteScreenStream(participant.identity);
@@ -996,6 +1002,13 @@ export function useLiveKit(meetingId: string) {
   }, [setScreenStream, setScreenSharing, stopScreenShare]);
 
   /**
+   * 원격 화면공유 RemoteTrack 조회 (attach/detach용)
+   */
+  const getRemoteScreenTrack = useCallback((userId: string): RemoteTrack | undefined => {
+    return remoteScreenTracksRef.current.get(userId);
+  }, []);
+
+  /**
    * 채팅 메시지 전송
    */
   const sendChatMessage = useCallback(
@@ -1139,6 +1152,7 @@ export function useLiveKit(meetingId: string) {
     // 화면공유 액션
     startScreenShare,
     stopScreenShare,
+    getRemoteScreenTrack,
     // 채팅 액션
     sendChatMessage,
   };
