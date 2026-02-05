@@ -94,6 +94,7 @@ def get_runnable_config(
         base_url=base_url,
     )
 
+
     # Langfuse v3+: CallbackHandler는 생성자 인자를 받지 않음
     # 이미 초기화된 Langfuse 클라이언트를 자동으로 사용함
     callback_handler = CallbackHandler()

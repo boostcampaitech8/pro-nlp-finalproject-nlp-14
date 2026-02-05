@@ -1,5 +1,7 @@
 import os
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
+from uuid import UUID
 
 from langchain_core.messages import HumanMessage
 
@@ -11,6 +13,34 @@ from app.infrastructure.graph.integration.langfuse import (
 from app.infrastructure.graph.orchestration import get_compiled_app
 from app.core.config import get_settings
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
+
+logger = logging.getLogger(__name__)
+
+
+async def get_user_context(user_id: str) -> dict:
+    """사용자의 팀 정보 및 현재 시간 컨텍스트 조회"""
+    from app.core.database import async_session_maker
+    from app.services.team_service import TeamService
+
+    current_time = datetime.now(timezone.utc).isoformat()
+
+    try:
+        user_uuid = UUID(str(user_id))
+        async with async_session_maker() as db:
+            service = TeamService(db)
+            result = await service.list_my_teams(user_id=user_uuid, limit=10)
+            return {
+                "user_id": user_id,
+                "teams": [{"id": str(t.id), "name": t.name} for t in result.items],
+                "current_time": current_time,
+            }
+    except Exception as e:
+        logger.warning(f"사용자 컨텍스트 조회 실패: {e}")
+        return {
+            "user_id": user_id,
+            "teams": [],
+            "current_time": current_time,
+        }
 
 
 async def main():
@@ -30,6 +60,8 @@ async def main():
     
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--query", type=str, default=None)
+    parser.add_argument("--mode", type=str, default="voice", choices=["voice", "spotlight"], help="Interaction mode: 'voice' (회의 중) or 'spotlight' (일반)")
+    parser.add_argument("--meeting-id", type=str, default=None, help="Meeting ID for voice mode (required for voice mode)")
     parser.add_argument("--no-checkpointer", action="store_true", help="Disable checkpointer")
     parser.add_argument("--no-streaming", action="store_true", help="Disable streaming (use ainvoke)")
     args, _ = parser.parse_known_args()
@@ -39,9 +71,17 @@ async def main():
     use_streaming = not args.no_streaming
     app = await get_compiled_app(with_checkpointer=use_checkpointer)
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("🚀 Orchestration Graph CLI")
-    print("=" * 60)
+    print("=" * 70)
+    
+    # 모드 설정
+    mode = args.mode.lower()
+    if mode not in ["voice", "spotlight"]:
+        mode = "voice"
+    
+    print(f"📌 Mode: {mode.upper()}")
+    
     if use_checkpointer:
         print("✅ Checkpointer: 활성화 (멀티턴 지원)")
     else:
@@ -53,11 +93,38 @@ async def main():
         print("⚠️  Streaming: 비활성화 (완료 후 일괄 출력)")
 
     print("\n💡 종료하려면 'quit', 'exit', 'q' 를 입력하세요")
-    print("=" * 60 + "\n")
+    print("=" * 70 + "\n")
 
     run_id = str(uuid.uuid4())
     user_id = "user-1e6382d1"  # 신수효 (샘플 데이터의 실제 사용자)
     thread_id = f"cli-session-{run_id[:8]}"  # CLI 세션용 thread_id
+    
+    # 모드별 초기 설정
+    meeting_id = None
+    user_context = None
+    
+    if mode == "voice":
+        # Voice 모드: meeting_id 설정
+        meeting_id = args.meeting_id
+        if not meeting_id:
+            meeting_id = input("\n📍 Voice 모드: 진행 중인 회의의 ID를 입력하세요: ").strip()
+            if not meeting_id:
+                print("❌ Meeting ID가 필요합니다.")
+                return
+        print(f"✅ Meeting ID: {meeting_id}")
+    
+    elif mode == "spotlight":
+        # Spotlight 모드: user_context 조회
+        print("\n⏳ 사용자 컨텍스트 로딩 중...")
+        user_context = await get_user_context(user_id)
+        
+        if user_context.get("teams"):
+            team_names = ", ".join([t["name"] for t in user_context["teams"]])
+            print(f"✅ Teams: {team_names}")
+        else:
+            print("⚠️  속한 팀이 없습니다.")
+        
+        print(f"📅 Current time: {user_context['current_time']}")
 
     single_query = args.query
 
@@ -86,7 +153,14 @@ async def main():
                 "user_id": user_id,
                 "executed_at": datetime.now(),
                 "retry_count": 0,
+                "interaction_mode": mode,  # 모드 설정
             }
+            
+            # 모드별 추가 설정
+            if mode == "voice":
+                initial_state["meeting_id"] = meeting_id
+            elif mode == "spotlight":
+                initial_state["user_context"] = user_context
 
             # 그래프 실행
             print("\n⚙️  처리 중...\n")

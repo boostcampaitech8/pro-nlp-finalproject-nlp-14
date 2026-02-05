@@ -6,7 +6,7 @@ from app.infrastructure.graph.integration.llm import get_mention_generator_llm
 from app.infrastructure.graph.workflows.mit_mention.state import (
     MitMentionState,
 )
-from app.prompts.v1.workflows.mit_mention import MENTION_RESPONSE_PROMPT
+from app.prompt.v1.workflows.mit_mention import MENTION_RESPONSE_PROMPT
 
 logger = logging.getLogger(__name__)
 

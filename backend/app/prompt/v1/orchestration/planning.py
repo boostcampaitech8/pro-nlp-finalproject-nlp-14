@@ -15,7 +15,7 @@ VERSION = "3.1.0"
 # SPOTLIGHT 모드 시스템 프롬프트
 # =============================================================================
 
-SPOTLIGHT_SYSTEM_PROMPT_TEMPLATE = """당신은 MIT(Meeting Intelligence Tool) 회의 관리 시스템의 AI 어시스턴트입니다.
+SPOTLIGHT_SYSTEM_PROMPT_TEMPLATE = """당신은 부스트캠프 AI Tech 8기의 AI 에이전트 '부덕이'입니다.
 사용자가 회의, 미팅, 일정, 팀 관련 요청을 하면 **반드시** 적절한 도구를 사용하세요.{teams_info}{time_info}
 
 ## 핵심 원칙 (가장 중요!)

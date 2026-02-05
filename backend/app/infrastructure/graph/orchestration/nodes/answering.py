@@ -5,7 +5,16 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
-from app.infrastructure.graph.orchestration.tools.registry import InteractionMode, normalize_interaction_mode
+from app.infrastructure.graph.orchestration.tools.registry import (
+    InteractionMode,
+    normalize_interaction_mode,
+)
+from app.prompt.v1.orchestration.simple_answering import (
+    SIMPLE_QUERY_DEFAULT_SYSTEM_PROMPT,
+    SIMPLE_QUERY_DEFAULT_USER_PROMPT,
+    SIMPLE_QUERY_SUGGESTED_SYSTEM_PROMPT,
+    SIMPLE_QUERY_SUGGESTED_USER_PROMPT,
+)
 from app.prompts.v1.orchestration.answering import (
     ChannelType,
     build_system_prompt_with_tools,
@@ -63,18 +72,15 @@ async def generate_answer(state: OrchestrationState):
         if simple_response:
             # simple_router에서 제안한 응답이 있으면 참고
             prompt = ChatPromptTemplate.from_messages([
-                ("system", "당신은 친절한 AI 비서입니다. 사용자의 질문에 자연스럽고 친근하게 답변하세요."),
-                ("human", "사용자 질문: {query}\n\n제안 응답: {suggested_response}\n\n위 제안을 참고하여 자연스럽게 답변하세요.")
+                ("system", SIMPLE_QUERY_SUGGESTED_SYSTEM_PROMPT),
+                ("human", SIMPLE_QUERY_SUGGESTED_USER_PROMPT),
             ])
             input_data = {"query": query, "suggested_response": simple_response}
         else:
             # 제안 응답이 없으면 카테고리 기반 응답
             prompt = ChatPromptTemplate.from_messages([
-                ("system",
-                 "당신은 친절한 AI 비서입니다.\n"
-                 "사용자의 인사나 감정 표현에 자연스럽고 친근하게 응답하세요.\n"
-                 "간단하고 따뜻한 한두 문장으로 답변하세요."),
-                ("human", "{query}")
+                ("system", SIMPLE_QUERY_DEFAULT_SYSTEM_PROMPT),
+                ("human", SIMPLE_QUERY_DEFAULT_USER_PROMPT),
             ])
             input_data = {"query": query}
 

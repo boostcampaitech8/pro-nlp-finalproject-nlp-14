@@ -10,7 +10,7 @@ from app.infrastructure.graph.integration.llm import get_decision_generator_llm
 from app.infrastructure.graph.workflows.mit_suggestion.state import (
     MitSuggestionState,
 )
-from app.prompts.v1.workflows.mit_suggestion import (
+from app.prompt.v1.workflows.mit_suggestion import (
     CONFIDENCE_LEVELS,
     DECISION_GENERATION_HUMAN,
     DECISION_GENERATION_SYSTEM,
@@ -20,7 +20,7 @@ from app.prompts.v1.workflows.mit_suggestion import (
 logger = logging.getLogger(__name__)
 
 
-# 프롬프트 템플릿 (prompts/v1/workflows/suggestion.py에서 import)
+# 프롬프트 템플릿 (app.prompt.v1.workflows.mit_suggestion에서 import)
 DECISION_GENERATION_PROMPT = ChatPromptTemplate.from_messages([
     ("system", DECISION_GENERATION_SYSTEM),
     ("human", DECISION_GENERATION_HUMAN),

@@ -11,6 +11,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.infrastructure.graph.integration.llm import get_cypher_generator_llm
+from app.prompt.v1.mit_search.cypher import (
+    CYPHER_GENERATION_SYSTEM_PROMPT,
+    SCHEMA_INFO,
+    SUBQUERY_EXTRACTION_SYSTEM_PROMPT,
+)
 from ..nodes.tool_retrieval import generate_cypher_by_strategy, normalize_query
 from ..state import MitSearchState
 from ..utils.search_strategy_router import SearchStrategyRouter
@@ -60,162 +65,10 @@ async def _generate_text_to_cypher_raw(
     llm = get_cypher_generator_llm()
 
     # 1. 스키마 정의
-    schema_info = textwrap.dedent(
-        """
-        [Graph Schema]
-        Nodes:
-        - Team: {id, name, description}
-        - User: {id, name, email}
-        - Meeting: {id, title, status("scheduled", "ongoing", "completed", "in_review", "confirmed", "cancelled"),
-                   description, summary, team_id, scheduled_at(datetime), started_at(datetime),
-                   ended_at(datetime), created_at(datetime)}
-        - Agenda: {id, topic, description, team_id, created_at(datetime)}
-        - Decision: {id, content, status("draft", "latest", "outdated", "superseded", "rejected"),
-                    context, meeting_id, team_id, created_at(datetime), updated_at(datetime)}
-        - ActionItem: {id, content, status("pending", "in_progress", "completed", "cancelled"),
-                      due_date(datetime), meeting_id, team_id, created_at(datetime)}
-        - Suggestion: {id, content, status("pending", "accepted", "rejected"), author_id,
-                      decision_id, created_decision_id, meeting_id, team_id, created_at(datetime)}
-        - Comment: {id, content, author_id, decision_id, parent_id, team_id, created_at(datetime)}
-
-        Relationships (Directional):
-        - (:User)-[:MEMBER_OF {role}]->(:Team)
-        - (:Team)-[:HOSTS]->(:Meeting)
-        - (:User)-[:PARTICIPATED_IN {role}]->(:Meeting)
-        - (:Meeting)-[:CONTAINS {order}]->(:Agenda)
-        - (:Meeting)-[:DECIDED_IN]->(:Decision)
-        - (:Agenda)-[:HAS_DECISION]->(:Decision)
-        - (:User)-[:APPROVES]->(:Decision)
-        - (:User)-[:REJECTS]->(:Decision)
-        - (:Decision)-[:SUPERSEDES]->(:Decision)
-        - (:Decision)-[:OUTDATES]->(:Decision)
-        - (:Decision)-[:TRIGGERS]->(:ActionItem)
-        - (:User)-[:ASSIGNED_TO]->(:ActionItem)
-        - (:Team)-[:ASSIGNED_TO]->(:ActionItem)
-        - (:User)-[:SUGGESTS]->(:Suggestion)
-        - (:Suggestion)-[:CREATES]->(:Decision)
-        - (:Suggestion)-[:ON]->(:Decision)
-        - (:User)-[:COMMENTS]->(:Comment)
-        - (:Comment)-[:ON]->(:Decision)
-        - (:Comment)-[:REPLY_TO]->(:Comment)
-
-        Indexes:
-        - CALL db.index.fulltext.queryNodes('decision_search', 'keyword')
-        - CALL db.index.fulltext.queryNodes('meeting_search', 'keyword')
-        - CALL db.index.fulltext.queryNodes('comment_search', 'keyword')
-        """
-    ).strip()
+    schema_info = SCHEMA_INFO
 
     # 2. 시스템 프롬프트: Few-Shot 예시 추가 (가장 중요)
-    system_prompt = textwrap.dedent(
-        f"""
-        Role: Neo4j Cypher Expert & Graph Navigator.
-
-        Task:
-        Convert the user's Natural Language Query into a precise Neo4j Cypher query based on the Schema.
-
-        {schema_info}
-
-                [Execution Principles]
-                    1. **Security & Safety**:
-                            - Only READ operations allowed.
-                            - Do NOT use CREATE/DELETE/SET/MERGE/LOAD CSV/CALL except fulltext index call.
-                            - Prefer scoping to the current user when possible.
-
-                    2. **Intent Alignment (CRITICAL)**:
-                            - Use the provided intent fields to choose the target node and filters.
-                            - If intent specifies a person/team and a topic, filter BOTH.
-                                `WHERE u.name CONTAINS $entity_name AND m.title CONTAINS $search_term`
-                            - If a non-entity keyword exists, 반드시 CONTAINS 필터를 추가.
-                            - Use EXACT literals; DO NOT TRANSLATE.
-
-                    3. **Traversal**:
-                            - Use the schema paths only (User → Meeting → Agenda → Decision, etc.).
-                            - Team/Composite intent must follow Member/Assigned relationships.
-
-                    4. **Formatting (CRITICAL - String Operations)**:
-                            - Must return: id, title/content, created_at, score, graph_context.
-                            - `graph_context` must be a human-readable string built with `+` operator.
-                            - **NEVER use CONCAT() function - Neo4j does NOT support it!**
-                            - **ONLY use + operator for string concatenation**
-                            - Example: `u.name + '님이 참여한 회의: ' + m.title AS graph_context`
-                            - Alias MUST be `AS graph_context`.
-                            - ALWAYS end with `LIMIT 20`.
-                            - No UNION/UNION ALL. Single query only.
-                            - **CRITICAL: ASCII arrows ONLY**:
-                                    - RIGHT arrow: -> (hyphen + greater-than)
-                                    - LEFT arrow: <- (less-than + hyphen)
-                                    - NEVER use Unicode: → ← ⇒ ⇐ ➡ ⬅
-                                    - Example: (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
-
-        [Few-Shot Examples]
-        Q: "민수랑 했던 예산 회의 찾아줘"
-        ```thought
-        1. Intent: Find meetings with '민수' containing keyword '예산'.
-        2. Strategy: User -> Participated -> Meeting
-        3. Entities: Name='민수'
-        4. Keywords: Topic='예산' (Add to WHERE!)
-        5. Composite Filter: User name AND Meeting title (both required)
-        ```
-        ```cypher
-        MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
-        WHERE u.name CONTAINS '민수'
-          AND m.title CONTAINS '예산'
-        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
-               u.name + '님과 함께한 예산(Budget) 회의: ' + m.title AS graph_context
-        ORDER BY m.created_at DESC
-        LIMIT 20
-        ```
-
-        Q: "조우진이랑 UX 관련한 회의 찾아줘"
-        ```thought
-        1. Intent: Find meetings with '조우진' containing keyword 'UX'.
-        2. Strategy: User -> Participated -> Meeting
-        3. Entities: Name='조우진'
-        4. Keywords: Topic='UX'
-        5. Composite Filter: User name AND Meeting title (both required)
-        ```
-        ```cypher
-        MATCH (u:User)-[:PARTICIPATED_IN]->(m:Meeting)
-        WHERE u.name CONTAINS '조우진'
-          AND m.title CONTAINS 'UX'
-        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
-               u.name + '님이 참여한 UX 관련 회의: ' + m.title AS graph_context
-        ORDER BY m.created_at DESC
-        LIMIT 20
-        ```
-
-        Q: "회고가 포함된 미팅"
-        ```thought
-        1. Intent: Find meetings with keyword '회고'.
-        2. Strategy: Direct Meeting search
-        3. Entities: None
-        4. Keywords: Topic='회고'
-        ```
-        ```cypher
-        MATCH (m:Meeting)
-        WHERE m.title CONTAINS '회고'
-        RETURN m.id AS id, m.title AS title, m.created_at AS created_at, 1.0 AS score,
-               '회고 관련 회의: ' + m.title AS graph_context
-        ORDER BY m.created_at DESC
-        LIMIT 20
-        ```
-
-        [Output Format]
-        Follow the Thought process above.
-        Format:
-        ```thought
-        1. Intent Analysis: ...
-        2. Path Strategy: ...
-        3. Entities: ...
-        4. Keywords: ...
-        5. Constraints: ...
-        ```
-        ```cypher
-        ...
-        ```
-        """
-    ).strip()
+    system_prompt = CYPHER_GENERATION_SYSTEM_PROMPT.format(schema_info=schema_info)
 
     # 의도 정보 주입
     keywords = query_intent.get('keywords', None)
@@ -753,16 +606,7 @@ async def _attempt_cypher_with_feedback(
 async def _extract_subqueries(query: str) -> List[str]:
     """LLM 기반 쿼리 분해."""
     llm = get_cypher_generator_llm()
-    system_prompt = textwrap.dedent(
-        """너는 사용자의 질문을 독립적인 검색 질문으로 분해하는 시스템이다.
-
-규칙:
-1. JSON만 출력한다.
-2. 키는 subqueries 하나만 사용한다.
-3. subqueries는 문자열 배열이며, 1~3개로 제한한다.
-4. 분해가 필요 없다면 원문 질문 하나만 넣는다.
-"""
-    ).strip()
+    system_prompt = SUBQUERY_EXTRACTION_SYSTEM_PROMPT
 
     user_message = f"질문: {query}\n\nJSON으로만 응답:"
 
