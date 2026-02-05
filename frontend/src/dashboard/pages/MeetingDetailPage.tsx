@@ -157,7 +157,7 @@ export function MeetingDetailPage() {
   // 회의 삭제
   const handleDeleteMeeting = async () => {
     if (!meetingId || !currentMeeting) return;
-    if (!confirm('Are you sure you want to delete this meeting?')) return;
+    if (!confirm('이 회의를 삭제하시겠습니까?')) return;
 
     setDeleting(true);
     try {
@@ -183,7 +183,7 @@ export function MeetingDetailPage() {
   // 참여자 제거
   const handleRemoveParticipant = async (userId: string, name: string) => {
     if (!meetingId) return;
-    if (!confirm(`Are you sure you want to remove ${name}?`)) return;
+    if (!confirm(`${name}님을 회의에서 제거하시겠습니까?`)) return;
     await removeParticipant(meetingId, userId);
   };
 
