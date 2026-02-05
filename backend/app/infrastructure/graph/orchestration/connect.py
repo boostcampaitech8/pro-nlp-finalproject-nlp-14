@@ -21,7 +21,8 @@ from app.infrastructure.graph.checkpointer import get_checkpointer
 
 from .nodes.answering import generate_answer
 from .nodes.evaluation import evaluate_result
-from .nodes.mit_tools import execute_mit_tools
+from .nodes.mit_tools_analyze import execute_mit_tools_analyze
+from .nodes.mit_tools_search import execute_mit_tools_search
 from .nodes.planning import create_plan
 from .nodes.simple_router import route_simple_query
 from .nodes.tools import execute_tools
@@ -40,7 +41,6 @@ def route_after_simple_check(state: OrchestrationState) -> str:
 # Planning -> 도구 필요 여부에 따라 라우팅
 def route_by_tool_need(state: OrchestrationState) -> str:
     """도구 필요 여부 및 HITL 상태에 따라 라우팅
-
     Returns:
         str: 다음 노드 이름
             - "tools": selected_tool이 있는 경우 (새 Tool 시스템)
@@ -52,15 +52,10 @@ def route_by_tool_need(state: OrchestrationState) -> str:
         return END
 
     # 새 Tool 시스템: selected_tool이 있으면 tools 노드로
-    if state.get("selected_tool"):
+    if state.get("selected_tool"): 
         return "tools"
 
-    # 기존 MIT 검색 도구 사용
-    if state.get("need_tools", False):
-        return "mit_tools"
-
-    return "generator"
-
+    return "mit_tools_analyze" if state.get("need_tools", False) else "generator"
 
 def route_after_tools(state: OrchestrationState) -> str:
     """Tool 실행 후 라우팅
@@ -73,12 +68,13 @@ def route_after_tools(state: OrchestrationState) -> str:
     return "evaluator"
 
 
+
 def route_by_evaluation(state: OrchestrationState) -> str:
     """평가 결과에 따라 라우팅: retry/replanning/success"""
     status = state.get("evaluation_status", "success")
 
     if status == "retry":
-        return "mit_tools"
+        return "mit_tools_analyze"
     elif status == "replanning":
         return "planner"
     return "generator"
@@ -102,6 +98,8 @@ def build_orchestration_workflow() -> StateGraph:
     # 노드 등록
     workflow.add_node("simple_router", route_simple_query)  # 새로운 라우터 노드
     workflow.add_node("planner", create_plan)
+    workflow.add_node("mit_tools_analyze", execute_mit_tools_analyze)
+    workflow.add_node("mit_tools_search", execute_mit_tools_search)
     workflow.add_node("tools", execute_tools)  # 새 Tool 시스템 (HITL 지원)
     workflow.add_node("mit_tools", execute_mit_tools)  # 기존 MIT 검색 도구
     workflow.add_node("evaluator", evaluate_result)
@@ -124,11 +122,12 @@ def build_orchestration_workflow() -> StateGraph:
         {
             "tools": "tools",
             "mit_tools": "mit_tools",
+            "mit_tools_analyze": "mit_tools_analyze",
             "generator": "generator",
             END: END,  # HITL pending 상태
         },
     )
-
+    
     # Tools -> HITL 상태에 따라 라우팅
     workflow.add_conditional_edges(
         "tools",
@@ -137,16 +136,20 @@ def build_orchestration_workflow() -> StateGraph:
             "evaluator": "evaluator",
             END: END,  # HITL pending 상태 (사용자 확인 대기)
         },
+
     )
 
-    # MIT-Tools -> Evaluator
-    workflow.add_edge("mit_tools", "evaluator")
+    # MIT-Tools Analyze -> MIT-Tools Search (항상)
+    workflow.add_edge("mit_tools_analyze", "mit_tools_search")
+
+    # MIT-Tools Search -> Evaluator
+    workflow.add_edge("mit_tools_search", "evaluator")
 
     # Evaluator -> 평가 결과에 따라 라우팅
     workflow.add_conditional_edges(
         "evaluator",
         route_by_evaluation,
-        {"mit_tools": "mit_tools", "planner": "planner", "generator": "generator"},
+        {"mit_tools_analyze": "mit_tools_analyze", "planner": "planner", "generator": "generator"},
     )
 
     # Generator -> END

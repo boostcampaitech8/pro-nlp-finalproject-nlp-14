@@ -11,6 +11,19 @@ from app.infrastructure.graph.workflows.mit_mention.state import (
 logger = logging.getLogger(__name__)
 
 
+def _is_capability_question(content: str) -> bool:
+    if not content:
+        return False
+
+    keywords = [
+        "할 수 있는", "할수있는", "가능한", "뭐 할 수", "무엇을 할 수",
+        "어떤 기능", "기능 알려", "기능 소개", "어떤 도움", "도와줄 수",
+        "무슨 일", "무엇을 해", "무엇을 하", "도움이 되는",
+    ]
+
+    return any(k in content for k in keywords)
+
+
 async def validate_response(state: MitMentionState) -> dict:
     """응답 품질 검증
 
@@ -21,6 +34,7 @@ async def validate_response(state: MitMentionState) -> dict:
         failures: None (always succeeds)
     """
     raw_response = state.get("mit_mention_raw_response", "")
+    content = state.get("mit_mention_content", "")
     retry_count = state.get("mit_mention_retry_count", 0)
 
     # 기본 검증
@@ -30,8 +44,9 @@ async def validate_response(state: MitMentionState) -> dict:
     if len(raw_response) < 10:
         issues.append("응답이 너무 짧습니다")
 
-    if len(raw_response) > 2000:
-        issues.append("응답이 너무 깁니다")
+    # 최대 길이 제한 제거 (응답 절단 방지) - 문장 완성을 우선시
+    # 이전: > 2000자 제한으로 인한 불필요한 재시도
+    # 현재: 최대 길이 제한 없음 (LLM의 자연스러운 응답 완성 보장)
 
     # 2. 내용 검증 (간단한 휴리스틱)
     if "죄송합니다" in raw_response and "오류" in raw_response:
@@ -39,6 +54,19 @@ async def validate_response(state: MitMentionState) -> dict:
         pass
     elif raw_response.strip() == "":
         issues.append("빈 응답입니다")
+
+    # 3. 기능 안내 질문 품질 검증
+    if _is_capability_question(content):
+        response_length = len(raw_response.strip())
+        has_examples = any(key in raw_response for key in ["예:", "예시", "예를", "예시 질문"])
+        bullet_lines = [
+            line for line in raw_response.splitlines()
+            if line.strip().startswith("-") or line.strip().startswith("*")
+        ]
+        has_enough_bullets = len(bullet_lines) >= 3
+
+        if response_length < 120 or (not has_examples and not has_enough_bullets):
+            issues.append("기능 안내가 충분하지 않습니다")
 
     # 결과 판정
     passed = len(issues) == 0
