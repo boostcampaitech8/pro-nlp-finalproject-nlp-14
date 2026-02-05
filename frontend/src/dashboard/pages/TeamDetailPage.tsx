@@ -47,7 +47,7 @@ export function TeamDetailPage() {
 
   // 팀 삭제
   const handleDeleteTeam = async () => {
-    if (!teamId || !confirm('Are you sure you want to delete this team?')) return;
+    if (!teamId || !confirm('이 팀을 삭제하시겠습니까?')) return;
 
     setDeleting(true);
     try {
@@ -83,7 +83,7 @@ export function TeamDetailPage() {
   // 멤버 제거
   const handleRemoveMember = async (userId: string, memberName: string) => {
     if (!teamId) return;
-    if (!confirm(`Are you sure you want to remove ${memberName} from the team?`)) return;
+    if (!confirm(`${memberName}님을 팀에서 제거하시겠습니까?`)) return;
     await removeMember(teamId, userId);
   };
 
