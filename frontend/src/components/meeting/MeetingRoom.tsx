@@ -28,6 +28,7 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
   const [showParticipants, setShowParticipants] = useState(true);
   const [showChat, setShowChat] = useState(true);
   const [showRecordingNotice, setShowRecordingNotice] = useState(false);
+  const [showScreenShareLimitNotice, setShowScreenShareLimitNotice] = useState(false);
   const prevRecordingRef = useRef(false);
 
   // MIT 에이전트 대기 관련 상태
@@ -92,7 +93,12 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
       stopScreenShare();
     } else {
       startScreenShare().catch((err) => {
-        logger.error('Failed to start screen share:', err);
+        if (err?.message === 'SCREEN_SHARE_LIMIT') {
+          setShowScreenShareLimitNotice(true);
+          setTimeout(() => setShowScreenShareLimitNotice(false), 3000);
+        } else {
+          logger.error('Failed to start screen share:', err);
+        }
       });
     }
   }, [isScreenSharing, startScreenShare, stopScreenShare]);
@@ -210,6 +216,16 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
                         flex items-center gap-2 animate-fade-in">
           <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
           녹음이 시작되었습니다
+        </div>
+      )}
+
+      {/* 화면공유 제한 알림 토스트 */}
+      {showScreenShareLimitNotice && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50
+                        bg-yellow-600 text-white px-4 py-2 rounded-lg shadow-lg
+                        flex items-center gap-2 animate-fade-in">
+          <span className="text-yellow-200">&#9888;</span>
+          다른 참여자가 이미 화면을 공유하고 있습니다
         </div>
       )}
 
