@@ -8,7 +8,12 @@ import { cn } from '@/lib/utils';
 export function SpotlightInput() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { inputValue, setInputValue, submitCommand, isChatMode, exitChatMode } = useCommand();
-  const { isProcessing, isInputFocused, setInputFocused, isStreaming } = useCommandStore();
+  const { isProcessing, isInputFocused, setInputFocused, isStreaming, chatMessages } = useCommandStore();
+
+  // HITL pending 상태 확인 (pending 상태의 HITL 메시지가 있으면 입력 비활성화)
+  const hasHITLPending = chatMessages.some(
+    (msg) => msg.type === 'hitl' && msg.hitlStatus === 'pending'
+  );
 
   // Cmd+K 단축키 처리
   useEffect(() => {
@@ -38,9 +43,12 @@ export function SpotlightInput() {
   }, [isChatMode, isStreaming, isProcessing]);
 
   const handleSubmit = () => {
-    if (!inputValue.trim() || isProcessing || isStreaming) return;
+    if (!inputValue.trim() || isProcessing || isStreaming || hasHITLPending) return;
     submitCommand();
   };
+
+  // 입력 비활성화 조건: 처리 중, 스트리밍 중, 또는 HITL 확인 대기 중
+  const isInputDisabled = isProcessing || isStreaming || hasHITLPending;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // 한글 입력 중(IME composing) Enter 무시 - 두 번 입력 버그 방지
@@ -88,7 +96,7 @@ export function SpotlightInput() {
         onFocus={() => setInputFocused(true)}
         onBlur={() => setInputFocused(false)}
         placeholder={isChatMode ? '메시지를 입력하세요...' : 'Mit에게 무엇이든 물어보세요...'}
-        disabled={isProcessing || isStreaming}
+        disabled={isInputDisabled}
         className="flex-1 bg-transparent text-[15px] text-white placeholder:text-white/40 outline-none disabled:opacity-50"
       />
 

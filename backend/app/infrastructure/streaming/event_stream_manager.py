@@ -40,7 +40,8 @@ async def stream_llm_tokens_only(
     # 노드별 역할 정의
     ORCHESTRATION_NODES = {
         "planner": "planner",
-        "mit_tools": "tools",
+        "tools": "tools",  # 새 Tool 시스템 (HITL 지원)
+        "mit_tools": "mit_tools",  # 기존 MIT 검색 도구
         "evaluator": "evaluator",
         "generator": "generator",
     }
@@ -61,7 +62,7 @@ async def stream_llm_tokens_only(
 
                     # Planner: 항상 상태 전송 (Skip 감지 로직 제거)
                     if event_name == "planner":
-                        logger.info(f"[PLANNER] 진입 → 즉시 상태 전송")
+                        logger.info("[PLANNER] 진입 → 즉시 상태 전송")
                         node_status_sent.add("planner")
                         yield {
                             "type": "node_start",
@@ -72,7 +73,7 @@ async def stream_llm_tokens_only(
 
                     # Generator: 항상 상태 전송
                     elif event_name == "generator":
-                        logger.info(f"[GENERATOR] 진입 → 즉시 상태 전송")
+                        logger.info("[GENERATOR] 진입 → 즉시 상태 전송")
                         node_status_sent.add("generator")
                         yield {
                             "type": "node_start",
@@ -81,8 +82,8 @@ async def stream_llm_tokens_only(
                             "timestamp": datetime.now().isoformat(),
                         }
 
-                    # MIT Tools 및 Evaluator: 상태 전송
-                    elif event_name in ["mit_tools", "evaluator"]:
+                    # MIT Tools, Tools (HITL), Evaluator: 상태 전송
+                    elif event_name in ["mit_tools", "tools", "evaluator"]:
                         logger.info(f"[{event_name.upper()}] 진입 → 즉시 상태 전송")
                         node_status_sent.add(event_name)
                         yield {
@@ -160,6 +161,25 @@ async def stream_llm_tokens_only(
             elif event_type == "on_chain_end":
                 if event_name == "generator":
                     logger.info(f"Generator completed: {token_count['generator']} tokens")
+
+                # === HITL 확인 요청 감지 ===
+                elif event_name == "tools":
+                    output = event.get("data", {}).get("output", {})
+                    if output.get("hitl_status") == "pending":
+                        logger.info("[HITL] Confirmation requested")
+                        yield {
+                            "type": "hitl_request",
+                            "tool_name": output.get("hitl_tool_name"),
+                            "params": output.get("hitl_extracted_params", {}),
+                            "params_display": output.get("hitl_params_display", {}),
+                            "message": output.get("hitl_confirmation_message", ""),
+                            "required_fields": output.get("hitl_required_fields", []),
+                            "display_template": output.get("hitl_display_template"),  # 자연어 템플릿
+                            "tag": "hitl",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                        # HITL pending이면 스트림 즉시 종료 (사용자 확인 대기)
+                        return
 
         # 완료 신호
         logger.info(
