@@ -105,6 +105,13 @@ ncp:
   clovaRouterId: {{ env "CLOVA_ROUTER_ID" | default "" }}
   clovaRouterVersion: {{ env "CLOVA_ROUTER_VERSION" | default "1" }}
 
+# Langfuse (LLM Observability)
+langfuse:
+  secretKey: {{ env "LANGFUSE_SECRET_KEY" | default "" }}
+  publicKey: {{ env "LANGFUSE_PUBLIC_KEY" | default "" }}
+  baseUrl: {{ env "LANGFUSE_BASE_URL" | default "https://cloud.langfuse.com" }}
+  tracingEnabled: {{ env "LANGFUSE_TRACING_ENABLED" | default "true" }}
+
 # OAuth - 외부 환경변수에서 주입
 oauth:
   google:
