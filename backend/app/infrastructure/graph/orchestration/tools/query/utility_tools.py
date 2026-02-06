@@ -10,11 +10,14 @@ General utility tools for common queries:
 
 import logging
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+
+from langchain_core.tools import InjectedToolArg
 
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
@@ -36,7 +39,7 @@ WEEKDAY_KR = ["월요일", "화요일", "수요일", "목요일", "금요일", "
 
 
 @mit_tool(category="query")
-async def get_current_datetime(*, _user_id: str = "") -> dict:
+async def get_current_datetime(*, _user_id: Annotated[str, InjectedToolArg] = "") -> dict:
     """현재 날짜와 시간을 조회합니다. 한국 표준시(KST) 기준입니다."""
     logger.info(f"Executing get_current_datetime for user {_user_id}")
 
@@ -58,7 +61,7 @@ async def get_current_datetime(*, _user_id: str = "") -> dict:
 
 
 @mit_tool(category="query")
-async def get_user_profile(*, _user_id: str = "") -> dict:
+async def get_user_profile(*, _user_id: Annotated[str, InjectedToolArg] = "") -> dict:
     """현재 사용자의 프로필 정보를 조회합니다. 이름, 이메일, 가입일 등을 확인할 수 있습니다."""
     logger.info(f"Executing get_user_profile for user {_user_id}")
 
@@ -89,7 +92,7 @@ async def get_user_profile(*, _user_id: str = "") -> dict:
 async def get_upcoming_meetings(
     limit: int = 5,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """사용자가 속한 팀의 다가오는 회의 목록을 조회합니다. 예정된(scheduled) 또는 진행 중인(ongoing) 회의를 포함합니다."""
     logger.info(f"Executing get_upcoming_meetings for user {_user_id}")
@@ -159,7 +162,7 @@ async def get_upcoming_meetings(
 async def get_meeting_transcript(
     meeting_id: str,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """회의의 전체 전사 기록을 조회합니다. 발화 내용, 발화자, 시간 정보가 포함됩니다."""
     logger.info(f"Executing get_meeting_transcript for user {_user_id}")
@@ -205,7 +208,7 @@ async def get_meeting_transcript(
 async def get_meeting_summary(
     meeting_id: str,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """회의의 요약, 안건(Agenda), 결정 사항(Decision), 액션 아이템(Action Item)을 조회합니다."""
     logger.info(f"Executing get_meeting_summary for user {_user_id}")

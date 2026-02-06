@@ -4,11 +4,14 @@ Query tools for team-related read operations.
 """
 
 import logging
+from typing import Annotated
 from uuid import UUID
 
 from app.core.database import async_session_maker
 from app.services.team_member_service import TeamMemberService
 from app.services.team_service import TeamService
+
+from langchain_core.tools import InjectedToolArg
 
 from ..decorators import mit_tool
 
@@ -20,7 +23,7 @@ async def get_my_teams(
     page: int = 1,
     limit: int = 20,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """내가 속한 팀 목록을 조회합니다."""
     logger.info(f"Executing get_my_teams for user {_user_id}")
@@ -50,7 +53,7 @@ async def get_my_teams(
 async def get_team(
     team_id: str,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """팀의 상세 정보를 조회합니다. 멤버 목록이 포함됩니다."""
     logger.info(f"Executing get_team for user {_user_id}")
@@ -80,7 +83,7 @@ async def get_team(
 async def get_team_members(
     team_id: str,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """팀의 멤버 목록을 조회합니다. 각 멤버의 이름, 이메일, 역할(owner/admin/member) 정보가 포함됩니다."""
     logger.info(f"Executing get_team_members for user {_user_id}")

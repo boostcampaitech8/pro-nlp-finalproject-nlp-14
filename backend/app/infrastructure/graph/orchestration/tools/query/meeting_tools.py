@@ -4,10 +4,13 @@ Query tools for meeting-related read operations.
 """
 
 import logging
+from typing import Annotated
 from uuid import UUID
 
 from app.core.database import async_session_maker
 from app.services.meeting_service import MeetingService
+
+from langchain_core.tools import InjectedToolArg
 
 from ..decorators import mit_tool
 
@@ -21,7 +24,7 @@ async def get_meetings(
     page: int = 1,
     limit: int = 20,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """팀의 회의 목록을 조회합니다. 상태별 필터링이 가능합니다."""
     logger.info(f"Executing get_meetings for user {_user_id}")
@@ -57,7 +60,7 @@ async def get_meetings(
 async def get_meeting(
     meeting_id: str,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """회의의 상세 정보를 조회합니다. 참여자 목록이 포함됩니다."""
     logger.info(f"Executing get_meeting for user {_user_id}")
