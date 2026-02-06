@@ -14,21 +14,21 @@ class ContextConfig(BaseSettings):
     """컨텍스트 엔지니어링 설정
 
     환경변수 예시:
-    - CONTEXT_L0_MAX_TURNS=25
-    - CONTEXT_L1_UPDATE_TURN_THRESHOLD=25
+    - CONTEXT_VOICE_CONTEXT_TURNS=25
+    - CONTEXT_CHAT_CONTEXT_TURNS=10
     """
 
+    # === 모드별 컨텍스트 턴 수 (L0 max turns + L1 threshold 통일) ===
+    voice_context_turns: int = 25  # 보이스 모드: L0/L1 공통 턴 수
+    chat_context_turns: int = 10  # 채팅 모드: L0/L1 공통 턴 수
+
     # === L0 설정 (Raw Window) ===
-    l0_max_turns: int = 25  # 최대 턴 수 (HCX-003 8K 기준)
     l0_max_tokens: int = 3000  # 최대 토큰 수 (초과 시 오래된 것부터 제거)
     l0_include_timestamps: bool = True  # 타임스탬프 포함 여부
 
     # L0 토픽 버퍼 설정 (무한 증식 방지)
     l0_topic_buffer_max_turns: int = 100  # 토픽 내 최대 발화 수
     l0_topic_buffer_max_tokens: int = 10000  # 토픽 내 최대 토큰
-
-    # === L1 설정 (Topic-Segmented) ===
-    l1_update_turn_threshold: int = 25  # 턴 기반 업데이트 임계값
 
     # === 화자 컨텍스트 설정 ===
     speaker_buffer_max_per_speaker: int = 25  # 화자별 최대 발화 버퍼 크기
@@ -44,6 +44,12 @@ class ContextConfig(BaseSettings):
     # === 시맨틱 서치 설정 ===
     topic_search_top_k: int = 5
     topic_search_threshold: float = 0.30
+
+    def get_context_turns(self, mode: str = "voice") -> int:
+        """모드에 따른 컨텍스트 턴 수 반환 (L0/L1 공통)"""
+        if mode == "chat":
+            return self.chat_context_turns
+        return self.voice_context_turns
 
     class Config:
         env_prefix = "CONTEXT_"

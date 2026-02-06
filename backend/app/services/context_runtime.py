@@ -40,12 +40,16 @@ _runtime_cache: TTLCache[str, ContextRuntimeState] = TTLCache(
 _runtime_lock = asyncio.Lock()
 
 
-async def get_or_create_runtime(meeting_id: str) -> ContextRuntimeState:
+async def get_or_create_runtime(
+    meeting_id: str, mode: str = "voice"
+) -> ContextRuntimeState:
     async with _runtime_lock:
         runtime = _runtime_cache.get(meeting_id)
         if runtime is None:
             runtime = ContextRuntimeState(
-                manager=ContextManager(meeting_id=meeting_id, config=ContextConfig()),
+                manager=ContextManager(
+                    meeting_id=meeting_id, config=ContextConfig(), mode=mode
+                ),
                 lock=asyncio.Lock(),
             )
             _runtime_cache[meeting_id] = runtime

@@ -261,10 +261,10 @@ async def run_option7() -> None:
 
         meeting_id = str(uuid.uuid4())
         config = ContextConfig(
-            l0_max_turns=25,
-            l1_update_turn_threshold=25,
+            voice_context_turns=25,
+            chat_context_turns=10,
         )
-        manager = ContextManager(meeting_id=meeting_id, config=config)
+        manager = ContextManager(meeting_id=meeting_id, config=config, mode="voice")
 
         print_header("Checkpointer 연결")
         try:
