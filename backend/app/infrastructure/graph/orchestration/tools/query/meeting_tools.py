@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 @mit_tool(category="query")
 async def get_meetings(
     team_id: str,
-    status: str | None = None,
+    status: str = "",
     page: int = 1,
     limit: int = 20,
     *,
@@ -38,6 +38,8 @@ async def get_meetings(
     except ValueError as e:
         return {"error": f"Invalid UUID format: {e}"}
 
+    normalized_status = status or None
+
     async with async_session_maker() as db:
         service = MeetingService(db)
         try:
@@ -46,7 +48,7 @@ async def get_meetings(
                 user_id=user_uuid,
                 page=page,
                 limit=limit,
-                status=status,
+                status=normalized_status,
             )
             return {
                 "meetings": [m.model_dump(mode="json") for m in result.items],

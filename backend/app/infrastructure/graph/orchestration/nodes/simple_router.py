@@ -58,7 +58,7 @@ async def route_simple_query(state: OrchestrationState) -> OrchestrationState:
 
     # Clova Router 호출
     try:
-        result = await _route_with_clova(query, messages)
+        result = await _route_with_clova(query)
         logger.info(
             f"Clova Router 성공: is_simple={result.is_simple_query}, "
             f"category={result.category}, confidence={result.confidence:.2f}"
@@ -69,12 +69,11 @@ async def route_simple_query(state: OrchestrationState) -> OrchestrationState:
         return _create_error_router_output(str(e))
 
 
-async def _route_with_clova(query: str, messages: list) -> SimpleRouterOutput:
+async def _route_with_clova(query: str) -> SimpleRouterOutput:
     """Clova Router API 호출
 
     Args:
         query: 사용자 쿼리
-        messages: 대화 메시지 이력
 
     Returns:
         SimpleRouterOutput: 라우팅 결과
@@ -87,19 +86,12 @@ async def _route_with_clova(query: str, messages: list) -> SimpleRouterOutput:
 
     settings = get_settings()
 
-    # Chat history 구성 (최근 5개만 사용)
-    chat_history = []
-    for i, msg in enumerate(messages[-5:]):
-        # BaseMessage 객체를 dict로 변환
-        role = "user" if hasattr(msg, "type") and msg.type == "human" else "assistant"
-        chat_history.append({"role": role, "content": msg.content})
-
     async with ClovaRouterClient(
         router_id=settings.clova_router_id,
         version=settings.clova_router_version,
         api_key=settings.ncp_clovastudio_api_key,
     ) as client:
-        clova_response = await client.route(query, chat_history)
+        clova_response = await client.route(query)
 
     # 응답 매핑
     return RouterResponseMapper.map_response(clova_response, query)
