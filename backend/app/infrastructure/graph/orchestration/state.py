@@ -58,8 +58,6 @@ class OrchestrationState(TypedDict):
     # Context Engineering (optional)
     planning_context: NotRequired[str]
     additional_context: NotRequired[str]
-    skip_planning: NotRequired[bool]
-
     # Channel (voice or spotlight)
     channel: NotRequired[str]  # "voice" or "spotlight", default: "voice"
     # === NEW: Interaction Mode & Tool Selection ===
@@ -69,17 +67,6 @@ class OrchestrationState(TypedDict):
     selected_tool: NotRequired[str]  # 선택된 도구 이름
     tool_args: NotRequired[dict]  # 도구 인자 (LLM이 추출)
     tool_category: NotRequired[Literal["query", "mutation"]]  # 도구 카테고리
-
-    # === NEW: HITL (Human-in-the-Loop) Fields ===
-    hitl_status: NotRequired[Literal["none", "pending", "confirmed", "cancelled", "executed"]]
-    hitl_tool_name: NotRequired[str]  # HITL 대기 중인 도구 이름
-    hitl_extracted_params: NotRequired[dict]  # LLM이 추출한 파라미터
-    hitl_params_display: NotRequired[dict]  # UUID → 이름 변환된 표시용 값
-    hitl_missing_params: NotRequired[list[str]]  # 누락된 필수 파라미터
-    hitl_confirmation_message: NotRequired[str]  # 사용자에게 보여줄 확인 메시지
-    hitl_required_fields: NotRequired[list[dict]]  # 필수 입력 필드 스키마
-    hitl_display_template: NotRequired[str]  # 자연어 템플릿 ({{param}}이 input으로 대체됨)
-    hitl_request_id: NotRequired[str]  # HITL 요청 식별자 (중복 방지용)
 
     # 사용자 컨텍스트 (SPOTLIGHT 세션 시작 시 주입)
     user_context: NotRequired[dict]

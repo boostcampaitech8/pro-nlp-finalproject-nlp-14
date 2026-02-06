@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Bot } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { STREAMING_CHAR_SPEED } from '@/app/constants';
 import type { ChatMessage } from '@/app/types/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui';
@@ -17,34 +18,34 @@ interface ChatBubbleProps {
 
 export function ChatBubble({ message, streaming = false, onStreamComplete }: ChatBubbleProps) {
   const [displayedText, setDisplayedText] = useState(streaming ? '' : message.content);
-  const streamingRef = useRef(streaming);
+  const displayedLengthRef = useRef(streaming ? 0 : message.content.length);
+  const contentRef = useRef(message.content);
 
-  useEffect(() => {
-    streamingRef.current = streaming;
-  }, [streaming]);
+  // 최신 content를 ref로 유지 (타이머 콜백에서 참조)
+  contentRef.current = message.content;
 
-  // 스트리밍 타이핑 애니메이션
+  // 스트리밍 종료 시 전체 콘텐츠 즉시 표시
   useEffect(() => {
     if (!streaming) {
       setDisplayedText(message.content);
-      return;
+      displayedLengthRef.current = message.content.length;
     }
+  }, [streaming, message.content]);
 
-    let index = 0;
-    setDisplayedText('');
+  // 스트리밍 타이핑 애니메이션 (content 변경 시 리셋하지 않음)
+  useEffect(() => {
+    if (!streaming) return;
 
     const timer = setInterval(() => {
-      if (index < message.content.length) {
-        setDisplayedText(message.content.slice(0, index + 1));
-        index++;
-      } else {
-        clearInterval(timer);
-        onStreamComplete?.();
+      const content = contentRef.current;
+      if (displayedLengthRef.current < content.length) {
+        displayedLengthRef.current++;
+        setDisplayedText(content.slice(0, displayedLengthRef.current));
       }
     }, STREAMING_CHAR_SPEED);
 
     return () => clearInterval(timer);
-  }, [message.content, streaming, onStreamComplete]);
+  }, [streaming]);
 
   const isUser = message.role === 'user';
   const agentAvatarUrl = DEFAULT_AI_AGENT.avatarUrl;
@@ -84,7 +85,7 @@ export function ChatBubble({ message, streaming = false, onStreamComplete }: Cha
             <p className="whitespace-pre-wrap">{displayedText}</p>
           ) : (
             <div className="prose prose-invert prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-              <ReactMarkdown>{displayedText}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayedText}</ReactMarkdown>
               {streaming && displayedText.length < message.content.length && (
                 <span className="inline-block w-0.5 h-4 bg-white/70 ml-0.5 animate-pulse" />
               )}

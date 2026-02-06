@@ -1,11 +1,13 @@
 """Unified Tool Execution Node with HITL Support
 
 This node handles execution of both Query and Mutation tools.
-For Mutation tools in Spotlight mode, it initiates HITL flow.
+For Mutation tools in Spotlight mode, it uses LangGraph interrupt() for HITL.
 """
 
 import logging
 from uuid import UUID, uuid4
+
+from langgraph.types import interrupt
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -111,23 +113,20 @@ def get_tool_category_from_metadata(tool_name: str) -> str:
 
 
 async def execute_tools(state: OrchestrationState) -> OrchestrationState:
-    """통합 도구 실행 노드 (HITL 지원)
+    """통합 도구 실행 노드 (HITL 지원 - interrupt 방식)
 
     Contract:
-        reads: selected_tool, tool_args, tool_category, hitl_status, interaction_mode, user_id
-        writes: tool_results, hitl_status, hitl_tool_name, hitl_extracted_params,
-                hitl_confirmation_message
-        side-effects: Tool 실행 (DB/Neo4j 작업)
+        reads: selected_tool, tool_args, tool_category, interaction_mode, user_id
+        writes: tool_results
+        side-effects: Tool 실행 (DB/Neo4j 작업), Mutation 시 interrupt()로 HITL 중단
         failures: TOOL_NOT_FOUND, TOOL_EXECUTION_ERROR
 
     Returns:
-        OrchestrationState: State update with tool results or HITL request
+        OrchestrationState: State update with tool results
     """
     logger.info("Tool execution node entered")
 
     selected_tool = state.get("selected_tool")
-    hitl_status = state.get("hitl_status", "none")
-    hitl_request_id = state.get("hitl_request_id")
     interaction_mode = normalize_interaction_mode(state.get("interaction_mode", "spotlight"))
     user_id = state.get("user_id")
     tool_args = state.get("tool_args", {})
@@ -140,7 +139,6 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             selected_tool=None,
             tool_args={},
             tool_category=None,
-            skip_planning=False,
         )
 
     # Get the tool (StructuredTool)
@@ -152,7 +150,6 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             selected_tool=None,
             tool_args={},
             tool_category=None,
-            skip_planning=False,
         )
 
     # Get tool metadata
@@ -161,143 +158,119 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
 
     logger.info(
         f"Executing tool: {selected_tool}, category: {tool_category_from_meta}, "
-        f"hitl_status: {hitl_status}, mode: {interaction_mode.value}"
+        f"mode: {interaction_mode.value}"
     )
 
-    # === HITL Flow for Mutation Tools ===
+    # === HITL Flow for Mutation Tools (interrupt 방식) ===
     if tool_category_from_meta == ToolCategory.MUTATION.value:
-        # Check if Mutation tool is allowed in current mode
+        # Voice 모드에서는 mutation 도구 사용 불가
         if interaction_mode == InteractionMode.VOICE:
             logger.warning(f"Mutation tool {selected_tool} not allowed in Voice mode")
             return OrchestrationState(
                 tool_results=f"'{tool.description}' 작업은 Spotlight 모드에서만 가능합니다."
             )
 
-        # HITL not yet initiated - request confirmation
-        if hitl_status == "none":
-            logger.info(f"Initiating HITL for mutation tool: {selected_tool}")
+        # HITL 데이터 구성
+        logger.info(f"[HITL] Mutation 도구 감지, interrupt 준비: {selected_tool}")
+        confirmation_message = generate_confirmation_message(
+            selected_tool, tool_args, metadata, tool.description
+        )
+        hitl_request_id = str(uuid4())
 
-            # Generate confirmation message
-            confirmation_message = generate_confirmation_message(
-                selected_tool, tool_args, metadata, tool.description
-            )
-            if not hitl_request_id:
-                hitl_request_id = str(uuid4())
-            logger.info(f"HITL request id generated: {hitl_request_id} for tool={selected_tool}")
+        # required_fields 빌드 (프론트엔드 입력 폼용)
+        required_fields = []
+        options_cache: dict[str, list[dict]] = {}
+        hitl_fields = metadata.get("hitl_fields", {}) if metadata else {}
 
-            # Generate required fields schema for frontend input form
-            # Only include fields NOT already extracted by LLM
-            required_fields = []
-            # 동적 옵션 캐시 (params_display 생성용)
-            options_cache: dict[str, list[dict]] = {}
+        for field_name, field_config in hitl_fields.items():
+            options_source = field_config.get("options_source")
 
-            # hitl_fields에서 필드 정보 가져오기
-            hitl_fields = metadata.get("hitl_fields", {}) if metadata else {}
+            if options_source:
+                if options_source not in options_cache:
+                    options_cache[options_source] = await load_dynamic_options(
+                        options_source, user_id
+                    )
 
-            for field_name, field_config in hitl_fields.items():
+            default_value = tool_args.get(field_name)
+
+            # select 타입: UUID → display label 변환
+            default_display = None
+            if options_source and options_source in options_cache and default_value:
+                for opt in options_cache[options_source]:
+                    if opt["value"] == str(default_value):
+                        default_display = opt["label"]
+                        break
+
+            field_data = {
+                "name": field_name,
+                "description": field_config.get("placeholder", field_name),
+                "type": "str",
+                "required": field_config.get("required", True),
+                "input_type": field_config.get("input_type", "text"),
+                "placeholder": field_config.get("placeholder", ""),
+                "options": [],
+                "default_value": default_value,
+                "default_display": default_display,
+            }
+
+            if options_source and options_source in options_cache:
+                field_data["options"] = options_cache[options_source]
+                if field_data["options"] and field_data["input_type"] == "text":
+                    field_data["input_type"] = "select"
+
+            required_fields.append(field_data)
+
+        # params_display 빌드 (UUID → 이름 변환)
+        params_display = {}
+        for field_name, field_config in hitl_fields.items():
+            if field_name in tool_args and tool_args.get(field_name) is not None:
+                value = tool_args[field_name]
+                display_value = str(value)
+
                 options_source = field_config.get("options_source")
-
-                # 동적 옵션 로딩
-                if options_source:
-                    if options_source not in options_cache:
-                        options_cache[options_source] = await load_dynamic_options(
-                            options_source, user_id
-                        )
-
-                # LLM이 추출한 값을 default_value로 설정 (모든 필드 포함)
-                default_value = tool_args.get(field_name)
-
-                # select 타입이고 옵션이 있으면, UUID를 display 값으로 변환
-                default_display = None
-                if options_source and options_source in options_cache and default_value:
+                if options_source and options_source in options_cache:
                     for opt in options_cache[options_source]:
-                        if opt["value"] == str(default_value):
-                            default_display = opt["label"]
+                        if opt["value"] == str(value):
+                            display_value = opt["label"]
                             break
 
-                field_data = {
-                    "name": field_name,
-                    "description": field_config.get("placeholder", field_name),
-                    "type": "str",
-                    "required": field_config.get("required", True),
-                    "input_type": field_config.get("input_type", "text"),
-                    "placeholder": field_config.get("placeholder", ""),
-                    "options": [],
-                    "default_value": default_value,  # LLM 추출 값 (없으면 None)
-                    "default_display": default_display,  # UUID → 이름 변환 (select용)
-                }
+                params_display[field_name] = display_value
 
-                # 동적 옵션 적용
-                if options_source and options_source in options_cache:
-                    field_data["options"] = options_cache[options_source]
-                    # 옵션이 있으면 input_type을 select로 설정
-                    if field_data["options"] and field_data["input_type"] == "text":
-                        field_data["input_type"] = "select"
+        display_template = metadata.get("display_template") if metadata else None
 
-                required_fields.append(field_data)
+        hitl_data = {
+            "tool_name": selected_tool,
+            "params": tool_args,
+            "params_display": params_display,
+            "required_fields": required_fields,
+            "display_template": display_template,
+            "confirmation_message": confirmation_message,
+            "hitl_request_id": hitl_request_id,
+        }
 
-            # 이미 추출된 파라미터의 표시용 값 생성 (UUID → 이름)
-            params_display = {}
-            for field_name, field_config in hitl_fields.items():
-                if field_name in tool_args and tool_args.get(field_name) is not None:
-                    value = tool_args[field_name]
-                    display_value = str(value)
+        # interrupt()! 그래프 자동 중단 → checkpointer에 상태 저장 → 재개 대기
+        user_response = interrupt(hitl_data)
 
-                    # 동적 옵션이 있으면 라벨로 변환
-                    options_source = field_config.get("options_source")
-                    if options_source and options_source in options_cache:
-                        for opt in options_cache[options_source]:
-                            if opt["value"] == str(value):
-                                display_value = opt["label"]
-                                break
-
-                    params_display[field_name] = display_value
-
-            display_template = metadata.get("display_template") if metadata else None
-
+        # 재개됨: 사용자 응답 처리
+        if user_response.get("action") == "cancel":
+            logger.info(f"[HITL] 사용자 취소: {selected_tool}")
             return OrchestrationState(
-                hitl_status="pending",
-                hitl_tool_name=selected_tool,
-                hitl_extracted_params=tool_args,
-                hitl_params_display=params_display,  # UUID → 이름 변환된 표시용 값
-                hitl_confirmation_message=confirmation_message,
-                hitl_required_fields=required_fields,
-                hitl_display_template=display_template,  # 자연어 템플릿
-                hitl_request_id=hitl_request_id,
-                tool_results="",  # No results yet
-            )
-
-        # HITL cancelled by user
-        if hitl_status == "cancelled":
-            logger.info(f"HITL cancelled for tool: {selected_tool}")
-            return OrchestrationState(
-                hitl_status="none",
-                hitl_tool_name=None,
-                hitl_extracted_params=None,
-                hitl_confirmation_message=None,
-                hitl_request_id=None,
                 tool_results="작업이 취소되었습니다.",
                 selected_tool=None,
                 tool_args={},
                 tool_category=None,
-                skip_planning=False,
             )
 
-        # HITL pending - should not reach here (graph routes to END)
-        if hitl_status == "pending":
-            logger.warning("Tool execution called with hitl_status=pending")
-            return OrchestrationState(tool_results="사용자 확인을 기다리고 있습니다.")
-
-        # HITL confirmed - proceed with execution
-        if hitl_status == "confirmed":
-            logger.info(f"HITL confirmed, executing mutation tool: {selected_tool}")
-            # Fall through to execute the tool
+        # confirm: 사용자 수정 파라미터 병합
+        logger.info(f"[HITL] 사용자 확인: {selected_tool}")
+        if user_response.get("params"):
+            tool_args = {**tool_args, **user_response["params"]}
+            logger.info(f"[HITL] 사용자 파라미터 병합: {user_response['params']}")
 
     # === Execute the Tool ===
     try:
         logger.info(f"Executing tool {selected_tool} with args: {tool_args}")
 
-        # tool.coroutine 직접 호출 (_user_id는 스키마에 없어서 ainvoke로는 전달 불가)
         invoke_args = {"_user_id": user_id, **tool_args}
         result = await tool.coroutine(**invoke_args)
 
@@ -314,36 +287,18 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
         else:
             tool_results = str(result)
 
-        # Mutation 도구 실행 성공 시 hitl_status를 "executed"로 설정
-        # 이렇게 하면 Evaluator가 replanning을 반환해도 Planning에서 HITL 재요청 방지
-        is_mutation = tool_category_from_meta == ToolCategory.MUTATION.value
-        new_hitl_status = "executed" if is_mutation else "none"
-
         return OrchestrationState(
             tool_results=tool_results,
-            # Clear HITL state after successful execution (but mark as executed for mutations)
-            hitl_status=new_hitl_status,
-            hitl_tool_name=None,
-            hitl_extracted_params=None,
-            hitl_confirmation_message=None,
-            hitl_request_id=None,
             selected_tool=None,
             tool_args={},
             tool_category=None,
-            skip_planning=False,
         )
 
     except Exception as e:
         logger.error(f"Tool execution failed: {e}", exc_info=True)
         return OrchestrationState(
             tool_results=f"도구 실행 중 오류가 발생했습니다: {str(e)}",
-            hitl_status="none",
-            hitl_tool_name=None,
-            hitl_extracted_params=None,
-            hitl_confirmation_message=None,
-            hitl_request_id=None,
             selected_tool=None,
             tool_args={},
             tool_category=None,
-            skip_planning=False,
         )

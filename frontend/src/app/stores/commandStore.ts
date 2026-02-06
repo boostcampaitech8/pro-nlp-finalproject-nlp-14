@@ -1,6 +1,6 @@
 // 명령 상태 관리 스토어
 import { create } from 'zustand';
-import { HISTORY_LIMIT } from '@/app/constants';
+import { HISTORY_LIMIT, MAX_SPOTLIGHT_SESSIONS } from '@/app/constants';
 import type { ActiveCommand, ChatMessage, HistoryItem, Suggestion } from '@/app/types/command';
 import { spotlightApi, SpotlightSession } from '@/app/services/spotlightApi';
 
@@ -165,9 +165,12 @@ export const useCommandStore = create<CommandState>((set) => ({
 
   abortCurrentStream: () =>
     set((state) => {
-      if (state.currentAbortController) {
-        state.currentAbortController.abort();
+      if (!state.currentAbortController) {
+        // 중단할 스트림이 없으면 상태 변경 없음
+        // (isStreaming을 불필요하게 false로 리셋하지 않음)
+        return {};
       }
+      state.currentAbortController.abort();
       return {
         currentAbortController: null,
         isStreaming: false,
@@ -177,12 +180,10 @@ export const useCommandStore = create<CommandState>((set) => ({
 
   // 세션 Actions
   setCurrentSession: (id) => {
-    // 기존 스트림 정리 후 세션 전환
+    // 세션 전환: 백그라운드 스트림은 abort하지 않음
+    // → SSE 콜백의 isCurrentSession 체크가 false가 되므로 UI는 영향 없음
+    // → 백그라운드 스트림 완료 시 markSessionNewResponse로 알림 표시
     set((state) => {
-      if (state.currentAbortController) {
-        state.currentAbortController.abort();
-      }
-      // 새 응답 표시 제거
       const newSet = new Set(state.sessionsWithNewResponse);
       if (id) newSet.delete(id);
       return {
@@ -323,6 +324,11 @@ export const useCommandStore = create<CommandState>((set) => ({
   },
 
   createNewSession: async () => {
+    const { sessions } = useCommandStore.getState();
+    if (sessions.length >= MAX_SPOTLIGHT_SESSIONS) {
+      console.warn(`세션 최대 개수(${MAX_SPOTLIGHT_SESSIONS})에 도달했습니다.`);
+      return null;
+    }
     try {
       const session = await spotlightApi.createSession();
       set((state) => ({

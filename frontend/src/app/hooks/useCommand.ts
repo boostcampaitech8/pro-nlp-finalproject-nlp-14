@@ -115,6 +115,13 @@ export function useCommand() {
     sessionCreationRef.current = null;
     setProcessing(false);
 
+    // 세션 생성 후 ref 즉시 동기 업데이트
+    // React 리렌더(macrotask)보다 먼저 실행되는 microtask 체인에서
+    // SSE 콜백이 올바른 sessionId를 참조할 수 있도록 보장
+    if (session?.id) {
+      currentSessionIdRef.current = session.id;
+    }
+
     return session?.id ?? null;
   }, [createNewSession, setProcessing, enterChatMode]);
 
@@ -149,7 +156,7 @@ export function useCommand() {
           streamSessionId,
           item.text,
           (event: SSEEvent) => {
-            const isCurrentSession = currentSessionIdRef.current === streamSessionId;
+            const isCurrentSession = useCommandStore.getState().currentSessionId === streamSessionId;
 
             if (event.type === 'message' && event.data) {
               if (!isCurrentSession) return;
@@ -274,7 +281,7 @@ export function useCommand() {
           streamSessionId,
           '',
           (event: SSEEvent) => {
-            const isCurrentSession = currentSessionIdRef.current === streamSessionId;
+            const isCurrentSession = useCommandStore.getState().currentSessionId === streamSessionId;
 
             if (event.type === 'message' && event.data) {
               if (!isCurrentSession) return;

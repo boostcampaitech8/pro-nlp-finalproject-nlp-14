@@ -74,9 +74,7 @@ async def evaluate_result(state: OrchestrationState) -> OrchestrationState:
     plan = state.get('plan', '')
     tool_results = state.get('tool_results', '')
     retry_count = state.get('retry_count', 0)
-    hitl_status = state.get('hitl_status', 'none')
-
-    logger.info(f"Evaluator 단계: retry_count={retry_count}, tool_results={bool(tool_results)}, hitl_status={hitl_status}")
+    logger.info(f"Evaluator 단계: retry_count={retry_count}, tool_results={bool(tool_results)}")
 
     # 무한 루프 방지: MAX_RETRY 이상 재시도 시 강제로 success 처리
     if retry_count >= MAX_RETRY:

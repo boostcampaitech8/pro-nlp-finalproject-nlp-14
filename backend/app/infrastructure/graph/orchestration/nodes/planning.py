@@ -33,22 +33,6 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
     messages = state.get("messages", [])
     query = messages[-1].content if messages else ""
 
-    # skip_planning 처리 (HITL 응답 시)
-    if state.get("skip_planning") and state.get("plan"):
-        logger.info("Planning 단계 스킵: 기존 plan 사용")
-        logger.info(f"hitl_status 보존: {state.get('hitl_status')}")
-        return OrchestrationState(
-            plan=state.get("plan", ""),
-            need_tools=state.get("need_tools", False),
-            can_answer=state.get("can_answer", True),
-            missing_requirements=state.get("missing_requirements", []),
-            selected_tool=state.get("selected_tool"),
-            tool_category=state.get("tool_category"),
-            tool_args=state.get("tool_args", {}),
-            # HITL 상태 보존 (confirmed/cancelled 상태가 tools 노드에 전달되어야 함)
-            hitl_status=state.get("hitl_status"),
-        )
-
     # 모드 및 도구 설정
     mode = normalize_interaction_mode(state.get("interaction_mode", "voice"))
 

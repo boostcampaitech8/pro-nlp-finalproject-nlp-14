@@ -342,7 +342,6 @@ async def run_option7() -> None:
                 **state,
                 **orchestration_payload,
                 "additional_context": additional_context,
-                "skip_planning": True,
             }
 
             try:

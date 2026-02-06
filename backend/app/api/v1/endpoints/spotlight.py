@@ -491,7 +491,9 @@ async def chat_stream(
                 if event_type == "token" and tag == "generator_token":
                     content = event.get("content", "")
                     if content:
-                        yield f"event: message\ndata: {content}\n\n"
+                        # SSE spec: 줄바꿈이 포함된 데이터는 각 줄을 별도 data: 필드로 전송
+                        data_lines = '\n'.join(f'data: {line}' for line in content.split('\n'))
+                        yield f"event: message\n{data_lines}\n\n"
 
                 # 상태 메시지
                 elif event_type == "node_start" and tag == "status":
