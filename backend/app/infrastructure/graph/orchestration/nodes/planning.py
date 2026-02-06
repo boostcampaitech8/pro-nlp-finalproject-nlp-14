@@ -7,10 +7,8 @@ import app.infrastructure.graph.orchestration.tools  # noqa: F401
 from app.infrastructure.graph.integration.llm import get_planner_llm_for_tools
 from app.infrastructure.graph.orchestration.state import OrchestrationState
 from app.infrastructure.graph.orchestration.tools.registry import (
-    InteractionMode,
     get_langchain_tools_for_mode,
     get_tool_category,
-    normalize_interaction_mode,
 )
 from app.prompt.v1.orchestration.planning import TOOL_UNAVAILABLE_MESSAGES  # noqa: F401
 from app.prompt.v1.orchestration.spotlight.planning import build_spotlight_system_prompt
@@ -23,7 +21,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
     """계획 수립 노드 - bind_tools 방식
 
     Contract:
-        reads: messages, retry_count, planning_context, tool_results, interaction_mode, user_context
+        reads: messages, retry_count, planning_context, tool_results, user_context
         writes: plan, need_tools, can_answer, selected_tool, tool_category, tool_args
         side-effects: LLM API 호출
         failures: PLANNING_FAILED -> 기본 계획 반환
@@ -33,18 +31,18 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
     messages = state.get("messages", [])
     query = messages[-1].content if messages else ""
 
-    # 모드 및 도구 설정
-    mode = normalize_interaction_mode(state.get("interaction_mode", "voice"))
+    # 모드 및 도구 설정 (meeting_id가 있으면 voice, 아니면 spotlight)
+    mode = "voice" if state.get("meeting_id") else "spotlight"
 
     langchain_tools = get_langchain_tools_for_mode(mode)
-    logger.info(f"Interaction mode: {mode.value}, tools count: {len(langchain_tools)}")
+    logger.info(f"Interaction mode: {mode}, tools count: {len(langchain_tools)}")
 
     # bind_tools 적용 (thinking 파라미터 없는 LLM 사용)
     llm = get_planner_llm_for_tools()
     llm_with_tools = llm.bind_tools(langchain_tools)
 
     # 모드별 시스템 프롬프트 (prompts 모듈에서 빌드)
-    if mode == InteractionMode.SPOTLIGHT:
+    if mode == "spotlight":
         user_context = state.get("user_context", {})
         system_prompt = build_spotlight_system_prompt(user_context)
     else:

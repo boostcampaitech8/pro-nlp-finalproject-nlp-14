@@ -58,10 +58,6 @@ class OrchestrationState(TypedDict):
     # Context Engineering (optional)
     planning_context: NotRequired[str]
     additional_context: NotRequired[str]
-    # Channel (voice or spotlight)
-    channel: NotRequired[str]  # "voice" or "spotlight", default: "voice"
-    # === NEW: Interaction Mode & Tool Selection ===
-    interaction_mode: NotRequired[Literal["voice", "spotlight"]]  # 상호작용 모드
 
     # Tool selection (Planning에서 설정)
     selected_tool: NotRequired[str]  # 선택된 도구 이름

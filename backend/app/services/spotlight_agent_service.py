@@ -166,7 +166,6 @@ class SpotlightAgentService:
                 "executed_at": datetime.now(timezone.utc),
                 "retry_count": 0,
                 "planning_context": planning_context,
-                "channel": "text",
                 "user_context": user_context,
                 "selected_tool": None,
                 "tool_args": {},

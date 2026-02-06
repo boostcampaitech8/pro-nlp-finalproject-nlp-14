@@ -40,7 +40,7 @@ async def generate_answer(state: SpotlightOrchestrationState):
 
         Contract:
         reads: messages, plan, tool_results, is_simple_query, simple_router_output,
-               additional_context, planning_context, channel
+               additional_context, planning_context
         writes: response
         side-effects: LLM API 호출, stdout 출력 (스트리밍)
     """

@@ -153,7 +153,6 @@ async def main():
                 "user_id": user_id,
                 "executed_at": datetime.now(),
                 "retry_count": 0,
-                "interaction_mode": mode,  # 모드 설정
             }
             
             # 모드별 추가 설정

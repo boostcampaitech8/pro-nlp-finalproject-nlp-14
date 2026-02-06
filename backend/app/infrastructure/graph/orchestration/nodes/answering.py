@@ -5,10 +5,6 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from app.infrastructure.graph.orchestration.state import OrchestrationState
-from app.infrastructure.graph.orchestration.tools.registry import (
-    InteractionMode,
-    normalize_interaction_mode,
-)
 from app.prompt.v1.orchestration.answering import (
     ChannelType,
     build_system_prompt_with_tools,
@@ -94,10 +90,9 @@ async def generate_answer(state: OrchestrationState):
 
     logger.info(f"tool_results 확인: {bool(tool_results)}, 길이: {len(tool_results) if tool_results else 0}")
     logger.info(f"planning_context 길이: {len(planning_context)}자")
-    # interaction_mode를 channel로 매핑
-    interaction_mode = normalize_interaction_mode(state.get("interaction_mode", "voice"))
-    channel = ChannelType.TEXT if interaction_mode == InteractionMode.SPOTLIGHT else ChannelType.VOICE
-    logger.info(f"interaction_mode: {interaction_mode.value}, channel: {channel}")
+    # meeting_id가 있으면 voice, 아니면 text
+    channel = ChannelType.VOICE if state.get("meeting_id") else ChannelType.TEXT
+    logger.info(f"channel: {channel}")
 
     # 프롬프트 빌더 사용
     if tool_results and tool_results.strip():

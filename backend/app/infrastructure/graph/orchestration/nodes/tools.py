@@ -17,7 +17,7 @@ from app.models.team import TeamMember
 
 from ..state import OrchestrationState
 from ..tools.base import ToolCategory
-from ..tools.registry import InteractionMode, get_tool_by_name, get_tool_metadata, normalize_interaction_mode
+from ..tools.registry import get_tool_by_name, get_tool_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
     """통합 도구 실행 노드 (HITL 지원 - interrupt 방식)
 
     Contract:
-        reads: selected_tool, tool_args, tool_category, interaction_mode, user_id
+        reads: selected_tool, tool_args, tool_category, user_id
         writes: tool_results
         side-effects: Tool 실행 (DB/Neo4j 작업), Mutation 시 interrupt()로 HITL 중단
         failures: TOOL_NOT_FOUND, TOOL_EXECUTION_ERROR
@@ -127,7 +127,7 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
     logger.info("Tool execution node entered")
 
     selected_tool = state.get("selected_tool")
-    interaction_mode = normalize_interaction_mode(state.get("interaction_mode", "spotlight"))
+    interaction_mode = "voice" if state.get("meeting_id") else "spotlight"
     user_id = state.get("user_id")
     tool_args = state.get("tool_args", {})
 
@@ -160,13 +160,13 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
 
     logger.info(
         f"Executing tool: {selected_tool}, category: {tool_category_from_meta}, "
-        f"mode: {interaction_mode.value}"
+        f"mode: {interaction_mode}"
     )
 
     # === HITL Flow for Mutation Tools (interrupt 방식) ===
     if tool_category_from_meta == ToolCategory.MUTATION.value:
         # Voice 모드에서는 mutation 도구 사용 불가
-        if interaction_mode == InteractionMode.VOICE:
+        if interaction_mode == "voice":
             logger.warning(f"Mutation tool {selected_tool} not allowed in Voice mode")
             return OrchestrationState(
                 tool_results=f"'{tool.description}' 작업은 Spotlight 모드에서만 가능합니다.",
