@@ -15,7 +15,6 @@ from langgraph.graph.state import CompiledStateGraph
 from app.infrastructure.graph.checkpointer import get_checkpointer
 
 from .nodes.answering import generate_answer
-from .nodes.evaluation import evaluate_result
 from .nodes.mit_tools_analyze import execute_mit_tools_analyze
 from .nodes.mit_tools_search import execute_mit_tools_search
 from .nodes.planning import create_plan
@@ -50,17 +49,6 @@ def route_by_tool_need(state: SpotlightOrchestrationState) -> str:
 
 
 
-def route_by_evaluation(state: SpotlightOrchestrationState) -> str:
-    """평가 결과에 따라 라우팅: retry/replanning/success"""
-    status = state.get("evaluation_status", "success")
-
-    if status == "retry":
-        return "mit_tools_analyze"
-    elif status == "replanning":
-        return "planner"
-    return "generator"
-
-
 def build_spotlight_orchestration_workflow() -> StateGraph:
     """Spotlight 오케스트레이션 워크플로우 빌더 (checkpointer 없이)
 
@@ -69,9 +57,9 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
 
     Workflow:
         planner -> [tools | mit_tools_analyze | generator]
-        tools -> evaluator (interrupt()가 HITL 중단 처리)
-        mit_tools_analyze -> mit_tools_search -> evaluator
-        evaluator -> [mit_tools_analyze | planner | generator]
+        tools -> planner (interrupt()가 HITL 중단 처리)
+        mit_tools_analyze -> mit_tools_search -> planner
+        planner -> [tools | mit_tools_analyze | generator]
         generator -> END
     """
     workflow = StateGraph(SpotlightOrchestrationState)
@@ -82,7 +70,6 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
     workflow.add_node("mit_tools_analyze", execute_mit_tools_analyze)
     workflow.add_node("mit_tools_search", execute_mit_tools_search)
     workflow.add_node("tools", execute_tools)  # 새 Tool 시스템 (HITL 지원)
-    workflow.add_node("evaluator", evaluate_result)
     workflow.add_node("generator", generate_answer)
 
     # 엣지 연결
@@ -106,21 +93,14 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
         },
     )
     
-    # Tools -> Evaluator (interrupt()가 HITL 중단을 자동 처리)
-    workflow.add_edge("tools", "evaluator")
+    # Tools -> Planner (interrupt()가 HITL 중단을 자동 처리)
+    workflow.add_edge("tools", "planner")
 
     # MIT-Tools Analyze -> MIT-Tools Search (항상)
     workflow.add_edge("mit_tools_analyze", "mit_tools_search")
 
-    # MIT-Tools Search -> Evaluator
-    workflow.add_edge("mit_tools_search", "evaluator")
-
-    # Evaluator -> 평가 결과에 따라 라우팅
-    workflow.add_conditional_edges(
-        "evaluator",
-        route_by_evaluation,
-        {"mit_tools_analyze": "mit_tools_analyze", "planner": "planner", "generator": "generator"},
-    )
+    # MIT-Tools Search -> Planner
+    workflow.add_edge("mit_tools_search", "planner")
 
     # Generator -> END
     workflow.add_edge("generator", END)
