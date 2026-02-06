@@ -31,7 +31,7 @@ _exit_stack: AsyncExitStack | None = None
 _lock = asyncio.Lock()
 
 
-async def get_checkpointer() -> AsyncPostgresSaver:
+async def get_checkpointer(kind: str = 'memory') -> AsyncPostgresSaver:
     """Checkpointer 싱글톤 반환 (lazy initialization)
 
     첫 호출 시 연결 풀 생성 및 스키마 초기화.
