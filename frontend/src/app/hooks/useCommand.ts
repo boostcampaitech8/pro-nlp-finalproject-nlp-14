@@ -31,6 +31,7 @@ export function useCommand() {
     exitChatMode,
     addChatMessage,
     updateChatMessage,
+    autoCancelPendingHitl,
     setStreaming,
     setStatusMessage,
     createNewSession,
@@ -394,6 +395,12 @@ export function useCommand() {
       const sessionId = await ensureSessionId();
       if (!sessionId) return;
 
+      // HITL pending 상태면 자동 취소 표시 후 새 메시지 전송
+      if (hitlPending) {
+        autoCancelPendingHitl();
+        hitlPending = false;
+      }
+
       const userMsg: ChatMessage = {
         id: `chat-${Date.now()}-user`,
         role: 'user',
@@ -412,6 +419,7 @@ export function useCommand() {
       ensureSessionId,
       addChatMessage,
       enqueueMessage,
+      autoCancelPendingHitl,
     ]
   );
 
@@ -460,7 +468,7 @@ export function useCommand() {
       if (!sessionId) return;
 
       // HITL 메시지 상태 업데이트
-      updateChatMessage(messageId, { hitlStatus: 'cancelled' });
+      updateChatMessage(messageId, { hitlStatus: 'cancelled', hitlCancelReason: 'user' });
 
       enqueueHitl('cancel', sessionId);
     },

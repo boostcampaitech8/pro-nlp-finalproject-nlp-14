@@ -54,6 +54,16 @@ def route_by_tool_need(state: OrchestrationState) -> str:
 
     return "mit_tools_analyze" if state.get("need_tools", False) else "generator"
 
+def route_after_tools(state: OrchestrationState) -> str:
+    """Tool 실행 후 라우팅
+
+    auto_cancelled=True이면 자동 취소 처리로 종료,
+    그 외에는 evaluator로 이동.
+    """
+    if state.get("auto_cancelled"):
+        return END
+    return "evaluator"
+
 
 
 def route_by_evaluation(state: OrchestrationState) -> str:
@@ -112,8 +122,15 @@ def build_orchestration_workflow() -> StateGraph:
         },
     )
 
-    # Tools -> Evaluator (interrupt()가 HITL 중단을 자동 처리)
-    workflow.add_edge("tools", "evaluator")
+    # Tools -> Evaluator (auto_cancelled는 END로 종료)
+    workflow.add_conditional_edges(
+        "tools",
+        route_after_tools,
+        {
+            "evaluator": "evaluator",
+            END: END,
+        },
+    )
 
     # MIT-Tools Analyze -> MIT-Tools Search (항상)
     workflow.add_edge("mit_tools_analyze", "mit_tools_search")

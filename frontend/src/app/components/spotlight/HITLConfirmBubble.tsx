@@ -12,7 +12,7 @@ interface HITLConfirmBubbleProps {
 }
 
 export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmBubbleProps) {
-  const { hitlData, hitlStatus } = message;
+  const { hitlData, hitlStatus, hitlCancelReason } = message;
   const isPending = hitlStatus === 'pending';
   const isConfirmed = hitlStatus === 'confirmed';
   const isCancelled = hitlStatus === 'cancelled';
@@ -544,7 +544,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
             ) : (
               <>
                 <X className="w-4 h-4" />
-                취소됨
+                {hitlCancelReason === 'auto' ? '취소됨 · 자동 취소' : '취소됨'}
               </>
             )}
           </div>

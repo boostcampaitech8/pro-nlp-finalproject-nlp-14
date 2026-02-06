@@ -139,6 +139,7 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             selected_tool=None,
             tool_args={},
             tool_category=None,
+            auto_cancelled=False,
         )
 
     # Get the tool (StructuredTool)
@@ -150,6 +151,7 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             selected_tool=None,
             tool_args={},
             tool_category=None,
+            auto_cancelled=False,
         )
 
     # Get tool metadata
@@ -167,7 +169,8 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
         if interaction_mode == InteractionMode.VOICE:
             logger.warning(f"Mutation tool {selected_tool} not allowed in Voice mode")
             return OrchestrationState(
-                tool_results=f"'{tool.description}' 작업은 Spotlight 모드에서만 가능합니다."
+                tool_results=f"'{tool.description}' 작업은 Spotlight 모드에서만 가능합니다.",
+                auto_cancelled=False,
             )
 
         # HITL 데이터 구성
@@ -249,16 +252,18 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
         }
 
         # interrupt()! 그래프 자동 중단 → checkpointer에 상태 저장 → 재개 대기
-        user_response = interrupt(hitl_data)
+        user_response = interrupt(hitl_data) or {}
 
         # 재개됨: 사용자 응답 처리
         if user_response.get("action") == "cancel":
             logger.info(f"[HITL] 사용자 취소: {selected_tool}")
+            is_silent = bool(user_response.get("silent"))
             return OrchestrationState(
-                tool_results="작업이 취소되었습니다.",
+                tool_results="" if is_silent else "작업이 취소되었습니다.",
                 selected_tool=None,
                 tool_args={},
                 tool_category=None,
+                auto_cancelled=is_silent,
             )
 
         # confirm: 사용자 수정 파라미터 병합
@@ -292,6 +297,7 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             selected_tool=None,
             tool_args={},
             tool_category=None,
+            auto_cancelled=False,
         )
 
     except Exception as e:
@@ -301,4 +307,5 @@ async def execute_tools(state: OrchestrationState) -> OrchestrationState:
             selected_tool=None,
             tool_args={},
             tool_category=None,
+            auto_cancelled=False,
         )

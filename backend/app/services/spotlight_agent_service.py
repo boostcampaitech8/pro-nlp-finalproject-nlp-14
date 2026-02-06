@@ -148,7 +148,10 @@ class SpotlightAgentService:
                                     "HITL pending 자동 취소: session_id=%s, thread_id=%s",
                                     session_id, thread_id,
                                 )
-                                await app.ainvoke(Command(resume={"action": "cancel"}), config)
+                                await app.ainvoke(
+                                    Command(resume={"action": "cancel", "silent": True}),
+                                    config,
+                                )
                                 break
             except Exception as e:
                 logger.warning(f"이전 상태 조회 실패 (첫 턴일 수 있음): {e}")
@@ -169,6 +172,7 @@ class SpotlightAgentService:
                 "selected_tool": None,
                 "tool_args": {},
                 "tool_category": None,
+                "auto_cancelled": False,
                 "plan": "",
                 "need_tools": False,
                 "can_answer": False,

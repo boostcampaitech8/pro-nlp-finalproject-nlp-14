@@ -47,6 +47,7 @@ interface CommandState {
     id: string,
     updates: Partial<Omit<ChatMessage, 'content'>> & { content?: string | ((prev: string) => string) }
   ) => void;
+  autoCancelPendingHitl: () => void;
   setStreaming: (streaming: boolean) => void;
   setStatusMessage: (message: string | null) => void;
 
@@ -153,6 +154,16 @@ export const useCommandStore = create<CommandState>((set) => ({
         }
 
         return { ...msg, ...updates } as ChatMessage;
+      }),
+    })),
+
+  autoCancelPendingHitl: () =>
+    set((state) => ({
+      chatMessages: state.chatMessages.map((msg): ChatMessage => {
+        if (msg.type === 'hitl' && msg.hitlStatus === 'pending') {
+          return { ...msg, hitlStatus: 'cancelled', hitlCancelReason: 'auto' };
+        }
+        return msg;
       }),
     })),
 

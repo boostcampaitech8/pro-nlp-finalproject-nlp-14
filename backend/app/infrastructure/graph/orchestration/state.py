@@ -67,6 +67,7 @@ class OrchestrationState(TypedDict):
     selected_tool: NotRequired[str]  # 선택된 도구 이름
     tool_args: NotRequired[dict]  # 도구 인자 (LLM이 추출)
     tool_category: NotRequired[Literal["query", "mutation"]]  # 도구 카테고리
+    auto_cancelled: NotRequired[bool]  # HITL 자동 취소 여부 (silent cancel)
 
     # 사용자 컨텍스트 (SPOTLIGHT 세션 시작 시 주입)
     user_context: NotRequired[dict]
