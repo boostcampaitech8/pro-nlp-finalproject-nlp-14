@@ -65,7 +65,6 @@ async def generate_answer(state: OrchestrationState):
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     planning_context = state.get("planning_context", "")  # L0 회의 대화 + L1 토픽
-    plan = state.get("plan", "")
     # ✅ 안전 장치: Mutation 요청인데 도구가 실행되지 않은 경우 거부
     query_lower = query.lower()
     mutation_keywords = ["만들어", "생성", "추가", "등록", "수정", "변경", "삭제", "취소", "잡아"]
@@ -99,33 +98,32 @@ async def generate_answer(state: OrchestrationState):
     interaction_mode = normalize_interaction_mode(state.get("interaction_mode", "voice"))
     channel = ChannelType.TEXT if interaction_mode == InteractionMode.SPOTLIGHT else ChannelType.VOICE
     logger.info(f"interaction_mode: {interaction_mode.value}, channel: {channel}")
-    plan = state.get("plan", "")
 
     # 프롬프트 빌더 사용
     if tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
 
-        system_prompt = build_system_prompt_with_tools(channel)
-        user_prompt = build_user_prompt_with_tools(
+        system_prompt = build_system_prompt_with_tools(
+            channel=channel,
             conversation_history=conversation_history or "없음",
-            query=query,
-            plan=plan or "없음",
-            tool_results=tool_results,
+            tool_results=tool_results or "없음",
             additional_context=additional_context or "없음",
             meeting_context=planning_context or "없음",
-            channel=channel,
+        )
+        user_prompt = build_user_prompt_with_tools(
+            query=query,
         )
     else:
         logger.info("도구 없이 직접 응답 생성")
 
-        system_prompt = build_system_prompt_without_tools(channel)
-        user_prompt = build_user_prompt_without_tools(
+        system_prompt = build_system_prompt_without_tools(
+            channel=channel,
             conversation_history=conversation_history or "없음",
-            query=query,
-            plan=plan or "없음",
             additional_context=additional_context or "없음",
             meeting_context=planning_context or "없음",
-            channel=channel,
+        )
+        user_prompt = build_user_prompt_without_tools(
+            query=query,
         )
 
     # 이미 포맷팅된 문자열에 포함된 JSON/중괄호가 변수로 해석되지 않도록 변수로 전달
