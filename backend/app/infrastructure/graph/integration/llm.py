@@ -107,12 +107,12 @@ def get_pr_generator_llm() -> ChatClovaX:
 
     Model: HCX-007
     Use Case: 회의 트랜스크립트에서 Agenda/Decision 대량 추출
-    temperature: 0.5 (자연스러운 생성 + 일관성 균형)
+    temperature: 0.2 (환각 억제 + 구조화 추출 안정성 우선)
     max_tokens: 4096 (다수 Agenda/Decision JSON 출력 대응)
     """
     return ChatClovaX(
         model="HCX-007",
-        temperature=0.5,
+        temperature=0.2,
         max_tokens=4096,
         api_key=NCP_CLOVASTUDIO_API_KEY,
         thinking={"effort": "low"},
