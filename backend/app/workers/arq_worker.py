@@ -138,6 +138,7 @@ async def generate_pr_task(
                 config=get_runnable_config(
                     trace_name="generate_pr",
                     metadata={"meeting_id": meeting_id},
+                    mode="voice",
                 ),
             )
 
@@ -208,6 +209,7 @@ async def mit_action_task(ctx: dict, decision_id: str) -> dict:
             config=get_runnable_config(
                 trace_name=f"mit_action:{decision_id}",
                 metadata={"decision_id": decision_id},
+                mode="voice",
             ),
         )
 
@@ -321,6 +323,7 @@ async def process_suggestion_task(
             config=get_runnable_config(
                 trace_name=f"mit_suggestion:{suggestion_id}",
                 metadata={"suggestion_id": suggestion_id, "decision_id": decision_id},
+                mode="voice",
             ),
         )
 

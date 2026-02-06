@@ -3,7 +3,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
-from app.infrastructure.graph.orchestration.state import OrchestrationState
+from ..state import SpotlightOrchestrationState
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class SimpleRouterOutput(BaseModel):
     reasoning: str = Field(description="판정 근거")
 
 
-async def route_simple_query(state: OrchestrationState) -> OrchestrationState:
+async def route_simple_query(state: SpotlightOrchestrationState) -> SpotlightOrchestrationState:
     """간단한 쿼리 사전 필터링 노드 (Planning 이전)
 
     Clova Router API를 사용하여 쿼리를 분류합니다.
@@ -33,7 +33,7 @@ async def route_simple_query(state: OrchestrationState) -> OrchestrationState:
         side-effects: Clova Router API 호출
 
     Returns:
-        OrchestrationState: 간단한 쿼리 판정 결과 포함
+        SpotlightOrchestrationState: 간단한 쿼리 판정 결과 포함
     """
     logger.info("간단한 쿼리 라우팅 단계 진입")
 
@@ -100,13 +100,13 @@ async def _route_with_clova(query: str) -> SimpleRouterOutput:
 
 
 def _create_router_state(result: SimpleRouterOutput) -> dict:
-    """라우터 결과를 OrchestrationState로 변환
+    """라우터 결과를 SpotlightOrchestrationState로 변환
 
     Args:
         result: SimpleRouterOutput 인스턴스
 
     Returns:
-        OrchestrationState 업데이트 딕셔너리
+        SpotlightOrchestrationState 업데이트 딕셔너리
     """
     if result.is_simple_query:
         return {
@@ -138,7 +138,7 @@ def _create_empty_router_output() -> dict:
     """빈 쿼리 처리
 
     Returns:
-        OrchestrationState 업데이트 딕셔너리
+        SpotlightOrchestrationState 업데이트 딕셔너리
     """
     return {
         "is_simple_query": False,
@@ -159,7 +159,7 @@ def _create_error_router_output(error_msg: str) -> dict:
         error_msg: 에러 메시지
 
     Returns:
-        OrchestrationState 업데이트 딕셔너리
+        SpotlightOrchestrationState 업데이트 딕셔너리
     """
     return {
         "is_simple_query": False,

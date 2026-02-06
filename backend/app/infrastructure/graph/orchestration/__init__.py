@@ -1,3 +1,14 @@
-from .connect import build_orchestration_workflow, get_compiled_app
+"""Orchestration Module - Separated Voice and Spotlight Orchestrations
 
-__all__ = ["build_orchestration_workflow", "get_compiled_app"]
+Voice orchestration: voice/
+Spotlight orchestration: spotlight/
+Shared utilities: shared/
+
+Import the specific orchestration you need:
+    from app.infrastructure.graph.orchestration.voice import get_voice_orchestration_app
+    from app.infrastructure.graph.orchestration.spotlight import get_spotlight_orchestration_app
+"""
+
+from .connect import get_compiled_app
+
+__all__ = ["get_compiled_app"]

@@ -2,28 +2,31 @@ import logging
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-# 🔧 FIX: tools 패키지 전체를 import하여 query/mutation 도구들이 registry에 등록되도록 함
-import app.infrastructure.graph.orchestration.tools  # noqa: F401
+# 공유 도구 레지스트리에서 모든 도구 가져오기 (Query + Mutation)
+import app.infrastructure.graph.orchestration.shared.tools  # noqa: F401
 from app.infrastructure.graph.integration.llm import get_planner_llm_for_tools
-from app.infrastructure.graph.orchestration.state import OrchestrationState
-from app.infrastructure.graph.orchestration.tools.registry import (
-    InteractionMode,
-    get_langchain_tools_for_mode,
+from app.infrastructure.graph.orchestration.shared.tools.registry import (
+    get_all_tools,
     get_tool_category,
-    normalize_interaction_mode,
 )
 from app.prompt.v1.orchestration.planning import TOOL_UNAVAILABLE_MESSAGES  # noqa: F401
 from app.prompt.v1.orchestration.spotlight.planning import build_spotlight_system_prompt
-from app.prompt.v1.orchestration.voice.planning import build_voice_system_prompt
+
+from ..state import SpotlightOrchestrationState
 
 logger = logging.getLogger(__name__)
 
 
-async def create_plan(state: OrchestrationState) -> OrchestrationState:
-    """계획 수립 노드 - bind_tools 방식
+async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrationState:
+    """Spotlight 계획 수립 노드 - Query + Mutation 도구 사용
+
+    Spotlight 모드는 독립적인 회의 관리에 특화되어:
+    - Query + Mutation 도구 모두 사용
+    - build_spotlight_system_prompt 사용
+    - user_context를 컨텍스트로 활용
 
     Contract:
-        reads: messages, retry_count, planning_context, tool_results, interaction_mode, user_context
+        reads: messages, retry_count, planning_context, tool_results, user_context, skip_planning, hitl_status
         writes: plan, need_tools, can_answer, selected_tool, tool_category, tool_args
         side-effects: LLM API 호출
         failures: PLANNING_FAILED -> 기본 계획 반환
@@ -37,7 +40,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
     if state.get("skip_planning") and state.get("plan"):
         logger.info("Planning 단계 스킵: 기존 plan 사용")
         logger.info(f"hitl_status 보존: {state.get('hitl_status')}")
-        return OrchestrationState(
+        return SpotlightOrchestrationState(
             plan=state.get("plan", ""),
             need_tools=state.get("need_tools", False),
             can_answer=state.get("can_answer", True),
@@ -45,27 +48,21 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             selected_tool=state.get("selected_tool"),
             tool_category=state.get("tool_category"),
             tool_args=state.get("tool_args", {}),
-            # HITL 상태 보존 (confirmed/cancelled 상태가 tools 노드에 전달되어야 함)
+            # HITL 상태 보존
             hitl_status=state.get("hitl_status"),
         )
 
-    # 모드 및 도구 설정
-    mode = normalize_interaction_mode(state.get("interaction_mode", "voice"))
+    # Spotlight는 모든 도구 사용 (Query + Mutation)
+    langchain_tools = get_all_tools()
+    logger.info(f"Spotlight mode, tools count: {len(langchain_tools)}")
 
-    langchain_tools = get_langchain_tools_for_mode(mode)
-    logger.info(f"Interaction mode: {mode.value}, tools count: {len(langchain_tools)}")
-
-    # bind_tools 적용 (thinking 파라미터 없는 LLM 사용)
+    # bind_tools 적용
     llm = get_planner_llm_for_tools()
     llm_with_tools = llm.bind_tools(langchain_tools)
 
-    # 모드별 시스템 프롬프트 (prompts 모듈에서 빌드)
-    if mode == InteractionMode.SPOTLIGHT:
-        user_context = state.get("user_context", {})
-        system_prompt = build_spotlight_system_prompt(user_context)
-    else:
-        meeting_id = state.get("meeting_id", "unknown")
-        system_prompt = build_voice_system_prompt(meeting_id)
+    # Spotlight 시스템 프롬프트
+    user_context = state.get("user_context", {})
+    system_prompt = build_spotlight_system_prompt(user_context)
 
     # 이전 도구 실행 결과를 컨텍스트에 포함
     planning_context = state.get("planning_context", "")
@@ -123,7 +120,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             logger.info(f"도구 인자: {tool_args}")
             logger.info(f"도구 카테고리: {tool_category}")
 
-            return OrchestrationState(
+            return SpotlightOrchestrationState(
                 messages=[response],
                 selected_tool=tool_name,
                 tool_args=tool_args,
@@ -138,7 +135,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
             logger.info("도구 없이 직접 응답")
             logger.info(f"응답 내용: {response.content[:100]}..." if response.content else "응답 없음")
 
-            return OrchestrationState(
+            return SpotlightOrchestrationState(
                 messages=[response],
                 response=response.content,
                 can_answer=True,
@@ -152,7 +149,7 @@ async def create_plan(state: OrchestrationState) -> OrchestrationState:
 
     except Exception as e:
         logger.error(f"Planning 단계에서 에러 발생: {e}")
-        return OrchestrationState(
+        return SpotlightOrchestrationState(
             plan="질문 분석 중 오류 발생",
             need_tools=False,
             can_answer=True,

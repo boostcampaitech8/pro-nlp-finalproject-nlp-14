@@ -17,7 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 from app.infrastructure.agent import ClovaStudioLLMClient
 from app.infrastructure.context import ContextBuilder, ContextManager
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
-from app.infrastructure.graph.orchestration import get_compiled_app
+from app.infrastructure.graph.orchestration.voice import get_voice_orchestration_app
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
 
 logger = logging.getLogger(__name__)
@@ -37,9 +37,9 @@ class AgentService:
         self._app: CompiledStateGraph | None = None  # lazy init
 
     async def _get_app(self) -> CompiledStateGraph:
-        """컴파일된 앱 lazy 로드 (checkpointer 포함)"""
+        """컴파일된 Voice 오케스트레이션 lazy 로드 (checkpointer 포함)"""
         if self._app is None:
-            self._app = await get_compiled_app(with_checkpointer=True)
+            self._app = await get_voice_orchestration_app(with_checkpointer=True)
         return self._app
 
     async def process_streaming(
@@ -105,6 +105,8 @@ class AgentService:
             "messages": [HumanMessage(content=user_input)],
             "run_id": str(uuid.uuid4()),
             "user_id": user_id,
+            "meeting_id": meeting_id,  # Voice 전용
+            "channel": "voice",  # Voice 고정
             "executed_at": datetime.now(timezone.utc),
             "retry_count": 0,
             "planning_context": planning_context,
@@ -116,6 +118,7 @@ class AgentService:
             trace_name=f"voice_in_meeting:{meeting_id}",
             user_id=user_id,
             session_id=meeting_id,
+            mode="voice",
         )
         config = {
             **langfuse_config,
@@ -191,6 +194,8 @@ class AgentService:
             "messages": [HumanMessage(content=user_input)],
             "run_id": str(uuid.uuid4()),
             "user_id": user_id,
+            "meeting_id": meeting_id,  # Voice 전용
+            "channel": "voice",  # Voice 고정
             "executed_at": datetime.now(timezone.utc),
             "retry_count": 0,
             "planning_context": planning_context,
@@ -202,6 +207,7 @@ class AgentService:
             trace_name=f"voice_in_meeting:{meeting_id}",
             user_id=user_id,
             session_id=meeting_id,
+            mode="voice",
         )
         config = {
             **langfuse_config,

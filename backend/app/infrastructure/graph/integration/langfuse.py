@@ -55,6 +55,7 @@ def get_runnable_config(
     trace_name: Optional[str] = None,
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    mode: Optional[str] = None,
     metadata: Optional[dict] = None,
 ) -> dict:
     """LangGraph/LangChain 실행을 위한 config 반환.
@@ -66,13 +67,18 @@ def get_runnable_config(
         trace_name: Langfuse 트레이스 이름 (예: "mit_search", "generate_pr")
         user_id: 사용자 ID (Langfuse에서 사용자별 필터링용)
         session_id: 세션 ID (대화 세션 추적용)
+        mode: 오케스트레이션 모드 (예: "voice", "spotlight") - Langfuse에서 모드별 필터링용
         metadata: 추가 메타데이터
 
     Returns:
         LangGraph/LangChain의 ainvoke/invoke에 전달할 config dict
 
     Example:
-        config = get_runnable_config(trace_name="mit_search", user_id="user-123")
+        config = get_runnable_config(
+            trace_name="mit_search",
+            user_id="user-123",
+            mode="voice"
+        )
         result = await graph.ainvoke(state, config=config)
     """
     settings = get_settings()
@@ -105,6 +111,7 @@ def get_runnable_config(
         **({"langfuse_trace_name": trace_name} if trace_name else {}),
         **({"langfuse_user_id": user_id} if user_id else {}),
         **({"langfuse_session_id": session_id} if session_id else {}),
+        **({"langfuse_mode": mode} if mode else {}),
     }
 
     return {
