@@ -6,7 +6,6 @@ Version 1.0 프롬프트 모음.
 패키지 구조:
     - orchestration/: 오케스트레이션 레이어 프롬프트
         - planning: 계획 수립/재계획
-        - evaluation_node: 도구 실행 결과 평가
         - answering: 최종 응답 생성
     - mit_search/: MIT Search 워크플로우 프롬프트
         - query_intent: 쿼리 의도 분석

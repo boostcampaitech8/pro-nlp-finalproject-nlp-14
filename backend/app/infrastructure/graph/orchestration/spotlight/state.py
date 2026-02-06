@@ -61,10 +61,7 @@ class SpotlightOrchestrationState(TypedDict):
     mit_search_primary_entity: NotRequired[str]
     mit_search_query_intent: NotRequired[dict]
 
-    # Evaluation
-    evaluation: Annotated[str, "evaluation result"]
-    evaluation_status: Annotated[str, "evaluation status"]
-    evaluation_reason: Annotated[str, "evaluation reason"]
+    # Replanning
     next_subquery: NotRequired[str]
 
     # Response
