@@ -10,6 +10,7 @@ export interface AIAgent {
   displayName: string;
   mention: string;
   description: string;
+  avatarUrl?: string;
 }
 
 /**
@@ -22,6 +23,7 @@ export const AI_AGENTS: AIAgent[] = [
     displayName: '부덕이',
     mention: '@부덕이',
     description: '이 결정 사항에 대해 궁금한 점이 있으면 언제든지 물어보세요!',
+    avatarUrl: '/agent.png',
   },
 ];
 
@@ -65,8 +67,8 @@ export function isAIAgent(authorId: string): boolean {
 }
 
 /**
- * 에이전트 이름으로 에이전트인지 확인
+ * 에이전트 ID로 에이전트 정보 조회
  */
-export function isAIAgentByName(authorName: string): boolean {
-  return AI_AGENTS.some((agent) => agent.name === authorName);
+export function getAIAgentById(authorId: string): AIAgent | undefined {
+  return AI_AGENTS.find((agent) => agent.id === authorId);
 }
