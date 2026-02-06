@@ -52,40 +52,20 @@ def get_base_llm(model: str = "HCX-003", **kwargs) -> ChatClovaX:
 def get_planner_llm() -> ChatClovaX:
     """Planning 전용 LLM (낮은 temperature)
 
-    Model: HCX-003
+    Model: HCX-007
     Use Case: 복잡한 다단계 계획 수립
     temperature: 0.3 (일관성 우선)
-    max_tokens: 1024 (계획 단계별 설명)
+    max_tokens: 1024
     """
     return ChatClovaX(
         model="HCX-007",
         temperature=0.3,
         max_tokens=1024,
         api_key=NCP_CLOVASTUDIO_API_KEY,
-        thinking={"effort": "medium"},
     ).with_config(run_name="planner")
 
 
-def get_planner_llm_for_tools() -> ChatClovaX:
-    """bind_tools용 Planning LLM (Function Calling 지원 모델)
-
-    Model: HCX-005 (Function Calling 지원)
-    Use Case: bind_tools를 사용한 도구 선택
-    temperature: 0.3 (일관성 우선)
-    max_tokens: 1024
-
-    Note: ClovaStudio Function Calling은 HCX-005, HCX-DASH-002에서만 지원
-    https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-fc
-    """
-    return ChatClovaX(
-        model="HCX-005",
-        temperature=0.3,
-        max_tokens=1024,
-        api_key=NCP_CLOVASTUDIO_API_KEY,
-    ).with_config(run_name="planner_tools")
-
-
-def get_generator_llm() -> ChatClovaX:
+def get_mit_action_generator_llm() -> ChatClovaX:
     """Generator 전용 LLM (일반 추출/생성용)
 
     Model: HCX-003
@@ -185,7 +165,6 @@ def get_cypher_generator_llm() -> ChatClovaX:
         temperature=0.05,
         max_tokens=1024,
         api_key=NCP_CLOVASTUDIO_API_KEY,
-        thinking={"effort": "low"},
     ).with_config(run_name="cypher_generator")
 
 
@@ -203,11 +182,10 @@ def get_answer_generator_llm() -> ChatClovaX:
     - 한국어 자연스러움 극대화
     """
     return ChatClovaX(
-        model="HCX-007",
+        model="HCX-DASH-002",
         temperature=0.6,
         max_tokens=2048,
         api_key=NCP_CLOVASTUDIO_API_KEY,
-        thinking={"effort": "medium"},
     ).with_config(run_name="answer_generator")
 
 
