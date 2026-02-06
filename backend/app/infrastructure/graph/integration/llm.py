@@ -119,23 +119,6 @@ def get_pr_generator_llm() -> ChatClovaX:
     ).with_config(run_name="pr_generator")
 
 
-def get_evaluator_llm() -> ChatClovaX:
-    """Evaluator 전용 LLM (낮은 temperature)
-
-    Model: HCX-003
-    Use Case: 결과 평가 및 검증
-    temperature: 0.2 (일관된 평가 기준)
-    max_tokens: 512
-    """
-    return ChatClovaX(
-        model="HCX-007",
-        temperature=0.2,
-        max_tokens=512,
-        api_key=NCP_CLOVASTUDIO_API_KEY,
-        thinking={"effort": "low"},
-    ).with_config(run_name="evaluator")
-
-
 # ============================================================================
 # Context Engineering용 LLM 인스턴스
 # ============================================================================
