@@ -13,10 +13,9 @@ import { cn } from '@/lib/utils';
 interface ChatBubbleProps {
   message: ChatMessage;
   streaming?: boolean;
-  onStreamComplete?: () => void;
 }
 
-export function ChatBubble({ message, streaming = false, onStreamComplete }: ChatBubbleProps) {
+export function ChatBubble({ message, streaming = false }: ChatBubbleProps) {
   const [displayedText, setDisplayedText] = useState(streaming ? '' : message.content);
   const displayedLengthRef = useRef(streaming ? 0 : message.content.length);
   const contentRef = useRef(message.content);

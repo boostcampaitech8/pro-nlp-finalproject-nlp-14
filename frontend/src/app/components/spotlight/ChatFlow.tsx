@@ -62,7 +62,6 @@ export function ChatFlow() {
               key={msg.id}
               message={msg}
               streaming={isLastAgent}
-              onStreamComplete={isLastAgent ? () => setStreaming(false) : undefined}
             />
           );
         })}
