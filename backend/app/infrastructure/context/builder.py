@@ -60,19 +60,22 @@ class ContextBuilder:
     def build_planning_input_context(
         self,
         ctx: ContextManager,
-        l0_limit: int = 10,
+        l0_limit: int | None = None,
         user_query: str | None = None,
     ) -> str:
         """Planning 입력용 요약 컨텍스트 (질문 → 토픽 목록 → 최근 발화)
 
         Args:
             ctx: ContextManager 인스턴스
-            l0_limit: L0 발화 최대 개수
+            l0_limit: L0 발화 최대 개수 (None이면 ctx.context_turns 사용)
             user_query: 사용자 질문 (명확하게 분리하여 표시)
 
         Returns:
             str: 포맷팅된 컨텍스트
         """
+        # l0_limit이 None이면 ContextManager의 모드별 턴 수 사용
+        effective_limit = l0_limit if l0_limit is not None else ctx.context_turns
+
         lines: list[str] = []
 
         # 1. 사용자 질문 (가장 먼저)
@@ -99,7 +102,7 @@ class ContextBuilder:
         # 4. L0 최근 발화 (회의 맥락)
         lines.append("")
         lines.append("## L0 최근 발화 (회의 맥락)")
-        recent = ctx.get_l0_utterances(limit=l0_limit)
+        recent = ctx.get_l0_utterances(limit=effective_limit)
         if recent:
             for u in recent:
                 ts = u.absolute_timestamp.strftime("%H:%M:%S")
@@ -114,7 +117,7 @@ class ContextBuilder:
         self,
         ctx: ContextManager,
         query: str,
-        l0_limit: int = 25,
+        l0_limit: int | None = None,
         topic_limit: int | None = None,
     ) -> str:
         """시맨틱 서치 기반 컨텍스트 구성 (L0 + 관련 토픽).
@@ -122,12 +125,14 @@ class ContextBuilder:
         Args:
             ctx: ContextManager 인스턴스
             query: 사용자 쿼리
-            l0_limit: L0 발화 최대 개수
+            l0_limit: L0 발화 최대 개수 (None이면 ctx.context_turns 사용)
             topic_limit: Top-K 토픽 개수 (None이면 config 사용)
 
         Returns:
             str: 포맷팅된 컨텍스트
         """
+        effective_limit = l0_limit if l0_limit is not None else ctx.context_turns
+
         lines: list[str] = []
 
         if query:
@@ -153,7 +158,7 @@ class ContextBuilder:
 
         lines.append("")
         lines.append("## L0 최근 발화 (회의 맥락)")
-        recent = ctx.get_l0_utterances(limit=l0_limit)
+        recent = ctx.get_l0_utterances(limit=effective_limit)
         if recent:
             for u in recent:
                 ts = u.absolute_timestamp.strftime("%H:%M:%S")

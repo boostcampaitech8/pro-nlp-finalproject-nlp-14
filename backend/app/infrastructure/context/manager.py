@@ -64,18 +64,23 @@ class ContextManager:
         meeting_id: str,
         config: ContextConfig | None = None,
         db_session: AsyncSession | None = None,
+        mode: str = "voice",
     ):
         self.meeting_id = meeting_id
         self.config = config or ContextConfig()
+        self.mode = mode
         self._db = db_session
         self._llm_enabled = bool(get_settings().ncp_clovastudio_api_key)
+
+        # 모드별 컨텍스트 턴 수 (L0/L1 공통)
+        self.context_turns = self.config.get_context_turns(mode)
 
         # 인메모리 임베딩 (시맨틱 서치용)
         self._embedder = TopicEmbedder() if EMBEDDING_AVAILABLE else None
         self._topic_embeddings: dict[str, list[float]] = {}  # topic_id -> embedding
 
-        # L0: Raw Window (고정 크기)
-        self.l0_buffer: deque[Utterance] = deque(maxlen=self.config.l0_max_turns)
+        # L0: Raw Window (모드별 턴 수 적용)
+        self.l0_buffer: deque[Utterance] = deque(maxlen=self.context_turns)
         self.current_topic: str = "Intro"  # 초기 토픽
 
         # L0: Topic Buffer (현재 토픽 발화, 제한 있음 - 무한 증식 방지)
@@ -125,17 +130,17 @@ class ContextManager:
         )
 
     def _should_queue_l1(self) -> bool:
-        """L1 청크 큐잉 필요 여부 판단 (25턴 단위).
+        """L1 청크 큐잉 필요 여부 판단 (context_turns 단위).
 
-        키워드 감지 없이 순수하게 25턴마다 토픽 분할 요약을 트리거합니다.
+        키워드 감지 없이 순수하게 context_turns마다 토픽 분할 요약을 트리거합니다.
         """
         # 요약할 새 발화가 있는지 확인
         new_utterances = self._get_unsummarized_utterances()
         if not new_utterances:
             return False
 
-        # 25턴 임계값 도달 시에만 트리거
-        if len(new_utterances) >= self.config.l1_update_turn_threshold:
+        # 모드별 턴 임계값 도달 시에만 트리거
+        if len(new_utterances) >= self.context_turns:
             return True
 
         return False
@@ -1034,16 +1039,19 @@ class ContextManager:
         return len(rows)
 
     def _queue_l1_chunks_from_utterances(self, utterances: list[Utterance]) -> None:
-        """발화 목록을 L1 청크로 분할하여 큐에 추가 (25턴 단위)"""
+        """발화 목록을 L1 청크로 분할하여 큐에 추가 (context_turns 단위)"""
         if not utterances:
             return
 
-        threshold = self.config.l1_update_turn_threshold
+        threshold = self.context_turns
 
-        # 25턴 단위로 청크 분할
         for i in range(0, len(utterances), threshold):
             chunk = utterances[i : i + threshold]
             if chunk:
                 self._pending_l1_chunks.append(chunk)
+
+        # 마지막 발화 ID 업데이트 (반복 요약 방지)
+        if utterances:
+            self._last_summarized_utterance_id = utterances[-1].id
 
         logger.info(f"Queued {len(self._pending_l1_chunks)} L1 chunks for processing")

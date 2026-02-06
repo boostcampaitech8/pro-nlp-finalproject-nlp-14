@@ -74,7 +74,7 @@ async def debug_context_flow(meeting_id: str):
         print(f"로드된 발화 수: {loaded}")
 
         # L0 버퍼 상태
-        print(f"\nL0 Raw Buffer (최대 {ctx_manager.config.l0_max_turns}개):")
+        print(f"\nL0 Raw Buffer (최대 {ctx_manager.context_turns}개):")
         print(f"  현재 크기: {len(ctx_manager.l0_buffer)}")
         if ctx_manager.l0_buffer:
             first = ctx_manager.l0_buffer[0]
