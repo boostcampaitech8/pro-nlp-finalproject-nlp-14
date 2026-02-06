@@ -18,7 +18,6 @@ from app.prompt.v1.orchestration.answering import (
 )
 
 logger = logging.getLogger("AgentLogger")
-logger.setLevel(logging.INFO)
 
 
 def build_conversation_history(messages: list) -> str:
@@ -52,15 +51,17 @@ async def generate_answer(state: OrchestrationState):
     logger.info("최종 응답 생성 단계 진입")
 
     messages = state.get('messages', [])
-    logger.info(f"[DEBUG] messages 개수: {len(messages)}")
-    for i, msg in enumerate(messages):
-        msg_type = type(msg).__name__
-        content_preview = msg.content[:50] if msg.content else ""
-        logger.info(f"[DEBUG] messages[{i}]: {msg_type} - {content_preview}...")
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("checkpointer 병합 후 messages 개수: %d", len(messages))
+        for i, msg in enumerate(messages):
+            msg_type = type(msg).__name__
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            content_preview = content[:50] if content else ""
+            logger.debug("messages[%d]: %s - %s...", i, msg_type, content_preview)
 
     query = messages[-1].content if messages else ""
     conversation_history = build_conversation_history(messages)
-    logger.info(f"[DEBUG] conversation_history 길이: {len(conversation_history)}자")
+    logger.debug("conversation_history 길이: %d자", len(conversation_history))
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     planning_context = state.get("planning_context", "")  # L0 회의 대화 + L1 토픽
