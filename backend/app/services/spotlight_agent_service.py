@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph.state import CompiledStateGraph
 
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
-from app.infrastructure.graph.orchestration import get_compiled_app
+from app.infrastructure.graph.orchestration.spotlight import get_spotlight_orchestration_app
 from app.infrastructure.graph.spotlight_checkpointer import get_spotlight_checkpointer
 from app.infrastructure.graph.orchestration.state import RESET_TOOL_RESULTS
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
@@ -28,10 +28,12 @@ class SpotlightAgentService:
         self._app: CompiledStateGraph | None = None
 
     async def _get_app(self) -> CompiledStateGraph:
-        """컴파일된 앱 lazy 로드 (checkpointer 포함)"""
+        """컴파일된 Spotlight 오케스트레이션 lazy 로드 (checkpointer 포함)"""
         if self._app is None:
             spotlight_checkpointer = await get_spotlight_checkpointer()
-            self._app = await get_compiled_app(with_checkpointer=True, checkpointer=spotlight_checkpointer)
+            self._app = await get_spotlight_orchestration_app(
+                with_checkpointer=True, checkpointer=spotlight_checkpointer
+            )
         return self._app
 
     def _get_thread_id(self, session_id: str) -> str:
@@ -103,10 +105,7 @@ class SpotlightAgentService:
             trace_name=f"spotlight:{session_id}",
             user_id=user_id,
             session_id=session_id,
-            metadata={
-                "interaction_mode": "spotlight",
-                **({"hitl_action": hitl_action} if hitl_action else {}),
-            },
+            mode="spotlight",
         )
         config = {
             **langfuse_config,
@@ -173,7 +172,7 @@ class SpotlightAgentService:
             "executed_at": datetime.now(timezone.utc),
             "retry_count": prev_retry_count,
             "planning_context": planning_context,
-            "interaction_mode": "spotlight",
+            "channel": "text",  # Spotlight 고정
             "hitl_status": hitl_status,
             "user_context": user_context,
         }

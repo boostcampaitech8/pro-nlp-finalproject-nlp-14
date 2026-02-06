@@ -378,6 +378,7 @@ async def run_generate_pr(
             config=get_runnable_config(
                 trace_name="generate_pr_script",
                 metadata={"meeting_id": meeting_id},
+                mode="voice",
             ),
         )
 
