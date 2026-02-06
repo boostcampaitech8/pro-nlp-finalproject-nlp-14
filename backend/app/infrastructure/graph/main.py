@@ -170,6 +170,7 @@ async def main():
                 trace_name="cli-mit-agent",
                 user_id=user_id,
                 session_id=run_id,
+                mode=mode,
             )
             if use_checkpointer:
                 config["configurable"] = {"thread_id": thread_id}

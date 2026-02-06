@@ -12,11 +12,9 @@ from app.infrastructure.graph.orchestration.tools.registry import (
     get_tool_category,
     normalize_interaction_mode,
 )
-from app.prompt.v1.orchestration.planning import (
-    TOOL_UNAVAILABLE_MESSAGES,  # noqa: F401  # Re-export for other modules
-    build_spotlight_system_prompt,
-    build_voice_system_prompt,
-)
+from app.prompt.v1.orchestration.planning import TOOL_UNAVAILABLE_MESSAGES  # noqa: F401
+from app.prompt.v1.orchestration.spotlight.planning import build_spotlight_system_prompt
+from app.prompt.v1.orchestration.voice.planning import build_voice_system_prompt
 
 logger = logging.getLogger(__name__)
 
