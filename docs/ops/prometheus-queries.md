@@ -216,7 +216,7 @@ round(sum(increase(mit_stt_segment_total[$__interval])))
 
 ### 총 Realtime Worker Job 수
 ```
-sum(mit_realtime_worker_jobs_total)
+round(sum(increase(mit_realtime_worker_jobs_total{status="created"}[$__interval])))
 ```
 
 ---
