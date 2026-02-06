@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import math
+import random
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 
@@ -32,9 +33,9 @@ logger = logging.getLogger(__name__)
 MAX_CHUNKS = 3
 CHUNK_WINDOW_RATIO = 0.5
 CHUNK_OVERLAP_RATIO = 0.5
-CHUNK_REQUEST_DELAY_SEC = 1.5
-CHUNK_MAX_RETRIES = 3
-CHUNK_RATE_LIMIT_BACKOFF_BASE_SEC = 4.0
+CHUNK_REQUEST_DELAY_SEC = 2.5
+CHUNK_MAX_RETRIES = 5
+CHUNK_RATE_LIMIT_BACKOFF_BASE_SEC = 5.0
 CHUNK_RATE_LIMIT_BACKOFF_MAX_SEC = 20.0
 
 # Evidence overlap 병합 임계값 (50% 이상 겹치면 병합)
@@ -242,8 +243,14 @@ def _prepare_utterances(state: GeneratePrState) -> list[dict]:
     if utterances:
         normalized: list[dict] = []
         for turn, utt in enumerate(utterances, start=1):
+            original_id = str(utt.get("id", "")).strip()
+            if not original_id:
+                # upstream ID가 없을 때만 제한적으로 fallback 사용
+                original_id = f"utt-{turn}"
+            llm_utt_id = f"utt-{turn}"
             normalized.append({
-                "id": str(utt.get("id")),
+                "id": original_id,
+                "llm_utt_id": llm_utt_id,
                 "speaker_name": str(utt.get("speaker_name", "") or "Unknown"),
                 "text": str(utt.get("text", "") or ""),
                 "start_ms": utt.get("start_ms"),
@@ -258,6 +265,7 @@ def _prepare_utterances(state: GeneratePrState) -> list[dict]:
 
     return [{
         "id": "utt-1",
+        "llm_utt_id": "utt-1",
         "speaker_name": "Unknown",
         "text": transcript,
         "start_ms": None,
@@ -291,8 +299,9 @@ def _format_utterances_for_prompt(utterances: list[dict]) -> str:
     """발화를 프롬프트용 텍스트로 포맷."""
     lines: list[str] = []
     for utt in utterances:
+        llm_utt_id = str(utt.get("llm_utt_id") or utt.get("id") or "")
         lines.append(
-            f"[Turn {utt['turn']}] [Utt {utt['id']}] "
+            f"[Turn {utt['turn']}] [Utt {llm_utt_id}] "
             f"{utt['speaker_name']}: {utt['text']}"
         )
     return "\n".join(lines)
@@ -972,6 +981,7 @@ async def _invoke_chain_with_retry(
                     CHUNK_RATE_LIMIT_BACKOFF_BASE_SEC * (2 ** (attempt - 1)),
                     CHUNK_RATE_LIMIT_BACKOFF_MAX_SEC,
                 )
+                backoff += random.uniform(0.0, 1.5)
                 logger.warning(
                     "Chunk extraction rate-limited: idx=%d attempt=%d/%d backoff=%.1fs",
                     chunk_index,
@@ -981,6 +991,7 @@ async def _invoke_chain_with_retry(
                 )
             else:
                 backoff = float(attempt)
+                backoff += random.uniform(0.0, 0.5)
                 logger.warning(
                     "Chunk extraction retrying: idx=%d attempt=%d/%d backoff=%.1fs error=%s",
                     chunk_index,
@@ -1073,7 +1084,7 @@ async def extract_single(state: GeneratePrState) -> GeneratePrState:
 
     try:
         result = _invoke_chain(transcript_text, topics_text)
-        agendas = _apply_fallback_evidence(result, fallback_span)
+        agendas = _apply_fallback_evidence(result, fallback_span, allow_fallback=False)
         return GeneratePrState(
             generate_pr_agendas=agendas,
             generate_pr_summary=result.summary,

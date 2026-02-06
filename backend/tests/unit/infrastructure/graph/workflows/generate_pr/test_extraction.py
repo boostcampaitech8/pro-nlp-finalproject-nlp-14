@@ -8,7 +8,9 @@ from app.infrastructure.graph.workflows.generate_pr.nodes.extraction import (
     AgendaData,
     DecisionData,
     ExtractionOutput,
+    _format_utterances_for_prompt,
     _format_realtime_topics_for_prompt,
+    _prepare_utterances,
     extract_agendas,
 )
 from app.infrastructure.graph.workflows.generate_pr.state import GeneratePrState
@@ -165,6 +167,32 @@ class TestRealtimeTopicFormatter:
 
     def test_format_realtime_topics_empty(self):
         assert _format_realtime_topics_for_prompt([]) == "(없음)"
+
+
+class TestUtteranceFormatting:
+    """발화 ID 포맷팅 테스트"""
+
+    def test_prepare_utterances_keeps_original_id_and_sets_llm_turn_id(self):
+        state = GeneratePrState(
+            generate_pr_transcript_utterances=[
+                {
+                    "id": "59f18d9a-9a8b-4d76-af01-0ea1ecb1278d",
+                    "speaker_name": "김민준",
+                    "text": "배포 일정을 확정합시다.",
+                    "start_ms": 0,
+                    "end_ms": 1200,
+                }
+            ]
+        )
+
+        utterances = _prepare_utterances(state)
+
+        assert utterances[0]["id"] == "59f18d9a-9a8b-4d76-af01-0ea1ecb1278d"
+        assert utterances[0]["llm_utt_id"] == "utt-1"
+
+        prompt_text = _format_utterances_for_prompt(utterances)
+        assert "[Utt utt-1]" in prompt_text
+        assert "59f18d9a-9a8b-4d76-af01-0ea1ecb1278d" not in prompt_text
 
 
 class TestExtractionModels:
