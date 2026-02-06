@@ -90,6 +90,7 @@ export interface ChatMessage {
   // HITL 전용 필드
   hitlData?: HITLData;
   hitlStatus?: 'pending' | 'confirmed' | 'cancelled';
+  hitlCancelReason?: 'user' | 'auto';
 }
 
 // 에이전트 응답 타입 (text 또는 plan)

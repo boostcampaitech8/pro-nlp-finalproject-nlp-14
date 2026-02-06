@@ -6,9 +6,7 @@ SimpleRouterOutput 형식으로 변환합니다.
 
 import logging
 
-from app.infrastructure.graph.orchestration.nodes.simple_router import (
-    SimpleRouterOutput,
-)
+from app.infrastructure.graph.orchestration.shared.simple_router import SimpleRouterOutput
 
 logger = logging.getLogger(__name__)
 

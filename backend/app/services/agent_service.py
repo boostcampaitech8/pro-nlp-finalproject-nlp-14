@@ -106,7 +106,6 @@ class AgentService:
             "run_id": str(uuid.uuid4()),
             "user_id": user_id,
             "meeting_id": meeting_id,  # Voice 전용
-            "channel": "voice",  # Voice 고정
             "executed_at": datetime.now(timezone.utc),
             "retry_count": 0,
             "planning_context": planning_context,
@@ -195,7 +194,6 @@ class AgentService:
             "run_id": str(uuid.uuid4()),
             "user_id": user_id,
             "meeting_id": meeting_id,  # Voice 전용
-            "channel": "voice",  # Voice 고정
             "executed_at": datetime.now(timezone.utc),
             "retry_count": 0,
             "planning_context": planning_context,
@@ -231,4 +229,3 @@ class AgentService:
                 "error": str(e),
                 "timestamp": datetime.now().isoformat(),
             }
-

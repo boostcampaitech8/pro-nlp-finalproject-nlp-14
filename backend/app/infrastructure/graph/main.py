@@ -10,7 +10,8 @@ from app.infrastructure.graph.integration.langfuse import (
     get_runnable_config,
     is_langfuse_enabled,
 )
-from app.infrastructure.graph.orchestration import get_compiled_app
+from app.infrastructure.graph.orchestration.spotlight import get_spotlight_orchestration_app
+from app.infrastructure.graph.orchestration.voice import get_voice_orchestration_app
 from app.core.config import get_settings
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
 
@@ -69,7 +70,6 @@ async def main():
     # 컴파일된 앱 로드 (checkpointer 선택적 적용)
     use_checkpointer = not args.no_checkpointer
     use_streaming = not args.no_streaming
-    app = await get_compiled_app(with_checkpointer=use_checkpointer)
 
     print("\n" + "=" * 70)
     print("🚀 Orchestration Graph CLI")
@@ -112,7 +112,8 @@ async def main():
                 print("❌ Meeting ID가 필요합니다.")
                 return
         print(f"✅ Meeting ID: {meeting_id}")
-    
+        thread_id = meeting_id
+
     elif mode == "spotlight":
         # Spotlight 모드: user_context 조회
         print("\n⏳ 사용자 컨텍스트 로딩 중...")
@@ -125,6 +126,11 @@ async def main():
             print("⚠️  속한 팀이 없습니다.")
         
         print(f"📅 Current time: {user_context['current_time']}")
+
+    if mode == "voice":
+        app = await get_voice_orchestration_app(with_checkpointer=use_checkpointer)
+    else:
+        app = await get_spotlight_orchestration_app(with_checkpointer=use_checkpointer)
 
     single_query = args.query
 
@@ -153,7 +159,6 @@ async def main():
                 "user_id": user_id,
                 "executed_at": datetime.now(),
                 "retry_count": 0,
-                "interaction_mode": mode,  # 모드 설정
             }
             
             # 모드별 추가 설정

@@ -27,7 +27,6 @@ class SpotlightOrchestrationState(TypedDict):
     Spotlight 모드는 독립적인 회의 관리 및 조회에 특화되어 있으며:
     - user_context를 통해 사용자 및 팀 정보 제공
     - Query + Mutation 도구 모두 사용 (회의 생성/수정 포함)
-    - channel은 항상 "text"
     - HITL(Human-in-the-Loop) 지원 (Mutation 도구 실행 전 사용자 확인)
     - meeting_id는 사용하지 않음 (회의 컨텍스트 무관)
     """
@@ -40,9 +39,6 @@ class SpotlightOrchestrationState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_id: Annotated[str, "user_id"]
     user_context: NotRequired[dict]  # Spotlight 전용: {"teams": [...], "current_time": "..."}
-
-    # 채널 (Spotlight 고정)
-    channel: Literal["text"]  # Spotlight는 항상 "text"
 
     # Simple Query Routing
     is_simple_query: NotRequired[bool]

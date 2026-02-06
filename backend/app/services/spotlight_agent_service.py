@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration.spotlight import get_spotlight_orchestration_app
 from app.infrastructure.graph.spotlight_checkpointer import get_spotlight_checkpointer
-from app.infrastructure.graph.orchestration.state import RESET_TOOL_RESULTS
+from app.infrastructure.graph.orchestration.spotlight.state import RESET_TOOL_RESULTS
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
 from app.core.redis import get_redis
 
@@ -112,94 +113,64 @@ class SpotlightAgentService:
             **state_config,
         }
 
-        # HITL 상태 결정
-        hitl_status = "none"
-        if hitl_action == "confirm":
-            hitl_status = "confirmed"
-        elif hitl_action == "cancel":
-            hitl_status = "cancelled"
-
-        # 이전 상태에서 컨텍스트 및 HITL 관련 필드 가져오기
-        planning_context = ""
-        prev_selected_tool = None
-        prev_tool_args = {}
-        prev_tool_category = None
-        prev_plan = ""
-        prev_retry_count = 0
-        user_context = None
-        prev_hitl_status = None
-        prev_hitl_tool_name = None
-
         app = await self._get_app()
-        try:
-            prev_state = await app.aget_state(state_config)
-            if prev_state and prev_state.values:
-                # 이전 턴의 도구 결과를 컨텍스트에 포함
-                prev_tool_results = prev_state.values.get("tool_results", "")
-                if prev_tool_results:
-                    planning_context = f"[이전 도구 실행 결과]\n{prev_tool_results}"
-                    logger.info(f"이전 도구 결과를 컨텍스트에 포함: {len(prev_tool_results)}자")
 
-                # 이전 상태에서 user_context 가져오기
-                user_context = prev_state.values.get("user_context")
-                prev_hitl_status = prev_state.values.get("hitl_status")
-                prev_hitl_tool_name = prev_state.values.get("hitl_tool_name")
+        # HITL 응답: Command(resume)로 그래프 재개
+        if hitl_action in ("confirm", "cancel"):
+            resume_value = {"action": hitl_action}
+            if hitl_params:
+                resume_value["params"] = hitl_params
+            graph_input = Command(resume=resume_value)
+            logger.info(f"HITL 응답: action={hitl_action}, params={hitl_params}")
+        else:
+            # 일반 메시지: 이전 상태에서 컨텍스트 가져오기
+            planning_context = ""
+            user_context = None
 
-                # 🔧 HITL 응답 시 이전 상태의 도구 관련 필드 복원
-                if hitl_action in ("confirm", "cancel"):
-                    prev_selected_tool = prev_state.values.get("selected_tool")
-                    prev_tool_args = prev_state.values.get("tool_args", {})
-                    prev_tool_category = prev_state.values.get("tool_category")
-                    prev_plan = prev_state.values.get("plan", "")
-                    prev_retry_count = prev_state.values.get("retry_count", 0)
-                    logger.info(
-                        f"HITL 응답 - 이전 상태 복원: tool={prev_selected_tool}, "
-                        f"args={prev_tool_args}, category={prev_tool_category}"
-                    )
-        except Exception as e:
-            logger.warning(f"이전 상태 조회 실패 (첫 턴일 수 있음): {e}")
+            try:
+                prev_state = await app.aget_state(state_config)
+                if prev_state and prev_state.values:
+                    prev_tool_results = prev_state.values.get("tool_results", "")
+                    if prev_tool_results:
+                        planning_context = f"[이전 도구 실행 결과]\n{prev_tool_results}"
+                        logger.info(f"이전 도구 결과를 컨텍스트에 포함: {len(prev_tool_results)}자")
 
-        # user_context가 없으면 조회
-        if user_context is None:
-            user_context = await self._get_user_context(user_id)
-            logger.info(f"사용자 컨텍스트 조회 완료: teams={len(user_context.get('teams', []))}개")
+                    user_context = prev_state.values.get("user_context")
 
-        # 기본 상태 구성
-        initial_state = {
-            "messages": [HumanMessage(content=user_input)] if user_input else [],
-            "run_id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "executed_at": datetime.now(timezone.utc),
-            "retry_count": prev_retry_count,
-            "planning_context": planning_context,
-            "channel": "text",  # Spotlight 고정
-            "hitl_status": hitl_status,
-            "user_context": user_context,
-        }
+                    # 대기 중인 interrupt가 있으면 자동 취소
+                    # NOTE: ainvoke로 cancel resume 시 tools→evaluator→generator 전체 실행됨.
+                    # 추후 최적화 필요 시 aupdate_state로 직접 상태 업데이트 방식 검토.
+                    if prev_state.tasks:
+                        for task in prev_state.tasks:
+                            if hasattr(task, 'interrupts') and task.interrupts:
+                                logger.info(
+                                    "HITL pending 자동 취소: session_id=%s, thread_id=%s",
+                                    session_id, thread_id,
+                                )
+                                await app.ainvoke(
+                                    Command(resume={"action": "cancel", "silent": True}),
+                                    config,
+                                )
+                                break
+            except Exception as e:
+                logger.warning(f"이전 상태 조회 실패 (첫 턴일 수 있음): {e}")
 
-        # 🔧 새 메시지 전송 시 (HITL 응답이 아닌 경우) 이전 HITL 상태 초기화
-        if hitl_action is None:
-            if prev_hitl_status == "pending":
-                logger.info(
-                    "HITL pending 자동 취소: session_id=%s, thread_id=%s, tool=%s",
-                    session_id,
-                    thread_id,
-                    prev_hitl_tool_name,
-                )
-            initial_state.update({
-                "hitl_tool_name": None,
-                "hitl_extracted_params": None,
-                "hitl_params_display": None,
-                "hitl_missing_params": None,
-                "hitl_confirmation_message": None,
-                "hitl_required_fields": None,
-                "hitl_display_template": None,
-                "hitl_request_id": None,
+            if user_context is None:
+                user_context = await self._get_user_context(user_id)
+                logger.info(f"사용자 컨텍스트 조회 완료: teams={len(user_context.get('teams', []))}개")
+
+            graph_input = {
+                "messages": [HumanMessage(content=user_input)] if user_input else [],
+                "run_id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "executed_at": datetime.now(timezone.utc),
+                "retry_count": 0,
+                "planning_context": planning_context,
+                "user_context": user_context,
                 "selected_tool": None,
                 "tool_args": {},
                 "tool_category": None,
                 "plan": "",
-                "skip_planning": False,
                 "need_tools": False,
                 "can_answer": False,
                 "missing_requirements": [],
@@ -207,30 +178,11 @@ class SpotlightAgentService:
                 "evaluation_status": "",
                 "evaluation_reason": "",
                 "next_subquery": None,
-                "retry_count": 0,
                 "tool_results": RESET_TOOL_RESULTS,
-            })
-
-        # 🔧 HITL 응답 시 이전 도구 상태 복원 (planner 건너뛰기)
-        if hitl_action in ("confirm", "cancel") and prev_selected_tool:
-            # 사용자가 입력한 파라미터를 이전 파라미터와 병합
-            merged_tool_args = {**prev_tool_args}
-            if hitl_params:
-                merged_tool_args.update(hitl_params)
-                logger.info(f"HITL 사용자 입력 파라미터 병합: {hitl_params}")
-
-            initial_state.update({
-                "selected_tool": prev_selected_tool,
-                "tool_args": merged_tool_args,
-                "tool_category": prev_tool_category,
-                "plan": prev_plan,
-                "skip_planning": True,  # planner 건너뛰고 바로 tools 노드로
-            })
-            logger.info(f"HITL 응답: skip_planning=True, selected_tool={prev_selected_tool}, args={merged_tool_args}")
+            }
 
         try:
-            app = await self._get_app()
-            async for event in stream_llm_tokens_only(app, initial_state, config):
+            async for event in stream_llm_tokens_only(app, graph_input, config):
                 yield event
 
             logger.info("Spotlight Agent 처리 완료 (thread_id=%s)", thread_id)
@@ -279,32 +231,28 @@ class SpotlightAgentService:
                         "type": "text",
                     })
 
-            # 🔧 HITL pending 상태 확인 및 추가 (유효한 HITL 요청인 경우에만)
-            hitl_status = state.values.get("hitl_status")
-            hitl_tool_name = state.values.get("hitl_tool_name")
-
-            # pending 상태이면서 tool_name이 실제로 존재하는 경우에만 HITL 메시지 추가
-            if hitl_status == "pending" and hitl_tool_name:
-                hitl_params = state.values.get("hitl_extracted_params", {})
-                hitl_message = state.values.get("hitl_confirmation_message", "")
-                hitl_required_fields = state.values.get("hitl_required_fields", [])
-
-                history.append({
-                    "role": "assistant",
-                    "content": hitl_message or "작업을 수행할까요?",
-                    "type": "hitl",
-                    "hitl_status": "pending",
-                    "hitl_data": {
-                        "tool_name": hitl_tool_name,
-                        "params": hitl_params,
-                        "params_display": state.values.get("hitl_params_display", {}),
-                        "message": hitl_message,
-                        "required_fields": hitl_required_fields,
-                        "display_template": state.values.get("hitl_display_template"),
-                        "hitl_request_id": state.values.get("hitl_request_id"),
-                    },
-                })
-                logger.info(f"HITL pending 상태 포함: {hitl_tool_name}")
+            # pending interrupt 확인 (HITL 대기 중인 경우)
+            if state.tasks:
+                for task in state.tasks:
+                    if hasattr(task, 'interrupts') and task.interrupts:
+                        hitl_data = task.interrupts[0].value
+                        history.append({
+                            "role": "assistant",
+                            "content": hitl_data.get("confirmation_message", "작업을 수행할까요?"),
+                            "type": "hitl",
+                            "hitl_status": "pending",
+                            "hitl_data": {
+                                "tool_name": hitl_data.get("tool_name"),
+                                "params": hitl_data.get("params", {}),
+                                "params_display": hitl_data.get("params_display", {}),
+                                "message": hitl_data.get("confirmation_message", ""),
+                                "required_fields": hitl_data.get("required_fields", []),
+                                "display_template": hitl_data.get("display_template"),
+                                "hitl_request_id": hitl_data.get("hitl_request_id"),
+                            },
+                        })
+                        logger.info(f"HITL pending interrupt 포함: {hitl_data.get('tool_name')}")
+                        break
 
             # 🔧 Draft (스트리밍 중간 응답) 복원
             user_id = state.values.get("user_id")

@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 from openai import RateLimitError
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 async def stream_llm_tokens_only(
     graph: CompiledStateGraph,
-    state: dict[str, Any],
+    graph_input: dict[str, Any] | Command,
     config: dict[str, Any],
 ) -> AsyncGenerator[dict[str, Any], None]:
     """오케스트레이션 스트리밍: Planner → Tools → Generator
@@ -29,7 +30,7 @@ async def stream_llm_tokens_only(
 
     Args:
         graph: 컴파일된 LangGraph
-        state: 그래프 초기 상태
+        graph_input: 그래프 초기 상태 (dict) 또는 HITL 재개 명령 (Command)
         config: 그래프 설정
 
     Yields:
@@ -37,22 +38,20 @@ async def stream_llm_tokens_only(
     """
     logger.info("Starting comprehensive event streaming")
 
-    # state에서 user_input 추출
+    # graph_input에서 user_input 추출 (Command인 경우 skip)
     user_input = None
-    if "messages" in state and len(state["messages"]) > 0:
-        first_message = state["messages"][0]
+    if isinstance(graph_input, dict) and "messages" in graph_input and len(graph_input["messages"]) > 0:
+        first_message = graph_input["messages"][0]
         if hasattr(first_message, "content"):
             user_input = first_message.content
             logger.info(f"[STREAM] user_input extracted: '{user_input[:50] if user_input else ''}...'")
-    else:
-        logger.warning("[STREAM] No user_input found in state")
 
     # 노드별 역할 정의
     ORCHESTRATION_NODES = {
         "planner": "planner",
         "mit_tools_analyze": "tools_analyze",
         "mit_tools_search": "tools_search",
-        "tools": "tools",  # 새 Tool 시스템 (HITL 지원)
+        "tools": "tools",
         "evaluator": "evaluator",
         "generator": "generator",
     }
@@ -65,7 +64,7 @@ async def stream_llm_tokens_only(
     mit_search_primary_entity = None  # mit_tools_analyze에서 추출
 
     try:
-        async for event in graph.astream_events(state, config, version="v2"):
+        async for event in graph.astream_events(graph_input, config, version="v2"):
             event_type = event.get("event")
             event_name = event.get("name")
 
@@ -235,31 +234,35 @@ async def stream_llm_tokens_only(
                 elif event_name == "generator":
                     logger.info(f"Generator completed: {token_count['generator']} tokens")
 
-                # === HITL 확인 요청 감지 ===
-                elif event_name == "tools":
-                    output = event.get("data", {}).get("output", {})
-                    if output.get("hitl_status") == "pending":
-                        logger.info("[HITL] Confirmation requested")
-                        yield {
-                            "type": "hitl_request",
-                            "tool_name": output.get("hitl_tool_name"),
-                            "params": output.get("hitl_extracted_params", {}),
-                            "params_display": output.get("hitl_params_display", {}),
-                            "message": output.get("hitl_confirmation_message", ""),
-                            "required_fields": output.get("hitl_required_fields", []),
-                            "display_template": output.get("hitl_display_template"),  # 자연어 템플릿
-                            "hitl_request_id": output.get("hitl_request_id"),
-                            "tag": "hitl",
-                            "timestamp": datetime.now().isoformat(),
-                        }
-                        # HITL pending이면 스트림 즉시 종료 (사용자 확인 대기)
-                        return
-
-        # 완료 신호
+        # 스트림 완료 후 pending interrupt 확인 (HITL)
         logger.info(
             f"Event streaming completed: "
             f"planner={token_count['planner']}, generator={token_count['generator']} tokens"
         )
+
+        try:
+            state_snapshot = await graph.aget_state(config)
+            if state_snapshot and state_snapshot.tasks:
+                for task in state_snapshot.tasks:
+                    if hasattr(task, 'interrupts') and task.interrupts:
+                        interrupt_value = task.interrupts[0].value
+                        logger.info("[HITL] Interrupt detected after stream")
+                        yield {
+                            "type": "hitl_request",
+                            "tool_name": interrupt_value.get("tool_name"),
+                            "params": interrupt_value.get("params", {}),
+                            "params_display": interrupt_value.get("params_display", {}),
+                            "message": interrupt_value.get("confirmation_message", ""),
+                            "required_fields": interrupt_value.get("required_fields", []),
+                            "display_template": interrupt_value.get("display_template"),
+                            "hitl_request_id": interrupt_value.get("hitl_request_id"),
+                            "tag": "hitl",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                        return
+        except Exception as e:
+            logger.warning(f"Interrupt state check failed: {e}")
+
         yield {
             "type": "done",
             "tag": "internal",

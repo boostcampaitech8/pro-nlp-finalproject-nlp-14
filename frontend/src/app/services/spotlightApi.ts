@@ -95,7 +95,12 @@ class SSEParser {
         if (line.startsWith('event: ')) {
           event.type = line.slice(7).trim() as SSEEvent['type'];
         } else if (line.startsWith('data: ')) {
-          event.data = line.slice(6);
+          // SSE spec: 여러 data: 필드는 줄바꿈으로 연결
+          if (event.data !== undefined) {
+            event.data += '\n' + line.slice(6);
+          } else {
+            event.data = line.slice(6);
+          }
         }
       }
 

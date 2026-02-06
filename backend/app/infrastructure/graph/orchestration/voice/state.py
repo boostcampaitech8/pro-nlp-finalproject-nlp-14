@@ -27,7 +27,6 @@ class VoiceOrchestrationState(TypedDict):
     Voice 모드는 회의 중 실시간 질의응답에 특화되어 있으며:
     - meeting_id를 통해 회의 컨텍스트 유지
     - Query 도구만 사용 (MIT Search, 회의/팀 조회)
-    - channel은 항상 "voice"
     - HITL(Human-in-the-Loop)는 지원하지 않음
     - user_context는 사용하지 않음 (meeting_id로 컨텍스트 파악)
     """
@@ -40,9 +39,6 @@ class VoiceOrchestrationState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_id: Annotated[str, "user_id"]
     meeting_id: Annotated[str, "meeting_id"]  # Voice 전용: 현재 진행 중인 회의 ID
-    
-    # 채널 (Voice 고정)
-    channel: Literal["voice"]  # Voice는 항상 "voice"
     
     # Simple Query Routing
     is_simple_query: NotRequired[bool]
@@ -78,4 +74,3 @@ class VoiceOrchestrationState(TypedDict):
     planning_context: NotRequired[str]
     additional_context: NotRequired[str]
     skip_planning: NotRequired[bool]
-

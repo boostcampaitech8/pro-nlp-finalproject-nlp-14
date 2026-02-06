@@ -38,8 +38,8 @@ from app.infrastructure.context import (
     Utterance,
 )
 from app.infrastructure.graph.checkpointer import get_checkpointer
-from app.infrastructure.graph.orchestration import get_compiled_app
-from app.infrastructure.graph.orchestration.nodes.planning import create_plan
+from app.infrastructure.graph.orchestration.voice import get_voice_orchestration_app
+from app.infrastructure.graph.orchestration.voice.nodes.planning import create_plan
 
 
 def print_header(title: str) -> None:
@@ -275,7 +275,7 @@ async def run_option7() -> None:
             return
 
         thread_config = {"configurable": {"thread_id": meeting_id}}
-        compiled_app = await get_compiled_app(with_checkpointer=True)
+        compiled_app = await get_voice_orchestration_app(with_checkpointer=True)
 
         speaker_ids: dict[str, str] = {}
         agent_call_count = 0
@@ -316,6 +316,7 @@ async def run_option7() -> None:
                 "messages": [HumanMessage(content=user_query)],
                 "run_id": str(uuid.uuid4()),
                 "user_id": "test_user",
+                "meeting_id": meeting_id,
                 "executed_at": datetime.now(timezone.utc),
                 "retry_count": 0,
                 "planning_context": planning_context,
@@ -342,7 +343,6 @@ async def run_option7() -> None:
                 **state,
                 **orchestration_payload,
                 "additional_context": additional_context,
-                "skip_planning": True,
             }
 
             try:
