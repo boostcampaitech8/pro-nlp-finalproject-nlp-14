@@ -6,12 +6,15 @@ These require HITL confirmation in Spotlight mode.
 
 import logging
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from app.core.database import async_session_maker
 from app.models.team import Team
 from app.schemas.meeting import CreateMeetingRequest, UpdateMeetingRequest
 from app.services.meeting_service import MeetingService
+
+from langchain_core.tools import InjectedToolArg
 
 from ..decorators import mit_tool
 
@@ -48,7 +51,7 @@ async def create_meeting(
     scheduled_at: str,
     description: str | None = None,
     *,
-    _user_id: str = "",  # Injected by tools.py
+    _user_id: Annotated[str, InjectedToolArg] = "",  # Injected by tools.py
 ) -> dict:
     """새로운 회의를 생성합니다"""
     logger.info(f"Executing create_meeting for user {_user_id}")
@@ -126,7 +129,7 @@ async def update_meeting(
     description: str | None = None,
     status: str | None = None,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """기존 회의의 정보를 수정합니다"""
     logger.info(f"Executing update_meeting for user {_user_id}")
@@ -185,7 +188,7 @@ async def update_meeting(
 async def delete_meeting(
     meeting_id: str,
     *,
-    _user_id: str = "",
+    _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """회의를 삭제합니다"""
     logger.info(f"Executing delete_meeting for user {_user_id}")

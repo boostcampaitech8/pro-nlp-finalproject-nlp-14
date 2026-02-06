@@ -25,7 +25,7 @@ EVALUATION_NODE_PROMPT = (
     "중요: 다른 텍스트 없이 오직 JSON만 출력하세요!\n\n"
     "{format_instructions}\n\n"
     "예시 1 (조회 완료):\n"
-    '{"evaluation": "검색 결과 충분", "status": "success", "reason": "사용자가 조회를 요청했고 결과 획득"}\n\n'
+    '{{"evaluation": "검색 결과 충분", "status": "success", "reason": "사용자가 조회를 요청했고 결과 획득"}}\n\n'
     "예시 2 (다음 단계 필요):\n"
-    '{"evaluation": "회의 생성 필요", "status": "replanning", "reason": "팀 조회는 완료했으나 회의 생성이 아직 필요함"}'
+    '{{"evaluation": "회의 생성 필요", "status": "replanning", "reason": "팀 조회는 완료했으나 회의 생성이 아직 필요함"}}'
 )
