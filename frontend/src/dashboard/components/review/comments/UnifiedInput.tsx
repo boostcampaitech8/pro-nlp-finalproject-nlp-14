@@ -351,7 +351,15 @@ export function UnifiedInput({
                     : 'text-white/80 hover:bg-white/10'
                 }`}
               >
-                <Bot className="w-4 h-4 text-purple-400" />
+                {agent.avatarUrl ? (
+                  <img
+                    src={agent.avatarUrl}
+                    alt={`${agent.displayName} 프로필`}
+                    className="w-4 h-4 rounded-full object-cover border border-purple-500/30"
+                  />
+                ) : (
+                  <Bot className="w-4 h-4 text-purple-400" />
+                )}
                 <div>
                   <div className="font-medium">{agent.displayName}</div>
                   <div className="text-xs text-white/50">{agent.description}</div>

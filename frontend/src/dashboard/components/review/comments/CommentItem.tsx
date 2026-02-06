@@ -12,7 +12,8 @@ import { Reply, Trash2, Bot, Loader2, User, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Comment } from '@/types';
-import { isAIAgent, isAIAgentByName } from '@/constants';
+import { getAIAgentById, isAIAgent } from '@/constants';
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui';
 import { UnifiedInput } from './UnifiedInput';
 
 interface CommentItemProps {
@@ -43,7 +44,9 @@ export function CommentItem({
   const previousContentRef = useRef<string>('');
 
   const isAuthor = currentUserId === comment.author.id;
-  const isAI = isAIAgent(comment.author.id) || isAIAgentByName(comment.author.name);
+  const isAI = isAIAgent(comment.author.id);
+  const agentProfile = isAI ? getAIAgentById(comment.author.id) : undefined;
+  const agentAvatarUrl = agentProfile?.avatarUrl;
   const maxDepth = 3;
   const canReply = depth < maxDepth;
 
@@ -150,23 +153,24 @@ export function CommentItem({
       >
         {/* 헤더 */}
         <div className="flex items-center gap-2 mb-2">
-          <div
-            className={`w-7 h-7 rounded-full flex items-center justify-center ${
-              comment.isErrorResponse
-                ? 'bg-red-500/20'
-                : isAI
-                  ? 'bg-purple-500/20'
-                  : 'bg-blue-500/20'
-            }`}
-          >
-            {comment.isErrorResponse ? (
+          {comment.isErrorResponse ? (
+            <div className="w-7 h-7 rounded-full flex items-center justify-center bg-red-500/20">
               <AlertCircle className="w-4 h-4 text-red-400" />
-            ) : isAI ? (
-              <Bot className="w-4 h-4 text-purple-400" />
-            ) : (
+            </div>
+          ) : isAI ? (
+            <Avatar className="h-7 w-7 border border-purple-500/30 bg-purple-500/10">
+              {agentAvatarUrl ? (
+                <AvatarImage src={agentAvatarUrl} alt={`${comment.author.name} 프로필`} />
+              ) : null}
+              <AvatarFallback className="bg-purple-500/20 text-purple-300">
+                <Bot className="w-4 h-4" />
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            <div className="w-7 h-7 rounded-full flex items-center justify-center bg-blue-500/20">
               <User className="w-4 h-4 text-blue-400" />
-            )}
-          </div>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <span
               className={`font-medium text-sm ${

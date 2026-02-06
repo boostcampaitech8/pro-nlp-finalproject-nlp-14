@@ -3,6 +3,7 @@
  */
 
 import type { RoomParticipant } from '@/types/webrtc';
+import { DEFAULT_AI_AGENT } from '@/constants';
 import type { AudioLevel } from '@/hooks/useAudioLevel';
 import { VolumeSlider } from './VolumeSlider';
 
@@ -69,6 +70,12 @@ export function ParticipantList({
           const isCurrentUser = participant.userId === currentUserId;
           const isMuted = isCurrentUser ? localMuteState : participant.audioMuted;
           const isSpeaking = audioLevel > 0 && !isMuted;
+          const agentAvatarUrl = participant.userId.startsWith('mit-agent-')
+            ? DEFAULT_AI_AGENT.avatarUrl
+            : undefined;
+          const isAgent = Boolean(agentAvatarUrl);
+          const avatarInitial =
+            participant.userName?.trim().charAt(0).toUpperCase() || '?';
 
           return (
             <li
@@ -81,11 +88,19 @@ export function ParticipantList({
                 <div className="flex items-center gap-2">
                   {/* 아바타 - 발화 시 테두리 효과 */}
                   <div
-                    className={`w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium transition-all flex-shrink-0 ${
-                      isSpeaking ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-gray-700' : ''
-                    }`}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium transition-all flex-shrink-0 overflow-hidden ${
+                      isAgent ? 'bg-purple-500/20 border border-purple-500/40' : 'bg-blue-500'
+                    } ${isSpeaking ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-gray-700' : ''}`}
                   >
-                    {participant.userName.charAt(0).toUpperCase()}
+                    {isAgent && agentAvatarUrl ? (
+                      <img
+                        src={agentAvatarUrl}
+                        alt={`${participant.userName} 프로필`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      avatarInitial
+                    )}
                   </div>
                   {/* 이름 */}
                   <span className="text-white text-sm truncate max-w-24">

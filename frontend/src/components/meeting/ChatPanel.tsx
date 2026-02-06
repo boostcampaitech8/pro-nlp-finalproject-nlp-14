@@ -4,6 +4,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ChatMessage } from '@/types/chat';
+import { DEFAULT_AI_AGENT } from '@/constants';
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 
 interface ChatPanelProps {
@@ -114,6 +115,10 @@ export function ChatPanel({
           messages.map((message, index) => {
             const isOwn = currentUserId === message.userId;
             const isContinuous = isContinuousMessage(index);
+            const agentAvatarUrl = message.userId.startsWith('mit-agent-')
+              ? DEFAULT_AI_AGENT.avatarUrl
+              : undefined;
+            const showAgentAvatar = !isOwn && !isContinuous && Boolean(agentAvatarUrl);
             return (
               <div
                 key={message.id}
@@ -121,6 +126,13 @@ export function ChatPanel({
               >
                 {!isContinuous && (
                   <div className="flex items-center gap-2 mb-1">
+                    {showAgentAvatar && agentAvatarUrl && (
+                      <img
+                        src={agentAvatarUrl}
+                        alt={`${message.userName} 프로필`}
+                        className="w-5 h-5 rounded-full object-cover border border-purple-500/30"
+                      />
+                    )}
                     <span className="text-xs text-gray-400">{message.userName}</span>
                     <span className="text-xs text-gray-500">{formatTime(message.createdAt)}</span>
                   </div>
