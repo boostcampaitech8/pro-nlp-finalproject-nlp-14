@@ -178,6 +178,14 @@ class AgentService:
             ctx_manager, user_query=user_input
         )
 
+        # Semantic Search 기반 추가 컨텍스트 구성 (비동기 배치 임베딩)
+        additional_context = await builder.build_additional_context_with_search_async(
+            ctx_manager,
+            user_input,
+            top_k=ctx_manager.config.topic_search_top_k,
+            threshold=ctx_manager.config.topic_search_threshold,
+        )
+
         # 4. Orchestration Graph 초기 상태 구성
         initial_state = {
             "messages": [HumanMessage(content=user_input)],
@@ -186,6 +194,7 @@ class AgentService:
             "executed_at": datetime.now(timezone.utc),
             "retry_count": 0,
             "planning_context": planning_context,
+            "additional_context": additional_context,
         }
 
         # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱

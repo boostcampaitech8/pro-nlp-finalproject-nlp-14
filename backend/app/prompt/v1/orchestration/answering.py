@@ -86,10 +86,10 @@ ANSWER_WITHOUT_TOOLS_SYSTEM_PROMPT = """\
 
 {channel_rules}
 
-[현재 회의 컨텍스트 - 최근 발화 및 토픽 (L0/L1)]
+[현재 회의 컨텍스트 - 최근 발화 및 토픽]
 {meeting_context}
 
-[추가 컨텍스트 - 관련 토픽 상세 (L1)]
+[추가 컨텍스트 - 관련 토픽 상세]
 {additional_context}
 
 [이전 에이전트 대화]
