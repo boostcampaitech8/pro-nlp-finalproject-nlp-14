@@ -13,7 +13,7 @@ from langgraph.types import Command
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.orchestration.spotlight import get_spotlight_orchestration_app
 from app.infrastructure.graph.spotlight_checkpointer import get_spotlight_checkpointer
-from app.infrastructure.graph.orchestration.state import RESET_TOOL_RESULTS
+from app.infrastructure.graph.orchestration.spotlight.state import RESET_TOOL_RESULTS
 from app.infrastructure.streaming.event_stream_manager import stream_llm_tokens_only
 from app.core.redis import get_redis
 
@@ -125,7 +125,6 @@ class SpotlightAgentService:
         else:
             # 일반 메시지: 이전 상태에서 컨텍스트 가져오기
             planning_context = ""
-            prev_retry_count = 0
             user_context = None
 
             try:
@@ -165,14 +164,13 @@ class SpotlightAgentService:
                 "run_id": str(uuid.uuid4()),
                 "user_id": user_id,
                 "executed_at": datetime.now(timezone.utc),
-                "retry_count": prev_retry_count,
+                "retry_count": 0,
                 "planning_context": planning_context,
-                "interaction_mode": "spotlight",
+                "channel": "text",
                 "user_context": user_context,
                 "selected_tool": None,
                 "tool_args": {},
                 "tool_category": None,
-                "auto_cancelled": False,
                 "plan": "",
                 "need_tools": False,
                 "can_answer": False,
@@ -181,7 +179,6 @@ class SpotlightAgentService:
                 "evaluation_status": "",
                 "evaluation_reason": "",
                 "next_subquery": None,
-                "retry_count": 0,
                 "tool_results": RESET_TOOL_RESULTS,
             }
 

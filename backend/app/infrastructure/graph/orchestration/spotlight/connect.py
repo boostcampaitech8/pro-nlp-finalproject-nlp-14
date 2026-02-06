@@ -35,32 +35,18 @@ def route_after_simple_check(state: SpotlightOrchestrationState) -> str:
 
 # Planning -> 도구 필요 여부에 따라 라우팅
 def route_by_tool_need(state: SpotlightOrchestrationState) -> str:
-    """도구 필요 여부 및 HITL 상태에 따라 라우팅
+    """도구 필요 여부에 따라 라우팅
     Returns:
         str: 다음 노드 이름
             - "tools": selected_tool이 있는 경우 (새 Tool 시스템)
             - "mit_tools_analyze": need_tools=True인 경우 (MIT 검색 분석/검색 경로)
             - "generator": 그 외 경우 (직접 응답 생성)
     """
-    # HITL 확인 대기 중이면 END (SSE로 클라이언트에 알림)
-    if state.get("hitl_status") == "pending":
-        return END
-
     # 새 Tool 시스템: selected_tool이 있으면 tools 노드로
     if state.get("selected_tool"): 
         return "tools"
 
     return "mit_tools_analyze" if state.get("need_tools", False) else "generator"
-
-def route_after_tools(state: SpotlightOrchestrationState) -> str:
-    """Tool 실행 후 라우팅
-
-    HITL pending 상태면 END로 가서 사용자 확인 대기,
-    그 외에는 evaluator로 이동.
-    """
-    if state.get("hitl_status") == "pending":
-        return END
-    return "evaluator"
 
 
 
@@ -82,8 +68,8 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
         StateGraph: 컴파일 전 워크플로우 그래프
 
     Workflow:
-        planner -> [tools | mit_tools_analyze | generator | END]
-        tools -> [evaluator | END (HITL pending)]
+        planner -> [tools | mit_tools_analyze | generator]
+        tools -> evaluator (interrupt()가 HITL 중단 처리)
         mit_tools_analyze -> mit_tools_search -> evaluator
         evaluator -> [mit_tools_analyze | planner | generator]
         generator -> END
@@ -109,7 +95,7 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
         {"generator": "generator", "planner": "planner"},
     )
 
-    # Planning -> 도구 필요 여부 및 HITL 상태에 따라 라우팅
+    # Planning -> 도구 필요 여부에 따라 라우팅
     workflow.add_conditional_edges(
         "planner",
         route_by_tool_need,
@@ -117,20 +103,11 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
             "tools": "tools",
             "mit_tools_analyze": "mit_tools_analyze",
             "generator": "generator",
-            END: END,  # HITL pending 상태
         },
     )
     
-    # Tools -> HITL 상태에 따라 라우팅
-    workflow.add_conditional_edges(
-        "tools",
-        route_after_tools,
-        {
-            "evaluator": "evaluator",
-            END: END,  # HITL pending 상태 (사용자 확인 대기)
-        },
-
-    )
+    # Tools -> Evaluator (interrupt()가 HITL 중단을 자동 처리)
+    workflow.add_edge("tools", "evaluator")
 
     # MIT-Tools Analyze -> MIT-Tools Search (항상)
     workflow.add_edge("mit_tools_analyze", "mit_tools_search")
