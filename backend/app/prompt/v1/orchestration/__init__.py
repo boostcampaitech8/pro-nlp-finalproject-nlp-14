@@ -8,12 +8,10 @@
 
 from . import planning
 from . import answering
-from . import simple_answering
 from . import evaluation_node
 
 __all__ = [
 	"planning",
 	"answering",
-	"simple_answering",
 	"evaluation_node",
 ]

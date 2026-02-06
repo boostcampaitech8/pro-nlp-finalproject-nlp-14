@@ -16,12 +16,6 @@ from app.prompt.v1.orchestration.answering import (
     build_user_prompt_with_tools,
     build_user_prompt_without_tools,
 )
-from app.prompt.v1.orchestration.simple_answering import (
-    SIMPLE_QUERY_DEFAULT_SYSTEM_PROMPT,
-    SIMPLE_QUERY_DEFAULT_USER_PROMPT,
-    SIMPLE_QUERY_SUGGESTED_SYSTEM_PROMPT,
-    SIMPLE_QUERY_SUGGESTED_USER_PROMPT
-)
 
 logger = logging.getLogger("AgentLogger")
 logger.setLevel(logging.INFO)
@@ -56,46 +50,6 @@ async def generate_answer(state: OrchestrationState):
         side-effects: LLM API 호출, stdout 출력 (스트리밍)
     """
     logger.info("최종 응답 생성 단계 진입")
-
-    # 간단한 쿼리는 simple_router_output을 보고 응답 생성
-    if state.get("is_simple_query", False):
-        simple_router_output = state.get("simple_router_output", {})
-        category = simple_router_output.get("category", "other")
-        simple_response = simple_router_output.get("simple_response")
-
-        messages = state.get('messages', [])
-        query = messages[-1].content if messages else ""
-
-        logger.info(f"간단한 쿼리 응답 생성: category={category}, query={query[:50]}...")
-
-        # 카테고리별 프롬프트 설정
-        if simple_response:
-            # simple_router에서 제안한 응답이 있으면 참고
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", SIMPLE_QUERY_SUGGESTED_SYSTEM_PROMPT),
-                ("human", SIMPLE_QUERY_SUGGESTED_USER_PROMPT),
-            ])
-            input_data = {"query": query, "suggested_response": simple_response}
-        else:
-            # 제안 응답이 없으면 카테고리 기반 응답
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", SIMPLE_QUERY_DEFAULT_SYSTEM_PROMPT),
-                ("human", SIMPLE_QUERY_DEFAULT_USER_PROMPT),
-            ])
-            input_data = {"query": query}
-
-        chain = prompt | get_answer_generator_llm()
-
-        # 스트리밍으로 응답 생성
-        response_chunks = []
-        async for chunk in chain.astream(input_data):
-            chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
-            response_chunks.append(chunk_text)
-
-        final_response = "".join(response_chunks)
-        logger.info(f"간단한 쿼리 응답 생성 완료 (길이: {len(final_response)}자)")
-
-        return {"response": final_response}
 
     messages = state.get('messages', [])
     logger.info(f"[DEBUG] messages 개수: {len(messages)}")
