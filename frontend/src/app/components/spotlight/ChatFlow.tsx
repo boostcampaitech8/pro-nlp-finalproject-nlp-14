@@ -20,7 +20,7 @@ export function ChatFlow() {
   }, [chatMessages, isStreaming, statusMessage]);
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-6">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide px-8 py-6">
       <div className="max-w-3xl mx-auto space-y-4">
         {chatMessages.map((msg, index) => {
           // 마지막 에이전트 메시지이면서 스트리밍 중인 경우

@@ -10,6 +10,7 @@ import {
   CommandSuggestions,
   CommandHistory,
   ChatFlow,
+  PendingMessageQueue,
 } from '@/app/components/spotlight';
 import { ScrollArea } from '@/app/components/ui';
 
@@ -97,13 +98,14 @@ export function MainPage() {
         {/* 중앙: 채팅 흐름 */}
         <ChatFlow />
 
-        {/* 하단: 입력창 */}
+        {/* 하단: 대기 메시지 + 입력창 */}
         <motion.section
           className="px-8 py-4"
           layout
           transition={layoutTransition}
         >
           <div className="max-w-3xl mx-auto">
+            <PendingMessageQueue />
             <SpotlightInput />
           </div>
         </motion.section>

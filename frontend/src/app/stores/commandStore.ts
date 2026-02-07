@@ -1,7 +1,7 @@
 // 명령 상태 관리 스토어
 import { create } from 'zustand';
 import { HISTORY_LIMIT, MAX_SPOTLIGHT_SESSIONS } from '@/app/constants';
-import type { ActiveCommand, ChatMessage, HistoryItem, Suggestion } from '@/app/types/command';
+import type { ActiveCommand, ChatMessage, HistoryItem, PendingMessage, Suggestion } from '@/app/types/command';
 import { spotlightApi, SpotlightSession } from '@/app/services/spotlightApi';
 
 interface CommandState {
@@ -66,13 +66,34 @@ interface CommandState {
   createNewSession: () => Promise<SpotlightSession | null>;
   updateSessionTitle: (id: string, title: string) => Promise<void>;
 
+  // 대기 메시지 (큐에 쌓인 유저 메시지)
+  pendingMessages: PendingMessage[];
+  addPendingMessage: (text: string) => string | null;
+  removePendingMessage: (id: string) => void;
+  clearPendingMessages: () => void;
+  promotePendingMessage: () => void;
+
   // 새 응답이 있는 세션 표시
   sessionsWithNewResponse: Set<string>;
   markSessionNewResponse: (sessionId: string) => void;
   clearSessionNewResponse: (sessionId: string) => void;
 }
 
-export const useCommandStore = create<CommandState>((set) => ({
+type SessionScopedUiState = Pick<
+  CommandState,
+  'chatMessages' | 'pendingMessages' | 'currentAbortController' | 'isStreaming' | 'statusMessage'
+>;
+
+const getSessionScopedUiReset = (): SessionScopedUiState => ({
+  // pending/chat/stream state is session-local transient UI state
+  chatMessages: [],
+  pendingMessages: [],
+  currentAbortController: null,
+  isStreaming: false,
+  statusMessage: null,
+});
+
+export const useCommandStore = create<CommandState>((set, get) => ({
   // 초기 상태
   inputValue: '',
   isInputFocused: false,
@@ -95,6 +116,9 @@ export const useCommandStore = create<CommandState>((set) => ({
 
   // SSE 스트림 관리 초기 상태
   currentAbortController: null,
+
+  // 대기 메시지 초기 상태
+  pendingMessages: [],
 
   // 새 응답이 있는 세션 초기 상태
   sessionsWithNewResponse: new Set<string>(),
@@ -132,10 +156,10 @@ export const useCommandStore = create<CommandState>((set) => ({
   setSuggestions: (suggestions) => set({ suggestions }),
 
   // 채팅 모드 Actions
-  enterChatMode: () => set({ isChatMode: true, chatMessages: [] }),
+  enterChatMode: () => set({ isChatMode: true, chatMessages: [], pendingMessages: [] }),
 
   exitChatMode: () =>
-    set({ isChatMode: false, chatMessages: [], isStreaming: false, currentSessionId: null }),
+    set({ isChatMode: false, chatMessages: [], pendingMessages: [], isStreaming: false, currentSessionId: null }),
 
   addChatMessage: (msg) =>
     set((state) => ({ chatMessages: [...state.chatMessages, msg] })),
@@ -200,10 +224,7 @@ export const useCommandStore = create<CommandState>((set) => ({
       if (id) newSet.delete(id);
       return {
         currentSessionId: id,
-        chatMessages: [],
-        currentAbortController: null,
-        isStreaming: false,
-        statusMessage: null,
+        ...getSessionScopedUiReset(),
         sessionsWithNewResponse: newSet,
       };
     });
@@ -346,7 +367,7 @@ export const useCommandStore = create<CommandState>((set) => ({
       set((state) => ({
         sessions: [session, ...state.sessions],
         currentSessionId: session.id,
-        chatMessages: [],
+        ...getSessionScopedUiReset(),
         isChatMode: true,
       }));
       return session;
@@ -369,6 +390,38 @@ export const useCommandStore = create<CommandState>((set) => ({
     }
   },
 
+  // 대기 메시지 Actions
+  addPendingMessage: (text) => {
+    const existing = get().pendingMessages;
+    if (existing.length > 0) return null;
+    const id = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    set({ pendingMessages: [...existing, { id, text }] });
+    return id;
+  },
+
+  removePendingMessage: (id) =>
+    set((state) => ({
+      pendingMessages: state.pendingMessages.filter((msg) => msg.id !== id),
+    })),
+
+  clearPendingMessages: () => set({ pendingMessages: [] }),
+
+  promotePendingMessage: () =>
+    set((state) => {
+      if (state.pendingMessages.length === 0) return state;
+      const [pending, ...rest] = state.pendingMessages;
+      const userMsg: ChatMessage = {
+        id: `chat-${Date.now()}-user`,
+        role: 'user',
+        type: 'text',
+        content: pending.text,
+        timestamp: new Date(),
+      };
+      return {
+        pendingMessages: rest,
+        chatMessages: [...state.chatMessages, userMsg],
+      };
+    }),
   // 새 응답 표시 Actions
   markSessionNewResponse: (sessionId) =>
     set((state) => ({

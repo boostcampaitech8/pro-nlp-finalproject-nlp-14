@@ -93,6 +93,12 @@ export interface ChatMessage {
   hitlCancelReason?: 'user' | 'auto';
 }
 
+// 대기 메시지 타입
+export type PendingMessage = {
+  id: string;
+  text: string;
+};
+
 // 에이전트 응답 타입 (text 또는 plan)
 export interface AgentResponse {
   type: 'text' | 'plan';
