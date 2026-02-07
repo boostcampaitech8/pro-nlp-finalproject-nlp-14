@@ -136,9 +136,10 @@ async def generate_pr_task(
                     "generate_pr_realtime_topics": realtime_topics or [],
                 },
                 config=get_runnable_config(
-                    trace_name="generate_pr",
-                    metadata={"meeting_id": meeting_id},
+                    trace_name="PR Generation",
+                    metadata={"meeting_id": meeting_id, "workflow_version": "2.0"},
                     mode="voice",
+                    tags=["workflow", "generate_pr"],
                 ),
             )
 
@@ -207,9 +208,10 @@ async def mit_action_task(ctx: dict, decision_id: str) -> dict:
                 "mit_action_meeting_id": "",  # Decision에서 meeting_id 필요시 별도 조회
             },
             config=get_runnable_config(
-                trace_name=f"mit_action:{decision_id}",
-                metadata={"decision_id": decision_id},
+                trace_name="MIT Action",
+                metadata={"decision_id": decision_id, "workflow_version": "2.0"},
                 mode="voice",
+                tags=["workflow", "mit_action"],
             ),
         )
 
@@ -321,9 +323,10 @@ async def process_suggestion_task(
                 "mit_suggestion_utterances": utterances_data if utterances_data else None,
             },
             config=get_runnable_config(
-                trace_name=f"mit_suggestion:{suggestion_id}",
-                metadata={"suggestion_id": suggestion_id, "decision_id": decision_id},
+                trace_name="MIT Suggestion",
+                metadata={"suggestion_id": suggestion_id, "decision_id": decision_id, "workflow_version": "2.0"},
                 mode="voice",
+                tags=["workflow", "suggestion"],
             ),
         )
 
@@ -443,16 +446,29 @@ async def process_mit_mention(
             mit_mention_graph,
         )
 
-        result = await mit_mention_graph.ainvoke({
-            "mit_mention_comment_id": comment_id,
-            "mit_mention_content": content,
-            "mit_mention_decision_id": decision_id,
-            "mit_mention_decision_content": decision.content,
-            "mit_mention_decision_context": decision.context,
-            "mit_mention_thread_history": thread_history,
-            "mit_mention_meeting_id": decision.meeting_id,  # Meeting ID 추가
-            "mit_mention_retry_count": 0,
-        })
+        result = await mit_mention_graph.ainvoke(
+            {
+                "mit_mention_comment_id": comment_id,
+                "mit_mention_content": content,
+                "mit_mention_decision_id": decision_id,
+                "mit_mention_decision_content": decision.content,
+                "mit_mention_decision_context": decision.context,
+                "mit_mention_thread_history": thread_history,
+                "mit_mention_meeting_id": decision.meeting_id,  # Meeting ID 추가
+                "mit_mention_retry_count": 0,
+            },
+            config=get_runnable_config(
+                trace_name="MIT Mention",
+                session_id=decision_id,  # Group by decision for related comments
+                mode="voice",
+                tags=["workflow", "mit_mention"],
+                metadata={
+                    "comment_id": comment_id,
+                    "decision_id": decision_id,
+                    "workflow_version": "2.0",
+                },
+            ),
+        )
 
         # 3. AI 응답으로 대댓글 생성
         ai_response = result.get("mit_mention_response", "")
