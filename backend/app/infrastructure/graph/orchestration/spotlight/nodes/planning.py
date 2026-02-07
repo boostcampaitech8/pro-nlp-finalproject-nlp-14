@@ -151,14 +151,14 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
     user_context = state.get("user_context", {})
     system_prompt = build_spotlight_system_prompt(user_context)
 
-    # 이전 도구 실행 결과를 컨텍스트에 포함
+    # 이전 도구 실행 결과를 Observation으로 컨텍스트에 포함
     planning_context = state.get("planning_context", "")
     if tool_results:
         if planning_context:
-            planning_context = f"[이전 도구 실행 결과]\n{tool_results}\n\n{planning_context}"
+            planning_context = f"[Observation (이전 도구 실행 결과)]\n{tool_results}\n\n{planning_context}"
         else:
-            planning_context = f"[이전 도구 실행 결과]\n{tool_results}"
-        logger.info(f"tool_results를 planning_context에 포함 (길이: {len(tool_results)})")
+            planning_context = f"[Observation (이전 도구 실행 결과)]\n{tool_results}"
+        logger.info(f"[ReAct Observation] tool_results를 planning_context에 포함 (길이: {len(tool_results)})")
 
     # 컨텍스트가 있으면 시스템 프롬프트에 추가
     if planning_context:
@@ -186,6 +186,11 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
         # LLM 호출 (bind_tools 적용된 모델)
         response: AIMessage = await llm_with_tools.ainvoke(chat_messages)
 
+        # ReAct Thought 캡처
+        thought = response.content or ""
+        if thought:
+            logger.info(f"[ReAct Thought] {thought[:200]}")
+
         # 진단 로깅: LLM 응답 분석
         logger.info(f"LLM response type: {type(response).__name__}")
         logger.info(f"Has tool_calls: {bool(response.tool_calls)}")
@@ -202,9 +207,12 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
 
             tool_category = get_tool_category(tool_name) or "query"
 
-            logger.info(f"도구 선택됨: {tool_name}")
+            logger.info(f"[ReAct Action] 도구 선택: {tool_name}")
             logger.info(f"도구 인자: {tool_args}")
             logger.info(f"도구 카테고리: {tool_category}")
+
+            thought_summary = thought[:100] if thought else ""
+            plan_text = f"[Thought] {thought_summary}\n[Action] {tool_name}" if thought_summary else f"도구 실행: {tool_name}"
 
             new_retry_count = retry_count + 1 if tool_results else retry_count
             return SpotlightOrchestrationState(
@@ -214,13 +222,13 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
                 tool_category=tool_category,
                 need_tools=False,
                 can_answer=True,
-                plan=f"도구 실행: {tool_name}",
+                plan=plan_text,
                 missing_requirements=[],
                 retry_count=new_retry_count,
             )
         else:
             # 도구 없이 직접 응답
-            logger.info("도구 없이 직접 응답")
+            logger.info("[ReAct] 도구 없이 직접 응답")
             logger.info(f"응답 내용: {response.content[:100]}..." if response.content else "응답 없음")
 
             return SpotlightOrchestrationState(
@@ -228,7 +236,7 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
                 response=response.content,
                 can_answer=True,
                 need_tools=False,
-                plan="직접 응답",
+                plan=f"[Thought] {thought[:100]}" if thought else "직접 응답",
                 selected_tool=None,
                 tool_category=None,
                 tool_args={},
