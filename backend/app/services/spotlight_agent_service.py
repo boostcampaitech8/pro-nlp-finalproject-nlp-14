@@ -107,7 +107,7 @@ class SpotlightAgentService:
             user_id=user_id,
             session_id=session_id,
             mode="spotlight",
-            tags=["spotlight", "dev"],
+            tags=["spotlight"],
             metadata={"workflow_version": "2.0", "session_id": session_id},
         )
         config = {

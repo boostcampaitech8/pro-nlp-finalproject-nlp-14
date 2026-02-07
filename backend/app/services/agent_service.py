@@ -118,7 +118,7 @@ class AgentService:
             user_id=user_id,
             session_id=meeting_id,
             mode="voice",
-            tags=["voice", "dev"],
+            tags=["voice"],
             metadata={"workflow_version": "2.0", "meeting_id": meeting_id},
         )
         config = {
@@ -219,7 +219,7 @@ class AgentService:
             user_id=user_id,
             session_id=meeting_id,
             mode="voice",
-            tags=["voice", "dev"],
+            tags=["voice"],
             metadata={"workflow_version": "2.0", "meeting_id": meeting_id},
         )
         config = {

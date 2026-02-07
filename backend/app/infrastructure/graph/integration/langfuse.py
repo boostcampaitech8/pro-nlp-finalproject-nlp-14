@@ -202,7 +202,7 @@ def get_runnable_config(
         session_id: 세션 ID (대화 세션 추적용)
         mode: 오케스트레이션 모드 (예: "voice", "spotlight") - Langfuse에서 모드별 필터링용
         metadata: 추가 메타데이터
-        tags: Langfuse UI 필터링용 태그 (예: ["voice", "dev"], ["spotlight", "production"])
+        tags: Langfuse UI 필터링용 태그 (예: ["voice"], ["spotlight"])
               UI에서 클릭 한 번으로 필터링 가능, metadata보다 빠르고 직관적
 
     Returns:
@@ -213,7 +213,7 @@ def get_runnable_config(
             trace_name="mit_search",
             user_id="user-123",
             mode="voice",
-            tags=["voice", "dev"]
+            tags=["voice"]
         )
         result = await graph.ainvoke(state, config=config)
     """

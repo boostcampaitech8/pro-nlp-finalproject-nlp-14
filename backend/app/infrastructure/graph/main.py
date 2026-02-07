@@ -176,7 +176,7 @@ async def main():
                 user_id=user_id,
                 session_id=run_id,
                 mode=mode,
-                tags=["cli", "dev"],
+                tags=["cli"],
                 metadata={"workflow_version": "2.0"},
             )
             if use_checkpointer:
