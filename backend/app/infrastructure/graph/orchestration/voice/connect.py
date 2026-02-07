@@ -22,7 +22,6 @@ from langgraph.graph.state import CompiledStateGraph
 from app.infrastructure.graph.checkpointer import get_checkpointer
 
 from .nodes.answering import generate_answer
-from .nodes.evaluation import evaluate_result
 from .nodes.mit_tools_analyze import execute_mit_tools_analyze
 from .nodes.mit_tools_search import execute_mit_tools_search
 from .nodes.planning import create_plan
@@ -63,23 +62,11 @@ def route_after_tools(state: VoiceOrchestrationState) -> str:
     """Tool 실행 후 라우팅
 
     HITL pending 상태면 END로 가서 사용자 확인 대기,
-    그 외에는 evaluator로 이동.
+    그 외에는 planner로 이동.
     """
     if state.get("hitl_status") == "pending":
         return END
-    return "evaluator"
-
-
-
-def route_by_evaluation(state: VoiceOrchestrationState) -> str:
-    """평가 결과에 따라 라우팅: retry/replanning/success"""
-    status = state.get("evaluation_status", "success")
-
-    if status == "retry":
-        return "mit_tools_analyze"
-    elif status == "replanning":
-        return "planner"
-    return "generator"
+    return "planner"
 
 
 def build_voice_orchestration_workflow() -> StateGraph:
@@ -90,9 +77,9 @@ def build_voice_orchestration_workflow() -> StateGraph:
 
     Workflow:
         planner -> [tools | mit_tools_analyze | generator | END]
-        tools -> [evaluator | END (HITL pending)]
-        mit_tools_analyze -> mit_tools_search -> evaluator
-        evaluator -> [mit_tools_analyze | planner | generator]
+        tools -> [planner | END (HITL pending)]
+        mit_tools_analyze -> mit_tools_search -> planner
+        planner -> [tools | mit_tools_analyze | generator | END]
         generator -> END
     """
     workflow = StateGraph(VoiceOrchestrationState)
@@ -103,7 +90,6 @@ def build_voice_orchestration_workflow() -> StateGraph:
     workflow.add_node("mit_tools_analyze", execute_mit_tools_analyze)
     workflow.add_node("mit_tools_search", execute_mit_tools_search)
     workflow.add_node("tools", execute_tools)  # 새 Tool 시스템 (HITL 지원)
-    workflow.add_node("evaluator", evaluate_result)
     workflow.add_node("generator", generate_answer)
 
     # 엣지 연결
@@ -133,7 +119,7 @@ def build_voice_orchestration_workflow() -> StateGraph:
         "tools",
         route_after_tools,
         {
-            "evaluator": "evaluator",
+            "planner": "planner",
             END: END,  # HITL pending 상태 (사용자 확인 대기)
         },
 
@@ -142,15 +128,8 @@ def build_voice_orchestration_workflow() -> StateGraph:
     # MIT-Tools Analyze -> MIT-Tools Search (항상)
     workflow.add_edge("mit_tools_analyze", "mit_tools_search")
 
-    # MIT-Tools Search -> Evaluator
-    workflow.add_edge("mit_tools_search", "evaluator")
-
-    # Evaluator -> 평가 결과에 따라 라우팅
-    workflow.add_conditional_edges(
-        "evaluator",
-        route_by_evaluation,
-        {"mit_tools_analyze": "mit_tools_analyze", "planner": "planner", "generator": "generator"},
-    )
+    # MIT-Tools Search -> Planner
+    workflow.add_edge("mit_tools_search", "planner")
 
     # Generator -> END
     workflow.add_edge("generator", END)

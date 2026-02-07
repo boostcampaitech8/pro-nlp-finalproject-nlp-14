@@ -174,9 +174,6 @@ class SpotlightAgentService:
                 "need_tools": False,
                 "can_answer": False,
                 "missing_requirements": [],
-                "evaluation": "",
-                "evaluation_status": "",
-                "evaluation_reason": "",
                 "next_subquery": None,
                 "tool_results": RESET_TOOL_RESULTS,
             }

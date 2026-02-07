@@ -1,7 +1,7 @@
 from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.infrastructure.graph.integration.llm import (
     get_base_llm,
-    get_evaluator_llm,
+    get_generator_llm,
     get_mit_action_generator_llm,
     get_planner_llm,
 )
@@ -9,7 +9,7 @@ from app.infrastructure.graph.integration.llm import (
 __all__ = [
     "get_base_llm",
     "get_planner_llm",
+    "get_generator_llm",
     "get_mit_action_generator_llm",
-    "get_evaluator_llm",
     "get_runnable_config",
 ]
