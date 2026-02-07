@@ -172,10 +172,12 @@ async def main():
 
             # config 설정 (checkpointer 및 langfuse)
             config = get_runnable_config(
-                trace_name="cli-mit-agent",
+                trace_name="cli_mit_agent",
                 user_id=user_id,
                 session_id=run_id,
                 mode=mode,
+                tags=["cli", "dev"],
+                metadata={"workflow_version": "2.0"},
             )
             if use_checkpointer:
                 config["configurable"] = {"thread_id": thread_id}

@@ -46,6 +46,7 @@ async def stream_llm_tokens_only(
             user_input = first_message.content
             logger.info(f"[STREAM] user_input extracted: '{user_input[:50] if user_input else ''}...'")
 
+    # CustomizedCallbackHandler가 자동으로 input/output 추출
     # 노드별 역할 정의
     ORCHESTRATION_NODES = {
         "planner": "planner",
@@ -232,6 +233,7 @@ async def stream_llm_tokens_only(
                     )
 
                 elif event_name == "generator":
+                    # Generator 완료 (CustomizedCallbackHandler가 자동으로 output 추출)
                     logger.info(f"Generator completed: {token_count['generator']} tokens")
 
         # 스트림 완료 후 pending interrupt 확인 (HITL)

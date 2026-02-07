@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -27,6 +28,9 @@ async def lifespan(_app: FastAPI):
     setup_telemetry("mit-backend", "0.1.0")
     yield
     # 종료 시
+    logger = logging.getLogger(__name__)
+    logger.info("Waiting for Langfuse traces...")
+    await asyncio.sleep(2.0)  # Langfuse 백그라운드 전송 대기
     await engine.dispose()
     await close_checkpointer()  # LangGraph checkpointer 연결 정리
 
