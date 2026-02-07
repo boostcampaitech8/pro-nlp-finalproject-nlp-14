@@ -2,13 +2,15 @@
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from app.infrastructure.graph.workflows.mit_mention.state import MitMentionState
 from app.infrastructure.graph.workflows.mit_search.graph import mit_search_graph
 
 logger = logging.getLogger(__name__)
 
 
-async def execute_search(state: MitMentionState) -> dict:
+async def execute_search(state: MitMentionState, config: RunnableConfig = None) -> dict:
     """MIT Search 도구 실행 (검색 필요 시에만 호출)
 
     Contract:
@@ -31,7 +33,7 @@ async def execute_search(state: MitMentionState) -> dict:
             "mit_search_query": search_query,
             "messages": [],  # MIT Mention은 단일 쿼리이므로 빈 메시지
             "user_id": "mention_workflow",  # 워크플로우 식별용
-        })
+        }, config=config)
 
         # 검색 결과 추출
         final_results = search_result.get("mit_search_raw_results", [])

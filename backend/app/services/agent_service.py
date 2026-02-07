@@ -114,10 +114,12 @@ class AgentService:
 
         # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
         langfuse_config = get_runnable_config(
-            trace_name=f"voice_in_meeting:{meeting_id}",
+            trace_name="Voice",
             user_id=user_id,
             session_id=meeting_id,
             mode="voice",
+            tags=["voice"],
+            metadata={"workflow_version": "2.0", "meeting_id": meeting_id},
         )
         config = {
             **langfuse_config,
@@ -133,6 +135,17 @@ class AgentService:
             app = await self._get_app()
             final_state = await app.ainvoke(initial_state, config)
             response = final_state.get("response", "")
+
+            # Langfuse trace에 실제 user input/output 기록
+            try:
+                from langfuse import get_client
+                client = get_client()
+                client.update_current_trace(
+                    input={"user_message": user_input},
+                    output={"assistant_response": response}
+                )
+            except Exception as e:
+                logger.warning(f"Langfuse trace 업데이트 실패: {e}")
 
             logger.info("Agent Context 처리 완료 (thread_id=%s)", meeting_id)
             return response
@@ -202,10 +215,12 @@ class AgentService:
 
         # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
         langfuse_config = get_runnable_config(
-            trace_name=f"voice_in_meeting:{meeting_id}",
+            trace_name="Voice",
             user_id=user_id,
             session_id=meeting_id,
             mode="voice",
+            tags=["voice"],
+            metadata={"workflow_version": "2.0", "meeting_id": meeting_id},
         )
         config = {
             **langfuse_config,
