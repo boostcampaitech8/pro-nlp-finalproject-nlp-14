@@ -1,5 +1,7 @@
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from ..state import VoiceOrchestrationState
 from app.infrastructure.graph.workflows.mit_search.graph import (
     mit_search_graph_from_cypher,
@@ -8,7 +10,7 @@ from app.infrastructure.graph.workflows.mit_search.graph import (
 logger = logging.getLogger(__name__)
 
 
-async def execute_mit_tools_search(state: VoiceOrchestrationState) -> VoiceOrchestrationState:
+async def execute_mit_tools_search(state: VoiceOrchestrationState, config: RunnableConfig = None) -> VoiceOrchestrationState:
     """MIT-Tools 검색 실행 노드
 
     Contract:
@@ -63,7 +65,7 @@ async def execute_mit_tools_search(state: VoiceOrchestrationState) -> VoiceOrche
             "mit_search_query_intent": query_intent,  # 이미 분석된 의도
             "messages": messages,
             "user_id": user_id,
-        })
+        }, config=config)
 
         # 검색 결과 추출
         final_results = search_result.get("mit_search_raw_results", [])
