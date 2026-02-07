@@ -103,10 +103,12 @@ class SpotlightAgentService:
 
         # 실행용 config (checkpointer + Langfuse)
         langfuse_config = get_runnable_config(
-            trace_name=f"spotlight:{session_id}",
+            trace_name="Spotlight",
             user_id=user_id,
             session_id=session_id,
             mode="spotlight",
+            tags=["spotlight", "dev"],
+            metadata={"workflow_version": "2.0", "session_id": session_id},
         )
         config = {
             **langfuse_config,
