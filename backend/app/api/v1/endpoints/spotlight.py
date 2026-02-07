@@ -100,13 +100,18 @@ async def list_sessions(
     session_service: Annotated[SpotlightSessionService, Depends(get_session_service)],
 ):
     """세션 목록 조회"""
-    raise HTTPException(
-        status_code=404,
-        detail={
-            "error": "DISABLED_IN_BETA",
-            "message": "세션 목록은 베타에서 비활성화됩니다.",
-        },
-    )
+    sessions = await session_service.list_sessions(str(current_user.id))
+    return [
+        SpotlightSessionResponse(
+            id=s.session_id,
+            user_id=s.user_id,
+            title=s.title,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+            message_count=s.message_count,
+        )
+        for s in sessions
+    ]
 
 
 @router.get("/sessions/{session_id}", response_model=SpotlightSessionResponse)
