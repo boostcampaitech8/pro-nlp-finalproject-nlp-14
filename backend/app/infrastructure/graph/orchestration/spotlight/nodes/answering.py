@@ -55,7 +55,12 @@ async def generate_answer(state: SpotlightOrchestrationState):
             content_preview = content[:50] if content else ""
             logger.debug("messages[%d]: %s - %s...", i, msg_type, content_preview)
 
-    query = messages[-1].content if messages else ""
+    # 마지막 HumanMessage를 query로 사용 (tool_calls AIMessage가 끝에 올 수 있음)
+    query = ""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            query = msg.content
+            break
     conversation_history = build_conversation_history(messages)
     logger.debug("conversation_history 길이: %d자", len(conversation_history))
     tool_results = state.get("tool_results", "")
@@ -76,6 +81,22 @@ async def generate_answer(state: SpotlightOrchestrationState):
         "created", "updated", "deleted"
     ]
     has_mutation_result = tool_results and any(marker in tool_results for marker in mutation_success_markers)
+
+    # Mutation 성공 시 LLM 호출 없이 결과를 직접 반환
+    if has_mutation_result:
+        # tool_results에서 mutation 성공 메시지만 추출 (앞에 누적된 조회 결과 제거)
+        mutation_message = tool_results
+        for marker in mutation_success_markers:
+            pos = tool_results.rfind(marker)
+            if pos != -1:
+                # marker 앞쪽에서 마지막 '}' 찾기 (이전 조회 결과 JSON 경계)
+                before = tool_results[:pos]
+                brace_pos = before.rfind('}')
+                if brace_pos != -1:
+                    mutation_message = tool_results[brace_pos + 1:].strip()
+                break
+        logger.info(f"Mutation 성공 결과 직접 반환: {mutation_message}")
+        return SpotlightOrchestrationState(response=mutation_message, messages=[AIMessage(content=mutation_message)])
 
     # 회의 관련 mutation 요청인데 mutation 결과가 없으면 거부
     if is_mutation_request and is_meeting_related and not has_mutation_result:

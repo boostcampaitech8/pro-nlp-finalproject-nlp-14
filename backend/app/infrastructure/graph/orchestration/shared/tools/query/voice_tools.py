@@ -24,7 +24,11 @@ async def get_team_by_meeting_id(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """현재 회의가 속한 팀의 정보를 조회합니다."""
+    """현재 회의가 속한 팀의 정보를 조회합니다.
+
+    Args:
+        meeting_id: 팀 정보를 조회할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+    """
     logger.info(f"Executing get_team_by_meeting_id for user {_user_id}")
 
     if not meeting_id:

@@ -22,7 +22,11 @@ async def get_my_action_items(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """나에게 할당된 액션 아이템 목록을 조회합니다. status로 필터링 가능합니다. (예: 'pending', 'completed')"""
+    """나에게 할당된 액션 아이템 목록을 조회합니다. status로 필터링 가능합니다.
+
+    Args:
+        status: 액션 아이템 상태 필터 ('pending', 'completed' 등, 빈 문자열이면 전체)
+    """
     logger.info(f"Executing get_my_action_items for user {_user_id}")
 
     driver = get_neo4j_driver()

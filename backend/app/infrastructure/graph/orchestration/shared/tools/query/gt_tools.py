@@ -22,7 +22,11 @@ async def get_ground_truth(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀의 Ground Truth(확정된 결정사항)를 조회합니다. 모든 회의에서 최종 확정(latest)된 Decision 목록을 반환합니다."""
+    """팀의 Ground Truth(확정된 결정사항)를 조회합니다. 모든 회의에서 최종 확정(latest)된 Decision 목록을 반환합니다.
+
+    Args:
+        team_id: 결정사항을 조회할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+    """
     logger.info(f"Executing get_ground_truth for team {team_id}, user {_user_id}")
 
     if not team_id:

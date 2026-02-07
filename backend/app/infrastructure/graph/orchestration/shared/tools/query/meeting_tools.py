@@ -32,7 +32,14 @@ async def get_meetings(
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
     """팀의 회의 목록을 조회합니다. 상태별, 시간별 필터링이 가능합니다.
-    time_filter: 'future'(예정된 회의), 'past'(지난 회의), ''(전체)"""
+
+    Args:
+        team_id: 회의 목록을 조회할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+        status: 회의 상태 필터 ('scheduled', 'ongoing', 'completed' 등, 빈 문자열이면 전체)
+        time_filter: 시간 필터 ('future'=예정된 회의, 'past'=지난 회의, ''=전체)
+        page: 페이지 번호 (기본값: 1)
+        limit: 페이지당 결과 수 (기본값: 20)
+    """
     logger.info(f"Executing get_meetings for user {_user_id}")
 
     if not team_id:
@@ -95,7 +102,11 @@ async def get_meeting(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """회의의 상세 정보를 조회합니다. 참여자 목록이 포함됩니다."""
+    """회의의 상세 정보를 조회합니다. 참여자 목록이 포함됩니다.
+
+    Args:
+        meeting_id: 조회할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+    """
     logger.info(f"Executing get_meeting for user {_user_id}")
 
     if not meeting_id:

@@ -56,7 +56,14 @@ async def create_meeting(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",  # Injected by tools.py
 ) -> dict:
-    """새로운 회의를 생성합니다"""
+    """새로운 회의를 생성합니다
+
+    Args:
+        team_id: 회의를 생성할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+        title: 회의 제목
+        scheduled_at: 회의 예정 일시 (ISO 8601 형식, 예: '2026-02-08T14:00:00+09:00')
+        description: 회의 설명 (선택사항)
+    """
     logger.info(f"Executing create_meeting for user {_user_id}")
 
     if not team_id:
@@ -135,7 +142,15 @@ async def update_meeting(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """기존 회의의 정보를 수정합니다"""
+    """기존 회의의 정보를 수정합니다
+
+    Args:
+        meeting_id: 수정할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+        title: 새로운 회의 제목 (선택사항)
+        scheduled_at: 새로운 회의 일시 (ISO 8601 형식, 선택사항)
+        description: 새로운 회의 설명 (선택사항)
+        status: 새로운 회의 상태 (선택사항)
+    """
     logger.info(f"Executing update_meeting for user {_user_id}")
 
     if not meeting_id:
@@ -195,7 +210,11 @@ async def delete_meeting(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """회의를 삭제합니다"""
+    """회의를 삭제합니다
+
+    Args:
+        meeting_id: 삭제할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+    """
     logger.info(f"Executing delete_meeting for user {_user_id}")
 
     if not meeting_id:
@@ -250,7 +269,13 @@ async def invite_meeting_participant(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """회의에 참여자를 추가합니다."""
+    """회의에 참여자를 추가합니다.
+
+    Args:
+        meeting_id: 참여자를 추가할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+        user_id: 추가할 참여자의 사용자 UUID (예: 'b6cf1234-56de-7890-abcd-ef1234567890')
+        role: 참여자 역할 ('participant' 또는 'host', 기본값: 'participant')
+    """
     logger.info(f"Executing invite_meeting_participant for user {_user_id}")
 
     if not meeting_id:

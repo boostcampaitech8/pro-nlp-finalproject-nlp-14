@@ -25,7 +25,12 @@ async def get_my_teams(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """내가 속한 팀 목록을 조회합니다."""
+    """내가 속한 팀 목록을 조회합니다.
+
+    Args:
+        page: 페이지 번호 (기본값: 1)
+        limit: 페이지당 결과 수 (기본값: 20)
+    """
     logger.info(f"Executing get_my_teams for user {_user_id}")
 
     try:
@@ -55,7 +60,11 @@ async def get_team(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀의 상세 정보를 조회합니다. 멤버 목록이 포함됩니다."""
+    """팀의 상세 정보를 조회합니다. 멤버 목록이 포함됩니다.
+
+    Args:
+        team_id: 조회할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+    """
     logger.info(f"Executing get_team for user {_user_id}")
 
     if not team_id:
@@ -85,7 +94,11 @@ async def get_team_members(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀의 멤버 목록을 조회합니다. 각 멤버의 이름, 이메일, 역할(owner/admin/member) 정보가 포함됩니다."""
+    """팀의 멤버 목록을 조회합니다. 각 멤버의 이름, 이메일, 역할(owner/admin/member) 정보가 포함됩니다.
+
+    Args:
+        team_id: 멤버를 조회할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+    """
     logger.info(f"Executing get_team_members for user {_user_id}")
 
     if not team_id:

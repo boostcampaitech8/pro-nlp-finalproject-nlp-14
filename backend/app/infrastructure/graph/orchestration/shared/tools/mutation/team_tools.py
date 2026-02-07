@@ -43,7 +43,12 @@ async def create_team(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """새로운 팀을 생성합니다"""
+    """새로운 팀을 생성합니다
+
+    Args:
+        name: 팀 이름
+        description: 팀 설명 (선택사항)
+    """
     logger.info(f"Executing create_team for user {_user_id}")
 
     if not name:
@@ -103,7 +108,13 @@ async def update_team(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀의 이름이나 설명을 수정합니다."""
+    """팀의 이름이나 설명을 수정합니다.
+
+    Args:
+        team_id: 수정할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+        name: 새로운 팀 이름 (선택사항)
+        description: 새로운 팀 설명 (선택사항)
+    """
     logger.info(f"Executing update_team for user {_user_id}")
 
     if not team_id:
@@ -155,7 +166,11 @@ async def delete_team(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀을 삭제합니다. 팀 소유자만 가능합니다."""
+    """팀을 삭제합니다. 팀 소유자만 가능합니다.
+
+    Args:
+        team_id: 삭제할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+    """
     logger.info(f"Executing delete_team for user {_user_id}")
 
     if not team_id:
@@ -212,7 +227,13 @@ async def invite_team_member(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀에 새 멤버를 초대합니다."""
+    """팀에 새 멤버를 초대합니다.
+
+    Args:
+        team_id: 멤버를 초대할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+        email: 초대할 사용자의 이메일 주소
+        role: 팀 내 역할 ('member' 또는 'admin', 기본값: 'member')
+    """
     logger.info(f"Executing invite_team_member for user {_user_id}")
 
     if not team_id:
@@ -266,7 +287,11 @@ async def generate_team_invite_link(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀 초대 링크를 생성합니다. 기존 링크가 있으면 새 링크로 교체됩니다."""
+    """팀 초대 링크를 생성합니다. 기존 링크가 있으면 새 링크로 교체됩니다.
+
+    Args:
+        team_id: 초대 링크를 생성할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+    """
     logger.info(f"Executing generate_team_invite_link for user {_user_id}")
 
     if not team_id:
