@@ -53,7 +53,6 @@ async def generate_answer(state: VoiceOrchestrationState):
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     planning_context = state.get("planning_context", "")
-    plan = state.get("plan", "")
 
     # Voice는 항상 VOICE 채널
     channel = ChannelType.VOICE
@@ -62,26 +61,26 @@ async def generate_answer(state: VoiceOrchestrationState):
     # 프롬프트 생성
     if tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 응답 생성")
-        system_prompt = build_system_prompt_with_tools(channel)
-        user_prompt = build_user_prompt_with_tools(
-            conversation_history=conversation_history or "없음",
-            query=query,
-            plan=plan or "없음",
-            tool_results=tool_results,
-            additional_context=additional_context or "없음",
-            meeting_context=planning_context or "없음",
+        system_prompt = build_system_prompt_with_tools(
             channel=channel,
+            conversation_history=conversation_history or "없음",
+            tool_results=tool_results,
+            meeting_context=planning_context or "없음",
+            additional_context=additional_context or "없음",
+        )
+        user_prompt = build_user_prompt_with_tools(
+            query=query,
         )
     else:
         logger.info("도구 없이 직접 응답 생성")
-        system_prompt = build_system_prompt_without_tools(channel)
-        user_prompt = build_user_prompt_without_tools(
-            conversation_history=conversation_history or "없음",
-            query=query,
-            plan=plan or "없음",
-            additional_context=additional_context or "없음",
-            meeting_context=planning_context or "없음",
+        system_prompt = build_system_prompt_without_tools(
             channel=channel,
+            conversation_history=conversation_history or "없음",
+            meeting_context=planning_context or "없음",
+            additional_context=additional_context or "없음",
+        )
+        user_prompt = build_user_prompt_without_tools(
+            query=query,
         )
 
     prompt = ChatPromptTemplate.from_messages([
