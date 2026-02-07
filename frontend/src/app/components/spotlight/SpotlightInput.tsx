@@ -1,14 +1,14 @@
 // Spotlight 입력창 컴포넌트
 import { useRef, useEffect } from 'react';
-import { Command, Loader2, ArrowLeft } from 'lucide-react';
+import { Command, Loader2, Send } from 'lucide-react';
 import { useCommand } from '@/app/hooks/useCommand';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { cn } from '@/lib/utils';
 
 export function SpotlightInput() {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { inputValue, setInputValue, submitCommand, isChatMode, exitChatMode } = useCommand();
-  const { isProcessing, isInputFocused, setInputFocused, isStreaming } = useCommandStore();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { inputValue, setInputValue, submitCommand, isChatMode, cancelPendingMessage } = useCommand();
+  const { isProcessing, isInputFocused, setInputFocused, isStreaming, pendingMessages } = useCommandStore();
 
   // Cmd+K 단축키 처리
   useEffect(() => {
@@ -37,16 +37,47 @@ export function SpotlightInput() {
     }
   }, [isChatMode, isStreaming, isProcessing]);
 
+  const isSendDisabled = pendingMessages.length > 0 || !inputValue.trim();
+
+  const resizeTextarea = () => {
+    const node = inputRef.current;
+    if (!node) return;
+    node.style.height = 'auto';
+    node.style.height = `${node.scrollHeight}px`;
+  };
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [inputValue]);
+
   const handleSubmit = () => {
-    if (!inputValue.trim()) return;
+    if (isSendDisabled) return;
     submitCommand();
   };
 
-  const isInputDisabled = false;
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // 한글 입력 중(IME composing) Enter 무시 - 두 번 입력 버그 방지
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
+    if (e.key === 'ArrowUp' && pendingMessages.length > 0) {
+      const { selectionStart, selectionEnd, value } = e.currentTarget;
+      if (selectionStart !== null && selectionStart === selectionEnd) {
+        const beforeCursor = value.slice(0, selectionStart);
+        if (!beforeCursor.includes('\n')) {
+          const pending = pendingMessages[0];
+          e.preventDefault();
+          setInputValue(pending.text);
+          cancelPendingMessage(pending.id);
+          requestAnimationFrame(() => {
+            const node = inputRef.current;
+            if (!node) return;
+            const end = node.value.length;
+            node.setSelectionRange(end, end);
+          });
+          return;
+        }
+      }
+    }
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -61,37 +92,25 @@ export function SpotlightInput() {
         isInputFocused && 'border-mit-primary/50 shadow-input-focus'
       )}
     >
-      {/* 채팅 모드: 뒤로가기 버튼 */}
-      {isChatMode ? (
-        <button
-          onClick={exitChatMode}
-          className="flex-shrink-0 p-0.5 text-white/60 hover:text-white transition-colors"
-          title="돌아가기 (ESC)"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-      ) : (
-        <div className="icon-container flex-shrink-0">
-          {isProcessing ? (
-            <Loader2 className="w-5 h-5 text-white animate-spin" />
-          ) : (
-            <Command className="w-5 h-5 text-white" />
-          )}
-        </div>
-      )}
+      <div className="icon-container flex-shrink-0">
+        {isProcessing ? (
+          <Loader2 className="w-5 h-5 text-white animate-spin" />
+        ) : (
+          <Command className="w-5 h-5 text-white" />
+        )}
+      </div>
 
       {/* 입력 필드 */}
-      <input
+      <textarea
         ref={inputRef}
-        type="text"
+        rows={1}
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={handleKeyDown}
         onFocus={() => setInputFocused(true)}
         onBlur={() => setInputFocused(false)}
         placeholder={isChatMode ? '메시지를 입력하세요...' : 'Mit에게 무엇이든 물어보세요...'}
-        disabled={isInputDisabled}
-        className="flex-1 bg-transparent text-[15px] text-white placeholder:text-white/40 outline-none disabled:opacity-50"
+        className="flex-1 bg-transparent text-[15px] text-white placeholder:text-white/40 outline-none resize-none min-h-[24px] max-h-[150px] leading-6 overflow-y-auto scrollbar-hide"
       />
 
       {/* 단축키 힌트 */}
@@ -100,6 +119,21 @@ export function SpotlightInput() {
           <span className="shortcut-key">Cmd</span>
           <span className="shortcut-key">K</span>
         </div>
+      )}
+
+      {isChatMode && (
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={isSendDisabled}
+          className={cn(
+            'flex-shrink-0 p-1.5 rounded-full transition-colors',
+            isSendDisabled ? 'text-white/25 cursor-not-allowed' : 'text-white/70 hover:text-white'
+          )}
+          title="전송 (Enter)"
+        >
+          <Send className="w-4 h-4" />
+        </button>
       )}
     </div>
   );

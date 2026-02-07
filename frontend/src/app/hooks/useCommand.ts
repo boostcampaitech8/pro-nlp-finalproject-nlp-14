@@ -6,7 +6,7 @@ import { spotlightApi, type SSEEvent, type SpotlightSession } from '@/app/servic
 import type { ChatMessage, HITLData } from '@/app/types/command';
 
 type QueueItem =
-  | { kind: 'message'; text: string; sessionId: string }
+  | { kind: 'message'; text: string; sessionId: string; pendingId?: string }
   | { kind: 'hitl'; action: 'confirm' | 'cancel'; params?: Record<string, unknown>; sessionId: string };
 
 const requestQueue: QueueItem[] = [];
@@ -42,6 +42,9 @@ export function useCommand() {
     syncSessionMessages,
     markSessionNewResponse,
     updateSessionTitle,
+    addPendingMessage,
+    removePendingMessage,
+    promotePendingMessage,
   } = useCommandStore();
 
   // 현재 세션 ID를 ref로 추적 (콜백에서 최신 값 참조용)
@@ -84,15 +87,19 @@ export function useCommand() {
     };
 
     if (nextItem.kind === 'message') {
+      // 대기 메시지가 있으면 채팅으로 이동 (큐 처리 시작 시점)
+      if (nextItem.pendingId) {
+        promotePendingMessage();
+      }
       startMessageStream(nextItem, completeItem);
     } else {
       startHitlStream(nextItem, completeItem);
     }
-  }, []);
+  }, [promotePendingMessage]);
 
   const enqueueMessage = useCallback(
-    (text: string, sessionId: string) => {
-      requestQueue.push({ kind: 'message', text, sessionId });
+    (text: string, sessionId: string, pendingId?: string) => {
+      requestQueue.push({ kind: 'message', text, sessionId, pendingId });
       processQueue();
     },
     [processQueue]
@@ -104,6 +111,26 @@ export function useCommand() {
       processQueue();
     },
     [processQueue]
+  );
+
+  const cancelPendingMessage = useCallback(
+    (pendingId?: string) => {
+      const state = useCommandStore.getState();
+      const pending = pendingId
+        ? state.pendingMessages.find((msg) => msg.id === pendingId)
+        : state.pendingMessages[0];
+
+      if (!pending) return;
+
+      const index = requestQueue.findIndex(
+        (item) => item.kind === 'message' && item.pendingId === pending.id
+      );
+      if (index !== -1) {
+        requestQueue.splice(index, 1);
+      }
+      removePendingMessage(pending.id);
+    },
+    [removePendingMessage]
   );
 
   const ensureSessionId = useCallback(async () => {
@@ -389,6 +416,10 @@ export function useCommand() {
       const cmd = command || inputValue;
       if (!cmd.trim()) return;
 
+      if (queueProcessing && useCommandStore.getState().pendingMessages.length > 0) {
+        return;
+      }
+
       setInputValue('');
 
       const wasInChatMode = isChatMode;
@@ -411,22 +442,29 @@ export function useCommand() {
         hitlPending = false;
       }
 
-      const userMsg: ChatMessage = {
-        id: `chat-${Date.now()}-user`,
-        role: 'user',
-        type: 'text',
-        content: cmd,
-        timestamp: new Date(),
-      };
-      addChatMessage(userMsg);
-
       // 첫 메시지인 경우 세션 제목을 유저 메시지로 설정
       if (!wasInChatMode) {
         const title = cmd.length > 50 ? cmd.slice(0, 50) + '...' : cmd;
         updateSessionTitle(sessionId, title);
       }
 
-      enqueueMessage(cmd, sessionId);
+      if (queueProcessing) {
+        // 큐가 처리 중이면 대기 메시지로 표시 (입력창 위에 표시됨)
+        const pendingId = addPendingMessage(cmd);
+        if (!pendingId) return;
+        enqueueMessage(cmd, sessionId, pendingId);
+      } else {
+        // 큐가 비어있으면 즉시 채팅에 추가
+        const userMsg: ChatMessage = {
+          id: `chat-${Date.now()}-user`,
+          role: 'user',
+          type: 'text',
+          content: cmd,
+          timestamp: new Date(),
+        };
+        addChatMessage(userMsg);
+        enqueueMessage(cmd, sessionId);
+      }
     },
     [
       inputValue,
@@ -436,6 +474,7 @@ export function useCommand() {
       enterChatMode,
       ensureSessionId,
       addChatMessage,
+      addPendingMessage,
       enqueueMessage,
       autoCancelPendingHitl,
       updateSessionTitle,
@@ -508,5 +547,6 @@ export function useCommand() {
     confirmHITL,
     cancelHITL,
     exitChatMode: handleExitChatMode,
+    cancelPendingMessage,
   };
 }
