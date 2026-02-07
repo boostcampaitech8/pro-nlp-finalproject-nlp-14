@@ -50,9 +50,10 @@ export function Navigation() {
   const navigate = useNavigate();
   const { teams, fetchTeams, teamsLoading } = useTeamStore();
   const { openModal: openMeetingModal } = useMeetingModalStore();
-  const { logout, isLoading: authLoading } = useAuth();
+  const { logout, isLoading: authLoading, isAuthenticated } = useAuth();
   const {
     sessions,
+    sessionsLoading,
     currentSessionId,
     sessionsWithNewResponse,
     loadSessions,
@@ -66,8 +67,10 @@ export function Navigation() {
   }, [teams.length, fetchTeams]);
 
   useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+    if (isAuthenticated) {
+      loadSessions();
+    }
+  }, [isAuthenticated, loadSessions]);
 
   const handleNewSession = async () => {
     if (sessions.length >= MAX_SPOTLIGHT_SESSIONS) return;
@@ -189,7 +192,13 @@ export function Navigation() {
         </div>
 
         <div className="space-y-0.5">
-          {sessions.length === 0 ? (
+          {sessionsLoading ? (
+            <div className="space-y-1 px-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-9 bg-white/5 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          ) : sessions.length === 0 ? (
             <button
               onClick={handleNewSession}
               className="px-3 py-2 text-white/50 text-sm hover:text-white/70 block w-full text-left"

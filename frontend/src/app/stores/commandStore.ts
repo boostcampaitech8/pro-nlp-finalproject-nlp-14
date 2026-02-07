@@ -64,6 +64,7 @@ interface CommandState {
   removeSession: (id: string) => void;
   loadSessions: () => Promise<void>;
   createNewSession: () => Promise<SpotlightSession | null>;
+  updateSessionTitle: (id: string, title: string) => Promise<void>;
 
   // 새 응답이 있는 세션 표시
   sessionsWithNewResponse: Set<string>;
@@ -352,6 +353,19 @@ export const useCommandStore = create<CommandState>((set) => ({
     } catch (error) {
       console.error('Failed to create session:', error);
       return null;
+    }
+  },
+
+  updateSessionTitle: async (id, title) => {
+    try {
+      await spotlightApi.updateSessionTitle(id, title);
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === id ? { ...s, title } : s
+        ),
+      }));
+    } catch (error) {
+      console.error('Failed to update session title:', error);
     }
   },
 

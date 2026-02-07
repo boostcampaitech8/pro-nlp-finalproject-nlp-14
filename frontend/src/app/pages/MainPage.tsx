@@ -1,5 +1,5 @@
 // 새 서비스 메인 페이지 (Spotlight UI)
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
@@ -21,53 +21,41 @@ const layoutTransition = {
 export function MainPage() {
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
-  const { isChatMode, setSuggestions, currentSessionId, setCurrentSession, loadSessionMessages } = useCommandStore();
+  const { isChatMode, setSuggestions, setCurrentSession, loadSessionMessages } = useCommandStore();
   const exitChatMode = useCommandStore((s) => s.exitChatMode);
   const enterChatMode = useCommandStore((s) => s.enterChatMode);
-
-  // 세션 전환 중복 방지를 위한 ref
-  const isSessionSwitching = useRef(false);
-  const lastLoadedSessionId = useRef<string | null>(null);
 
   // 추천 명령어 로드
   useEffect(() => {
     agentService.getSuggestions().then(setSuggestions);
   }, [setSuggestions]);
 
-  // URL 파라미터에서 세션 ID를 읽어 세션 로드 (단방향: URL → State)
+  // URL → State 동기화 (단방향)
   useEffect(() => {
-    // 이미 전환 중이거나, 같은 세션이면 무시
-    if (isSessionSwitching.current) return;
-    if (!urlSessionId) return;
-    if (urlSessionId === lastLoadedSessionId.current) return;
+    const state = useCommandStore.getState();
 
-    // 전환 시작
-    isSessionSwitching.current = true;
-    lastLoadedSessionId.current = urlSessionId;
+    if (!urlSessionId) {
+      // 홈으로 이동: 채팅 모드 종료
+      if (state.currentSessionId) {
+        exitChatMode();
+      }
+      return;
+    }
 
+    // 같은 세션이 이미 로드되어 있으면 스킵
+    if (urlSessionId === state.currentSessionId) {
+      // 새로고침 시 채팅 모드 복원
+      if (!state.isChatMode) {
+        enterChatMode();
+      }
+      return;
+    }
+
+    // 새로운 세션으로 전환
     setCurrentSession(urlSessionId);
     loadSessionMessages(urlSessionId);
     enterChatMode();
-
-    // 전환 완료 (다음 틱에서 플래그 해제)
-    requestAnimationFrame(() => {
-      isSessionSwitching.current = false;
-    });
-  }, [urlSessionId, setCurrentSession, loadSessionMessages, enterChatMode]);
-
-  // 세션 변경 시 URL 업데이트 (새 세션 생성 시에만 필요)
-  useEffect(() => {
-    // 전환 중이면 무시 (URL에서 시작된 전환인 경우)
-    if (isSessionSwitching.current) return;
-
-    if (currentSessionId && isChatMode) {
-      // 현재 URL이 이미 해당 세션이 아니면 업데이트
-      if (urlSessionId !== currentSessionId) {
-        lastLoadedSessionId.current = currentSessionId;
-        navigate(`/spotlight/${currentSessionId}`, { replace: true });
-      }
-    }
-  }, [currentSessionId, isChatMode, urlSessionId, navigate]);
+  }, [urlSessionId, exitChatMode, setCurrentSession, loadSessionMessages, enterChatMode]);
 
   // 채팅 모드 종료 + URL 홈으로 이동
   const handleExitChatMode = () => {
