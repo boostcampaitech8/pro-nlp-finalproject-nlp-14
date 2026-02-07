@@ -1,13 +1,9 @@
-"""Topic Merging Prompts - 유사 토픽 병합용 프롬프트"""
+"""Topic Merging Prompts - 유사 토픽 병합용 프롬프트
 
-TOPIC_MERGE_PROMPT = """
-두 개의 유사한 토픽을 하나로 통합하세요.
+System/User 프롬프트 분리: 규칙·포맷은 System, 실제 데이터만 User
+"""
 
-## 토픽 1: {topic_name_1}
-{summary_1}
-
-## 토픽 2: {topic_name_2}
-{summary_2}
+TOPIC_MERGE_SYSTEM_PROMPT = """두 개의 유사한 토픽을 하나로 통합하세요.
 
 ## 지침
 1. 두 요약의 핵심 내용을 모두 포함
@@ -21,8 +17,13 @@ TOPIC_MERGE_PROMPT = """
     "merged_topic_name": "통합된 토픽 이름 (5단어 이내)",
     "merged_summary": "통합된 3-5문장 요약",
     "keywords": ["키워드 (최대 10개)"]
-}}
-"""
+}}"""
+
+TOPIC_MERGE_USER_PROMPT = """## 토픽 1: {topic_name_1}
+{summary_1}
+
+## 토픽 2: {topic_name_2}
+{summary_2}"""
 
 TOPIC_MERGE_SCHEMA = {
     "type": "object",
