@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 # 공유 도구 레지스트리에서 Query 도구만 가져오기
 import app.infrastructure.graph.orchestration.shared.tools  # noqa: F401
-from app.infrastructure.graph.integration.llm import get_planner_llm_for_tools
+from app.infrastructure.graph.integration.llm import get_planner_llm
 from app.infrastructure.graph.orchestration.shared.tools.registry import (
     get_query_tools,
     get_tool_category,
@@ -130,7 +130,7 @@ async def create_plan(state: VoiceOrchestrationState) -> VoiceOrchestrationState
     logger.info(f"Voice mode, tools count: {len(langchain_tools)}")
 
     # bind_tools 적용
-    llm = get_planner_llm_for_tools()
+    llm = get_planner_llm()
     llm_with_tools = llm.bind_tools(langchain_tools)
 
     # Voice 시스템 프롬프트
