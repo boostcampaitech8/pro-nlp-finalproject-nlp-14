@@ -224,12 +224,35 @@ class ContextManager:
 
             # 새 세그먼트만 추가 (업데이트된 것은 이미 l1_segments에 반영됨)
             for seg in segments:
-                if not self._find_segment_by_name(seg.name):
+                existing_segment = self._find_segment_by_name(seg.name)
+
+                if not existing_segment:
                     self.l1_segments.append(seg)
                     new_segments.append(seg)
-                elif seg.id not in self._topic_embeddings:
+                    continue
+
+                # 업데이트된 세그먼트(동일 ID)는 재임베딩 대상에 포함
+                if existing_segment.id == seg.id and seg.id not in self._topic_embeddings:
                     # 업데이트된 세그먼트도 임베딩 필요
                     new_segments.append(seg)
+                    continue
+
+                # 같은 이름인데 다른 ID → 기존 토픽에 새 정보 병합
+                existing_segment.summary = f"{existing_segment.summary} {seg.summary}"
+                existing_segment.end_utterance_id = max(
+                    existing_segment.end_utterance_id, seg.end_utterance_id
+                )
+                existing_segment.keywords = list(
+                    set(existing_segment.keywords + seg.keywords)
+                )[:10]
+                # 요약이 바뀌었으므로 stale embedding 무효화
+                self._topic_embeddings.pop(existing_segment.id, None)
+                new_segments.append(existing_segment)
+                logger.info(
+                    "Appended to existing topic: name=%s, id=%s",
+                    existing_segment.name,
+                    existing_segment.id[:8],
+                )
 
             logger.info(
                 f"Chunk {chunk_idx + 1}: {len(segments)} topics from "
@@ -527,6 +550,8 @@ class ContextManager:
                     existing.summary = summary
                     existing.end_utterance_id = turn_end
                     existing.keywords = list(set(existing.keywords + keywords))[:10]
+                    # 업데이트된 요약의 stale embedding을 무효화하여 재임베딩 트리거
+                    self._topic_embeddings.pop(existing.id, None)
                     segments.append(existing)
                     continue
 
@@ -586,12 +611,15 @@ class ContextManager:
         if not self._embedder or not self._embedder.is_available:
             return 0
 
-        # 이미 임베딩된 토픽 제외
-        to_embed = [
-            (seg, seg.summary)
-            for seg in segments
-            if seg.id not in self._topic_embeddings and seg.summary.strip()
-        ]
+        # 이미 임베딩된 토픽 제외 + 동일 토픽 중복 요청 제거
+        to_embed: list[tuple[TopicSegment, str]] = []
+        seen_topic_ids: set[str] = set()
+        for seg in segments:
+            if seg.id in seen_topic_ids:
+                continue
+            seen_topic_ids.add(seg.id)
+            if seg.id not in self._topic_embeddings and seg.summary.strip():
+                to_embed.append((seg, seg.summary))
 
         if not to_embed:
             return 0
@@ -713,10 +741,31 @@ class ContextManager:
 
         # 병합된 토픽 추가
         self.l1_segments.append(merged_segment)
-        self._embed_topic(merged_segment)
+        await self._embed_topics_batch_async([merged_segment])
 
         logger.info(f"Merged into: '{merged_segment.name}' (now {len(self.l1_segments)} topics)")
         return True
+
+    def _rank_topics_by_similarity(
+        self,
+        query_embedding: np.ndarray,
+        top_k: int,
+        threshold: float,
+    ) -> list[TopicSegment]:
+        """쿼리 임베딩 기준으로 토픽 유사도 계산 후 Top-K 반환."""
+        similarities: list[tuple[TopicSegment, float]] = []
+        for seg in self.l1_segments:
+            topic_embedding_values = self._topic_embeddings.get(seg.id)
+            if topic_embedding_values is None:
+                continue
+
+            topic_embedding = np.array(topic_embedding_values, dtype=np.float32)
+            similarity = self._embedder.cosine_similarity(query_embedding, topic_embedding)
+            if similarity >= threshold:
+                similarities.append((seg, similarity))
+
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        return [seg for seg, _ in similarities[:top_k]]
 
     async def _merge_topics_with_llm(
         self, seg1: TopicSegment, seg2: TopicSegment
@@ -815,23 +864,7 @@ class ContextManager:
         if query_embedding is None:
             return self.l1_segments[:top_k]
 
-        # 유사도 계산
-        similarities: list[tuple[TopicSegment, float]] = []
-        for seg in self.l1_segments:
-            if seg.id not in self._topic_embeddings:
-                continue
-
-            topic_embedding = np.array(self._topic_embeddings[seg.id], dtype=np.float32)
-            similarity = self._embedder.cosine_similarity(query_embedding, topic_embedding)
-
-            if similarity >= threshold:
-                similarities.append((seg, similarity))
-
-        # 유사도 내림차순 정렬
-        similarities.sort(key=lambda x: x[1], reverse=True)
-
-        # Top-K 반환
-        results = [seg for seg, _ in similarities[:top_k]]
+        results = self._rank_topics_by_similarity(query_embedding, top_k, threshold)
         logger.debug(
             f"Async semantic search for '{query[:30]}...': "
             f"found {len(results)} topics (top_k={top_k}, threshold={threshold})"
@@ -870,23 +903,7 @@ class ContextManager:
         if query_embedding is None:
             return self.l1_segments[:top_k]
 
-        # 유사도 계산
-        similarities: list[tuple[TopicSegment, float]] = []
-        for seg in self.l1_segments:
-            if seg.id not in self._topic_embeddings:
-                continue
-
-            topic_embedding = np.array(self._topic_embeddings[seg.id], dtype=np.float32)
-            similarity = self._embedder.cosine_similarity(query_embedding, topic_embedding)
-
-            if similarity >= threshold:
-                similarities.append((seg, similarity))
-
-        # 유사도 내림차순 정렬
-        similarities.sort(key=lambda x: x[1], reverse=True)
-
-        # Top-K 반환
-        results = [seg for seg, _ in similarities[:top_k]]
+        results = self._rank_topics_by_similarity(query_embedding, top_k, threshold)
         logger.debug(
             f"Semantic search for '{query[:30]}...': "
             f"found {len(results)} topics (top_k={top_k}, threshold={threshold})"
@@ -1018,7 +1035,9 @@ class ContextManager:
                 start_ms=row.start_ms,
                 end_ms=row.end_ms,
                 confidence=row.confidence,
-                absolute_timestamp=row.start_at or row.created_at,
+                absolute_timestamp=row.start_at
+                or row.created_at
+                or datetime.now(timezone.utc),
             )
             utterances.append(utterance)
 
