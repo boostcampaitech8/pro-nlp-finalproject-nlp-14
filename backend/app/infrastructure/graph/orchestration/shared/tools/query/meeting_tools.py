@@ -4,8 +4,10 @@ Query tools for meeting-related read operations.
 """
 
 import logging
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from app.core.database import async_session_maker
 from app.services.meeting_service import MeetingService
@@ -16,17 +18,21 @@ from ..decorators import mit_tool
 
 logger = logging.getLogger(__name__)
 
+KST = ZoneInfo("Asia/Seoul")
+
 
 @mit_tool(category="query")
 async def get_meetings(
     team_id: str,
     status: str = "",
+    time_filter: str = "",
     page: int = 1,
     limit: int = 20,
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """팀의 회의 목록을 조회합니다. 상태별 필터링이 가능합니다."""
+    """팀의 회의 목록을 조회합니다. 상태별, 시간별 필터링이 가능합니다.
+    time_filter: 'future'(예정된 회의), 'past'(지난 회의), ''(전체)"""
     logger.info(f"Executing get_meetings for user {_user_id}")
 
     if not team_id:
@@ -50,8 +56,33 @@ async def get_meetings(
                 limit=limit,
                 status=normalized_status,
             )
+
+            meetings = [m.model_dump(mode="json") for m in result.items]
+
+            # time_filter 적용
+            if time_filter:
+                now = datetime.now(KST)
+                filtered = []
+                for m in meetings:
+                    scheduled_at = m.get("scheduled_at")
+                    if not scheduled_at:
+                        continue
+                    if isinstance(scheduled_at, str):
+                        try:
+                            meeting_time = datetime.fromisoformat(scheduled_at)
+                        except ValueError:
+                            continue
+                    else:
+                        meeting_time = scheduled_at
+
+                    if time_filter == "future" and meeting_time >= now:
+                        filtered.append(m)
+                    elif time_filter == "past" and meeting_time < now:
+                        filtered.append(m)
+                meetings = filtered
+
             return {
-                "meetings": [m.model_dump(mode="json") for m in result.items],
+                "meetings": meetings,
                 "meta": result.meta.model_dump(),
             }
         except ValueError as e:

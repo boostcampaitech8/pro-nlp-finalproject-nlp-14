@@ -17,6 +17,13 @@ class ToolCategory(str, Enum):
     MUTATION = "mutation"  # Write operation, requires HITL in Spotlight mode
 
 
+class ToolMode(str, Enum):
+    """Tool availability mode"""
+
+    VOICE = "voice"  # Voice mode (in-meeting assistant)
+    SPOTLIGHT = "spotlight"  # Spotlight mode (standalone meeting manager)
+
+
 # Registry for tools
 _tools: dict[str, StructuredTool] = {}
 _tool_metadata: dict[str, dict] = {}
@@ -24,6 +31,7 @@ _tool_metadata: dict[str, dict] = {}
 
 def mit_tool(
     category: ToolCategory | str = ToolCategory.QUERY,
+    modes: list[ToolMode] | None = None,
     display_template: str | None = None,
     hitl_fields: dict[str, dict] | None = None,
 ):
@@ -31,6 +39,9 @@ def mit_tool(
 
     Args:
         category: Tool category (query or mutation)
+        modes: List of modes where this tool is available.
+               None means available in all modes.
+               e.g., [ToolMode.SPOTLIGHT] = Spotlight only
         display_template: Natural language template for HITL confirmation.
                          Use {{param_name}} for input placeholders.
         hitl_fields: HITL field configuration for each parameter.
@@ -95,6 +106,7 @@ def mit_tool(
         # Store metadata
         metadata = {
             "category": cat.value,
+            "modes": [m.value for m in modes] if modes else None,
             "display_template": display_template,
             "hitl_fields": hitl_fields or {},
         }
@@ -146,6 +158,20 @@ def is_mutation_tool(name: str) -> bool:
     """Check if a tool is a mutation tool"""
     metadata = _tool_metadata.get(name, {})
     return metadata.get("category") == ToolCategory.MUTATION.value
+
+
+def get_tools_by_mode(mode: ToolMode | str) -> list[StructuredTool]:
+    """Get tools available in a specific mode.
+
+    Tools with modes=None are available in all modes.
+    Tools with specific modes are only available in those modes.
+    """
+    mode_value = mode if isinstance(mode, str) else mode.value
+    return [
+        tool for name, tool in _tools.items()
+        if _tool_metadata.get(name, {}).get("modes") is None
+        or mode_value in _tool_metadata.get(name, {}).get("modes", [])
+    ]
 
 
 def clear_registry() -> None:

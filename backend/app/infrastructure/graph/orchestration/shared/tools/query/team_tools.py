@@ -13,12 +13,12 @@ from app.services.team_service import TeamService
 
 from langchain_core.tools import InjectedToolArg
 
-from ..decorators import mit_tool
+from ..decorators import ToolMode, mit_tool
 
 logger = logging.getLogger(__name__)
 
 
-@mit_tool(category="query")
+@mit_tool(category="query", modes=[ToolMode.SPOTLIGHT])
 async def get_my_teams(
     page: int = 1,
     limit: int = 20,
@@ -79,7 +79,7 @@ async def get_team(
             return {"error": str(e)}
 
 
-@mit_tool(category="query")
+@mit_tool(category="query", modes=[ToolMode.SPOTLIGHT])
 async def get_team_members(
     team_id: str,
     *,

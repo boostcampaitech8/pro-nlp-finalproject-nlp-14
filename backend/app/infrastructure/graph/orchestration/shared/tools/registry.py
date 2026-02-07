@@ -12,11 +12,13 @@ from langchain_core.tools import StructuredTool
 
 from .decorators import (
     ToolCategory,
+    ToolMode,
     get_all_tools,
     get_mutation_tools,
     get_query_tools,
     get_tool,
     get_tool_metadata,
+    get_tools_by_mode,
     is_mutation_tool,
 )
 
@@ -48,12 +50,26 @@ def get_tool_category(name: str) -> str | None:
     return metadata.get("category") if metadata else None
 
 
+def get_voice_tools() -> list:
+    """Get tools available in Voice mode"""
+    return get_tools_by_mode(ToolMode.VOICE)
+
+
+def get_spotlight_tools() -> list:
+    """Get tools available in Spotlight mode"""
+    return get_tools_by_mode(ToolMode.SPOTLIGHT)
+
+
 # Re-export from decorators
 __all__ = [
     "ToolCategory",
+    "ToolMode",
     "get_query_tools",
     "get_all_tools",
     "get_mutation_tools",
+    "get_tools_by_mode",
+    "get_voice_tools",
+    "get_spotlight_tools",
     "get_tool_by_name",
     "get_tool_category",
     "get_tool_metadata",
