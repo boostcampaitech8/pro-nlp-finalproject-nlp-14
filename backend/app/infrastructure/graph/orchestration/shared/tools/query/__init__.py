@@ -1,7 +1,7 @@
 """Query Tools for MIT Orchestration
 
 Query tools are read-only operations that do not require HITL confirmation.
-Available in both Voice and Spotlight modes.
+Mode-specific availability is controlled via the `modes` parameter in @mit_tool.
 
 Tools are auto-registered via @mit_tool decorator on import.
 """
@@ -10,6 +10,9 @@ Tools are auto-registered via @mit_tool decorator on import.
 from . import meeting_tools  # noqa: F401
 from . import team_tools  # noqa: F401
 from . import utility_tools  # noqa: F401
+from . import voice_tools  # noqa: F401
+from . import action_item_tools  # noqa: F401
+from . import gt_tools  # noqa: F401
 
 # Export function names for reference
 __all__ = [
@@ -26,4 +29,10 @@ __all__ = [
     "get_upcoming_meetings",
     "get_meeting_transcript",
     "get_meeting_summary",
+    # Voice tools
+    "get_team_by_meeting_id",
+    # Action item tools
+    "get_my_action_items",
+    # Ground truth tools
+    "get_ground_truth",
 ]

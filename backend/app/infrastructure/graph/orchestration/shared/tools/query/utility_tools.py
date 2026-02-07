@@ -94,7 +94,11 @@ async def get_upcoming_meetings(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """사용자가 속한 팀의 다가오는 회의 목록을 조회합니다. 예정된(scheduled) 또는 진행 중인(ongoing) 회의를 포함합니다."""
+    """사용자가 속한 팀의 다가오는 회의 목록을 조회합니다. 예정된(scheduled) 또는 진행 중인(ongoing) 회의를 포함합니다.
+
+    Args:
+        limit: 조회할 회의 수 (기본값: 5, 최대: 20)
+    """
     logger.info(f"Executing get_upcoming_meetings for user {_user_id}")
 
     try:
@@ -164,7 +168,11 @@ async def get_meeting_transcript(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """회의의 전체 전사 기록을 조회합니다. 발화 내용, 발화자, 시간 정보가 포함됩니다."""
+    """회의의 전체 전사 기록을 조회합니다. 발화 내용, 발화자, 시간 정보가 포함됩니다.
+
+    Args:
+        meeting_id: 전사 기록을 조회할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+    """
     logger.info(f"Executing get_meeting_transcript for user {_user_id}")
 
     if not meeting_id:
@@ -210,7 +218,11 @@ async def get_meeting_summary(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """회의의 요약, 안건(Agenda), 결정 사항(Decision), 액션 아이템(Action Item)을 조회합니다."""
+    """회의의 요약, 안건(Agenda), 결정 사항(Decision), 액션 아이템(Action Item)을 조회합니다.
+
+    Args:
+        meeting_id: 요약을 조회할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+    """
     logger.info(f"Executing get_meeting_summary for user {_user_id}")
 
     if not meeting_id:

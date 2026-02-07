@@ -233,8 +233,20 @@ async def stream_llm_tokens_only(
                     )
 
                 elif event_name == "generator":
-                    # Generator 완료 (CustomizedCallbackHandler가 자동으로 output 추출)
                     logger.info(f"Generator completed: {token_count['generator']} tokens")
+                    # LLM 미호출 시 (mutation 성공 등) response를 직접 토큰으로 전송
+                    if token_count["generator"] == 0:
+                        output = event.get("data", {}).get("output", {})
+                        response_text = output.get("response", "")
+                        if response_text:
+                            logger.info(f"[GENERATOR] LLM 미호출 - response 직접 전송: {len(response_text)}자")
+                            yield {
+                                "type": "token",
+                                "tag": "generator_token",
+                                "content": response_text,
+                                "node": "generator",
+                                "timestamp": datetime.now().isoformat(),
+                            }
 
         # 스트림 완료 후 pending interrupt 확인 (HITL)
         logger.info(

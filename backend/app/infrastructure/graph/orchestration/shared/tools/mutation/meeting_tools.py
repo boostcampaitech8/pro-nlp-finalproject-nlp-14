@@ -12,17 +12,20 @@ from uuid import UUID
 from app.core.database import async_session_maker
 from app.models.team import Team
 from app.schemas.meeting import CreateMeetingRequest, UpdateMeetingRequest
+from app.schemas.meeting_participant import AddMeetingParticipantRequest
+from app.services.meeting_participant_service import MeetingParticipantService
 from app.services.meeting_service import MeetingService
 
 from langchain_core.tools import InjectedToolArg
 
-from ..decorators import mit_tool
+from ..decorators import ToolMode, mit_tool
 
 logger = logging.getLogger(__name__)
 
 
 @mit_tool(
     category="mutation",
+    modes=[ToolMode.SPOTLIGHT],
     display_template="{{team_id}} 팀에 '{{title}}' 회의를 {{scheduled_at}}에 만들까요?",
     hitl_fields={
         "team_id": {
@@ -53,7 +56,14 @@ async def create_meeting(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",  # Injected by tools.py
 ) -> dict:
-    """새로운 회의를 생성합니다"""
+    """새로운 회의를 생성합니다
+
+    Args:
+        team_id: 회의를 생성할 팀의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0'). 반드시 사용자의 팀 목록에서 id 값을 사용해야 합니다.
+        title: 회의 제목
+        scheduled_at: 회의 예정 일시 (ISO 8601 형식, 예: '2026-02-08T14:00:00+09:00')
+        description: 회의 설명 (선택사항)
+    """
     logger.info(f"Executing create_meeting for user {_user_id}")
 
     if not team_id:
@@ -106,6 +116,7 @@ async def create_meeting(
 
 @mit_tool(
     category="mutation",
+    modes=[ToolMode.SPOTLIGHT],
     display_template="회의 정보를 수정할까요?",
     hitl_fields={
         "meeting_id": {
@@ -131,7 +142,15 @@ async def update_meeting(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """기존 회의의 정보를 수정합니다"""
+    """기존 회의의 정보를 수정합니다
+
+    Args:
+        meeting_id: 수정할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+        title: 새로운 회의 제목 (선택사항)
+        scheduled_at: 새로운 회의 일시 (ISO 8601 형식, 선택사항)
+        description: 새로운 회의 설명 (선택사항)
+        status: 새로운 회의 상태 (선택사항)
+    """
     logger.info(f"Executing update_meeting for user {_user_id}")
 
     if not meeting_id:
@@ -177,6 +196,7 @@ async def update_meeting(
 
 @mit_tool(
     category="mutation",
+    modes=[ToolMode.SPOTLIGHT],
     display_template="이 회의를 삭제할까요?",
     hitl_fields={
         "meeting_id": {
@@ -190,7 +210,11 @@ async def delete_meeting(
     *,
     _user_id: Annotated[str, InjectedToolArg] = "",
 ) -> dict:
-    """회의를 삭제합니다"""
+    """회의를 삭제합니다
+
+    Args:
+        meeting_id: 삭제할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+    """
     logger.info(f"Executing delete_meeting for user {_user_id}")
 
     if not meeting_id:
@@ -213,6 +237,76 @@ async def delete_meeting(
             return {
                 "success": True,
                 "message": "회의가 삭제되었습니다.",
+            }
+        except ValueError as e:
+            return {"error": str(e)}
+
+
+@mit_tool(
+    category="mutation",
+    modes=[ToolMode.SPOTLIGHT],
+    display_template="회의에 참여자를 추가할까요?",
+    hitl_fields={
+        "meeting_id": {
+            "input_type": "text",
+            "placeholder": "회의 ID",
+        },
+        "user_id": {
+            "input_type": "text",
+            "placeholder": "참여자 ID",
+        },
+        "role": {
+            "input_type": "select",
+            "options": ["participant", "host"],
+            "placeholder": "역할을 선택하세요",
+        },
+    },
+)
+async def invite_meeting_participant(
+    meeting_id: str,
+    user_id: str,
+    role: str = "participant",
+    *,
+    _user_id: Annotated[str, InjectedToolArg] = "",
+) -> dict:
+    """회의에 참여자를 추가합니다.
+
+    Args:
+        meeting_id: 참여자를 추가할 회의의 UUID (예: 'a5aed891-35e3-4678-903b-44f0b13742b0')
+        user_id: 추가할 참여자의 사용자 UUID (예: 'b6cf1234-56de-7890-abcd-ef1234567890')
+        role: 참여자 역할 ('participant' 또는 'host', 기본값: 'participant')
+    """
+    logger.info(f"Executing invite_meeting_participant for user {_user_id}")
+
+    if not meeting_id:
+        return {"error": "meeting_id is required"}
+    if not user_id:
+        return {"error": "user_id is required"}
+
+    try:
+        meeting_uuid = UUID(str(meeting_id))
+        participant_uuid = UUID(str(user_id))
+        current_user_uuid = UUID(str(_user_id))
+    except ValueError as e:
+        return {"error": f"Invalid UUID format: {e}"}
+
+    async with async_session_maker() as db:
+        service = MeetingParticipantService(db)
+        try:
+            request = AddMeetingParticipantRequest(
+                user_id=participant_uuid,
+                role=role,
+            )
+            result = await service.add_participant(
+                meeting_id=meeting_uuid,
+                data=request,
+                current_user_id=current_user_uuid,
+            )
+            await db.commit()
+            return {
+                "success": True,
+                "participant": result.model_dump(mode="json"),
+                "message": "회의에 참여자가 추가되었습니다.",
             }
         except ValueError as e:
             return {"error": str(e)}

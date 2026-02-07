@@ -1313,6 +1313,56 @@ class KGRepository:
         return len(records) > 0
 
     # =========================================================================
+    # Ground Truth - 팀 확정 결정사항
+    # =========================================================================
+
+    async def get_team_latest_decisions(self, team_id: str) -> list[dict]:
+        """팀의 모든 회의에서 최종 확정(latest)된 Decision 목록 조회
+
+        Args:
+            team_id: 팀 ID
+
+        Returns:
+            확정된 결정사항 목록 (decision, agenda_topic, meeting_title, action_items 포함)
+        """
+        query = """
+        MATCH (m:Meeting {team_id: $team_id})-[:CONTAINS]->(a:Agenda)-[:HAS_DECISION]->(d:Decision)
+        WHERE d.status = 'latest'
+        OPTIONAL MATCH (d)-[:TRIGGERS]->(ai:ActionItem)
+        OPTIONAL MATCH (assignee:User)-[:ASSIGNED_TO]->(ai)
+        WITH d, a.topic as agenda_topic, m.title as meeting_title, m.id as meeting_id,
+             collect(CASE WHEN ai IS NOT NULL THEN {
+                 id: ai.id,
+                 content: ai.content,
+                 status: ai.status,
+                 assignee: assignee.name,
+                 due_date: ai.due_date
+             } END) as action_items
+        RETURN d.id as id, d.content as content, d.status as status,
+               d.created_at as created_at,
+               agenda_topic, meeting_title, meeting_id,
+               action_items
+        ORDER BY d.created_at DESC
+        """
+        records = await self._execute_read(query, {"team_id": team_id})
+
+        return [
+            {
+                "id": r["id"],
+                "content": r["content"] or "",
+                "status": r["status"],
+                "created_at": _convert_neo4j_datetime(r["created_at"]).isoformat(),
+                "agenda_topic": r["agenda_topic"],
+                "meeting_title": r["meeting_title"],
+                "meeting_id": r["meeting_id"],
+                "action_items": [
+                    ai for ai in r["action_items"] if ai is not None
+                ],
+            }
+            for r in records
+        ]
+
+    # =========================================================================
     # Minutes View
     # =========================================================================
 
