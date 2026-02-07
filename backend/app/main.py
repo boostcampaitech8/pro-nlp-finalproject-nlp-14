@@ -58,4 +58,3 @@ app.include_router(api_router)
 async def health_check() -> dict:
     """헬스 체크"""
     return {"status": "ok"}
-
