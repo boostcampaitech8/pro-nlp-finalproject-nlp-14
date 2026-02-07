@@ -1,5 +1,6 @@
 // 명령 처리 훅
 import { useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { spotlightApi, type SSEEvent, type SpotlightSession } from '@/app/services/spotlightApi';
 import type { ChatMessage, HITLData } from '@/app/types/command';
@@ -21,6 +22,7 @@ const resetQueueState = () => {
 };
 
 export function useCommand() {
+  const navigate = useNavigate();
   const {
     inputValue,
     isChatMode,
@@ -39,6 +41,7 @@ export function useCommand() {
     abortCurrentStream,
     syncSessionMessages,
     markSessionNewResponse,
+    updateSessionTitle,
   } = useCommandStore();
 
   // 현재 세션 ID를 ref로 추적 (콜백에서 최신 값 참조용)
@@ -388,12 +391,19 @@ export function useCommand() {
 
       setInputValue('');
 
+      const wasInChatMode = isChatMode;
+
       if (!isChatMode) {
         enterChatMode();
       }
 
       const sessionId = await ensureSessionId();
       if (!sessionId) return;
+
+      // 새 세션이 생성된 경우 URL 업데이트
+      if (!wasInChatMode) {
+        navigate(`/spotlight/${sessionId}`, { replace: true });
+      }
 
       // HITL pending 상태면 자동 취소 표시 후 새 메시지 전송
       if (hitlPending) {
@@ -409,17 +419,26 @@ export function useCommand() {
         timestamp: new Date(),
       };
       addChatMessage(userMsg);
+
+      // 첫 메시지인 경우 세션 제목을 유저 메시지로 설정
+      if (!wasInChatMode) {
+        const title = cmd.length > 50 ? cmd.slice(0, 50) + '...' : cmd;
+        updateSessionTitle(sessionId, title);
+      }
+
       enqueueMessage(cmd, sessionId);
     },
     [
       inputValue,
       isChatMode,
+      navigate,
       setInputValue,
       enterChatMode,
       ensureSessionId,
       addChatMessage,
       enqueueMessage,
       autoCancelPendingHitl,
+      updateSessionTitle,
     ]
   );
 
@@ -475,6 +494,11 @@ export function useCommand() {
     [updateChatMessage, enqueueHitl]
   );
 
+  const handleExitChatMode = useCallback(() => {
+    exitChatMode();
+    navigate('/', { replace: true });
+  }, [exitChatMode, navigate]);
+
   return {
     inputValue,
     isChatMode,
@@ -483,6 +507,6 @@ export function useCommand() {
     approvePlan,
     confirmHITL,
     cancelHITL,
-    exitChatMode,
+    exitChatMode: handleExitChatMode,
   };
 }
