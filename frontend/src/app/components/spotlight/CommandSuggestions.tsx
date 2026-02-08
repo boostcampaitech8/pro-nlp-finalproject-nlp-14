@@ -19,97 +19,99 @@ const iconMap: Record<string, LucideIcon> = {
   help: HelpCircle,
 };
 
+type CardVariant = 'primary' | 'accent' | 'default';
+
 interface SuggestionCardProps {
   suggestion: Suggestion;
-  primary?: boolean;
+  variant?: CardVariant;
   expanded?: boolean;
   onSelect: (command: string, category?: string) => void;
   children?: React.ReactNode;
 }
 
-function SuggestionCard({ suggestion, primary, expanded, onSelect, children }: SuggestionCardProps) {
-  const IconComponent = iconMap[suggestion.icon];
+const variantStyles: Record<CardVariant, {
+  card: string;
+  icon: string;
+  title: string;
+  desc: string;
+}> = {
+  primary: {
+    card: 'bg-gradient-to-br from-mit-primary/20 via-purple-500/15 to-purple-600/5 border-purple-400/25 shadow-[0_4px_20px_rgba(168,85,247,0.1)] hover:border-purple-400/40 hover:shadow-[0_16px_48px_rgba(168,85,247,0.2)]',
+    icon: 'bg-gradient-to-br from-mit-primary to-mit-purple shadow-[0_0_16px_rgba(168,85,247,0.25)] group-hover:shadow-[0_0_28px_rgba(168,85,247,0.4)]',
+    title: 'text-white font-semibold',
+    desc: 'text-white/50 group-hover:text-white/70',
+  },
+  accent: {
+    card: 'bg-gradient-to-br from-sky-500/10 via-cyan-500/5 to-transparent border-sky-400/15 hover:border-sky-400/30 hover:shadow-[0_12px_36px_rgba(56,189,248,0.1)]',
+    icon: 'bg-sky-500/15 border border-sky-400/20 group-hover:bg-sky-500/25 group-hover:border-sky-400/30',
+    title: 'text-white/90 font-medium group-hover:text-white',
+    desc: 'text-white/40 group-hover:text-white/60',
+  },
+  default: {
+    card: 'bg-white/[0.03] border-white/[0.06] hover:bg-purple-500/[0.08] hover:border-purple-400/20 hover:shadow-[0_12px_36px_rgba(168,85,247,0.12)]',
+    icon: 'bg-white/[0.06] border border-white/[0.08] group-hover:bg-purple-500/15 group-hover:border-purple-400/20',
+    title: 'text-white/80 font-medium group-hover:text-white',
+    desc: 'text-white/35 group-hover:text-white/55',
+  },
+};
 
-  // 호버 시 보라 글로우가 좌상단→우하단으로 흐르는 shimmer overlay
+function SuggestionCard({ suggestion, variant = 'default', expanded, onSelect, children }: SuggestionCardProps) {
+  const IconComponent = iconMap[suggestion.icon];
+  const styles = variantStyles[variant];
+
   const glowOverlay = (
     <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
       <div className="absolute -inset-full w-[200%] h-[200%] opacity-0 group-hover:animate-[glow-sweep_0.6s_ease-out_forwards] bg-gradient-to-br from-transparent via-purple-400/15 to-transparent" />
     </div>
   );
 
-  if (primary) {
-    return (
-      <motion.div
-        layout
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className={expanded ? 'col-span-1 sm:col-span-3' : ''}
-      >
-        <button
-          onClick={() => !expanded && onSelect(suggestion.command, suggestion.category)}
-          className={`relative w-full p-5 rounded-xl bg-gradient-to-br from-mit-primary/20 via-purple-500/15 to-purple-600/5 backdrop-blur-lg border border-purple-400/25 shadow-[0_4px_20px_rgba(168,85,247,0.1)] hover:border-purple-400/40 ${!expanded ? 'hover:-translate-y-1' : ''} hover:shadow-[0_16px_48px_rgba(168,85,247,0.2)] transition-all duration-300 text-left group ${expanded ? '' : 'overflow-hidden'}`}
-        >
-          {glowOverlay}
-          <div className="relative flex items-center gap-4">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-mit-primary to-mit-purple flex items-center justify-center flex-shrink-0 shadow-[0_0_16px_rgba(168,85,247,0.25)] group-hover:scale-110 group-hover:shadow-[0_0_28px_rgba(168,85,247,0.4)] transition-all duration-300">
-              {IconComponent && <IconComponent className="w-5 h-5 text-white" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-white mb-0.5">
-                {suggestion.title}
-              </h3>
-              <p className="text-xs text-white/50 group-hover:text-white/70 transition-colors duration-200">
-                {suggestion.description}
-              </p>
-            </div>
-            {!expanded && (
-              <ArrowRight className="w-4 h-4 text-white/30 group-hover:text-white/60 group-hover:translate-x-1 transition-all duration-300 flex-shrink-0" />
-            )}
-          </div>
-
-          {/* 인라인 폼 영역 */}
-          <AnimatePresence>
-            {expanded && children && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-                className="overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {children}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </button>
-      </motion.div>
-    );
-  }
-
   return (
-    <motion.div layout transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}>
+    <motion.div
+      layout
+      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+      className={expanded ? 'col-span-1 sm:col-span-3' : ''}
+    >
       <button
-        onClick={() => onSelect(suggestion.command, suggestion.category)}
-        className="relative w-full p-4 rounded-xl bg-white/[0.03] backdrop-blur-lg border border-white/[0.06] hover:bg-purple-500/[0.08] hover:border-purple-400/20 hover:-translate-y-1 hover:shadow-[0_12px_36px_rgba(168,85,247,0.12)] transition-all duration-300 text-left group overflow-hidden"
+        onClick={() => !expanded && onSelect(suggestion.command, suggestion.category)}
+        className={`relative w-full p-4 rounded-xl backdrop-blur-lg border ${styles.card} ${!expanded ? 'hover:-translate-y-1' : ''} transition-all duration-300 text-left group ${expanded ? '' : 'overflow-hidden'}`}
       >
         {glowOverlay}
         <div className="relative flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center flex-shrink-0 group-hover:bg-purple-500/15 group-hover:border-purple-400/20 group-hover:scale-110 transition-all duration-300">
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-all duration-300 ${styles.icon}`}>
             {IconComponent ? (
-              <IconComponent className="w-4 h-4 text-white/50 group-hover:text-white/80 transition-colors duration-200" />
+              <IconComponent className="w-4 h-4 text-white/80" />
             ) : (
               <span className="text-lg">{suggestion.icon}</span>
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-medium text-white/80 mb-0.5 group-hover:text-white transition-colors duration-200">
+            <h3 className={`text-sm mb-0.5 transition-colors duration-200 ${styles.title}`}>
               {suggestion.title}
             </h3>
-            <p className="text-xs text-white/35 group-hover:text-white/55 transition-colors duration-200 line-clamp-2">
+            <p className={`text-xs transition-colors duration-200 line-clamp-2 ${styles.desc}`}>
               {suggestion.description}
             </p>
           </div>
+          {variant === 'primary' && !expanded && (
+            <ArrowRight className="w-4 h-4 text-white/30 group-hover:text-white/60 group-hover:translate-x-1 transition-all duration-300 flex-shrink-0" />
+          )}
         </div>
+
+        {/* 인라인 폼 영역 */}
+        <AnimatePresence>
+          {expanded && children && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+              className="overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {children}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </button>
     </motion.div>
   );
@@ -175,12 +177,17 @@ export function CommandSuggestions() {
         {sortedSuggestions.map((suggestion) => {
           const isMeetingCategory = suggestion.category === 'meeting';
           const isExpanded = expandedId === suggestion.id;
+          const variant: CardVariant = isMeetingCategory
+            ? 'primary'
+            : suggestion.category === 'help'
+              ? 'accent'
+              : 'default';
 
           return (
             <SuggestionCard
               key={suggestion.id}
               suggestion={suggestion}
-              primary={isMeetingCategory}
+              variant={variant}
               expanded={isExpanded}
               onSelect={handleSelect}
             >
