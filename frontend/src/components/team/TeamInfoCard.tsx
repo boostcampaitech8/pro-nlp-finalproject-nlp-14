@@ -60,10 +60,10 @@ export function TeamInfoCard({
                   <button
                     onClick={handleShareClick}
                     className={cn(
-                      'p-2 rounded-lg transition-all duration-200',
+                      'p-2.5 rounded-xl transition-all duration-200',
                       copied
-                        ? 'text-green-400 bg-green-500/10'
-                        : 'text-white/40 hover:text-white hover:bg-white/10'
+                        ? 'text-green-400 bg-green-500/15'
+                        : 'text-white/60 bg-white/5 hover:text-white hover:bg-white/10'
                     )}
                   >
                     {copied ? (
@@ -81,7 +81,7 @@ export function TeamInfoCard({
                 <TooltipTrigger asChild>
                   <button
                     onClick={onOpenSettings}
-                    className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                    className="p-2.5 rounded-xl bg-white/5 text-white/60 hover:text-white hover:bg-white/10 transition-colors"
                   >
                     <Settings className="w-5 h-5" />
                   </button>

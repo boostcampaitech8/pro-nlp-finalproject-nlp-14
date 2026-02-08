@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Check, Copy, RefreshCw, Trash2 } from 'lucide-react';
+import { Settings, Check, Copy, RefreshCw, Trash2, Plus, Pencil, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,6 @@ import {
   DialogDescription,
 } from '@/app/components/ui';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/utils';
 import { useTeamStore } from '@/stores/teamStore';
 import {
@@ -52,10 +51,13 @@ export function TeamSettingsDialog({
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<TeamRole>('member');
   const [inviting, setInviting] = useState(false);
+  const [inviteFeedback, setInviteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Member editing state
-  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
-  const [editRole, setEditRole] = useState<TeamRole>('member');
+  // Member editing state - batch edit mode
+  const [editMode, setEditMode] = useState(false);
+  const [pendingRoles, setPendingRoles] = useState<Record<string, TeamRole>>({});
+  const [pendingRemovals, setPendingRemovals] = useState<Set<string>>(new Set());
+  const [savingEdits, setSavingEdits] = useState(false);
 
   // Invite link state
   const {
@@ -82,24 +84,81 @@ export function TeamSettingsDialog({
     if (!inviteEmail.trim()) return;
 
     if (isTeamFull) {
-      alert(`팀 정원이 가득 찼습니다. (최대 ${MAX_TEAM_MEMBERS}명)`);
+      setInviteFeedback({ type: 'error', message: `팀 정원이 가득 찼습니다 (최대 ${MAX_TEAM_MEMBERS}명)` });
+      setTimeout(() => setInviteFeedback(null), 3000);
       return;
     }
 
     setInviting(true);
+    setInviteFeedback(null);
     try {
       await onInvite(inviteEmail.trim(), inviteRole);
+      setInviteFeedback({ type: 'success', message: `${inviteEmail.trim()} 초대 완료` });
       setInviteEmail('');
       setInviteRole('member');
-      setShowInviteForm(false);
+      setTimeout(() => setInviteFeedback(null), 3000);
+    } catch {
+      setInviteFeedback({ type: 'error', message: '초대에 실패했습니다' });
+      setTimeout(() => setInviteFeedback(null), 3000);
     } finally {
       setInviting(false);
     }
   };
 
-  const handleUpdateRole = async (userId: string) => {
-    await onUpdateRole(userId, editRole);
-    setEditingMemberId(null);
+  const handleEnterEditMode = () => {
+    const initial: Record<string, TeamRole> = {};
+    team.members.forEach((m) => {
+      if (m.role !== 'owner') {
+        initial[m.userId] = m.role as TeamRole;
+      }
+    });
+    setPendingRoles(initial);
+    setEditMode(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+    setPendingRoles({});
+    setPendingRemovals(new Set());
+  };
+
+  const handleToggleRemoval = (userId: string) => {
+    setPendingRemovals((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveEdits = async () => {
+    setSavingEdits(true);
+    try {
+      const roleUpdates = Object.entries(pendingRoles).filter(
+        ([userId, role]) => {
+          if (pendingRemovals.has(userId)) return false;
+          const member = team.members.find((m) => m.userId === userId);
+          return member && member.role !== role;
+        }
+      );
+
+      await Promise.all([
+        ...roleUpdates.map(([userId, role]) => onUpdateRole(userId, role)),
+        ...Array.from(pendingRemovals).map((userId) => {
+          const member = team.members.find((m) => m.userId === userId);
+          return onRemove(userId, member?.user?.name || 'this member');
+        }),
+      ]);
+
+      setEditMode(false);
+      setPendingRoles({});
+      setPendingRemovals(new Set());
+    } finally {
+      setSavingEdits(false);
+    }
   };
 
   const handleCopy = async () => {
@@ -123,7 +182,6 @@ export function TeamSettingsDialog({
   };
 
   const handleDeactivate = async () => {
-    if (!confirm('초대 링크를 비활성화하시겠습니까?')) return;
     setError(null);
     try {
       await deactivateInviteLink(teamId);
@@ -153,13 +211,76 @@ export function TeamSettingsDialog({
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 flex items-center justify-center">
               <Settings className="w-5 h-5 text-blue-400" />
             </div>
-            <div>
+            <div className="flex-1">
               <DialogTitle className="text-white">팀 설정</DialogTitle>
               <DialogDescription className="text-white/50">
                 멤버 관리, 초대, 팀 설정
               </DialogDescription>
             </div>
+            {canManageMembers && !inviteLink && !isTeamFull && (
+              <Button
+                variant="outline"
+                onClick={handleGenerate}
+                isLoading={inviteLinkLoading}
+                className="flex-shrink-0"
+              >
+                Invite Link
+              </Button>
+            )}
           </div>
+          {/* Invite Link - animated slide */}
+          <div
+            className="grid transition-[grid-template-rows] duration-300 ease-in-out"
+            style={{ gridTemplateRows: canManageMembers && inviteLink && !isTeamFull ? '1fr' : '0fr' }}
+          >
+            <div className="overflow-hidden">
+              <div className="mt-2 flex items-stretch rounded-lg border border-white/10 overflow-hidden">
+                <div
+                  className="group relative cursor-pointer flex-1 min-w-0"
+                  onClick={handleCopy}
+                  title={copied ? 'Copied!' : inviteLink ? `Click to copy · ${formatExpiresAt(inviteLink.expiresAt)}` : ''}
+                >
+                  <input
+                    type="text"
+                    readOnly
+                    value={inviteLink?.inviteUrl ?? ''}
+                    className={cn(
+                      'w-full h-full px-3 py-2 pr-8 bg-transparent text-sm font-mono truncate cursor-pointer transition-all border-none outline-none',
+                      copied ? 'text-green-400' : 'text-white'
+                    )}
+                  />
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                    {copied ? (
+                      <Check className="w-4 h-4 text-green-400" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-white/30 group-hover:text-white/60 transition-colors" />
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerate}
+                  disabled={inviteLinkLoading}
+                  className="px-4 border-l border-white/10 text-white/50 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 flex-shrink-0"
+                  title="갱신"
+                >
+                  <RefreshCw className={cn('w-5 h-5', inviteLinkLoading && 'animate-spin')} />
+                </button>
+                <button
+                  onClick={handleDeactivate}
+                  disabled={inviteLinkLoading}
+                  className="px-4 border-l border-white/10 text-red-400/50 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50 flex-shrink-0"
+                  title="삭제"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+          {error && (
+            <div className="mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+              {error}
+            </div>
+          )}
         </DialogHeader>
 
         <div className="flex items-center justify-between">
@@ -167,70 +288,80 @@ export function TeamSettingsDialog({
             Team Members ({memberCount}/{MAX_TEAM_MEMBERS})
           </h3>
           {canManageMembers && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowInviteForm(!showInviteForm)}
-              disabled={isTeamFull && !showInviteForm}
-              title={
-                isTeamFull
-                  ? `팀 정원이 가득 찼습니다 (최대 ${MAX_TEAM_MEMBERS}명)`
-                  : undefined
-              }
-            >
-              {showInviteForm ? 'Cancel' : 'Invite Member'}
-            </Button>
+            editMode ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={savingEdits}
+                  className="p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  title="취소"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleSaveEdits}
+                  disabled={savingEdits}
+                  className="p-2 rounded-lg text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-50"
+                  title="저장"
+                >
+                  <Check className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleEnterEditMode}
+                className="p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+                title="멤버 편집"
+              >
+                <Pencil className="w-5 h-5" />
+              </button>
+            )
           )}
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto space-y-6 pr-1">
+        <div className="max-h-[60vh] overflow-y-auto scrollbar-hide space-y-6 pr-1">
           {/* Section 1: Members */}
           <div>
 
-            {/* Invite Form */}
+            {/* Invite Form - hidden in edit mode */}
             <div
               className="grid transition-[grid-template-rows] duration-300 ease-in-out"
-              style={{ gridTemplateRows: showInviteForm ? '1fr' : '0fr' }}
+              style={{ gridTemplateRows: showInviteForm && !editMode ? '1fr' : '0fr' }}
             >
               <div className="overflow-hidden">
-                <div className="p-4 rounded-lg bg-white/5 border border-white/10 mb-4">
-                  <h4 className="text-sm font-semibold text-white mb-3">Invite New Member</h4>
-                  <form onSubmit={handleInvite} className="space-y-3">
-                    <Input
-                      label="Email"
+                <form onSubmit={handleInvite} className="mb-3 space-y-2">
+                  <div className="flex gap-2">
+                    <input
                       type="email"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="Enter member's email"
+                      placeholder="이메일 주소"
                       required
+                      className="flex-1 min-w-0 px-3 py-2 text-sm bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/30 focus:outline-none focus:border-mit-primary/50"
                     />
-                    <div>
-                      <label className="block text-sm font-medium text-white/70 mb-1">
-                        Role
-                      </label>
-                      <select
-                        value={inviteRole}
-                        onChange={(e) => setInviteRole(e.target.value as TeamRole)}
-                        className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-mit-primary/50"
-                      >
-                        <option value="member" className="bg-gray-800">Member</option>
-                        <option value="admin" className="bg-gray-800">Admin</option>
-                      </select>
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as TeamRole)}
+                      className="appearance-none px-3 py-2 text-sm bg-white/5 border border-white/10 rounded-lg text-white/70 focus:outline-none focus:border-mit-primary/50 cursor-pointer"
+                    >
+                      <option value="member" className="bg-gray-800">Member</option>
+                      <option value="admin" className="bg-gray-800">Admin</option>
+                    </select>
+                    <Button type="submit" isLoading={inviting}>
+                      초대
+                    </Button>
+                  </div>
+                  {inviteFeedback && (
+                    <div className={cn(
+                      'text-xs px-3 py-1.5 rounded-lg transition-all',
+                      inviteFeedback.type === 'success'
+                        ? 'bg-green-500/10 text-green-400'
+                        : 'bg-red-500/10 text-red-400'
+                    )}>
+                      {inviteFeedback.type === 'success' ? '✓' : '✗'} {inviteFeedback.message}
                     </div>
-                    <div className="flex justify-end gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowInviteForm(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button type="submit" isLoading={inviting}>
-                        Invite
-                      </Button>
-                    </div>
-                  </form>
-                </div>
+                  )}
+                </form>
               </div>
             </div>
 
@@ -243,93 +374,28 @@ export function TeamSettingsDialog({
                   currentUserId={currentUserId}
                   isOwner={isOwner}
                   canManageMembers={canManageMembers}
-                  isEditing={editingMemberId === member.userId}
-                  editRole={editRole}
-                  onStartEdit={() => {
-                    setEditingMemberId(member.userId);
-                    setEditRole(member.role as TeamRole);
-                  }}
-                  onCancelEdit={() => setEditingMemberId(null)}
-                  onEditRoleChange={setEditRole}
-                  onSaveRole={() => handleUpdateRole(member.userId)}
-                  onRemove={() => onRemove(member.userId, member.user?.name || 'this member')}
+                  editMode={editMode}
+                  pendingRole={pendingRoles[member.userId]}
+                  pendingRemoval={pendingRemovals.has(member.userId)}
+                  onRoleChange={(role) => setPendingRoles((prev) => ({ ...prev, [member.userId]: role }))}
+                  onToggleRemoval={() => handleToggleRemoval(member.userId)}
                 />
               ))}
+
+              {/* Add Member Button - hidden in edit mode */}
+              {canManageMembers && !isTeamFull && !editMode && (
+                <button
+                  onClick={() => setShowInviteForm(!showInviteForm)}
+                  className="w-full px-3 py-2.5 flex items-center justify-center gap-2 text-sm text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  {showInviteForm ? '취소' : '멤버 초대'}
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Section 2: Invite Link */}
-          {canManageMembers && (
-            <div className="border-t border-white/10 pt-6">
-              <h3 className="text-lg font-semibold text-white mb-3">Invite Link</h3>
-
-              {error && (
-                <div className="mb-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                  {error}
-                </div>
-              )}
-
-              {inviteLink ? (
-                <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="group relative cursor-pointer flex-1 min-w-0"
-                      onClick={handleCopy}
-                      title={copied ? 'Copied!' : `Click to copy · ${formatExpiresAt(inviteLink.expiresAt)}`}
-                    >
-                      <input
-                        type="text"
-                        readOnly
-                        value={inviteLink.inviteUrl}
-                        className={cn(
-                          'w-full px-3 py-2 pr-9 bg-white/5 border rounded-lg text-sm font-mono truncate cursor-pointer transition-all',
-                          copied
-                            ? 'border-green-500/30 text-green-400'
-                            : 'border-white/10 text-white hover:border-white/20'
-                        )}
-                      />
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        {copied ? (
-                          <Check className="w-4 h-4 text-green-400" />
-                        ) : (
-                          <Copy className="w-4 h-4 text-white/30 group-hover:text-white/60 transition-colors" />
-                        )}
-                      </div>
-                    </div>
-                    <div className="inline-flex rounded-lg border border-white/10 overflow-hidden flex-shrink-0">
-                      <button
-                        onClick={handleGenerate}
-                        disabled={inviteLinkLoading}
-                        className="p-2 text-white/50 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50"
-                        title="Regenerate"
-                      >
-                        <RefreshCw className={cn('w-3.5 h-3.5', inviteLinkLoading && 'animate-spin')} />
-                      </button>
-                      <div className="w-px bg-white/10" />
-                      <button
-                        onClick={handleDeactivate}
-                        disabled={inviteLinkLoading}
-                        className="p-2 text-red-400/50 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
-                        title="Deactivate"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={handleGenerate}
-                  isLoading={inviteLinkLoading}
-                >
-                  Generate Invite Link
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Section 3: Danger Zone */}
+          {/* Section 2: Danger Zone */}
           {isOwner && (
             <div className="border-t border-white/10 pt-6">
               <div className="p-4 rounded-lg border-2 border-red-500/30 bg-red-500/5 flex items-center justify-between gap-4">
@@ -341,7 +407,6 @@ export function TeamSettingsDialog({
                 </div>
                 <Button
                   variant="outline"
-                  size="sm"
                   onClick={onDeleteTeam}
                   isLoading={deleting}
                   className="text-red-400 border-red-500/30 hover:bg-red-500/20 flex-shrink-0"
@@ -362,13 +427,11 @@ interface MemberRowProps {
   currentUserId: string | undefined;
   isOwner: boolean;
   canManageMembers: boolean;
-  isEditing: boolean;
-  editRole: TeamRole;
-  onStartEdit: () => void;
-  onCancelEdit: () => void;
-  onEditRoleChange: (role: TeamRole) => void;
-  onSaveRole: () => void;
-  onRemove: () => void;
+  editMode: boolean;
+  pendingRole: TeamRole | undefined;
+  pendingRemoval: boolean;
+  onRoleChange: (role: TeamRole) => void;
+  onToggleRemoval: () => void;
 }
 
 function MemberRow({
@@ -376,83 +439,75 @@ function MemberRow({
   currentUserId,
   isOwner,
   canManageMembers,
-  isEditing,
-  editRole,
-  onStartEdit,
-  onCancelEdit,
-  onEditRoleChange,
-  onSaveRole,
-  onRemove,
+  editMode,
+  pendingRole,
+  pendingRemoval,
+  onRoleChange,
+  onToggleRemoval,
 }: MemberRowProps) {
   const isCurrentUser = member.userId === currentUserId;
   const isMemberOwner = member.role === 'owner';
 
+  const canRemove =
+    (isOwner && !isCurrentUser) ||
+    (canManageMembers && member.role === 'member' && !isCurrentUser) ||
+    (isCurrentUser && !isMemberOwner);
+
+  const canEditRole = isOwner && !isMemberOwner;
+  const displayRole = pendingRole ?? (member.role as TeamRole);
+  const roleChanged = pendingRole !== undefined && pendingRole !== member.role;
+
   return (
-    <div className="p-4 flex items-center justify-between">
-      <div>
-        <p className="font-medium text-white">
+    <div className={cn(
+      'px-3 py-2.5 flex items-center justify-between transition-all',
+      pendingRemoval && 'opacity-40 line-through'
+    )}>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-white truncate">
           {member.user?.name || 'Unknown User'}
           {isCurrentUser && (
-            <span className="text-white/50 text-sm ml-2">(You)</span>
+            <span className="text-white/50 text-xs ml-2">(You)</span>
           )}
         </p>
-        <p className="text-sm text-white/60">{member.user?.email}</p>
+        <p className="text-xs text-white/60 truncate">{member.user?.email}</p>
       </div>
-      <div className="flex items-center gap-2">
-        {isEditing ? (
-          <>
-            <select
-              value={editRole}
-              onChange={(e) => onEditRoleChange(e.target.value as TeamRole)}
-              className="px-2 py-1 bg-white/5 border border-white/10 rounded text-sm text-white"
-            >
-              <option value="member" className="bg-gray-800">Member</option>
-              <option value="admin" className="bg-gray-800">Admin</option>
-            </select>
-            <Button
-              variant="outline"
-              onClick={onSaveRole}
-              className="text-sm px-2 py-1"
-            >
-              Save
-            </Button>
-            <Button
-              variant="outline"
-              onClick={onCancelEdit}
-              className="text-sm px-2 py-1"
-            >
-              Cancel
-            </Button>
-          </>
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {editMode && canEditRole && !pendingRemoval ? (
+          <select
+            value={displayRole}
+            onChange={(e) => onRoleChange(e.target.value as TeamRole)}
+            className={cn(
+              'appearance-none px-2 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-all',
+              roleChanged
+                ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                : 'bg-white/5 border-white/10 text-white/70'
+            )}
+          >
+            <option value="member" className="bg-gray-800">Member</option>
+            <option value="admin" className="bg-gray-800">Admin</option>
+          </select>
         ) : (
-          <>
-            <span
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                TEAM_ROLE_COLORS[member.role as TeamRole]
-              }`}
-            >
-              {TEAM_ROLE_LABELS[member.role as TeamRole]}
-            </span>
-            {isOwner && !isMemberOwner && (
-              <Button
-                variant="outline"
-                onClick={onStartEdit}
-                className="text-sm px-2 py-1"
-              >
-                Edit
-              </Button>
+          <span
+            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+              TEAM_ROLE_COLORS[member.role as TeamRole]
+            }`}
+          >
+            {TEAM_ROLE_LABELS[member.role as TeamRole]}
+          </span>
+        )}
+        {editMode && canRemove && (
+          <button
+            onClick={onToggleRemoval}
+            className={cn(
+              'p-1.5 rounded-lg transition-colors',
+              pendingRemoval
+                ? 'text-white/50 hover:text-white hover:bg-white/10'
+                : 'text-red-400/50 hover:text-red-400 hover:bg-red-500/10'
             )}
-            {((canManageMembers && member.role === 'member') ||
-              (isCurrentUser && !isMemberOwner)) && (
-              <Button
-                variant="outline"
-                onClick={onRemove}
-                className="text-sm px-2 py-1 text-red-400 border-red-500/30 hover:bg-red-500/20"
-              >
-                Remove
-              </Button>
-            )}
-          </>
+            title={pendingRemoval ? '되돌리기' : '내보내기'}
+          >
+            {pendingRemoval ? <RefreshCw className="w-4 h-4" /> : <X className="w-4 h-4" />}
+          </button>
         )}
       </div>
     </div>
