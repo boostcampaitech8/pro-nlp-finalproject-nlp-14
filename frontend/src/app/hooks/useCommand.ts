@@ -443,8 +443,9 @@ export function useCommand() {
       }
 
       // 첫 메시지인 경우 세션 제목을 유저 메시지로 설정
-      if (!wasInChatMode) {
-        const title = cmd.length > 50 ? cmd.slice(0, 50) + '...' : cmd;
+      const currentSession = useCommandStore.getState().sessions.find((s) => s.id === sessionId);
+      if (!wasInChatMode || (currentSession && currentSession.message_count === 0)) {
+        const title = cmd.length > 20 ? cmd.slice(0, 20) + '...' : cmd;
         updateSessionTitle(sessionId, title);
       }
 

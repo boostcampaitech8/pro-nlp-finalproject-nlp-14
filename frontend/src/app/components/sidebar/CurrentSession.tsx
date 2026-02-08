@@ -4,6 +4,8 @@ import { Clock, Users, Video } from 'lucide-react';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { useTeamStore } from '@/stores/teamStore';
 
+const SHOW_SIDEBAR_NEW_MEETING = false;
+
 interface CurrentSessionProps {
   meetingId?: string;
   meetingTitle?: string;
@@ -23,8 +25,8 @@ export function CurrentSession({
   const { teams, teamsLoading } = useTeamStore();
 
   if (!isActive) {
+    if (!SHOW_SIDEBAR_NEW_MEETING) return null;
     const hasTeams = !teamsLoading && teams.length > 0;
-
     if (!hasTeams) return null;
 
     return (
