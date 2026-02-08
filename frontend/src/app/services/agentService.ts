@@ -331,6 +331,14 @@ export const agentService = {
 
     return [
       {
+        id: '0',
+        title: '서비스 사용법',
+        description: '처음 사용하는 방법과 기능을 안내합니다',
+        icon: 'help',
+        command: '이 서비스 어떻게 써?',
+        category: 'help' as const,
+      },
+      {
         id: '1',
         title: '새 회의 시작',
         description: '팀원들과 새로운 회의를 시작합니다',

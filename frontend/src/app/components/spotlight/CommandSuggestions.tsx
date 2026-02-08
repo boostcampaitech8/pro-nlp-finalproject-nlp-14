@@ -1,5 +1,5 @@
 // 추천 명령어 컴포넌트
-import { Video, Search, Calendar, Users, type LucideIcon } from 'lucide-react';
+import { Video, Search, Calendar, Users, HelpCircle, type LucideIcon } from 'lucide-react';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { useCommand } from '@/app/hooks/useCommand';
 import { SUGGESTIONS_DISPLAY_LIMIT } from '@/app/constants';
@@ -11,6 +11,7 @@ const iconMap: Record<string, LucideIcon> = {
   search: Search,
   calendar: Calendar,
   users: Users,
+  help: HelpCircle,
 };
 
 interface SuggestionCardProps {
