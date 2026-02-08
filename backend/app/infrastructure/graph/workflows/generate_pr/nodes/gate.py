@@ -1,442 +1,265 @@
-"""generate_pr Hard Gate 노드.
-
-최소 근거 검증:
-- agenda/decision에 evidence가 존재해야 함
-- evidence의 utterance id가 입력 발화 목록에 존재해야 함
-"""
+"""generate_pr Hard Gate — 의미 기반 근거 검증."""
 
 import logging
 import re
 
+import numpy as np
+
+from app.infrastructure.context.embedding import TopicEmbedder
 from app.infrastructure.graph.workflows.generate_pr.state import GeneratePrState
 
 logger = logging.getLogger(__name__)
 
-MAX_EVIDENCE_SPAN_TURNS = 10
-TOKEN_PATTERN = re.compile(r"[가-힣A-Za-z0-9]{2,}")
-SUBJECT_PATTERN = re.compile(r"(?:^|\s)[^\s]{1,20}(?:은|는|이|가)(?:\s|$)")
-DECISION_OBJECT_PATTERN = re.compile(
-    r"[가-힣A-Za-z0-9][가-힣A-Za-z0-9\s()_/-]{0,80}(?:을|를)(?:\s|$)"
-)
-DECISION_RELAXED_FORM_PATTERN = re.compile(
-    r"(?:로|으로|에|까지)\s*(?:확정|결정|채택|유지|중단|연기|보류|적용|도입|선정|제외|추가|삭제|통합|분리|변경|개선|조정)"
-)
-KOREAN_STOPWORDS = frozenset(
-    [
-        "그리고",
-        "하지만",
-        "또한",
-        "이번",
-        "회의",
-        "논의",
-        "진행",
-        "관련",
-        "사항",
-        "기반",
-        "내용",
-        "부분",
-        "것",
-        "수",
-        "등",
-    ]
-)
-ACTION_ITEM_HINTS = (
-    "todo",
-    "담당",
-    "준비",
-    "작성",
-    "조사",
-    "공유",
-    "다음 회의",
-    "후속",
-)
-DECISION_VERB_HINTS = (
+TOPIC_THRESHOLD = 0.40
+DESCRIPTION_THRESHOLD = 0.40
+DECISION_THRESHOLD = 0.36
+CONTEXT_THRESHOLD = 0.40
+
+DECISION_LEXICAL_OVERLAP_THRESHOLD = 0.10
+DECISION_TOPIC_SUPPORT_THRESHOLD = 0.10
+DECISION_MIN_LEXICAL_OVERLAP = 0.04
+
+DECISION_CUE_KEYWORDS = (
+    "하기로",
     "확정",
+    "합의",
     "결정",
     "채택",
-    "유지",
-    "중단",
-    "연기",
-    "보류",
+    "승인",
     "적용",
-    "도입",
-    "선정",
-    "제외",
-    "추가",
-    "삭제",
-    "통합",
-    "분리",
-    "변경",
-    "개선",
+    "진행",
 )
 
+TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣]{2,}")
 
-def _normalize_text(value: object) -> str:
+
+def _norm(value: object) -> str:
     return " ".join(str(value or "").strip().split())
 
 
 def _tokenize(text: str) -> set[str]:
+    if not text:
+        return set()
+    return {m.group(0).lower() for m in TOKEN_PATTERN.finditer(_norm(text))}
+
+
+def _overlap_ratio(tokens_a: set[str], tokens_b: set[str]) -> float:
+    if not tokens_a or not tokens_b:
+        return 0.0
+    union = tokens_a | tokens_b
+    if not union:
+        return 0.0
+    return len(tokens_a & tokens_b) / len(union)
+
+
+def _has_decision_cue(text: str) -> bool:
+    lowered = _norm(text).lower()
+    return any(cue in lowered for cue in DECISION_CUE_KEYWORDS)
+
+
+def _decision_supported_by_evidence(
+    decision_content: str,
+    topic: str,
+    evidence: str,
+) -> bool:
+    """임베딩 유사도가 낮을 때 decision 보존을 위한 lexical fallback."""
+    if not decision_content or not evidence:
+        return False
+    if not _has_decision_cue(decision_content):
+        return False
+
+    decision_overlap = _overlap_ratio(
+        _tokenize(decision_content),
+        _tokenize(evidence),
+    )
+    topic_overlap = _overlap_ratio(
+        _tokenize(topic),
+        _tokenize(evidence),
+    )
+    if decision_overlap >= DECISION_LEXICAL_OVERLAP_THRESHOLD:
+        return True
+    return (
+        decision_overlap >= DECISION_MIN_LEXICAL_OVERLAP
+        and topic_overlap >= DECISION_TOPIC_SUPPORT_THRESHOLD
+    )
+
+
+def _build_lookup(
+    utterances: list[dict],
+) -> tuple[dict[str, str], list[str]]:
+    """발화 id → text 매핑 + 순서 리스트. 원본 ID와 utt-N 별칭 모두 등록."""
+    id_text: dict[str, str] = {}
+    ordered: list[str] = []
+
+    for idx, utt in enumerate(utterances, 1):
+        uid = _norm(utt.get("id")) or f"utt-{idx}"
+        if uid in id_text:
+            continue
+        text = _norm(utt.get("text"))
+        id_text[uid] = text
+        alias = f"utt-{idx}"
+        if alias != uid:
+            id_text[alias] = text
+        ordered.append(uid)
+
+    return id_text, ordered
+
+
+def _resolve_spans(
+    spans: list,
+    id_text: dict[str, str],
+    ordered: list[str],
+) -> str:
+    """Evidence spans → 연결 텍스트. 유효하지 않은 span 무시."""
+    order = {uid: i for i, uid in enumerate(ordered)}
+    for i, uid in enumerate(ordered):
+        a = f"utt-{i + 1}"
+        if a not in order:
+            order[a] = i
+
+    parts: list[str] = []
+    for span in spans or []:
+        if not isinstance(span, dict):
+            continue
+        si = order.get(_norm(span.get("start_utt_id")))
+        ei = order.get(_norm(span.get("end_utt_id")))
+        if si is None or ei is None:
+            continue
+        if si > ei:
+            si, ei = ei, si
+        for uid in ordered[si : ei + 1]:
+            t = id_text.get(uid, "")
+            if t:
+                parts.append(t)
+    return " ".join(parts)
+
+
+async def _embed(texts: list[str]) -> dict[str, np.ndarray]:
+    """배치 임베딩. API 불가 시 빈 dict."""
+    embedder = TopicEmbedder()
+    if not embedder.is_available:
+        return {}
+    unique = list(dict.fromkeys(t for t in texts if t and t.strip()))
+    if not unique:
+        return {}
+    vectors = await embedder.embed_batch_async(unique)
     return {
-        token
-        for token in TOKEN_PATTERN.findall(text.lower())
-        if token not in KOREAN_STOPWORDS
+        t: v
+        for t, v in zip(unique, vectors)
+        if v is not None and np.linalg.norm(v) > 0
     }
 
 
-def _has_required_object(text: str) -> bool:
-    normalized = _normalize_text(text)
-    if not normalized:
-        return False
-    return bool(DECISION_OBJECT_PATTERN.search(normalized))
-
-
-def _has_relaxed_decision_form(text: str) -> bool:
-    normalized = _normalize_text(text)
-    if not normalized:
-        return False
-    return bool(DECISION_RELAXED_FORM_PATTERN.search(normalized))
-
-
-def _has_subject(text: str) -> bool:
-    return bool(SUBJECT_PATTERN.search(_normalize_text(text)))
-
-
-def _looks_like_action_item(text: str) -> bool:
-    normalized = _normalize_text(text).lower()
-    if not normalized:
-        return True
-    if any(hint in normalized for hint in ACTION_ITEM_HINTS):
-        return not any(verb in normalized for verb in DECISION_VERB_HINTS)
-    return False
-
-
-def _build_utterance_maps(
-    utterances: list[dict],
-) -> tuple[dict[str, str], dict[str, int], list[str], dict[str, str]]:
-    alias_to_canonical: dict[str, str] = {}
-    order_by_id: dict[str, int] = {}
-    ordered_ids: list[str] = []
-    text_by_id: dict[str, str] = {}
-
-    for idx, item in enumerate(utterances, start=1):
-        raw_id = _normalize_text(item.get("id"))
-        canonical_id = raw_id or f"utt-{idx}"
-        if canonical_id in order_by_id:
-            continue
-
-        order = len(ordered_ids) + 1
-        order_by_id[canonical_id] = order
-        ordered_ids.append(canonical_id)
-        text_by_id[canonical_id] = _normalize_text(item.get("text"))
-
-        alias_to_canonical[canonical_id] = canonical_id
-        alias_to_canonical[canonical_id.lower()] = canonical_id
-        alias_to_canonical[f"utt-{idx}"] = canonical_id
-        alias_to_canonical[str(idx)] = canonical_id
-
-    return alias_to_canonical, order_by_id, ordered_ids, text_by_id
-
-
-def _expand_utt_alias_candidates(raw_utt_id: str) -> list[str]:
-    normalized = _normalize_text(raw_utt_id)
-    if not normalized:
-        return []
-
-    candidates: list[str] = [normalized]
-    compact = normalized.strip("[]()")
-    if compact and compact not in candidates:
-        candidates.append(compact)
-
-    lowered = compact.lower()
-    if lowered.startswith("utt "):
-        maybe_id = compact[4:].strip()
-        if maybe_id:
-            candidates.append(maybe_id)
-    if lowered.startswith("utt-"):
-        maybe_turn = compact[4:].strip()
-        if maybe_turn:
-            candidates.append(maybe_turn)
-    if lowered.startswith("turn "):
-        maybe_turn = compact[5:].strip()
-        if maybe_turn:
-            candidates.append(maybe_turn)
-    if lowered.startswith("turn-"):
-        maybe_turn = compact[5:].strip()
-        if maybe_turn:
-            candidates.append(maybe_turn)
-    if compact.isdigit():
-        candidates.append(compact)
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        for variant in (candidate, candidate.lower()):
-            if variant and variant not in seen:
-                seen.add(variant)
-                deduped.append(variant)
-
-    return deduped
-
-
-def _canonicalize_utt_id(utt_id: object, alias_to_canonical: dict[str, str]) -> str | None:
-    for candidate in _expand_utt_alias_candidates(str(utt_id or "")):
-        mapped = alias_to_canonical.get(candidate)
-        if mapped:
-            return mapped
-    return None
-
-
-def _normalize_span(
-    span: dict,
-    alias_to_canonical: dict[str, str],
-    order_by_id: dict[str, int],
-) -> dict | None:
-    start = _canonicalize_utt_id(span.get("start_utt_id"), alias_to_canonical)
-    end = _canonicalize_utt_id(span.get("end_utt_id"), alias_to_canonical)
-    if not start or not end:
-        return None
-
-    start_order = order_by_id.get(start)
-    end_order = order_by_id.get(end)
-    if not start_order or not end_order:
-        return None
-
-    if start_order > end_order:
-        start, end = end, start
-        start_order, end_order = end_order, start_order
-
-    if end_order - start_order + 1 > MAX_EVIDENCE_SPAN_TURNS:
-        return None
-
-    normalized_span = dict(span)
-    normalized_span["start_utt_id"] = start
-    normalized_span["end_utt_id"] = end
-    return normalized_span
-
-
-def _filter_valid_evidence(
-    evidence: list[dict],
-    alias_to_canonical: dict[str, str],
-    order_by_id: dict[str, int],
-) -> list[dict]:
-    filtered: list[dict] = []
-    seen: set[tuple[str, str]] = set()
-
-    for span in evidence:
-        if not isinstance(span, dict):
-            continue
-        normalized_span = _normalize_span(span, alias_to_canonical, order_by_id)
-        if normalized_span is None:
-            continue
-        key = (
-            _normalize_text(normalized_span.get("start_utt_id")),
-            _normalize_text(normalized_span.get("end_utt_id")),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        filtered.append(normalized_span)
-
-    return filtered
-
-
-def _collect_evidence_text(
-    evidence: list[dict],
-    order_by_id: dict[str, int],
-    ordered_ids: list[str],
-    text_by_id: dict[str, str],
-) -> str:
-    segments: list[str] = []
-
-    for span in evidence:
-        start_id = _normalize_text(span.get("start_utt_id"))
-        end_id = _normalize_text(span.get("end_utt_id"))
-        start_order = order_by_id.get(start_id)
-        end_order = order_by_id.get(end_id)
-        if not start_order or not end_order:
-            continue
-
-        for canonical_id in ordered_ids[start_order - 1 : end_order]:
-            text = text_by_id.get(canonical_id, "")
-            if text:
-                segments.append(text)
-
-    return " ".join(segments)
-
-
-def _is_claim_grounded(
+def _grounded(
     claim: str,
-    evidence: list[dict],
-    order_by_id: dict[str, int],
-    ordered_ids: list[str],
-    text_by_id: dict[str, str],
-    min_overlap_tokens: int = 1,
-    min_coverage: float = 0.25,
+    evidence: str,
+    vecs: dict[str, np.ndarray],
+    threshold: float,
 ) -> bool:
-    claim_tokens = _tokenize(_normalize_text(claim))
-    if not claim_tokens:
+    """의미 기반 근거 검증. 임베딩 불가 시 통과."""
+    if not claim or not evidence:
         return False
-
-    evidence_text = _collect_evidence_text(evidence, order_by_id, ordered_ids, text_by_id)
-    evidence_tokens = _tokenize(evidence_text)
-    if not evidence_tokens:
-        return False
-
-    overlap = claim_tokens & evidence_tokens
-    if not overlap:
-        return False
-
-    required_overlap = min(min_overlap_tokens, len(claim_tokens))
-    if len(overlap) < required_overlap:
-        return False
-
-    coverage = len(overlap) / max(1, len(claim_tokens))
-    return coverage >= min_coverage
+    cv, ev = vecs.get(claim), vecs.get(evidence)
+    if cv is None or ev is None:
+        return True
+    return float(TopicEmbedder.cosine_similarity(cv, ev)) >= threshold
 
 
 async def validate_hard_gate(state: GeneratePrState) -> GeneratePrState:
-    """근거 존재/유효성 검증 후 통과 agenda만 저장 단계로 전달."""
+    """의미 기반 근거 검증 gate."""
     utterances = state.get("generate_pr_transcript_utterances", [])
     agendas = state.get("generate_pr_agendas", [])
 
     if not agendas:
         return GeneratePrState(generate_pr_agendas=[])
-
     if not utterances:
-        logger.warning("Hard Gate skipped: no utterances found")
         return GeneratePrState(generate_pr_agendas=agendas)
 
-    alias_to_canonical, order_by_id, ordered_ids, text_by_id = _build_utterance_maps(
-        list(utterances)
-    )
-    if not order_by_id:
-        logger.warning("Hard Gate skipped: utterance ids not found")
+    id_text, ordered = _build_lookup(list(utterances))
+    if not id_text:
         return GeneratePrState(generate_pr_agendas=agendas)
 
-    passed_agendas: list[dict] = []
-    dropped_for_evidence = 0
-    dropped_for_grounding = 0
-    dropped_decisions_for_form = 0
-    dropped_decisions_for_grounding = 0
-    normalized_descriptions = 0
-    normalized_contexts = 0
-
-    for agenda in agendas:
-        if not isinstance(agenda, dict):
+    # 임베딩 대상 수집
+    to_embed: set[str] = set()
+    for ag in agendas:
+        if not isinstance(ag, dict):
             continue
-
-        topic = _normalize_text(agenda.get("topic"))
-        description = _normalize_text(agenda.get("description"))
-        if not topic:
-            dropped_for_grounding += 1
-            continue
-
-        agenda_evidence = _filter_valid_evidence(
-            list(agenda.get("evidence", []) or []),
-            alias_to_canonical,
-            order_by_id,
+        to_embed.update(
+            t
+            for t in [
+                _norm(ag.get("topic")),
+                _norm(ag.get("description")),
+                _resolve_spans(ag.get("evidence", []), id_text, ordered),
+            ]
+            if t
         )
-        if not agenda_evidence:
-            dropped_for_evidence += 1
+        dec = ag.get("decision")
+        if isinstance(dec, dict):
+            to_embed.update(
+                t
+                for t in [
+                    _norm(dec.get("content")),
+                    _norm(dec.get("context")),
+                    _resolve_spans(dec.get("evidence", []), id_text, ordered),
+                ]
+                if t
+            )
+
+    vecs = await _embed(list(to_embed))
+
+    # 의미 검증
+    passed: list[dict] = []
+    lexical_decision_fallback = 0
+    for ag in agendas:
+        if not isinstance(ag, dict):
+            continue
+        topic = _norm(ag.get("topic"))
+        if not topic:
+            continue
+        ev = _resolve_spans(ag.get("evidence", []), id_text, ordered)
+        if not ev or not _grounded(topic, ev, vecs, TOPIC_THRESHOLD):
             continue
 
-        if not _is_claim_grounded(
-            topic,
-            agenda_evidence,
-            order_by_id,
-            ordered_ids,
-            text_by_id,
-            min_overlap_tokens=1,
-            min_coverage=0.2,
-        ):
-            dropped_for_grounding += 1
-            continue
+        desc = _norm(ag.get("description"))
+        if desc and not _grounded(desc, ev, vecs, DESCRIPTION_THRESHOLD):
+            desc = ""
 
-        if description and not _is_claim_grounded(
-            description,
-            agenda_evidence,
-            order_by_id,
-            ordered_ids,
-            text_by_id,
-            min_overlap_tokens=1,
-            min_coverage=0.2,
-        ):
-            description = ""
-            normalized_descriptions += 1
+        decision = None
+        raw = ag.get("decision")
+        if isinstance(raw, dict):
+            dc = _norm(raw.get("content"))
+            dx = _norm(raw.get("context"))
+            de = _resolve_spans(raw.get("evidence", []), id_text, ordered) or ev
+            decision_grounded = _grounded(dc, de, vecs, DECISION_THRESHOLD)
+            if not decision_grounded and dc:
+                decision_grounded = _decision_supported_by_evidence(dc, topic, de)
+                if decision_grounded:
+                    lexical_decision_fallback += 1
+            if dc and decision_grounded:
+                if dx and not _grounded(dx, de, vecs, CONTEXT_THRESHOLD):
+                    dx = ""
+                decision = {
+                    "content": dc,
+                    "context": dx,
+                    "evidence": raw.get("evidence") or list(ag.get("evidence", [])),
+                }
 
-        decision = agenda.get("decision")
-        if isinstance(decision, dict):
-            content = _normalize_text(decision.get("content"))
-            context = _normalize_text(decision.get("context"))
-
-            decision = None
-            if content:
-                decision_evidence = _filter_valid_evidence(
-                    list((agenda.get("decision") or {}).get("evidence", []) or []),
-                    alias_to_canonical,
-                    order_by_id,
-                )
-                if not decision_evidence:
-                    decision_evidence = list(agenda_evidence)
-
-                if not decision_evidence:
-                    dropped_decisions_for_grounding += 1
-                elif _looks_like_action_item(content):
-                    dropped_decisions_for_form += 1
-                elif not _has_required_object(content) and not _has_relaxed_decision_form(content):
-                    dropped_decisions_for_form += 1
-                elif not _is_claim_grounded(
-                    content,
-                    decision_evidence,
-                    order_by_id,
-                    ordered_ids,
-                    text_by_id,
-                    min_overlap_tokens=1,
-                    min_coverage=0.18,
-                ):
-                    dropped_decisions_for_grounding += 1
-                else:
-                    if context and not _is_claim_grounded(
-                        context,
-                        decision_evidence,
-                        order_by_id,
-                        ordered_ids,
-                        text_by_id,
-                        min_overlap_tokens=1,
-                        min_coverage=0.2,
-                    ):
-                        context = ""
-                        normalized_contexts += 1
-                    decision = {
-                        "content": content,
-                        "context": context,
-                        "evidence": decision_evidence,
-                    }
-                    if not _has_subject(content):
-                        logger.debug("Decision without explicit subject: %s", content)
-        else:
-            decision = None
-
-        passed_agendas.append(
+        passed.append(
             {
                 "topic": topic,
-                "description": description,
-                "evidence": agenda_evidence,
+                "description": desc,
+                "evidence": ag.get("evidence", []),
                 "decision": decision,
             }
         )
 
+    decision_count = sum(1 for item in passed if item.get("decision"))
     logger.info(
-        "Hard Gate finished: input=%d, passed=%d, drop_evidence=%d, drop_grounding=%d, "
-        "drop_decision_form=%d, drop_decision_grounding=%d, normalized_descriptions=%d, normalized_contexts=%d",
+        "Hard Gate: in=%d out=%d decisions=%d lexical_fallback=%d semantic=%s",
         len(agendas),
-        len(passed_agendas),
-        dropped_for_evidence,
-        dropped_for_grounding,
-        dropped_decisions_for_form,
-        dropped_decisions_for_grounding,
-        normalized_descriptions,
-        normalized_contexts,
+        len(passed),
+        decision_count,
+        lexical_decision_fallback,
+        bool(vecs),
     )
-
-    return GeneratePrState(generate_pr_agendas=passed_agendas)
+    return GeneratePrState(generate_pr_agendas=passed)
