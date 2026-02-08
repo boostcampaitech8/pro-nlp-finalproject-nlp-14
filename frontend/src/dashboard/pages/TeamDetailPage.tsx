@@ -7,10 +7,9 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Home } from 'lucide-react';
 
-import { InviteLinkSection } from '@/components/team/InviteLinkSection';
 import { MeetingListSection } from '@/components/team/MeetingListSection';
 import { TeamInfoCard } from '@/components/team/TeamInfoCard';
-import { TeamMemberSection } from '@/components/team/TeamMemberSection';
+import { TeamSettingsDialog } from '@/components/team/TeamSettingsDialog';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useTeamStore } from '@/stores/teamStore';
@@ -37,6 +36,7 @@ export function TeamDetailPage() {
   } = useTeamStore();
 
   const [deleting, setDeleting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (teamId) {
@@ -87,6 +87,40 @@ export function TeamDetailPage() {
     await removeMember(teamId, userId);
   };
 
+  // 초대 링크 공유 (성공 시 true 반환)
+  const handleShareInvite = async (): Promise<boolean> => {
+    if (!teamId) return false;
+    const { inviteLink, generateInviteLink, fetchInviteLink } = useTeamStore.getState();
+    let link = inviteLink;
+    if (!link) {
+      try {
+        await fetchInviteLink(teamId);
+        link = useTeamStore.getState().inviteLink;
+      } catch {
+        // ignore
+      }
+    }
+    if (!link) {
+      try {
+        link = await generateInviteLink(teamId);
+      } catch {
+        // ignore
+      }
+    }
+    if (link) {
+      try {
+        await navigator.clipboard.writeText(link.inviteUrl);
+        return true;
+      } catch {
+        setSettingsOpen(true);
+        return false;
+      }
+    } else {
+      setSettingsOpen(true);
+      return false;
+    }
+  };
+
   const currentUserRole = currentTeam?.members.find(
     (m) => m.userId === user?.id
   )?.role as TeamRole | undefined;
@@ -117,7 +151,7 @@ export function TeamDetailPage() {
   }
 
   return (
-    <div className="min-h-screen gradient-bg">
+    <div className="h-screen overflow-y-auto gradient-bg [scrollbar-gutter:stable]">
       <header className="glass-sidebar border-b border-white/10">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -160,9 +194,8 @@ export function TeamDetailPage() {
           <TeamInfoCard
             team={currentTeam}
             currentUserRole={currentUserRole}
-            isOwner={isOwner}
-            deleting={deleting}
-            onDelete={handleDeleteTeam}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onShareInvite={handleShareInvite}
           />
         )}
 
@@ -173,28 +206,24 @@ export function TeamDetailPage() {
           meetingError={meetingError}
           onCreate={handleCreateMeeting}
         />
-
-        {/* 팀 멤버 섹션 */}
-        {currentTeam && (
-          <>
-            <TeamMemberSection
-              members={currentTeam.members}
-              currentUserId={user?.id}
-              isOwner={isOwner}
-              canManageMembers={canManageMembers}
-              onInvite={handleInviteMember}
-              onUpdateRole={handleUpdateMemberRole}
-              onRemove={handleRemoveMember}
-            />
-            {canManageMembers && teamId && (
-              <InviteLinkSection
-                teamId={teamId}
-                canManageMembers={canManageMembers}
-              />
-            )}
-          </>
-        )}
       </main>
+
+      {currentTeam && teamId && (
+        <TeamSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          team={currentTeam}
+          teamId={teamId}
+          currentUserId={user?.id}
+          isOwner={isOwner}
+          canManageMembers={canManageMembers}
+          onInvite={handleInviteMember}
+          onUpdateRole={handleUpdateMemberRole}
+          onRemove={handleRemoveMember}
+          onDeleteTeam={handleDeleteTeam}
+          deleting={deleting}
+        />
+      )}
     </div>
   );
 }
