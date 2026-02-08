@@ -140,8 +140,7 @@ class SpotlightAgentService:
                     user_context = prev_state.values.get("user_context")
 
                     # 대기 중인 interrupt가 있으면 자동 취소
-                    # NOTE: ainvoke로 cancel resume 시 tools→evaluator→generator 전체 실행됨.
-                    # 추후 최적화 필요 시 aupdate_state로 직접 상태 업데이트 방식 검토.
+                    # silent=True → tools 노드에서 RESET_TOOL_RESULTS로 초기화 → route_after_tools → END
                     if prev_state.tasks:
                         for task in prev_state.tasks:
                             if hasattr(task, 'interrupts') and task.interrupts:
@@ -172,6 +171,7 @@ class SpotlightAgentService:
                 "selected_tool": None,
                 "tool_args": {},
                 "tool_category": None,
+                "tool_execution_status": None,
                 "plan": "",
                 "need_tools": False,
                 "can_answer": False,
@@ -224,11 +224,18 @@ class SpotlightAgentService:
                         "type": "text",
                     })
                 elif isinstance(msg, AIMessage):
+                    # tool_calls가 있는 AIMessage는 planner 중간 메시지 → 스킵
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        continue
+                    # 빈 content는 스킵
+                    if not msg.content or not msg.content.strip():
+                        continue
                     history.append({
                         "role": "assistant",
                         "content": msg.content,
                         "type": "text",
                     })
+                # ToolMessage는 포함하지 않음 (기존과 동일)
 
             # pending interrupt 확인 (HITL 대기 중인 경우)
             if state.tasks:

@@ -2,17 +2,16 @@
 
 import logging
 
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import AIMessage
 
 from app.infrastructure.graph.integration.llm import get_answer_generator_llm
+from app.infrastructure.graph.orchestration.shared.message_utils import (
+    build_generator_chat_messages,
+)
 from app.prompt.v1.orchestration.answering import (
     ChannelType,
+    build_generator_system_prompt,
     build_system_prompt_for_guide,
-    build_system_prompt_with_tools,
-    build_system_prompt_without_tools,
-    build_user_prompt_with_tools,
-    build_user_prompt_without_tools,
 )
 
 from ..state import VoiceOrchestrationState
@@ -20,38 +19,17 @@ from ..state import VoiceOrchestrationState
 logger = logging.getLogger("Voice AgentLogger")
 
 
-def build_conversation_history(messages: list) -> str:
-    """이전 대화 히스토리를 문자열로 변환"""
-    if len(messages) <= 1:
-        return ""
-
-    history_parts = []
-    for msg in messages[:-1]:  # 마지막 메시지(현재 질문) 제외
-        if isinstance(msg, HumanMessage):
-            history_parts.append(f"사용자: {msg.content}")
-        elif isinstance(msg, AIMessage):
-            content = msg.content
-            if len(content) > 500:
-                content = content[:500] + "..."
-            history_parts.append(f"AI: {content}")
-
-    return "\n".join(history_parts)
-
-
 async def generate_answer(state: VoiceOrchestrationState):
     """Voice 최종 응답 생성 노드 - 항상 voice 채널 사용
 
     Contract:
-        reads: messages, plan, tool_results, additional_context, planning_context
+        reads: messages, additional_context, planning_context, simple_router_output
         writes: response
         side-effects: LLM API 호출
     """
     logger.info("Voice 최종 응답 생성 단계 진입")
 
     messages = state.get("messages", [])
-    query = messages[-1].content if messages else ""
-    conversation_history = build_conversation_history(messages)
-    tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     planning_context = state.get("planning_context", "")
     simple_router_output = state.get("simple_router_output", {}) or {}
@@ -61,56 +39,33 @@ async def generate_answer(state: VoiceOrchestrationState):
     channel = ChannelType.VOICE
     logger.info(f"Voice mode, channel: {channel}")
 
-    # 프롬프트 생성
+    # 시스템 프롬프트 선택 (guide vs 일반)
     if simple_category == "guide":
         logger.info("가이드 요청: 전용 프롬프트 사용")
         system_prompt = build_system_prompt_for_guide(
             channel=channel,
-            conversation_history=conversation_history or "없음",
+            conversation_history="없음",
             meeting_context=planning_context or "없음",
             additional_context=additional_context or "없음",
-        )
-        user_prompt = build_user_prompt_without_tools(
-            query=query,
-        )
-    elif tool_results and tool_results.strip():
-        logger.info(f"도구 결과 포함 응답 생성")
-        system_prompt = build_system_prompt_with_tools(
-            channel=channel,
-            conversation_history=conversation_history or "없음",
-            tool_results=tool_results,
-            meeting_context=planning_context or "없음",
-            additional_context=additional_context or "없음",
-        )
-        user_prompt = build_user_prompt_with_tools(
-            query=query,
         )
     else:
-        logger.info("도구 없이 직접 응답 생성")
-        system_prompt = build_system_prompt_without_tools(
+        system_prompt = build_generator_system_prompt(
             channel=channel,
-            conversation_history=conversation_history or "없음",
             meeting_context=planning_context or "없음",
             additional_context=additional_context or "없음",
         )
-        user_prompt = build_user_prompt_without_tools(
-            query=query,
-        )
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", "{system_prompt}"),
-        ("human", "{user_prompt}"),
-    ])
-    input_data = {
-        "system_prompt": system_prompt,
-        "user_prompt": user_prompt,
-    }
+    # messages 배열 기반으로 chat_messages 구성
+    chat_messages = build_generator_chat_messages(
+        system_prompt=system_prompt,
+        messages=messages,
+    )
 
-    chain = prompt | get_answer_generator_llm()
+    llm = get_answer_generator_llm()
 
-    # 응답 생성
+    # 스트리밍으로 응답 생성
     response_chunks = []
-    async for chunk in chain.astream(input_data):
+    async for chunk in llm.astream(chat_messages):
         chunk_text = chunk.content if hasattr(chunk, "content") else str(chunk)
         response_chunks.append(chunk_text)
 
