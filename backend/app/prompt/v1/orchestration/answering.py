@@ -9,6 +9,8 @@ Changelog:
     2.2.0: 사용자 프롬프트를 마지막 사용자 질의만 남기고 나머지 컨텍스트를 시스템 프롬프트로 이동
 """
 
+from app.prompt.v1.orchestration.guide import ANSWER_GUIDE_SYSTEM_PROMPT
+
 VERSION = "2.2.0"
 
 
@@ -182,6 +184,23 @@ def build_system_prompt_without_tools(
     """도구 없이 응답할 때 사용하는 시스템 프롬프트 빌드"""
     config = get_channel_config(channel)
     return ANSWER_WITHOUT_TOOLS_SYSTEM_PROMPT.format(
+        channel_description=config["description"],
+        channel_rules=config["rules"],
+        conversation_history=conversation_history or "없음",
+        meeting_context=meeting_context or "없음",
+        additional_context=additional_context or "없음",
+    )
+
+
+def build_system_prompt_for_guide(
+    channel: str = ChannelType.VOICE,
+    conversation_history: str = "",
+    meeting_context: str = "",
+    additional_context: str = "",
+) -> str:
+    """가이드 응답용 시스템 프롬프트 빌드"""
+    config = get_channel_config(channel)
+    return ANSWER_GUIDE_SYSTEM_PROMPT.format(
         channel_description=config["description"],
         channel_rules=config["rules"],
         conversation_history=conversation_history or "없음",

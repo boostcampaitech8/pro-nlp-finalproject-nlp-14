@@ -2,7 +2,7 @@
 
 // 히스토리 및 UI 상수
 export const HISTORY_LIMIT = 50;
-export const SUGGESTIONS_DISPLAY_LIMIT = 4;
+export const SUGGESTIONS_DISPLAY_LIMIT = 5;
 export const MAX_SPOTLIGHT_SESSIONS = 5;
 
 // Status 색상 매핑

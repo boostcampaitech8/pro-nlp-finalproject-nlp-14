@@ -339,6 +339,14 @@ export const agentService = {
         category: 'meeting' as const,
       },
       {
+        id: '0',
+        title: '서비스 사용법',
+        description: '처음 사용하는 방법과 기능을 안내합니다',
+        icon: 'help',
+        command: '이 서비스 어떻게 써?',
+        category: 'help' as const,
+      },
+      {
         id: '2',
         title: '지난 회의록 검색',
         description: '이전 회의 내용을 검색합니다',
@@ -352,14 +360,6 @@ export const agentService = {
         description: '오늘 예정된 회의를 확인합니다',
         icon: 'calendar',
         command: '오늘 일정',
-        category: 'action' as const,
-      },
-      {
-        id: '4',
-        title: '팀 현황 보기',
-        description: '팀 멤버와 활동 현황을 확인합니다',
-        icon: 'users',
-        command: '팀 현황',
         category: 'action' as const,
       },
     ];
