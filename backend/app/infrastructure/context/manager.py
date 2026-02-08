@@ -25,16 +25,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.infrastructure.context.config import ContextConfig
 from app.infrastructure.context.models import TopicSegment, Utterance
-from app.prompt.v1.context.topic_merging import TOPIC_MERGE_PROMPT
-from app.prompt.v1.context.topic_separation import (
-    RECURSIVE_TOPIC_SEPARATION_PROMPT,
-    TOPIC_SEPARATION_PROMPT,
-)
 from app.infrastructure.context.speaker_context import SpeakerContext
+from app.prompt.v1.context.topic_merging import (
+    TOPIC_MERGE_SYSTEM_PROMPT,
+    TOPIC_MERGE_USER_PROMPT,
+)
+from app.prompt.v1.context.topic_separation import (
+    RECURSIVE_TOPIC_SEPARATION_SYSTEM_PROMPT,
+    RECURSIVE_TOPIC_SEPARATION_USER_PROMPT,
+    TOPIC_SEPARATION_SYSTEM_PROMPT,
+    TOPIC_SEPARATION_USER_PROMPT,
+)
 
 # 인메모리 임베딩용 (lazy import)
 try:
     import numpy as np
+
     from app.infrastructure.context.embedding import TopicEmbedder
 
     EMBEDDING_AVAILABLE = True
@@ -211,8 +217,9 @@ class ContextManager:
         chunks = self._pending_l1_chunks.copy()
         self._pending_l1_chunks.clear()
 
-        # 새로 생성된 세그먼트 수집 (배치 임베딩용)
+        # 새로 생성/갱신된 세그먼트 수집 (배치 임베딩용)
         new_segments: list[TopicSegment] = []
+        queued_for_embedding: set[str] = set()
 
         for chunk_idx, chunk in enumerate(chunks):
             is_first = len(self.l1_segments) == 0 and chunk_idx == 0
@@ -222,37 +229,65 @@ class ContextManager:
                 chunk, is_first=is_first
             )
 
-            # 새 세그먼트만 추가 (업데이트된 것은 이미 l1_segments에 반영됨)
+            # 같은 토픽명은 append 방식으로 병합
             for seg in segments:
                 existing_segment = self._find_segment_by_name(seg.name)
 
                 if not existing_segment:
                     self.l1_segments.append(seg)
-                    new_segments.append(seg)
+                    if seg.id not in queued_for_embedding:
+                        new_segments.append(seg)
+                        queued_for_embedding.add(seg.id)
                     continue
 
-                # 업데이트된 세그먼트(동일 ID)는 재임베딩 대상에 포함
-                if existing_segment.id == seg.id and seg.id not in self._topic_embeddings:
-                    # 업데이트된 세그먼트도 임베딩 필요
-                    new_segments.append(seg)
-                    continue
+                delta_summary = seg.summary.strip()
+                summary_updated = False
 
-                # 같은 이름인데 다른 ID → 기존 토픽에 새 정보 병합
-                existing_segment.summary = f"{existing_segment.summary} {seg.summary}"
+                # 기존 요약과 동일/부분중복이면 append 생략
+                if delta_summary and delta_summary not in existing_segment.summary:
+                    existing_segment.summary = (
+                        f"{existing_segment.summary} {delta_summary}".strip()
+                    )
+                    summary_updated = True
+
+                existing_segment.start_utterance_id = min(
+                    existing_segment.start_utterance_id, seg.start_utterance_id
+                )
                 existing_segment.end_utterance_id = max(
                     existing_segment.end_utterance_id, seg.end_utterance_id
                 )
-                existing_segment.keywords = list(
-                    set(existing_segment.keywords + seg.keywords)
-                )[:10]
-                # 요약이 바뀌었으므로 stale embedding 무효화
-                self._topic_embeddings.pop(existing_segment.id, None)
-                new_segments.append(existing_segment)
-                logger.info(
-                    "Appended to existing topic: name=%s, id=%s",
-                    existing_segment.name,
-                    existing_segment.id[:8],
+
+                merged_keywords = self._merge_unique(existing_segment.keywords, seg.keywords, limit=10)
+                keywords_updated = merged_keywords != existing_segment.keywords
+                if keywords_updated:
+                    existing_segment.keywords = merged_keywords
+
+                merged_participants = self._merge_unique(
+                    existing_segment.participants, seg.participants
                 )
+                if merged_participants != existing_segment.participants:
+                    existing_segment.participants = merged_participants
+
+                if summary_updated:
+                    # 요약이 바뀌었으므로 stale embedding 무효화
+                    self._topic_embeddings.pop(existing_segment.id, None)
+                    if existing_segment.id not in queued_for_embedding:
+                        new_segments.append(existing_segment)
+                        queued_for_embedding.add(existing_segment.id)
+                    logger.info(
+                        "Appended new topic delta: name=%s, id=%s, turn=%d~%d",
+                        existing_segment.name,
+                        existing_segment.id[:8],
+                        seg.start_utterance_id,
+                        seg.end_utterance_id,
+                    )
+                else:
+                    logger.info(
+                        "No new topic delta: name=%s, turn=%d~%d",
+                        existing_segment.name,
+                        seg.start_utterance_id,
+                        seg.end_utterance_id,
+                    )
 
             logger.info(
                 f"Chunk {chunk_idx + 1}: {len(segments)} topics from "
@@ -336,11 +371,12 @@ class ContextManager:
             f"시작: {first[:80]} / 마지막: {last[:80]}"
         )
 
-    async def _call_llm(self, prompt: str) -> str | None:
-        """LLM 호출 (실패 시 None 반환)
+    async def _call_llm(self, system_prompt: str, user_prompt: str) -> str | None:
+        """LLM 호출 (SystemMessage/HumanMessage 분리, 실패 시 None 반환)
 
         Args:
-            prompt: LLM에 전달할 프롬프트
+            system_prompt: 페르소나·규칙·포맷 등 시스템 프롬프트
+            user_prompt: 실제 처리할 데이터 (발화, 토픽 등)
 
         Note:
             HCX-DASH-002 모델 사용 (실시간 처리 + 빠른 응답)
@@ -356,8 +392,13 @@ class ContextManager:
             return None
 
         try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+
             llm = get_context_summarizer_llm()
-            response = await llm.ainvoke(prompt)
+            response = await llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ])
             return response.content if hasattr(response, "content") else str(response)
         except Exception as e:
             logger.warning(f"Context summarization LLM call failed: {e}")
@@ -416,14 +457,16 @@ class ContextManager:
         utterances_text = self._format_utterances_for_topic_separation(utterances)
 
         if is_first:
-            prompt = TOPIC_SEPARATION_PROMPT.format(
+            system_prompt = TOPIC_SEPARATION_SYSTEM_PROMPT
+            user_prompt = TOPIC_SEPARATION_USER_PROMPT.format(
                 start_turn=start_turn,
                 end_turn=end_turn,
                 utterances=utterances_text,
             )
         else:
             existing_topics_text = self._format_existing_topics_for_prompt()
-            prompt = RECURSIVE_TOPIC_SEPARATION_PROMPT.format(
+            system_prompt = RECURSIVE_TOPIC_SEPARATION_SYSTEM_PROMPT
+            user_prompt = RECURSIVE_TOPIC_SEPARATION_USER_PROMPT.format(
                 existing_topics=existing_topics_text or "(없음)",
                 start_turn=start_turn,
                 end_turn=end_turn,
@@ -431,7 +474,7 @@ class ContextManager:
             )
 
         # LLM 호출
-        response = await self._call_llm(prompt)
+        response = await self._call_llm(system_prompt, user_prompt)
         if not response:
             # fallback: 단일 토픽 생성
             return [self._create_fallback_segment(utterances, start_turn, end_turn)]
@@ -532,32 +575,31 @@ class ContextManager:
                 continue
 
             topic_name = t.get("topic_name")
-            summary = t.get("summary")
             if not isinstance(topic_name, str) or not topic_name.strip():
                 continue
-            if not isinstance(summary, str) or not summary.strip():
-                continue
+
+            topic_name = topic_name.strip()
+            summary_raw = t.get("summary", "")
+            summary = summary_raw.strip() if isinstance(summary_raw, str) else ""
 
             turn_start = _coerce_int(t.get("turn_start"), default_start)
             turn_end = _coerce_int(t.get("turn_end"), default_end)
+            turn_start = max(default_start, min(default_end, turn_start))
+            turn_end = max(default_start, min(default_end, turn_end))
+            if turn_start > turn_end:
+                turn_start, turn_end = turn_end, turn_start
+
             keywords = _coerce_keywords(t.get("keywords"))
             is_updated = _coerce_bool(t.get("is_updated", False))
 
-            # 기존 토픽 업데이트 처리
-            if is_updated:
-                existing = self._find_segment_by_name(topic_name)
-                if existing:
-                    existing.summary = summary
-                    existing.end_utterance_id = turn_end
-                    existing.keywords = list(set(existing.keywords + keywords))[:10]
-                    # 업데이트된 요약의 stale embedding을 무효화하여 재임베딩 트리거
-                    self._topic_embeddings.pop(existing.id, None)
-                    segments.append(existing)
-                    continue
+            existing = self._find_segment_by_name(topic_name)
+            # 기존 토픽이면 summary가 비어도 허용 (구간만 업데이트)
+            if not summary and not (is_updated or existing is not None):
+                continue
 
             # 새 토픽 생성
             segment = TopicSegment(
-                id=str(uuid_module.uuid4()),
+                id=existing.id if existing is not None else str(uuid_module.uuid4()),
                 name=topic_name,
                 summary=summary,
                 start_utterance_id=turn_start,
@@ -568,6 +610,25 @@ class ContextManager:
             segments.append(segment)
 
         return segments
+
+    @staticmethod
+    def _merge_unique(
+        base: list[str],
+        incoming: list[str],
+        limit: int | None = None,
+    ) -> list[str]:
+        """순서를 유지하며 중복 제거 후 병합."""
+        merged: list[str] = []
+        seen: set[str] = set()
+        for value in [*base, *incoming]:
+            item = str(value).strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+            if limit is not None and len(merged) >= limit:
+                break
+        return merged
 
     def _find_segment_by_name(self, name: str) -> TopicSegment | None:
         """이름으로 기존 세그먼트 검색."""
@@ -771,14 +832,15 @@ class ContextManager:
         self, seg1: TopicSegment, seg2: TopicSegment
     ) -> TopicSegment | None:
         """LLM을 사용하여 두 토픽 병합."""
-        prompt = TOPIC_MERGE_PROMPT.format(
+        system_prompt = TOPIC_MERGE_SYSTEM_PROMPT
+        user_prompt = TOPIC_MERGE_USER_PROMPT.format(
             topic_name_1=seg1.name,
             summary_1=seg1.summary,
             topic_name_2=seg2.name,
             summary_2=seg2.summary,
         )
 
-        response = await self._call_llm(prompt)
+        response = await self._call_llm(system_prompt, user_prompt)
         if not response:
             return None
 
