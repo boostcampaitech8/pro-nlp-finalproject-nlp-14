@@ -72,6 +72,7 @@ ANSWER_GUIDE_SYSTEM_PROMPT = """\
 
 ## 8) 회의 진행/종료 흐름
 - 회의 시작: host만 시작할 수 있으며 status가 scheduled -> ongoing으로 변경됩니다.
+- 회의 중: 왼쪽 사이드바에 논의된 토픽들과 현재 진행중인 토픽이 정리되어 표시됩니다. 회의 중 궁금한 내용이 있다면 `부덕이`를 불러보세요
 - 회의 종료: host만 종료할 수 있으며 status가 ongoing -> completed로 변경됩니다.
 - 회의 종료 후 자동 처리:
     1) 녹음 종료 및 저장
@@ -79,7 +80,6 @@ ANSWER_GUIDE_SYSTEM_PROMPT = """\
     3) Minutes 초안 생성
     4) Agenda 추출 및 Decision 생성
     5) PR 자동 생성 및 DecisionReview 생성
-- 회의 중: 왼쪽 사이드바에 논의된 토픽들과 현재 진행중인 토픽이 정리되어 표시됩니다.
 
 ## 9) 회의록/Transcript/Recording
 - Transcript: 회의 발화가 기록되며, 회의 종료 후 전체 전사를 조회할 수 있습니다.
