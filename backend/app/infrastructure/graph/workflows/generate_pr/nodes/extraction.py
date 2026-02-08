@@ -1,30 +1,32 @@
-"""Agenda/Decision 추출 노드.
+"""Agenda/Decision 추출 노드 — 2단계 파이프라인.
 
-문서 설계에 맞춰 다음 모드를 지원한다.
-- single pass: 짧은 회의는 1회 추출
-- chunked pass: 긴 회의는 3청크(50% overlap)로 추출 후 토픽 기반 병합
+Step 1 (키워드 추출): 트랜스크립트 → 원자 단위 키워드 + evidence span
+Step 2 (회의록 생성): 키워드 + 근거 원문 → 회의록 (topic, description, decision)
+
+모드:
+- single pass: 짧은 회의 — Step 1 → Step 2
+- chunked pass: 긴 회의 — 청크별 Step 1 → merge → Step 2 1회
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import math
-import random
-from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from app.infrastructure.graph.integration.llm import get_pr_generator_llm
+from app.infrastructure.graph.integration.llm import (
+    get_keyword_extractor_llm,
+    get_minutes_generator_llm,
+)
 from app.infrastructure.graph.workflows.generate_pr.state import GeneratePrState
 from app.prompt.v1.workflows.generate_pr import (
-    AGENDA_EXTRACTION_PROMPT,
-    AGENDA_MERGE_PROMPT,
-    SUMMARY_REFINEMENT_PROMPT,
+    KEYWORD_EXTRACTION_PROMPT,
+    MINUTES_GENERATION_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,27 +37,19 @@ CHUNK_WINDOW_RATIO = 0.5
 CHUNK_OVERLAP_RATIO = 0.5
 CHUNK_REQUEST_DELAY_SEC = 2.5
 CHUNK_MAX_RETRIES = 5
-CHUNK_RATE_LIMIT_BACKOFF_BASE_SEC = 5.0
-CHUNK_RATE_LIMIT_BACKOFF_MAX_SEC = 20.0
+CHUNK_RETRY_DELAY_SEC = 10.0
 
-# Evidence overlap 병합 임계값 (50% 이상 겹치면 병합)
-EVIDENCE_OVERLAP_MERGE_THRESHOLD = 0.5
+# 키워드 병합 설정
+KEYWORD_MERGE_MIN_OVERLAP = 0.4  # topic_keywords 40% 이상 겹치면 동일 agenda로 판단
 
-# Topic 키워드 유사도 병합 임계값 (50% 이상 겹치면 병합)
-TOPIC_KEYWORD_OVERLAP_THRESHOLD = 0.5
 
-# 한국어 불용어 (토픽 키워드 추출 시 제외)
-KOREAN_STOPWORDS = frozenset([
-    "및", "의", "에", "를", "을", "이", "가", "은", "는", "로", "으로",
-    "에서", "와", "과", "도", "만", "부터", "까지", "에게", "한", "할",
-    "하는", "된", "되는", "위한", "대한", "관한", "통한", "관련",
-    "기반", "방안", "방식", "내용", "사항", "진행", "검토", "논의",
-    "확인", "결정", "도입", "적용", "활용", "개선", "추가", "변경",
-])
+# =============================================================================
+# Pydantic 스키마 — Step 1 (키워드 추출)
+# =============================================================================
 
 
 class SpanRef(BaseModel):
-    """근거 참조 (Utterance + Topic 기반)."""
+    """근거 참조 (Utterance 기반)."""
 
     transcript_id: str = Field(default="meeting-transcript")
     start_utt_id: str = Field(description="근거 시작 발화 ID")
@@ -64,102 +58,121 @@ class SpanRef(BaseModel):
     sub_end: int | None = Field(default=None, description="발화 내 종료 오프셋")
     start_ms: int | None = Field(default=None, description="근거 시작 시점(ms)")
     end_ms: int | None = Field(default=None, description="근거 종료 시점(ms)")
-    # 토픽 힌트 (선택, 병합/검색에 활용)
     topic_id: str | None = Field(default=None, description="근거가 속한 토픽 ID")
     topic_name: str | None = Field(default=None, description="근거가 속한 토픽 이름")
 
 
-class DecisionData(BaseModel):
-    """추출된 결정사항."""
+class DecisionKeywords(BaseModel):
+    """Step 1: 결정사항 키워드."""
+
+    who: str | None = Field(default=None, description="결정 주체/담당자 (선택)")
+    what: str = Field(description="결정 대상/목적어 (필수)")
+    when: str | None = Field(default=None, description="기한/시점 (선택)")
+    verb: str = Field(description="결정 행위 동사 (필수; 예: 확정, 적용하기로 결정)")
+    evidence_spans: list[SpanRef] = Field(
+        default_factory=list,
+        description="결정 근거 발화 구간",
+    )
+
+
+class AgendaKeywords(BaseModel):
+    """Step 1: 아젠다 키워드 그룹."""
+
+    evidence_spans: list[SpanRef] = Field(
+        description="아젠다 근거 발화 구간 (필수)",
+    )
+    topic_keywords: list[str] = Field(
+        description="토픽 핵심 키워드 리스트 (명사 + 행위)",
+    )
+    decision: DecisionKeywords | None = Field(
+        default=None,
+        description="결정 키워드 (명시적 합의 없으면 null)",
+    )
+
+
+class KeywordExtractionOutput(BaseModel):
+    """Step 1 LLM 출력."""
+
+    agendas: list[AgendaKeywords] = Field(
+        description="트랜스크립트 등장 순으로 정렬된 아젠다 키워드 그룹",
+    )
+
+
+# =============================================================================
+# Pydantic 스키마 — Step 2 (회의록 생성)
+# =============================================================================
+
+
+class MinutesDecisionData(BaseModel):
+    """Step 2 LLM 출력: 결정사항 (evidence 없음, 코드에서 Step 1과 결합)."""
 
     content: str = Field(
-        description=(
-            "해당 아젠다에서 최종 합의된 단일 결정 내용. "
-            "명시적 확정/합의/보류 결정만 포함하고, 액션 아이템/제안/단순 의견은 제외."
-        )
+        description="[누가] [무엇을] [언제까지] ~하기로 했다 형식의 결정 내용",
     )
     context: str = Field(
         default="",
-        description=(
-            "결정의 근거/맥락/제약. "
-            "결정이 그렇게 정해진 이유를 서술하며 status/승인 정보는 포함하지 않음."
-        ),
+        description="결정의 근거/맥락 (1문장)",
     )
+
+
+class MinutesAgendaData(BaseModel):
+    """Step 2 LLM 출력: 아젠다 (evidence 없음, 코드에서 Step 1과 결합)."""
+
+    topic: str = Field(description="구체적인 안건명")
+    description: str = Field(default="", description="보충 설명 (1문장)")
+    decision: MinutesDecisionData | None = Field(
+        default=None,
+        description="결정사항 (없으면 null)",
+    )
+
+
+class MinutesGenerationOutput(BaseModel):
+    """Step 2 LLM 출력."""
+
+    summary: str = Field(description="회의 전체 요약 (3~7문장)")
+    agendas: list[MinutesAgendaData] = Field(
+        description="키워드 그룹 순서와 동일한 아젠다 목록",
+    )
+
+
+# =============================================================================
+# Downstream 전달용 스키마 (gate, persistence 호환)
+# =============================================================================
+
+
+class DecisionData(BaseModel):
+    """최종 결정사항 (evidence 포함)."""
+
+    content: str = Field(description="결정 내용")
+    context: str = Field(default="", description="결정 맥락/근거")
     evidence: list[SpanRef] = Field(
         default_factory=list,
-        description="결정 근거 span 목록 (없으면 chunk 범위로 fallback)",
+        description="결정 근거 span 목록",
     )
 
 
 class AgendaData(BaseModel):
-    """추출된 아젠다."""
+    """최종 아젠다 (evidence 포함)."""
 
-    topic: str = Field(
-        description=(
-            "작고 구체적인 아젠다 주제(한 가지 핵심). "
-            "커밋 메시지처럼 논의 단위를 잘게 쪼갠 제목."
-        )
-    )
-    description: str = Field(
-        default="",
-        description=(
-            "아젠다의 핵심 논의 내용 요약(1문장 권장). "
-            "트랜스크립트 근거 기반으로 작성."
-        ),
-    )
+    topic: str = Field(description="안건명")
+    description: str = Field(default="", description="보충 설명")
     evidence: list[SpanRef] = Field(
         default_factory=list,
-        description="아젠다 근거 span 목록 (없으면 chunk 범위로 fallback)",
+        description="아젠다 근거 span 목록",
     )
-    decision: DecisionData | None = Field(
-        default=None,
-        description=(
-            "해당 아젠다의 결정사항(Agenda당 최대 1개). "
-            "명시적 합의가 없으면 null."
-        ),
-    )
+    decision: DecisionData | None = Field(default=None, description="결정사항")
 
 
 class ExtractionOutput(BaseModel):
-    """LLM 추출 결과."""
+    """최종 추출 결과 (downstream 호환)."""
 
-    summary: str = Field(
-        description=(
-            "회의 전체 요약(3-7문장). "
-            "핵심 논의 흐름과 결론을 포함."
-        )
-    )
-    agendas: list[AgendaData] = Field(
-        description=(
-            "트랜스크립트 등장 순으로 정렬된 아젠다 목록. "
-            "유사 표현은 병합하고, 근거 없는 항목은 제외."
-        )
-    )
+    summary: str = Field(description="회의 전체 요약")
+    agendas: list[AgendaData] = Field(description="아젠다 목록")
 
 
-class AgendaMergeGroup(BaseModel):
-    """LLM 병합 결과의 단일 그룹."""
-
-    source_agenda_ids: list[str] = Field(
-        default_factory=list,
-        description="병합 대상 source agenda id 목록",
-    )
-    merged_topic: str = Field(default="", description="병합 후 최종 topic")
-    merged_description: str = Field(default="", description="병합 후 최종 description")
-    merged_decision_content: str | None = Field(
-        default=None,
-        description="병합 후 최종 decision content (없으면 null)",
-    )
-    merged_decision_context: str | None = Field(
-        default=None,
-        description="병합 후 최종 decision context (없으면 null)",
-    )
-
-
-class AgendaMergeOutput(BaseModel):
-    """LLM 병합 출력 스키마."""
-
-    merged_agendas: list[AgendaMergeGroup] = Field(default_factory=list)
+# =============================================================================
+# 청킹 데이터 구조
+# =============================================================================
 
 
 @dataclass
@@ -245,7 +258,6 @@ def _prepare_utterances(state: GeneratePrState) -> list[dict]:
         for turn, utt in enumerate(utterances, start=1):
             original_id = str(utt.get("id", "")).strip()
             if not original_id:
-                # upstream ID가 없을 때만 제한적으로 fallback 사용
                 original_id = f"utt-{turn}"
             llm_utt_id = f"utt-{turn}"
             normalized.append({
@@ -274,27 +286,6 @@ def _prepare_utterances(state: GeneratePrState) -> list[dict]:
     }]
 
 
-def _build_chunk_span(
-    chunk_utterances: list[dict],
-    topic_id: str | None = None,
-    topic_name: str | None = None,
-) -> list[dict]:
-    """청크 범위를 SpanRef 형태로 반환."""
-    if not chunk_utterances:
-        return []
-    first = chunk_utterances[0]
-    last = chunk_utterances[-1]
-    return [{
-        "transcript_id": "meeting-transcript",
-        "start_utt_id": str(first["id"]),
-        "end_utt_id": str(last["id"]),
-        "start_ms": first.get("start_ms"),
-        "end_ms": last.get("end_ms"),
-        "topic_id": topic_id,
-        "topic_name": topic_name,
-    }]
-
-
 def _format_utterances_for_prompt(utterances: list[dict]) -> str:
     """발화를 프롬프트용 텍스트로 포맷."""
     lines: list[str] = []
@@ -305,6 +296,169 @@ def _format_utterances_for_prompt(utterances: list[dict]) -> str:
             f"{utt['speaker_name']}: {utt['text']}"
         )
     return "\n".join(lines)
+
+
+# =============================================================================
+# Utterance ID 해석
+# =============================================================================
+
+
+def _normalize_key(value: object) -> str:
+    return " ".join(str(value or "").strip().split())
+
+
+def _build_utt_alias_to_index(utterances: list[dict]) -> dict[str, int]:
+    alias_to_index: dict[str, int] = {}
+
+    for idx, utterance in enumerate(utterances):
+        original_id = _normalize_key(utterance.get("id"))
+        llm_utt_id = _normalize_key(utterance.get("llm_utt_id"))
+        turn = int(utterance.get("turn") or (idx + 1))
+
+        aliases = {
+            original_id,
+            original_id.lower(),
+            llm_utt_id,
+            llm_utt_id.lower(),
+            str(turn),
+            f"utt-{turn}",
+            f"turn-{turn}",
+            f"utt {turn}",
+            f"turn {turn}",
+        }
+        for alias in aliases:
+            if alias:
+                alias_to_index[alias] = idx
+
+    return alias_to_index
+
+
+def _expand_utt_alias_candidates(raw_utt_id: str) -> list[str]:
+    normalized = _normalize_key(raw_utt_id)
+    if not normalized:
+        return []
+
+    candidates: list[str] = [normalized]
+    compact = normalized.strip("[]()")
+    if compact and compact not in candidates:
+        candidates.append(compact)
+
+    lowered = compact.lower()
+    if lowered.startswith("utt "):
+        turn = compact[4:].strip()
+        if turn:
+            candidates.append(turn)
+    if lowered.startswith("utt-"):
+        turn = compact[4:].strip()
+        if turn:
+            candidates.append(turn)
+    if lowered.startswith("turn "):
+        turn = compact[5:].strip()
+        if turn:
+            candidates.append(turn)
+    if lowered.startswith("turn-"):
+        turn = compact[5:].strip()
+        if turn:
+            candidates.append(turn)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        for variant in (candidate, candidate.lower()):
+            if variant and variant not in seen:
+                seen.add(variant)
+                deduped.append(variant)
+
+    return deduped
+
+
+def _resolve_utt_index(raw_utt_id: object, alias_to_index: dict[str, int]) -> int | None:
+    for candidate in _expand_utt_alias_candidates(str(raw_utt_id or "")):
+        mapped = alias_to_index.get(candidate)
+        if mapped is not None:
+            return mapped
+    return None
+
+
+# =============================================================================
+# Evidence 정규화
+# =============================================================================
+
+
+def _canonicalize_evidence(
+    evidence: list[dict],
+    utterances: list[dict],
+    alias_to_index: dict[str, int],
+    topic_id: str | None = None,
+    topic_name: str | None = None,
+) -> list[dict]:
+    """LLM이 출력한 evidence span을 정규화한다."""
+    canonical: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    for span in evidence:
+        if not isinstance(span, dict):
+            continue
+
+        start_idx = _resolve_utt_index(span.get("start_utt_id"), alias_to_index)
+        end_idx = _resolve_utt_index(span.get("end_utt_id"), alias_to_index)
+        if start_idx is None or end_idx is None:
+            continue
+
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+
+        start_utt = utterances[start_idx]
+        end_utt = utterances[end_idx]
+        start_id = str(start_utt.get("id", "")).strip()
+        end_id = str(end_utt.get("id", "")).strip()
+        if not start_id or not end_id:
+            continue
+
+        key = (start_id, end_id)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        normalized_span = dict(span)
+        normalized_span["start_utt_id"] = start_id
+        normalized_span["end_utt_id"] = end_id
+        normalized_span["start_ms"] = start_utt.get("start_ms")
+        normalized_span["end_ms"] = end_utt.get("end_ms")
+        if not normalized_span.get("topic_id") and topic_id:
+            normalized_span["topic_id"] = topic_id
+        if not normalized_span.get("topic_name") and topic_name:
+            normalized_span["topic_name"] = topic_name
+        canonical.append(normalized_span)
+
+    return canonical
+
+
+def _resolve_evidence_text(
+    evidence: list[dict],
+    utterances: list[dict],
+    alias_to_index: dict[str, int],
+    max_chars: int = 500,
+) -> str:
+    """evidence span에 해당하는 발화 원문을 추출한다."""
+    segments: list[str] = []
+
+    for span in evidence:
+        start_idx = _resolve_utt_index(span.get("start_utt_id"), alias_to_index)
+        end_idx = _resolve_utt_index(span.get("end_utt_id"), alias_to_index)
+        if start_idx is None or end_idx is None:
+            continue
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+
+        for utt in utterances[start_idx : end_idx + 1]:
+            text = str(utt.get("text", "")).strip()
+            speaker = str(utt.get("speaker_name", "")).strip()
+            if text:
+                segments.append(f"{speaker}: {text}" if speaker else text)
+
+    result = " ".join(segments)
+    return result[:max_chars] if len(result) > max_chars else result
 
 
 # =============================================================================
@@ -384,568 +538,242 @@ def _create_three_overlap_chunks(
 
 
 # =============================================================================
-# 토픽 기반 병합 (Topic-Guided Merge)
+# 키워드 병합 (chunked pass용)
 # =============================================================================
 
 
-def _find_topic_for_evidence(
-    evidence: list[dict],
-    topics: list[dict],
-) -> str | None:
-    """Evidence의 발화 ID가 속한 토픽 ID 반환."""
-    if not evidence or not topics:
-        return None
-
-    # 0) evidence에 topic_id가 있으면 우선 사용 (UUID 기반 utt_id에서도 안정적)
-    first_evidence = evidence[0]
-    topic_id = first_evidence.get("topic_id")
-    if isinstance(topic_id, str) and topic_id.strip():
-        return topic_id.strip()
-
-    # 1) 첫 번째 evidence의 발화 ID 기준 fallback
-    start_utt_id = first_evidence.get("start_utt_id", "")
-
-    # utt_id에서 turn 번호 추출 시도
-    try:
-        # "utt-1" 형식이거나 숫자인 경우
-        if isinstance(start_utt_id, str) and start_utt_id.startswith("utt-"):
-            utt_turn = int(start_utt_id.split("-")[1])
-        else:
-            utt_turn = int(start_utt_id)
-    except (ValueError, IndexError):
-        return None
-
-    for topic in topics:
-        start_turn, end_turn = _get_topic_turn_range(topic)
-        if start_turn <= utt_turn <= end_turn:
-            return str(topic.get("id", ""))
-
-    return None
-
-
-def _merge_chunk_results_with_topics(
-    chunk_results: list[dict],
-    topics: list[dict],
-) -> list[dict]:
-    """토픽 정보를 활용한 스마트 병합.
-
-    원칙:
-    1. 같은 토픽 내 항목 → 중복 가능성 높음 → 병합 검토
-    2. 다른 토픽의 항목 → 기본적으로 분리 유지
-    """
-    if not topics:
-        return _merge_chunk_results_simple(chunk_results)
-
-    # 1. 모든 아젠다를 topic_id로 그룹핑
-    by_topic: dict[str, list[dict]] = defaultdict(list)
-
-    for chunk_result in chunk_results:
-        for agenda in chunk_result.get("agendas", []):
-            evidence = agenda.get("evidence", [])
-            topic_id = _find_topic_for_evidence(evidence, topics) or "unknown"
-            by_topic[topic_id].append(agenda)
-
-    # 2. 각 토픽 내에서만 중복 검사 (범위 축소 = 정확도 향상)
-    merged_items: list[dict] = []
-
-    for items in by_topic.values():
-        if len(items) == 1:
-            merged_items.extend(items)
-        else:
-            # 같은 토픽 내 항목만 병합 시도
-            merged = _merge_within_topic(items)
-            merged_items.extend(merged)
-
-    # 3. 시간순 정렬 (첫 번째 evidence의 start_utt_id 기준)
-    def _get_min_turn(agenda: dict) -> int:
-        evidence = agenda.get("evidence", [])
-        if not evidence:
-            return 0
-        first_evidence = evidence[0]
-        start_ms = first_evidence.get("start_ms")
-        if isinstance(start_ms, int):
-            return start_ms
-        start_utt_id = str(first_evidence.get("start_utt_id", "0"))
-        try:
-            if start_utt_id.startswith("utt-"):
-                return int(start_utt_id.split("-")[1])
-            return int(start_utt_id)
-        except (ValueError, IndexError):
-            return 0
-
-    merged_items.sort(key=_get_min_turn)
-
-    return merged_items
-
-
-def _get_evidence_utt_ids(agenda: dict) -> set[str]:
-    """아젠다의 evidence에서 utterance ID 집합 추출."""
-    ids: set[str] = set()
-    for ev in agenda.get("evidence", []):
-        start = str(ev.get("start_utt_id", "")).strip()
-        end = str(ev.get("end_utt_id", "")).strip()
-        if start:
-            ids.add(start)
-        if end:
-            ids.add(end)
-    return ids
-
-
-def _calculate_evidence_overlap(ids1: set[str], ids2: set[str]) -> float:
-    """두 evidence 집합의 overlap 비율 계산.
-
-    Returns:
-        overlap 비율 (0.0 ~ 1.0). min(len)이 0이면 0.0 반환.
-    """
-    if not ids1 or not ids2:
+def _keywords_overlap_ratio(kws_a: list[str], kws_b: list[str]) -> float:
+    """두 keyword 리스트의 겹침 비율 (Jaccard-like)."""
+    set_a = {kw.lower().strip() for kw in kws_a if kw.strip()}
+    set_b = {kw.lower().strip() for kw in kws_b if kw.strip()}
+    if not set_a or not set_b:
         return 0.0
-    intersection = len(ids1 & ids2)
-    min_size = min(len(ids1), len(ids2))
-    return intersection / min_size if min_size > 0 else 0.0
+    intersection = set_a & set_b
+    union = set_a | set_b
+    return len(intersection) / len(union) if union else 0.0
 
 
-def _extract_topic_keywords(topic: str) -> set[str]:
-    """토픽 문자열에서 의미있는 키워드 추출.
-
-    공백/특수문자로 분리 후 불용어 제거, 2자 이상 단어만 유지.
-    """
-    import re
-
-    # 공백 및 특수문자로 분리
-    words = re.split(r"[\s,./()·\-_]+", topic.lower().strip())
-
-    # 불용어 제거, 2자 이상만 유지
-    keywords = {
-        word for word in words
-        if len(word) >= 2 and word not in KOREAN_STOPWORDS
-    }
-    return keywords
-
-
-def _calculate_topic_similarity(topic1: str, topic2: str) -> float:
-    """두 토픽의 키워드 유사도 계산.
-
-    Returns:
-        유사도 (0.0 ~ 1.0). 키워드가 없으면 0.0 반환.
-    """
-    kw1 = _extract_topic_keywords(topic1)
-    kw2 = _extract_topic_keywords(topic2)
-
-    if not kw1 or not kw2:
-        return 0.0
-
-    intersection = len(kw1 & kw2)
-    min_size = min(len(kw1), len(kw2))
-    return intersection / min_size if min_size > 0 else 0.0
-
-
-def _merge_two_agendas(primary: dict, secondary: dict) -> dict:
-    """두 아젠다를 병합 (primary 기준)."""
-    result = primary.copy()
-
-    # description은 더 긴 쪽 유지
-    if len(str(secondary.get("description", ""))) > len(str(result.get("description", ""))):
-        result["description"] = secondary.get("description", "")
-
-    # evidence union
-    existing_evidence = list(result.get("evidence", []) or [])
-    incoming_evidence = list(secondary.get("evidence", []) or [])
+def _merge_evidence_spans(spans_a: list[dict], spans_b: list[dict]) -> list[dict]:
+    """두 evidence span 리스트를 중복 제거하여 병합."""
+    merged: list[dict] = list(spans_a)
     seen = {
-        (str(item.get("start_utt_id")), str(item.get("end_utt_id")))
-        for item in existing_evidence
+        (_normalize_key(s.get("start_utt_id")), _normalize_key(s.get("end_utt_id")))
+        for s in spans_a
     }
-    for item in incoming_evidence:
-        key_tuple = (str(item.get("start_utt_id")), str(item.get("end_utt_id")))
-        if key_tuple not in seen:
-            existing_evidence.append(item)
-            seen.add(key_tuple)
-    result["evidence"] = existing_evidence
-
-    # decision 병합
-    existing_decision = result.get("decision")
-    incoming_decision = secondary.get("decision")
-    if not existing_decision and incoming_decision:
-        result["decision"] = incoming_decision
-    elif existing_decision and incoming_decision:
-        _merge_decision_evidence(existing_decision, incoming_decision)
-
-    return result
+    for span in spans_b:
+        key = (_normalize_key(span.get("start_utt_id")), _normalize_key(span.get("end_utt_id")))
+        if key not in seen:
+            seen.add(key)
+            merged.append(span)
+    return merged
 
 
-def _merge_within_topic(items: list[dict]) -> list[dict]:
-    """같은 토픽 내 중복 아젠다 병합 (evidence overlap + topic 유사도 기반).
+def _merge_keyword_groups(
+    all_chunk_keywords: list[list[dict]],
+) -> list[dict]:
+    """여러 청크의 키워드 그룹을 유사 agenda끼리 병합한다.
 
-    다음 조건 중 하나라도 만족하면 동일 주제로 간주하여 병합:
-    1. Evidence ID가 50% 이상 겹침 (같은 발화 근거)
-    2. Topic 키워드가 50% 이상 겹침 (의미적 유사)
+    Args:
+        all_chunk_keywords: 청크별 agenda keyword dict 리스트의 리스트
+
+    Returns:
+        병합된 agenda keyword dict 리스트
     """
-    if len(items) <= 1:
-        return items
-
     merged: list[dict] = []
-    used: set[int] = set()
 
-    for i, agenda_a in enumerate(items):
-        if i in used:
-            continue
+    for chunk_keywords in all_chunk_keywords:
+        for kw_group in chunk_keywords:
+            topic_kws = list(kw_group.get("topic_keywords", []))
 
-        ids_a = _get_evidence_utt_ids(agenda_a)
-        topic_a = str(agenda_a.get("topic", "")).strip()
-        current = agenda_a.copy()
-        used.add(i)
-
-        # 나머지 아젠다와 병합 조건 검사
-        for j in range(i + 1, len(items)):
-            if j in used:
-                continue
-
-            agenda_b = items[j]
-            ids_b = _get_evidence_utt_ids(agenda_b)
-            topic_b = str(agenda_b.get("topic", "")).strip()
-
-            # 조건 1: Evidence overlap
-            evidence_overlap = _calculate_evidence_overlap(ids_a, ids_b)
-            should_merge_by_evidence = evidence_overlap >= EVIDENCE_OVERLAP_MERGE_THRESHOLD
-
-            # 조건 2: Topic 키워드 유사도
-            topic_similarity = _calculate_topic_similarity(topic_a, topic_b)
-            should_merge_by_topic = topic_similarity >= TOPIC_KEYWORD_OVERLAP_THRESHOLD
-
-            # 둘 중 하나라도 만족하면 병합
-            if should_merge_by_evidence or should_merge_by_topic:
-                merge_reason = []
-                if should_merge_by_evidence:
-                    merge_reason.append(f"evidence={evidence_overlap*100:.0f}%")
-                if should_merge_by_topic:
-                    merge_reason.append(f"topic={topic_similarity*100:.0f}%")
-
-                logger.info(
-                    "Merging agendas: '%s' + '%s' (%s)",
-                    topic_a[:25],
-                    topic_b[:25],
-                    ", ".join(merge_reason),
+            # 기존 merged에서 유사 agenda 찾기
+            best_match_idx = -1
+            best_overlap = 0.0
+            for idx, existing in enumerate(merged):
+                overlap = _keywords_overlap_ratio(
+                    topic_kws, existing.get("topic_keywords", [])
                 )
-                current = _merge_two_agendas(current, agenda_b)
-                # 병합 후 evidence IDs 업데이트
-                ids_a = _get_evidence_utt_ids(current)
-                used.add(j)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_match_idx = idx
 
-        merged.append(current)
+            if best_overlap >= KEYWORD_MERGE_MIN_OVERLAP and best_match_idx >= 0:
+                # 기존 agenda에 병합
+                existing = merged[best_match_idx]
+                # topic_keywords 합집합
+                existing_kws = set(existing.get("topic_keywords", []))
+                for kw in topic_kws:
+                    if kw not in existing_kws:
+                        existing["topic_keywords"].append(kw)
+                        existing_kws.add(kw)
+                # evidence_spans 병합
+                existing["evidence_spans"] = _merge_evidence_spans(
+                    existing.get("evidence_spans", []),
+                    kw_group.get("evidence_spans", []),
+                )
+                # decision 병합 (없던 것이 새로 나오면 추가)
+                if kw_group.get("decision") and not existing.get("decision"):
+                    existing["decision"] = kw_group["decision"]
+                elif kw_group.get("decision") and existing.get("decision"):
+                    # decision evidence 병합
+                    existing["decision"]["evidence_spans"] = _merge_evidence_spans(
+                        existing["decision"].get("evidence_spans", []),
+                        kw_group["decision"].get("evidence_spans", []),
+                    )
+            else:
+                # 새 agenda로 추가
+                merged.append(dict(kw_group))
 
     return merged
 
 
-def _merge_decision_evidence(existing: dict, incoming: dict) -> None:
-    """두 decision의 evidence를 병합 (in-place)."""
-    ex_evidence = list(existing.get("evidence", []) or [])
-    in_evidence = list(incoming.get("evidence", []) or [])
-    ex_seen = {
-        (str(item.get("start_utt_id")), str(item.get("end_utt_id")))
-        for item in ex_evidence
-    }
-    for item in in_evidence:
-        key_tuple = (str(item.get("start_utt_id")), str(item.get("end_utt_id")))
-        if key_tuple not in ex_seen:
-            ex_evidence.append(item)
-            ex_seen.add(key_tuple)
-    existing["evidence"] = ex_evidence
+# =============================================================================
+# Step 2 입력 포맷팅
+# =============================================================================
 
 
-def _merge_chunk_results_simple(chunk_results: list[dict]) -> list[dict]:
-    """단순 문자열 키 기반 병합 (토픽 없을 때 fallback)."""
-    merged_by_topic: OrderedDict[str, dict] = OrderedDict()
+def _format_keywords_for_minutes_prompt(
+    keyword_groups: list[dict],
+    utterances: list[dict],
+    alias_to_index: dict[str, int],
+) -> str:
+    """키워드 그룹 + 근거 원문을 Step 2 프롬프트용 텍스트로 포맷한다."""
+    sections: list[str] = []
 
-    for chunk_result in chunk_results:
-        for agenda in chunk_result.get("agendas", []):
-            topic = str(agenda.get("topic", "")).strip()
-            if not topic:
-                continue
-            key = " ".join(topic.lower().split())
+    for idx, group in enumerate(keyword_groups):
+        lines: list[str] = [f"### 아젠다 {idx + 1}"]
 
-            if key not in merged_by_topic:
-                merged_by_topic[key] = agenda.copy()
-                continue
+        # topic keywords
+        topic_kws = group.get("topic_keywords", [])
+        lines.append(f"키워드: {', '.join(topic_kws)}")
 
-            existing = merged_by_topic[key]
-
-            if len(str(agenda.get("description", ""))) > len(str(existing.get("description", ""))):
-                existing["description"] = agenda.get("description", "")
-
-            existing_evidence = list(existing.get("evidence", []) or [])
-            incoming_evidence = list(agenda.get("evidence", []) or [])
-            seen = {
-                (str(item.get("start_utt_id")), str(item.get("end_utt_id")))
-                for item in existing_evidence
-            }
-            for item in incoming_evidence:
-                key_tuple = (str(item.get("start_utt_id")), str(item.get("end_utt_id")))
-                if key_tuple not in seen:
-                    existing_evidence.append(item)
-                    seen.add(key_tuple)
-            existing["evidence"] = existing_evidence
-
-            existing_decision = existing.get("decision")
-            incoming_decision = agenda.get("decision")
-            if not existing_decision and incoming_decision:
-                existing["decision"] = incoming_decision
-            elif existing_decision and incoming_decision:
-                _merge_decision_evidence(existing_decision, incoming_decision)
-
-    return list(merged_by_topic.values())
-
-
-def _build_llm_merge_candidates(
-    chunk_results: list[dict],
-) -> tuple[list[dict], dict[str, dict], dict[str, int]]:
-    """LLM 병합용 후보 agenda 목록/맵 생성."""
-    candidates: list[dict] = []
-    agenda_by_id: dict[str, dict] = {}
-    agenda_order: dict[str, int] = {}
-
-    running_index = 0
-    for chunk_idx, chunk_result in enumerate(chunk_results):
-        for agenda_idx, agenda in enumerate(chunk_result.get("agendas", [])):
-            agenda_id = f"a{running_index}"
-            running_index += 1
-
-            decision = agenda.get("decision") or {}
-            evidence = list(agenda.get("evidence", []) or [])
-            first_evidence = evidence[0] if evidence else {}
-
-            candidates.append({
-                "agenda_id": agenda_id,
-                "chunk_index": chunk_idx,
-                "agenda_index": agenda_idx,
-                "topic": str(agenda.get("topic", "")),
-                "description": str(agenda.get("description", "")),
-                "decision_content": str(decision.get("content", "")) if decision else "",
-                "decision_context": str(decision.get("context", "")) if decision else "",
-                "topic_id_hint": str(first_evidence.get("topic_id", "") or ""),
-                "evidence_count": len(evidence),
-            })
-            agenda_by_id[agenda_id] = agenda
-            agenda_order[agenda_id] = len(agenda_order)
-
-    return candidates, agenda_by_id, agenda_order
-
-
-def _invoke_merge_chain(
-    chunk_agendas_text: str,
-    realtime_topics_text: str,
-) -> AgendaMergeOutput:
-    """LLM 기반 agenda 병합 그룹 생성."""
-    parser = PydanticOutputParser(pydantic_object=AgendaMergeOutput)
-    prompt = ChatPromptTemplate.from_template(AGENDA_MERGE_PROMPT)
-    chain = prompt | get_pr_generator_llm() | parser
-
-    return chain.invoke({
-        "realtime_topics": realtime_topics_text,
-        "chunk_agendas": chunk_agendas_text,
-        "format_instructions": parser.get_format_instructions(),
-    })
-
-
-def _materialize_merged_agenda(
-    source_agenda_ids: list[str],
-    agenda_by_id: dict[str, dict],
-    merged_topic: str = "",
-    merged_description: str = "",
-    merged_decision_content: str | None = None,
-    merged_decision_context: str | None = None,
-) -> dict | None:
-    """source_agenda_ids를 실제 agenda로 병합하고, LLM이 제안한 문구를 반영."""
-    if not source_agenda_ids:
-        return None
-
-    first_id = source_agenda_ids[0]
-    current = agenda_by_id[first_id].copy()
-
-    for agenda_id in source_agenda_ids[1:]:
-        current = _merge_two_agendas(current, agenda_by_id[agenda_id])
-
-    topic_text = merged_topic.strip()
-    if topic_text:
-        current["topic"] = topic_text
-
-    description_text = merged_description.strip()
-    if description_text:
-        current["description"] = description_text
-
-    # decision 문구는 LLM 결과를 우선하되, evidence는 기존 union 결과를 유지한다.
-    if merged_decision_content is not None:
-        decision_text = merged_decision_content.strip()
-        if not decision_text:
-            current["decision"] = None
-        else:
-            decision_context = (merged_decision_context or "").strip()
-            decision_evidence = []
-            if isinstance(current.get("decision"), dict):
-                decision_evidence = list(current["decision"].get("evidence", []) or [])
-            if not decision_evidence:
-                decision_evidence = list(current.get("evidence", []) or [])
-
-            current["decision"] = {
-                "content": decision_text,
-                "context": decision_context,
-                "evidence": decision_evidence,
-            }
-
-    return current
-
-
-def _merge_chunk_results_with_llm(
-    chunk_results: list[dict],
-    topics: list[dict],
-) -> list[dict]:
-    """청크 결과를 LLM으로 병합한다. 실패 시 규칙 병합으로 fallback."""
-    candidates, agenda_by_id, agenda_order = _build_llm_merge_candidates(chunk_results)
-    if len(candidates) <= 1:
-        return list(agenda_by_id.values())
-
-    topics_text = _format_realtime_topics_for_prompt(topics)
-    chunk_agendas_text = json.dumps(candidates, ensure_ascii=False)
-
-    try:
-        merge_output = _invoke_merge_chain(chunk_agendas_text, topics_text)
-    except Exception as e:
-        logger.warning("LLM merge failed, fallback to rule merge: %s", e)
-        return _merge_chunk_results_with_topics(chunk_results, topics)
-
-    used_ids: set[str] = set()
-    merged_with_order: list[tuple[int, dict]] = []
-
-    for group in merge_output.merged_agendas:
-        source_ids: list[str] = []
-        for agenda_id in group.source_agenda_ids:
-            if agenda_id in agenda_by_id and agenda_id not in used_ids:
-                source_ids.append(agenda_id)
-                used_ids.add(agenda_id)
-
-        if not source_ids:
-            continue
-
-        merged_agenda = _materialize_merged_agenda(
-            source_agenda_ids=source_ids,
-            agenda_by_id=agenda_by_id,
-            merged_topic=group.merged_topic,
-            merged_description=group.merged_description,
-            merged_decision_content=group.merged_decision_content,
-            merged_decision_context=group.merged_decision_context,
+        # agenda evidence text
+        agenda_evidence = group.get("evidence_spans", [])
+        evidence_text = _resolve_evidence_text(
+            agenda_evidence, utterances, alias_to_index, max_chars=800
         )
-        if not merged_agenda:
-            continue
+        if evidence_text:
+            lines.append(f"근거 원문: {evidence_text}")
 
-        min_order = min(agenda_order[agenda_id] for agenda_id in source_ids)
-        merged_with_order.append((min_order, merged_agenda))
+        # decision keywords
+        decision = group.get("decision")
+        if decision:
+            decision_parts: list[str] = []
+            if decision.get("who"):
+                decision_parts.append(f"누가: {decision['who']}")
+            decision_parts.append(f"무엇을: {decision.get('what', '')}")
+            if decision.get("when"):
+                decision_parts.append(f"언제까지: {decision['when']}")
+            decision_parts.append(f"행위: {decision.get('verb', '')}")
+            lines.append(f"결정 키워드: {' | '.join(decision_parts)}")
 
-    # LLM 출력 누락 대비: 미할당 agenda는 singleton으로 추가한다.
-    for agenda_id, agenda in agenda_by_id.items():
-        if agenda_id in used_ids:
-            continue
-        merged_with_order.append((agenda_order[agenda_id], agenda.copy()))
+            # decision evidence text
+            dec_evidence = decision.get("evidence_spans", [])
+            dec_evidence_text = _resolve_evidence_text(
+                dec_evidence, utterances, alias_to_index, max_chars=400
+            )
+            if dec_evidence_text:
+                lines.append(f"결정 근거 원문: {dec_evidence_text}")
+        else:
+            lines.append("결정: 없음")
 
-    merged_with_order.sort(key=lambda item: item[0])
-    merged_agendas = [agenda for _, agenda in merged_with_order]
+        sections.append("\n".join(lines))
 
-    logger.info(
-        "LLM merge finished: input=%d, output=%d",
-        len(candidates),
-        len(merged_agendas),
-    )
-    return merged_agendas
+    return "\n\n".join(sections)
 
 
 # =============================================================================
-# Evidence 처리
+# Step 1 + Step 2 결합
 # =============================================================================
 
 
-def _apply_fallback_evidence(
-    result: ExtractionOutput,
-    fallback_span: list[dict],
+def _combine_minutes_with_evidence(
+    minutes: MinutesGenerationOutput,
+    keyword_groups: list[dict],
+    utterances: list[dict],
+    alias_to_index: dict[str, int],
     topic_id: str | None = None,
     topic_name: str | None = None,
-    allow_fallback: bool = True,
 ) -> list[dict]:
-    """LLM 결과에 fallback evidence 적용 및 topic 정보 추가."""
+    """Step 2 LLM 출력과 Step 1 evidence를 결합하여 최종 agenda dict를 생성한다."""
     agendas: list[dict] = []
-    agenda_fallback_count = 0
-    decision_fallback_count = 0
 
-    for agenda in result.agendas:
-        # Agenda evidence
-        agenda_evidence = []
-        if agenda.evidence:
-            for span in agenda.evidence:
-                span_dict = span.model_dump()
-                # topic 정보가 없으면 fallback으로 주입
-                if not span_dict.get("topic_id") and topic_id:
-                    span_dict["topic_id"] = topic_id
-                if not span_dict.get("topic_name") and topic_name:
-                    span_dict["topic_name"] = topic_name
-                agenda_evidence.append(span_dict)
-        elif allow_fallback:
-            agenda_evidence = fallback_span
-            agenda_fallback_count += 1
+    for idx, minutes_agenda in enumerate(minutes.agendas):
+        # 대응하는 keyword group (순서 기반 매칭)
+        kw_group = keyword_groups[idx] if idx < len(keyword_groups) else {}
 
-        # Decision evidence
+        # agenda evidence (Step 1)
+        agenda_evidence = _canonicalize_evidence(
+            kw_group.get("evidence_spans", []),
+            utterances,
+            alias_to_index,
+            topic_id=topic_id,
+            topic_name=topic_name,
+        )
+        if not agenda_evidence:
+            continue
+
+        # decision (Step 2 content + Step 1 evidence)
         decision_data = None
-        if agenda.decision:
-            decision_evidence = []
-            if agenda.decision.evidence:
-                for span in agenda.decision.evidence:
-                    span_dict = span.model_dump()
-                    if not span_dict.get("topic_id") and topic_id:
-                        span_dict["topic_id"] = topic_id
-                    if not span_dict.get("topic_name") and topic_name:
-                        span_dict["topic_name"] = topic_name
-                    decision_evidence.append(span_dict)
-            else:
-                decision_evidence = agenda_evidence
-                if allow_fallback and agenda_evidence == fallback_span:
-                    decision_fallback_count += 1
+        if minutes_agenda.decision and kw_group.get("decision"):
+            decision_evidence = _canonicalize_evidence(
+                kw_group["decision"].get("evidence_spans", []),
+                utterances,
+                alias_to_index,
+                topic_id=topic_id,
+                topic_name=topic_name,
+            )
+            if not decision_evidence:
+                decision_evidence = list(agenda_evidence)
 
             decision_data = {
-                "content": agenda.decision.content,
-                "context": agenda.decision.context,
+                "content": minutes_agenda.decision.content.strip(),
+                "context": minutes_agenda.decision.context.strip(),
                 "evidence": decision_evidence,
             }
 
         agendas.append({
-            "topic": agenda.topic,
-            "description": agenda.description,
+            "topic": minutes_agenda.topic.strip(),
+            "description": minutes_agenda.description.strip(),
             "evidence": agenda_evidence,
             "decision": decision_data,
         })
-
-    if allow_fallback and (agenda_fallback_count or decision_fallback_count):
-        logger.info(
-            "Evidence fallback applied: agenda_fallback=%d, decision_fallback=%d, agendas=%d",
-            agenda_fallback_count,
-            decision_fallback_count,
-            len(result.agendas),
-        )
 
     return agendas
 
 
 # =============================================================================
-# LLM 호출
+# LLM 체인 호출
 # =============================================================================
 
 
-def _invoke_chain(
+def _invoke_keyword_chain(
     transcript_text: str,
     realtime_topics_text: str,
-) -> ExtractionOutput:
-    """LLM 체인 호출."""
-    parser = PydanticOutputParser(pydantic_object=ExtractionOutput)
-    prompt = ChatPromptTemplate.from_template(AGENDA_EXTRACTION_PROMPT)
-    chain = prompt | get_pr_generator_llm() | parser
+) -> KeywordExtractionOutput:
+    """Step 1: 키워드 추출 LLM 체인."""
+    parser = PydanticOutputParser(pydantic_object=KeywordExtractionOutput)
+    prompt = ChatPromptTemplate.from_template(KEYWORD_EXTRACTION_PROMPT)
+    chain = prompt | get_keyword_extractor_llm() | parser
 
     return chain.invoke({
         "realtime_topics": realtime_topics_text,
         "transcript": transcript_text,
+        "format_instructions": parser.get_format_instructions(),
+    })
+
+
+def _invoke_minutes_chain(
+    keyword_groups_text: str,
+    realtime_topics_text: str,
+) -> MinutesGenerationOutput:
+    """Step 2: 회의록 생성 LLM 체인."""
+    parser = PydanticOutputParser(pydantic_object=MinutesGenerationOutput)
+    prompt = ChatPromptTemplate.from_template(MINUTES_GENERATION_PROMPT)
+    chain = prompt | get_minutes_generator_llm() | parser
+
+    return chain.invoke({
+        "realtime_topics": realtime_topics_text,
+        "keyword_groups": keyword_groups_text,
         "format_instructions": parser.get_format_instructions(),
     })
 
@@ -961,39 +789,33 @@ def _is_rate_limit_error(error: Exception) -> bool:
     )
 
 
-async def _invoke_chain_with_retry(
+async def _invoke_keyword_chain_with_retry(
     transcript_text: str,
     realtime_topics_text: str,
     chunk_index: int,
-) -> ExtractionOutput:
-    """청크 추출 호출 (rate-limit 완화를 위한 재시도 포함)."""
+) -> KeywordExtractionOutput:
+    """청크별 Step 1 호출 (rate-limit 완화를 위한 재시도 포함)."""
     last_error: Exception | None = None
     for attempt in range(1, CHUNK_MAX_RETRIES + 1):
         try:
-            return _invoke_chain(transcript_text, realtime_topics_text)
+            return _invoke_keyword_chain(transcript_text, realtime_topics_text)
         except Exception as error:
             last_error = error
             if attempt >= CHUNK_MAX_RETRIES:
                 break
 
+            backoff = CHUNK_RETRY_DELAY_SEC
             if _is_rate_limit_error(error):
-                backoff = min(
-                    CHUNK_RATE_LIMIT_BACKOFF_BASE_SEC * (2 ** (attempt - 1)),
-                    CHUNK_RATE_LIMIT_BACKOFF_MAX_SEC,
-                )
-                backoff += random.uniform(0.0, 1.5)
                 logger.warning(
-                    "Chunk extraction rate-limited: idx=%d attempt=%d/%d backoff=%.1fs",
+                    "Keyword extraction rate-limited: idx=%d attempt=%d/%d backoff=%.1fs",
                     chunk_index,
                     attempt,
                     CHUNK_MAX_RETRIES,
                     backoff,
                 )
             else:
-                backoff = float(attempt)
-                backoff += random.uniform(0.0, 0.5)
                 logger.warning(
-                    "Chunk extraction retrying: idx=%d attempt=%d/%d backoff=%.1fs error=%s",
+                    "Keyword extraction retrying: idx=%d attempt=%d/%d backoff=%.1fs error=%s",
                     chunk_index,
                     attempt,
                     CHUNK_MAX_RETRIES,
@@ -1005,64 +827,136 @@ async def _invoke_chain_with_retry(
 
     if last_error:
         raise last_error
-    raise RuntimeError("Chunk extraction failed without explicit error")
+    raise RuntimeError("Keyword extraction failed without explicit error")
 
 
-async def _refine_summary_with_llm(
-    chunk_summaries: list[str],
-    realtime_topics: list[dict],
-    merged_agendas: list[dict],
-) -> str:
-    """청크 요약들을 LLM으로 통합하여 최종 요약 생성."""
-    if not chunk_summaries:
-        return ""
+async def _invoke_minutes_chain_with_retry(
+    keyword_groups_text: str,
+    realtime_topics_text: str,
+    *,
+    phase: str,
+) -> MinutesGenerationOutput:
+    """Step 2 호출 재시도 (rate-limit 포함 10초 간격)."""
+    last_error: Exception | None = None
+    for attempt in range(1, CHUNK_MAX_RETRIES + 1):
+        try:
+            return _invoke_minutes_chain(keyword_groups_text, realtime_topics_text)
+        except Exception as error:
+            last_error = error
+            if attempt >= CHUNK_MAX_RETRIES:
+                break
 
-    # 단일 청크면 정제 없이 반환
-    if len(chunk_summaries) == 1:
-        return chunk_summaries[0]
+            backoff = CHUNK_RETRY_DELAY_SEC
+            if _is_rate_limit_error(error):
+                logger.warning(
+                    "Minutes generation rate-limited: phase=%s attempt=%d/%d backoff=%.1fs",
+                    phase,
+                    attempt,
+                    CHUNK_MAX_RETRIES,
+                    backoff,
+                )
+            else:
+                logger.warning(
+                    "Minutes generation retrying: phase=%s attempt=%d/%d backoff=%.1fs error=%s",
+                    phase,
+                    attempt,
+                    CHUNK_MAX_RETRIES,
+                    backoff,
+                    error,
+                )
 
-    # 청크 요약 포맷팅
-    summaries_text = "\n".join(
-        f"[청크 {i+1}] {summary}"
-        for i, summary in enumerate(chunk_summaries)
-        if summary.strip()
+            await asyncio.sleep(backoff)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Minutes generation failed without explicit error")
+
+
+# =============================================================================
+# Step 1 결과를 dict로 변환
+# =============================================================================
+
+
+def _keyword_output_to_dicts(output: KeywordExtractionOutput) -> list[dict]:
+    """KeywordExtractionOutput을 dict 리스트로 변환."""
+    result: list[dict] = []
+    for agenda in output.agendas:
+        agenda_dict: dict = {
+            "evidence_spans": [span.model_dump() for span in agenda.evidence_spans],
+            "topic_keywords": list(agenda.topic_keywords),
+        }
+        if agenda.decision:
+            agenda_dict["decision"] = {
+                "who": agenda.decision.who,
+                "what": agenda.decision.what,
+                "when": agenda.decision.when,
+                "verb": agenda.decision.verb,
+                "evidence_spans": [span.model_dump() for span in agenda.decision.evidence_spans],
+            }
+        else:
+            agenda_dict["decision"] = None
+        result.append(agenda_dict)
+    return result
+
+
+# =============================================================================
+# 2단계 파이프라인 실행
+# =============================================================================
+
+
+async def _run_two_step_pipeline(
+    keyword_groups: list[dict],
+    utterances: list[dict],
+    realtime_topics_text: str,
+    topic_id: str | None = None,
+    topic_name: str | None = None,
+    *,
+    phase: str,
+) -> tuple[list[dict], str]:
+    """Step 1 결과(keyword_groups)를 받아 Step 2를 실행하고 최종 agenda를 반환한다.
+
+    Returns:
+        (agendas, summary)
+    """
+    if not keyword_groups:
+        return [], ""
+
+    alias_to_index = _build_utt_alias_to_index(utterances)
+
+    # 근거 없는 그룹 필터링
+    valid_groups = [
+        g for g in keyword_groups
+        if g.get("evidence_spans") and g.get("topic_keywords")
+    ]
+    if not valid_groups:
+        return [], ""
+
+    # 키워드 병합 (중복 agenda 통합 — Step 2 1:1 매핑을 위해 코드에서 선행 처리)
+    valid_groups = _merge_keyword_groups([valid_groups])
+
+    # Step 2 프롬프트 포맷팅
+    keyword_groups_text = _format_keywords_for_minutes_prompt(
+        valid_groups, utterances, alias_to_index
     )
 
-    # 토픽 컨텍스트
-    topics_text = _format_realtime_topics_for_prompt(realtime_topics)
+    # Step 2 LLM 호출
+    minutes_output = await _invoke_minutes_chain_with_retry(
+        keyword_groups_text,
+        realtime_topics_text,
+        phase=phase,
+    )
 
-    # 아젠다 목록 포맷팅
-    agenda_lines = []
-    for i, agenda in enumerate(merged_agendas, 1):
-        topic = agenda.get("topic", "")
-        decision = agenda.get("decision")
-        decision_text = f" → 결정: {decision.get('content', '')}" if decision else ""
-        agenda_lines.append(f"{i}. {topic}{decision_text}")
-    agenda_list_text = "\n".join(agenda_lines) if agenda_lines else "(없음)"
+    # Step 1 evidence + Step 2 minutes 결합
+    agendas = _combine_minutes_with_evidence(
+        minutes_output,
+        valid_groups,
+        utterances,
+        alias_to_index,
+        topic_id=topic_id,
+        topic_name=topic_name,
+    )
 
-    try:
-        prompt = ChatPromptTemplate.from_template(SUMMARY_REFINEMENT_PROMPT)
-        chain = prompt | get_pr_generator_llm()
-
-        result = await chain.ainvoke({
-            "realtime_topics": topics_text,
-            "chunk_summaries": summaries_text,
-            "agenda_list": agenda_list_text,
-        })
-
-        refined_summary = str(result.content).strip()
-        logger.info(
-            "Summary refined: chunks=%d, length=%d->%d",
-            len(chunk_summaries),
-            sum(len(s) for s in chunk_summaries),
-            len(refined_summary),
-        )
-        return refined_summary
-
-    except Exception as e:
-        logger.warning("Summary refinement failed, using concatenated: %s", e)
-        # 실패 시 기존 방식으로 fallback
-        return " ".join(dict.fromkeys(chunk_summaries))
+    return agendas, minutes_output.summary.strip()
 
 
 # =============================================================================
@@ -1071,7 +965,7 @@ async def _refine_summary_with_llm(
 
 
 async def extract_single(state: GeneratePrState) -> GeneratePrState:
-    """짧은 회의 추출: single pass."""
+    """짧은 회의 추출: single pass (Step 1 → Step 2)."""
     utterances = _prepare_utterances(state)
     if not utterances:
         logger.warning("트랜스크립트가 비어있습니다")
@@ -1080,14 +974,33 @@ async def extract_single(state: GeneratePrState) -> GeneratePrState:
     transcript_text = _format_utterances_for_prompt(utterances)
     realtime_topics = state.get("generate_pr_realtime_topics", []) or []
     topics_text = _format_realtime_topics_for_prompt(realtime_topics)
-    fallback_span = _build_chunk_span(utterances)
 
     try:
-        result = _invoke_chain(transcript_text, topics_text)
-        agendas = _apply_fallback_evidence(result, fallback_span, allow_fallback=False)
+        # Step 1: 키워드 추출
+        keyword_output = _invoke_keyword_chain(transcript_text, topics_text)
+        keyword_groups = _keyword_output_to_dicts(keyword_output)
+
+        logger.debug(
+            "Single pass Step 1 complete: keyword_groups=%d",
+            len(keyword_groups),
+        )
+
+        # Step 2: 회의록 생성 + evidence 결합
+        agendas, summary = await _run_two_step_pipeline(
+            keyword_groups,
+            utterances,
+            topics_text,
+            phase="single",
+        )
+
+        logger.info(
+            "Single pass Step 2 complete: agendas=%d",
+            len(agendas),
+        )
+
         return GeneratePrState(
             generate_pr_agendas=agendas,
-            generate_pr_summary=result.summary,
+            generate_pr_summary=summary,
             generate_pr_chunks=[{
                 "index": 0,
                 "utterance_count": len(utterances),
@@ -1099,124 +1012,94 @@ async def extract_single(state: GeneratePrState) -> GeneratePrState:
 
 
 async def extract_chunked(state: GeneratePrState) -> GeneratePrState:
-    """긴 회의 추출: 3청크(50% overlap) pass."""
+    """긴 회의 추출: 청크별 Step 1 → merge → Step 2 1회."""
     utterances = _prepare_utterances(state)
     if not utterances:
         logger.warning("트랜스크립트가 비어있습니다")
         return GeneratePrState(generate_pr_agendas=[], generate_pr_summary="")
 
     realtime_topics = list(state.get("generate_pr_realtime_topics", []) or [])
-
-    # 토픽 유무와 무관하게 3청크(50% overlap) 생성
     chunks = _create_three_overlap_chunks(utterances, realtime_topics)
 
     if len(chunks) <= 1:
         return await extract_single(state)
 
-    logger.info(
-        "Three-chunk extraction: chunks=%d, topics=%d",
+    logger.debug(
+        "Chunked extraction: chunks=%d, topics=%d",
         len(chunks),
         len(realtime_topics),
     )
 
-    chunk_results: list[dict] = []
+    # 청크별 Step 1
+    all_chunk_keywords: list[list[dict]] = []
     chunk_meta: list[dict] = []
 
     for chunk_idx, chunk in enumerate(chunks):
-        main_text = _format_utterances_for_prompt(chunk.utterances)
-        transcript_text = main_text
-
-        # 청크에 해당하는 토픽 컨텍스트
+        transcript_text = _format_utterances_for_prompt(chunk.utterances)
         topics_text = chunk.topics_context or _format_realtime_topics_for_prompt(
             [t for t in realtime_topics if str(t.get("id", "")) in chunk.topic_ids]
         )
 
-        # Fallback span에 topic 정보 포함
-        primary_topic_id = chunk.topic_ids[0] if chunk.topic_ids else None
-        primary_topic_name = None
-        if primary_topic_id:
-            for t in realtime_topics:
-                if str(t.get("id", "")) == primary_topic_id:
-                    primary_topic_name = str(t.get("name", ""))
-                    break
-
-        fallback_span = _build_chunk_span(
-            chunk.utterances,
-            topic_id=primary_topic_id,
-            topic_name=primary_topic_name,
-        )
-
         try:
-            result = await _invoke_chain_with_retry(
-                transcript_text,
-                topics_text,
-                chunk.index,
+            keyword_output = await _invoke_keyword_chain_with_retry(
+                transcript_text, topics_text, chunk.index
             )
-            chunk_agendas = _apply_fallback_evidence(
-                result, fallback_span,
-                topic_id=primary_topic_id,
-                topic_name=primary_topic_name,
-                allow_fallback=False,
+            keyword_groups = _keyword_output_to_dicts(keyword_output)
+
+            logger.debug(
+                "Chunk Step 1 complete: idx=%d keyword_groups=%d",
+                chunk.index,
+                len(keyword_groups),
             )
 
-            agendas_with_evidence = sum(
-                1 for agenda in chunk_agendas if agenda.get("evidence")
-            )
-            decisions_with_evidence = sum(
-                1
-                for agenda in chunk_agendas
-                if agenda.get("decision") and agenda["decision"].get("evidence")
-            )
-            logger.info(
-                "Chunk evidence extraction: idx=%d agendas=%d agendas_with_evidence=%d decisions_with_evidence=%d",
-                chunk.index,
-                len(chunk_agendas),
-                agendas_with_evidence,
-                decisions_with_evidence,
-            )
-
-            chunk_results.append({
-                "summary": result.summary,
-                "agendas": chunk_agendas,
-            })
+            all_chunk_keywords.append(keyword_groups)
             chunk_meta.append({
                 "index": chunk.index,
                 "utterance_count": len(chunk.utterances),
                 "topic_ids": chunk.topic_ids,
             })
         except Exception as e:
-            logger.warning("Chunk extraction failed: idx=%d error=%s", chunk.index, e)
+            logger.warning("Chunk Step 1 failed: idx=%d error=%s", chunk.index, e)
 
         if chunk_idx < len(chunks) - 1:
             await asyncio.sleep(CHUNK_REQUEST_DELAY_SEC)
 
-    if not chunk_results:
+    if not all_chunk_keywords:
         return GeneratePrState(generate_pr_agendas=[], generate_pr_summary="")
 
-    # LLM 기반 병합 (실패 시 규칙 병합 fallback)
-    merged_agendas = _merge_chunk_results_with_llm(
-        chunk_results, realtime_topics
+    # 키워드 병합
+    merged_keywords = _merge_keyword_groups(all_chunk_keywords)
+
+    logger.debug(
+        "Keyword merge complete: chunks=%d, merged_groups=%d",
+        len(all_chunk_keywords),
+        len(merged_keywords),
     )
 
-    # 청크 요약들 추출
-    chunk_summaries = [
-        str(cr.get("summary", "")).strip()
-        for cr in chunk_results
-        if str(cr.get("summary", "")).strip()
-    ]
+    # Step 2: 병합된 키워드로 회의록 1회 생성
+    topics_text = _format_realtime_topics_for_prompt(realtime_topics)
 
-    # LLM으로 최종 요약 정제
-    refined_summary = await _refine_summary_with_llm(
-        chunk_summaries=chunk_summaries,
-        realtime_topics=realtime_topics,
-        merged_agendas=merged_agendas,
-    )
+    try:
+        agendas, summary = await _run_two_step_pipeline(
+            merged_keywords,
+            utterances,
+            topics_text,
+            phase="chunked",
+        )
 
-    return GeneratePrState(
-        generate_pr_agendas=merged_agendas,
-        generate_pr_summary=refined_summary,
-        generate_pr_chunks=chunk_meta,
-    )
+        logger.info(
+            "Chunked Step 2 complete: agendas=%d",
+            len(agendas),
+        )
+
+        return GeneratePrState(
+            generate_pr_agendas=agendas,
+            generate_pr_summary=summary,
+            generate_pr_chunks=chunk_meta,
+        )
+    except Exception as e:
+        logger.error("Chunked Step 2 failed: %s", e)
+        return GeneratePrState(generate_pr_agendas=[], generate_pr_summary="")
 
 
 async def extract_agendas(state: GeneratePrState) -> GeneratePrState:
