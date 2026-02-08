@@ -10,7 +10,7 @@ class SimpleRouterOutput(BaseModel):
     category: str = Field(
         description=(
             "쿼리 카테고리 (greeting, sentiment, acknowledgment, "
-            "nonsense, general_knowledge, unavailable, other)"
+            "nonsense, general_knowledge, guide, unavailable, other)"
         )
     )
     simple_response: str | None = Field(

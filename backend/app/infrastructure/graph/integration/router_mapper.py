@@ -19,6 +19,7 @@ class RouterResponseMapper:
 
     도메인 매핑 규칙 (실제 Clova Router rdtl7tve 모델 기준):
         - "simple talk" → simple_talk (간단한 쿼리, Planning 스킵)
+        - "guide" → guide (사용법 안내, Planning 스킵)
         - "planning needed" → planning_needed (복잡한 쿼리, Planning 필요)
         - "" (빈 문자열) → other (복잡한 쿼리)
     """
@@ -26,11 +27,12 @@ class RouterResponseMapper:
     # Clova 도메인 → SimpleRouter 카테고리 매핑
     DOMAIN_TO_CATEGORY = {
         "simple talk": "simple_talk",  # 간단한 대화 (인사, 감사, 잡담 등)
+        "guide": "guide",  # 사용법/기능 안내
         "planning needed": "planning_needed",  # 복잡한 쿼리 (업무, 지식 등)
     }
 
     # 간단한 쿼리로 판단할 카테고리 (Planning 스킵)
-    SIMPLE_CATEGORIES = {"simple_talk"}
+    SIMPLE_CATEGORIES = {"simple_talk", "guide"}
 
     @classmethod
     def map_response(cls, clova_response: dict, query: str) -> SimpleRouterOutput:
