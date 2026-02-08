@@ -34,6 +34,7 @@ data:
 
   # Worker
   CLOVA_STT_ENDPOINT: {{ .Values.worker.clovaSttEndpoint | quote }}
+  TTS_VOLUME_SCALE: {{ .Values.worker.ttsVolumeScale | quote }}
   BACKEND_API_URL: {{ include "mit.backendUrl" . | quote }}
   WORKER_IMAGE: {{ include "mit.image" (dict "Values" .Values "name" "worker") | quote }}
   IMAGE_PULL_SECRET: {{ .Values.images.pullSecret | quote }}
