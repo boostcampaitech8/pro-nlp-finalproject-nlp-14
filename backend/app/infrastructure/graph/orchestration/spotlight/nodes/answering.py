@@ -102,7 +102,7 @@ async def generate_answer(state: SpotlightOrchestrationState):
         return SpotlightOrchestrationState(response=mutation_message, messages=[AIMessage(content=mutation_message)])
 
     # 회의 관련 mutation 요청인데 mutation 결과가 없으면 거부
-    if is_mutation_request and is_meeting_related and not has_mutation_result:
+    if simple_category != "guide" and is_mutation_request and is_meeting_related and not has_mutation_result:
         # tool_results가 조회 결과(팀 목록, 회의 목록)만 있는 경우는 허용 (다음 단계 진행 중)
         is_query_result_only = tool_results and ("teams" in tool_results or "meetings" in tool_results or "팀" in tool_results)
 
