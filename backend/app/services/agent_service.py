@@ -116,7 +116,6 @@ class AgentService:
         langfuse_config = get_runnable_config(
             trace_name="Voice",
             user_id=user_id,
-            session_id=meeting_id,
             mode="voice",
             tags=["voice"],
             metadata={"workflow_version": "2.0", "meeting_id": meeting_id},
@@ -217,7 +216,6 @@ class AgentService:
         langfuse_config = get_runnable_config(
             trace_name="Voice",
             user_id=user_id,
-            session_id=meeting_id,
             mode="voice",
             tags=["voice"],
             metadata={"workflow_version": "2.0", "meeting_id": meeting_id},

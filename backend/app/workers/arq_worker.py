@@ -459,7 +459,6 @@ async def process_mit_mention(
             },
             config=get_runnable_config(
                 trace_name="MIT Mention",
-                session_id=decision_id,  # Group by decision for related comments
                 mode="voice",
                 tags=["workflow", "mit_mention"],
                 metadata={
