@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { useTeamStore } from '@/stores/teamStore';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
+import { useCreateTeamModalStore } from '@/app/stores/createTeamModalStore';
 import { useAuth } from '@/hooks/useAuth';
 import { ScrollArea } from '@/app/components/ui';
 import { MAX_SPOTLIGHT_SESSIONS } from '@/app/constants';
@@ -50,6 +51,7 @@ export function Navigation() {
   const navigate = useNavigate();
   const { teams, fetchTeams, teamsLoading } = useTeamStore();
   const { openModal: openMeetingModal } = useMeetingModalStore();
+  const { openModal: openCreateTeamModal } = useCreateTeamModalStore();
   const { logout, isLoading: authLoading, isAuthenticated } = useAuth();
   const {
     sessions,
@@ -110,7 +112,11 @@ export function Navigation() {
   };
 
   const handleNewMeeting = () => {
-    openMeetingModal();
+    if (teams.length > 0) {
+      openMeetingModal();
+    } else {
+      openCreateTeamModal();
+    }
   };
 
   return (
@@ -128,7 +134,7 @@ export function Navigation() {
           <button
             onClick={handleNewMeeting}
             className="w-5 h-5 rounded flex items-center justify-center text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
-            title="새 회의 시작"
+            title={teams.length > 0 ? "새 회의 시작" : "새 팀 만들기"}
           >
             <Plus className="w-3.5 h-3.5" />
           </button>

@@ -7,10 +7,13 @@ import { MiniCard } from './MiniCard';
 import { ScrollArea } from '@/app/components/ui';
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
 import { useTeamStore } from '@/stores/teamStore';
+import { CreateTeamModal } from './CreateTeamModal';
+import { useCreateTeamModalStore } from '@/app/stores/createTeamModalStore';
 
 export function LeftSidebar() {
   const { meetingId, participants, connectionState } = useMeetingRoomStore();
   const { currentMeeting, fetchMeeting } = useTeamStore();
+  const { isOpen: isCreateTeamOpen, closeModal: closeCreateTeam } = useCreateTeamModalStore();
   const [duration, setDuration] = useState<string>('');
   const startTimeRef = useRef<Date | null>(null);
 
@@ -82,6 +85,12 @@ export function LeftSidebar() {
       <div className="p-3 border-t border-glass">
         <MiniCard />
       </div>
+
+      {/* 팀 생성 모달 */}
+      <CreateTeamModal
+        open={isCreateTeamOpen}
+        onOpenChange={(open) => !open && closeCreateTeam()}
+      />
     </aside>
   );
 }
