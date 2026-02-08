@@ -2,6 +2,7 @@
 import { Link } from 'react-router-dom';
 import { Clock, Users, Video } from 'lucide-react';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
+import { useTeamStore } from '@/stores/teamStore';
 
 interface CurrentSessionProps {
   meetingId?: string;
@@ -19,23 +20,28 @@ export function CurrentSession({
   isActive = false,
 }: CurrentSessionProps) {
   const { openModal } = useMeetingModalStore();
+  const { teams, teamsLoading } = useTeamStore();
 
   if (!isActive) {
+    const hasTeams = !teamsLoading && teams.length > 0;
+
+    if (!hasTeams) return null;
+
     return (
       <button
         onClick={() => openModal()}
-        className="w-full glass-card p-4 hover:bg-white/5 transition-colors group"
+        className="w-full p-4 rounded-xl bg-gradient-to-r from-mit-primary/20 to-mit-purple/20 hover:from-mit-primary/30 hover:to-mit-purple/30 border border-mit-primary/25 hover:border-mit-primary/40 transition-all group"
       >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mit-primary/20 to-mit-secondary/20 flex items-center justify-center group-hover:from-mit-primary/30 group-hover:to-mit-secondary/30 transition-colors">
-            <Video className="w-5 h-5 text-white/60 group-hover:text-white/80" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mit-primary to-mit-purple flex items-center justify-center">
+            <Video className="w-5 h-5 text-white" />
           </div>
           <div className="text-left">
-            <p className="text-sm font-medium text-white/70 group-hover:text-white/90">
+            <p className="text-sm font-medium text-white">
               새 회의 시작
             </p>
-            <p className="text-xs text-white/40">
-              클릭하여 회의 만들기
+            <p className="text-xs text-white/40 group-hover:text-white/60 transition-colors">
+              팀원과 회의 시작
             </p>
           </div>
         </div>

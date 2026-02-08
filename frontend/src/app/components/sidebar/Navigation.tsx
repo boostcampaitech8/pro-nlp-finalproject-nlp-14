@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useTeamStore } from '@/stores/teamStore';
 import { useCommandStore } from '@/app/stores/commandStore';
-import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
+import { useCreateTeamModalStore } from '@/app/stores/createTeamModalStore';
 import { useAuth } from '@/hooks/useAuth';
 import { ScrollArea } from '@/app/components/ui';
 import { MAX_SPOTLIGHT_SESSIONS } from '@/app/constants';
@@ -49,7 +49,7 @@ export function Navigation() {
   const location = useLocation();
   const navigate = useNavigate();
   const { teams, fetchTeams, teamsLoading } = useTeamStore();
-  const { openModal: openMeetingModal } = useMeetingModalStore();
+  const { openModal: openCreateTeamModal } = useCreateTeamModalStore();
   const { logout, isLoading: authLoading, isAuthenticated } = useAuth();
   const {
     sessions,
@@ -109,10 +109,6 @@ export function Navigation() {
     );
   };
 
-  const handleNewMeeting = () => {
-    openMeetingModal();
-  };
-
   return (
     <div className="flex flex-col h-full">
       {/* 메인 네비게이션 */}
@@ -125,13 +121,15 @@ export function Navigation() {
       <div className="mt-6 flex-1 min-h-0 flex flex-col">
         <div className="flex items-center justify-between px-3 mb-2">
           <p className="text-nav-title">Teams</p>
-          <button
-            onClick={handleNewMeeting}
-            className="w-5 h-5 rounded flex items-center justify-center text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
-            title="새 회의 시작"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+          {teams.length > 0 && (
+            <button
+              onClick={openCreateTeamModal}
+              className="w-5 h-5 rounded flex items-center justify-center text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+              title="새 팀 만들기"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         <ScrollArea className="flex-1">
@@ -141,12 +139,19 @@ export function Navigation() {
                 Loading...
               </div>
             ) : teams.length === 0 ? (
-              <Link
-                to="/dashboard"
-                className="px-3 py-2 text-white/50 text-sm hover:text-white/70 block"
+              <button
+                onClick={openCreateTeamModal}
+                className="mx-2 w-[calc(100%-16px)] flex items-center gap-2.5 px-3 py-3 rounded-xl bg-gradient-to-r from-mit-primary/20 to-mit-purple/20 hover:from-mit-primary/30 hover:to-mit-purple/30 border border-mit-primary/25 hover:border-mit-primary/40 text-white transition-all group animate-[nudge-glow_3s_ease-in-out_infinite]"
               >
-                Create your first team
-              </Link>
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-mit-primary to-mit-purple flex items-center justify-center">
+                  <Plus className="w-4 h-4 text-white" />
+                </div>
+                <div className="text-left flex-1">
+                  <p className="text-sm font-medium">새 팀 만들기</p>
+                  <p className="text-xs text-white/40 group-hover:text-white/60 transition-colors">팀 생성 후 바로 회의 가능</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/50 transition-colors" />
+              </button>
             ) : (
               teams.map((team) => {
                 const isActive = location.pathname === `/dashboard/teams/${team.id}`;
