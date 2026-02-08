@@ -71,6 +71,10 @@ class LiveKitBot:
         self._tts_source: rtc.AudioSource | None = None
         self._tts_track: rtc.LocalAudioTrack | None = None
         self._tts_publish_lock = asyncio.Lock()
+        self._tts_volume_scale = self.config.tts_volume_scale
+
+        if self._tts_volume_scale != 1.0:
+            logger.info("TTS 볼륨 스케일 적용: %.2f", self._tts_volume_scale)
 
     async def _create_token(self) -> str:
         """LiveKit 접근 토큰 생성"""
@@ -198,6 +202,8 @@ class LiveKitBot:
             pcm = self._stereo_to_mono_int16(pcm)
             num_channels = 1
 
+        pcm = self._apply_gain_int16(pcm, self._tts_volume_scale)
+
         output_rate = target_sample_rate or sample_rate
         await self.ensure_tts_track(output_rate, num_channels)
 
@@ -239,6 +245,36 @@ class LiveKitBot:
             mono.append((samples[i] + samples[i + 1]) // 2)
 
         return mono.tobytes()
+
+    @staticmethod
+    def _apply_gain_int16(pcm_data: bytes, gain: float) -> bytes:
+        """16-bit PCM 데이터에 gain을 적용한다."""
+        if not pcm_data or gain == 1.0:
+            return pcm_data
+
+        if len(pcm_data) % 2 != 0:
+            logger.warning(
+                "PCM 데이터 길이가 홀수(%d bytes)여서 마지막 1바이트를 버립니다.",
+                len(pcm_data),
+            )
+            pcm_data = pcm_data[:-1]
+
+        if not pcm_data:
+            return b""
+
+        samples = array("h")
+        samples.frombytes(pcm_data)
+
+        scaled_samples = array("h")
+        for sample in samples:
+            scaled = int(sample * gain)
+            if scaled > 32767:
+                scaled = 32767
+            elif scaled < -32768:
+                scaled = -32768
+            scaled_samples.append(scaled)
+
+        return scaled_samples.tobytes()
 
     @staticmethod
     async def _chunk_pcm_frames(

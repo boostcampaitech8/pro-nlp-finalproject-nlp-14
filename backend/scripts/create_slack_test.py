@@ -382,34 +382,35 @@ async def run_generate_pr(
             ),
         )
 
-        agenda_ids = result.get("generate_pr_agenda_ids", [])
         decision_ids = result.get("generate_pr_decision_ids", [])
         summary = result.get("generate_pr_summary", "")
         agendas = result.get("generate_pr_agendas", [])
 
-        logger.info(f"PR 생성 완료!")
-        logger.info(f"  - Agenda: {len(agenda_ids)}개")
-        logger.info(f"  - Decision: {len(decision_ids)}개")
+        logger.info(
+            "PR 생성 완료: Agenda %d개, Decision %d개",
+            len(agendas),
+            len(decision_ids),
+        )
 
         if agendas:
-            logger.info(f"\n생성된 Agenda 목록:")
+            logger.debug("\n생성된 Agenda 목록:")
             for agenda in agendas:
                 topic = agenda.get("topic", "N/A")
                 desc = agenda.get("description", "")[:50]
                 decision = agenda.get("decision")
                 decision_text = decision.get("content", "")[:50] if decision else "없음"
-                logger.info(f"  - {topic}")
-                logger.info(f"    설명: {desc}...")
-                logger.info(f"    결정: {decision_text}")
+                logger.debug(f"  - {topic}")
+                logger.debug(f"    설명: {desc}...")
+                logger.debug(f"    결정: {decision_text}")
 
         if summary:
-            logger.info(f"\n회의 요약:")
-            logger.info(f"  {summary}")
+            logger.debug("\n회의 요약:")
+            logger.debug(f"  {summary}")
 
         return {
             "status": "success",
             "meeting_id": meeting_id,
-            "agenda_count": len(agenda_ids),
+            "agenda_count": len(agendas),
             "decision_count": len(decision_ids),
             "summary": summary,
             "agendas": agendas,

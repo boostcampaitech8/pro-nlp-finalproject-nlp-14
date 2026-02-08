@@ -4,13 +4,18 @@ import { Logo } from './Logo';
 import { CurrentSession } from './CurrentSession';
 import { Navigation } from './Navigation';
 import { MiniCard } from './MiniCard';
-import { ScrollArea } from '@/app/components/ui';
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
 import { useTeamStore } from '@/stores/teamStore';
+import { CreateTeamModal } from './CreateTeamModal';
+import { CreateMeetingModal } from './CreateMeetingModal';
+import { useCreateTeamModalStore } from '@/app/stores/createTeamModalStore';
+import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 
 export function LeftSidebar() {
   const { meetingId, participants, connectionState } = useMeetingRoomStore();
   const { currentMeeting, fetchMeeting } = useTeamStore();
+  const { isOpen: isCreateTeamOpen, closeModal: closeCreateTeam } = useCreateTeamModalStore();
+  const { isOpen: isMeetingModalOpen, closeModal: closeMeetingModal } = useMeetingModalStore();
   const [duration, setDuration] = useState<string>('');
   const startTimeRef = useRef<Date | null>(null);
 
@@ -72,16 +77,28 @@ export function LeftSidebar() {
       </div>
 
       {/* 네비게이션 */}
-      <ScrollArea className="flex-1">
-        <nav className="p-4">
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <nav className="h-full">
           <Navigation />
         </nav>
-      </ScrollArea>
+      </div>
 
       {/* 미니 카드 */}
       <div className="p-3 border-t border-glass">
         <MiniCard />
       </div>
+
+      {/* 팀 생성 모달 */}
+      <CreateTeamModal
+        open={isCreateTeamOpen}
+        onOpenChange={(open) => !open && closeCreateTeam()}
+      />
+
+      {/* 회의 생성 모달 */}
+      <CreateMeetingModal
+        open={isMeetingModalOpen}
+        onOpenChange={(open) => !open && closeMeetingModal()}
+      />
     </aside>
   );
 }

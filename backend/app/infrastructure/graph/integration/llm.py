@@ -84,20 +84,51 @@ def get_mit_action_generator_llm() -> ChatClovaX:
 
 
 def get_pr_generator_llm() -> ChatClovaX:
-    """Generate PR 전용 LLM (긴 구조화 출력 대응).
+    """Generate PR 전용 LLM (하위 호환용).
 
     Model: HCX-007
-    Use Case: 회의 트랜스크립트에서 Agenda/Decision 대량 추출
-    temperature: 0.2 (환각 억제 + 구조화 추출 안정성 우선)
-    max_tokens: 4096 (다수 Agenda/Decision JSON 출력 대응)
+    Use Case: 레거시 — 새 코드는 get_keyword_extractor_llm / get_minutes_generator_llm 사용
     """
     return ChatClovaX(
         model="HCX-007",
         temperature=0.2,
         max_tokens=4096,
         api_key=NCP_CLOVASTUDIO_API_KEY,
-        thinking={"effort": "low"},
+        reasoning_effort="none",
     ).with_config(run_name="pr_generator")
+
+
+def get_keyword_extractor_llm() -> ChatClovaX:
+    """Step 1: 키워드 추출 전용 LLM (정밀 추출).
+
+    Model: HCX-007
+    Use Case: 트랜스크립트에서 evidence span, 토픽 키워드, decision 구성요소 추출
+    temperature: 0.15 (정밀 추출 — evidence span 매핑 정확도 최우선)
+    max_tokens: 4096 (키워드 구조화 출력)
+    """
+    return ChatClovaX(
+        model="HCX-007",
+        temperature=0.15,
+        max_tokens=4096,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+    ).with_config(run_name="keyword_extractor")
+
+
+def get_minutes_generator_llm() -> ChatClovaX:
+    """Step 2: 회의록 생성 전용 LLM (자연스러운 문장 생성).
+
+    Model: HCX-007
+    Use Case: 추출된 키워드 + 근거 원문 → 회의록 형식으로 작성
+    temperature: 0.3 (자연스러운 한국어 문장 + 형식 준수 균형)
+    max_tokens: 8192 (다수 Agenda 대응)
+    """
+    return ChatClovaX(
+        model="HCX-007",
+        temperature=0.3,
+        max_tokens=8192,
+        api_key=NCP_CLOVASTUDIO_API_KEY,
+        reasoning_effort="none",
+    ).with_config(run_name="minutes_generator")
 
 
 # ============================================================================

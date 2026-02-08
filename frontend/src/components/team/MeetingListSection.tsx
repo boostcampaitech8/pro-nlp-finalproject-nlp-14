@@ -7,11 +7,11 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import {
   MEETING_STATUS_COLORS,
   MEETING_STATUS_LABELS,
 } from '@/constants';
+import { cn } from '@/lib/utils';
 import type { Meeting, MeetingStatus } from '@/types';
 
 interface MeetingListSectionProps {
@@ -20,6 +20,9 @@ interface MeetingListSectionProps {
   meetingError: string | null;
   onCreate: (data: { title: string; description?: string; scheduledAt?: string }) => Promise<void>;
 }
+
+const inputBaseClasses =
+  'w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder:text-white/30 outline-none focus:border-mit-primary/50 focus:ring-2 focus:ring-mit-primary/20 transition-all';
 
 export function MeetingListSection({
   meetings,
@@ -32,10 +35,24 @@ export function MeetingListSection({
   const [description, setDescription] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCancel = () => {
+    setTitle('');
+    setDescription('');
+    setScheduledAt('');
+    setError(null);
+    setShowCreateForm(false);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    setError(null);
+
+    if (!title.trim()) {
+      setError('회의 제목을 입력해주세요.');
+      return;
+    }
 
     setCreating(true);
     try {
@@ -47,6 +64,7 @@ export function MeetingListSection({
       setTitle('');
       setDescription('');
       setScheduledAt('');
+      setError(null);
       setShowCreateForm(false);
     } finally {
       setCreating(false);
@@ -57,7 +75,10 @@ export function MeetingListSection({
     <>
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-xl font-bold text-white">Meetings</h3>
-        <Button onClick={() => setShowCreateForm(!showCreateForm)}>
+        <Button
+          variant={showCreateForm ? 'outline' : 'primary'}
+          onClick={() => showCreateForm ? handleCancel() : setShowCreateForm(true)}
+        >
           {showCreateForm ? 'Cancel' : 'Create Meeting'}
         </Button>
       </div>
@@ -65,48 +86,62 @@ export function MeetingListSection({
       {/* 회의 생성 폼 */}
       {showCreateForm && (
         <div className="glass-card p-6 mb-6">
-          <h4 className="text-lg font-semibold text-white mb-4">Create New Meeting</h4>
           <form onSubmit={handleCreate} className="space-y-4">
-            <Input
-              label="Meeting Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter meeting title"
-              required
-            />
             <div>
               <label className="block text-sm font-medium text-white/70 mb-1">
-                Description (optional)
+                회의 제목 <span className="text-red-400">*</span>
               </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Enter meeting description (Shift+Enter: new line)"
-                rows={3}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-mit-primary/50 resize-none"
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="예: 주간 스프린트 회의"
+                disabled={creating}
+                className={inputBaseClasses}
+                required
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-white/70 mb-1">
-                Scheduled At (optional)
+                회의 설명
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="회의 주제나 안건을 입력하세요"
+                rows={3}
+                disabled={creating}
+                className={cn(inputBaseClasses, 'resize-none')}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1">
+                예정 일시
               </label>
               <input
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-mit-primary/50"
+                disabled={creating}
+                className={inputBaseClasses}
               />
             </div>
-            <div className="flex gap-2">
-              <Button type="submit" isLoading={creating}>
-                Create
-              </Button>
+            {error && (
+              <div className="text-sm text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">
+                {error}
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setShowCreateForm(false)}
+                onClick={handleCancel}
+                disabled={creating}
               >
                 Cancel
+              </Button>
+              <Button type="submit" isLoading={creating}>
+                Create Meeting
               </Button>
             </div>
           </form>

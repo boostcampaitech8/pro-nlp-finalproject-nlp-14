@@ -18,7 +18,7 @@ Version 1.0 프롬프트 모음.
 사용 예시:
     from app.prompt.v1.orchestration.planning import INITIAL_PLANNING_PROMPT
     from app.prompt.v1.mit_search.cypher import CYPHER_GENERATION_SYSTEM_PROMPT
-    from app.prompt.v1.workflows.generate_pr import AGENDA_EXTRACTION_PROMPT
+    from app.prompt.v1.workflows.generate_pr import KEYWORD_EXTRACTION_PROMPT
 """
 
 from . import orchestration

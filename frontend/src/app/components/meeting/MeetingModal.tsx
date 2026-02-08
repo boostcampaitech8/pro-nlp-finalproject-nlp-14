@@ -1,6 +1,5 @@
-// [미사용] 채팅 모드 통합으로 비활성화 (2025.01)
-// 추후 실제 회의 생성 API 연동 시 재활용 가능
-// 회의 생성 모달 컴포넌트
+// [Deprecated] CreateMeetingModal로 대체됨
+// frontend/src/app/components/sidebar/CreateMeetingModal.tsx 참조
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Users } from 'lucide-react';
