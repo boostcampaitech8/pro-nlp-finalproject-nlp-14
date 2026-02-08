@@ -8,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from app.prompt.v1.orchestration.answering import (
     ChannelType,
+    build_system_prompt_for_guide,
     build_system_prompt_with_tools,
     build_system_prompt_without_tools,
     build_user_prompt_with_tools,
@@ -53,13 +54,26 @@ async def generate_answer(state: VoiceOrchestrationState):
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     planning_context = state.get("planning_context", "")
+    simple_router_output = state.get("simple_router_output", {}) or {}
+    simple_category = simple_router_output.get("category")
 
     # Voice는 항상 VOICE 채널
     channel = ChannelType.VOICE
     logger.info(f"Voice mode, channel: {channel}")
 
     # 프롬프트 생성
-    if tool_results and tool_results.strip():
+    if simple_category == "guide":
+        logger.info("가이드 요청: 전용 프롬프트 사용")
+        system_prompt = build_system_prompt_for_guide(
+            channel=channel,
+            conversation_history=conversation_history or "없음",
+            meeting_context=planning_context or "없음",
+            additional_context=additional_context or "없음",
+        )
+        user_prompt = build_user_prompt_without_tools(
+            query=query,
+        )
+    elif tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 응답 생성")
         system_prompt = build_system_prompt_with_tools(
             channel=channel,

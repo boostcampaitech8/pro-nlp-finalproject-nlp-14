@@ -7,6 +7,7 @@ from app.infrastructure.graph.integration.llm import get_answer_generator_llm
 from ..state import SpotlightOrchestrationState
 from app.prompt.v1.orchestration.answering import (
     ChannelType,
+    build_system_prompt_for_guide,
     build_system_prompt_with_tools,
     build_system_prompt_without_tools,
     build_user_prompt_with_tools,
@@ -66,6 +67,8 @@ async def generate_answer(state: SpotlightOrchestrationState):
     tool_results = state.get("tool_results", "")
     additional_context = state.get("additional_context", "")
     planning_context = state.get("planning_context", "")  # L0 회의 대화 + L1 토픽
+    simple_router_output = state.get("simple_router_output", {}) or {}
+    simple_category = simple_router_output.get("category")
     # ✅ 안전 장치: Mutation 요청인데 도구가 실행되지 않은 경우 거부
     query_lower = query.lower()
     mutation_keywords = ["만들어", "생성", "추가", "등록", "수정", "변경", "삭제", "취소", "잡아"]
@@ -115,7 +118,16 @@ async def generate_answer(state: SpotlightOrchestrationState):
     channel = ChannelType.TEXT
     logger.info(f"Spotlight mode, channel: {channel}")
     # 프롬프트 빌더 사용
-    if tool_results and tool_results.strip():
+    if simple_category == "guide":
+        logger.info("가이드 요청: 전용 프롬프트 사용")
+        system_prompt = build_system_prompt_for_guide(
+            channel=channel,
+            conversation_history=conversation_history or "없음",
+            additional_context=additional_context or "없음",
+            meeting_context=planning_context or "없음",
+        )
+        user_prompt = build_user_prompt_without_tools(query=query)
+    elif tool_results and tool_results.strip():
         logger.info(f"도구 결과 포함 여부: {bool(tool_results)}")
 
         system_prompt = build_system_prompt_with_tools(
