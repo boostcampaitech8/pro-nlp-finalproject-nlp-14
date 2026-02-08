@@ -294,6 +294,27 @@ class TestValidateHardGate:
         assert ags[0]["decision"] is not None
 
     @pytest.mark.asyncio
+    async def test_decision_fallback_accepts_cue_in_evidence(self):
+        v = _vec(0)
+        sv = _sim(v)
+        dec = _decision("Redis 캐시 도입안", [("utt-1", "utt-1")], context="")
+        state = GeneratePrState(
+            generate_pr_agendas=[_agenda("Redis 캐시 도입", [("utt-1", "utt-1")], decision=dec)],
+            generate_pr_transcript_utterances=_utts(["우선 Redis 캐시 도입으로 진행합시다"]),
+        )
+        with patch(f"{GATE_MOD}._embed", new_callable=AsyncMock) as m:
+            m.return_value = {
+                "Redis 캐시 도입": v,
+                "우선 Redis 캐시 도입으로 진행합시다": sv,
+                # semantic grounding은 실패시키고 lexical fallback으로 통과 검증
+                "Redis 캐시 도입안": _vec(99),
+            }
+            result = await validate_hard_gate(state)
+        ags = result.get("generate_pr_agendas", [])
+        assert len(ags) == 1
+        assert ags[0]["decision"] is not None
+
+    @pytest.mark.asyncio
     async def test_ungrounded_context_cleared(self):
         v = _vec(0)
         sv = _sim(v)

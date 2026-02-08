@@ -28,6 +28,10 @@ DECISION_CUE_KEYWORDS = (
     "승인",
     "적용",
     "진행",
+    "정리",
+    "원칙",
+    "우선",
+    "유지",
 )
 
 TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣]{2,}")
@@ -61,12 +65,16 @@ def _decision_supported_by_evidence(
     decision_content: str,
     topic: str,
     evidence: str,
+    decision_context: str = "",
 ) -> bool:
     """임베딩 유사도가 낮을 때 decision 보존을 위한 lexical fallback."""
     if not decision_content or not evidence:
         return False
-    if not _has_decision_cue(decision_content):
-        return False
+    cue_detected = (
+        _has_decision_cue(decision_content)
+        or _has_decision_cue(decision_context)
+        or _has_decision_cue(evidence)
+    )
 
     decision_overlap = _overlap_ratio(
         _tokenize(decision_content),
@@ -76,9 +84,9 @@ def _decision_supported_by_evidence(
         _tokenize(topic),
         _tokenize(evidence),
     )
-    if decision_overlap >= DECISION_LEXICAL_OVERLAP_THRESHOLD:
+    if decision_overlap >= DECISION_LEXICAL_OVERLAP_THRESHOLD and cue_detected:
         return True
-    return (
+    return cue_detected and (
         decision_overlap >= DECISION_MIN_LEXICAL_OVERLAP
         and topic_overlap >= DECISION_TOPIC_SUPPORT_THRESHOLD
     )
@@ -232,7 +240,7 @@ async def validate_hard_gate(state: GeneratePrState) -> GeneratePrState:
             de = _resolve_spans(raw.get("evidence", []), id_text, ordered) or ev
             decision_grounded = _grounded(dc, de, vecs, DECISION_THRESHOLD)
             if not decision_grounded and dc:
-                decision_grounded = _decision_supported_by_evidence(dc, topic, de)
+                decision_grounded = _decision_supported_by_evidence(dc, topic, de, dx)
                 if decision_grounded:
                     lexical_decision_fallback += 1
             if dc and decision_grounded:
