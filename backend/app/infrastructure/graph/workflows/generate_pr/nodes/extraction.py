@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import random
 from dataclasses import dataclass, field
 
 from langchain_core.output_parsers import PydanticOutputParser
@@ -38,8 +37,7 @@ CHUNK_WINDOW_RATIO = 0.5
 CHUNK_OVERLAP_RATIO = 0.5
 CHUNK_REQUEST_DELAY_SEC = 2.5
 CHUNK_MAX_RETRIES = 5
-CHUNK_RATE_LIMIT_BACKOFF_BASE_SEC = 5.0
-CHUNK_RATE_LIMIT_BACKOFF_MAX_SEC = 20.0
+CHUNK_RETRY_DELAY_SEC = 10.0
 
 # 키워드 병합 설정
 KEYWORD_MERGE_MIN_OVERLAP = 0.4  # topic_keywords 40% 이상 겹치면 동일 agenda로 판단
@@ -806,12 +804,8 @@ async def _invoke_keyword_chain_with_retry(
             if attempt >= CHUNK_MAX_RETRIES:
                 break
 
+            backoff = CHUNK_RETRY_DELAY_SEC
             if _is_rate_limit_error(error):
-                backoff = min(
-                    CHUNK_RATE_LIMIT_BACKOFF_BASE_SEC * (2 ** (attempt - 1)),
-                    CHUNK_RATE_LIMIT_BACKOFF_MAX_SEC,
-                )
-                backoff += random.uniform(0.0, 1.5)
                 logger.warning(
                     "Keyword extraction rate-limited: idx=%d attempt=%d/%d backoff=%.1fs",
                     chunk_index,
@@ -820,8 +814,6 @@ async def _invoke_keyword_chain_with_retry(
                     backoff,
                 )
             else:
-                backoff = float(attempt)
-                backoff += random.uniform(0.0, 0.5)
                 logger.warning(
                     "Keyword extraction retrying: idx=%d attempt=%d/%d backoff=%.1fs error=%s",
                     chunk_index,
@@ -836,6 +828,48 @@ async def _invoke_keyword_chain_with_retry(
     if last_error:
         raise last_error
     raise RuntimeError("Keyword extraction failed without explicit error")
+
+
+async def _invoke_minutes_chain_with_retry(
+    keyword_groups_text: str,
+    realtime_topics_text: str,
+    *,
+    phase: str,
+) -> MinutesGenerationOutput:
+    """Step 2 호출 재시도 (rate-limit 포함 10초 간격)."""
+    last_error: Exception | None = None
+    for attempt in range(1, CHUNK_MAX_RETRIES + 1):
+        try:
+            return _invoke_minutes_chain(keyword_groups_text, realtime_topics_text)
+        except Exception as error:
+            last_error = error
+            if attempt >= CHUNK_MAX_RETRIES:
+                break
+
+            backoff = CHUNK_RETRY_DELAY_SEC
+            if _is_rate_limit_error(error):
+                logger.warning(
+                    "Minutes generation rate-limited: phase=%s attempt=%d/%d backoff=%.1fs",
+                    phase,
+                    attempt,
+                    CHUNK_MAX_RETRIES,
+                    backoff,
+                )
+            else:
+                logger.warning(
+                    "Minutes generation retrying: phase=%s attempt=%d/%d backoff=%.1fs error=%s",
+                    phase,
+                    attempt,
+                    CHUNK_MAX_RETRIES,
+                    backoff,
+                    error,
+                )
+
+            await asyncio.sleep(backoff)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Minutes generation failed without explicit error")
 
 
 # =============================================================================
@@ -870,12 +904,14 @@ def _keyword_output_to_dicts(output: KeywordExtractionOutput) -> list[dict]:
 # =============================================================================
 
 
-def _run_two_step_pipeline(
+async def _run_two_step_pipeline(
     keyword_groups: list[dict],
     utterances: list[dict],
     realtime_topics_text: str,
     topic_id: str | None = None,
     topic_name: str | None = None,
+    *,
+    phase: str,
 ) -> tuple[list[dict], str]:
     """Step 1 결과(keyword_groups)를 받아 Step 2를 실행하고 최종 agenda를 반환한다.
 
@@ -904,7 +940,11 @@ def _run_two_step_pipeline(
     )
 
     # Step 2 LLM 호출
-    minutes_output = _invoke_minutes_chain(keyword_groups_text, realtime_topics_text)
+    minutes_output = await _invoke_minutes_chain_with_retry(
+        keyword_groups_text,
+        realtime_topics_text,
+        phase=phase,
+    )
 
     # Step 1 evidence + Step 2 minutes 결합
     agendas = _combine_minutes_with_evidence(
@@ -946,8 +986,11 @@ async def extract_single(state: GeneratePrState) -> GeneratePrState:
         )
 
         # Step 2: 회의록 생성 + evidence 결합
-        agendas, summary = _run_two_step_pipeline(
-            keyword_groups, utterances, topics_text
+        agendas, summary = await _run_two_step_pipeline(
+            keyword_groups,
+            utterances,
+            topics_text,
+            phase="single",
         )
 
         logger.info(
@@ -1037,8 +1080,11 @@ async def extract_chunked(state: GeneratePrState) -> GeneratePrState:
     topics_text = _format_realtime_topics_for_prompt(realtime_topics)
 
     try:
-        agendas, summary = _run_two_step_pipeline(
-            merged_keywords, utterances, topics_text
+        agendas, summary = await _run_two_step_pipeline(
+            merged_keywords,
+            utterances,
+            topics_text,
+            phase="chunked",
         )
 
         logger.info(
