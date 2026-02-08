@@ -22,7 +22,7 @@ export function MarkdownRenderer({
   className = '',
 }: MarkdownRendererProps) {
   return (
-    <div className={`prose prose-sm max-w-none ${className}`.trim()}>
+    <div className={`prose prose-sm prose-invert max-w-none ${className}`.trim()}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
     </div>
   );
