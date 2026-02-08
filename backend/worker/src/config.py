@@ -2,8 +2,12 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
+from pydantic import BeforeValidator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from src.utils.config_validation import validate_tts_volume_scale
 
 
 class RealtimeWorkerConfig(BaseSettings):
@@ -41,6 +45,10 @@ class RealtimeWorkerConfig(BaseSettings):
     tts_timeout: float = 60.0
     tts_synthesize_path: str = "/tts/synthesize"
     tts_voice: str = "F1"
+    tts_volume_scale: Annotated[
+        float,
+        BeforeValidator(validate_tts_volume_scale),
+    ] = 0.70
 
     # Worker 설정
     log_level: str = "INFO"

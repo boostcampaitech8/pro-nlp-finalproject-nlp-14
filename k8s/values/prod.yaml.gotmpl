@@ -103,6 +103,7 @@ worker:
     - {{ requiredEnv "CLOVA_STT_SECRET_4" }}
   backendApiKey: {{ requiredEnv "BACKEND_API_KEY" }}
   ttsServerUrl: {{ requiredEnv "TTS_SERVER_URL" }}
+  ttsVolumeScale: {{ env "TTS_VOLUME_SCALE" | default "0.70" }}
 
 # NCP Clova Studio
 ncp:

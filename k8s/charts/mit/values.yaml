@@ -69,6 +69,7 @@ worker:
   clovaSttSecrets: []
   backendApiKey: ""
   ttsServerUrl: ""
+  ttsVolumeScale: 0.70
 
 # NCP Clova Studio
 ncp:
