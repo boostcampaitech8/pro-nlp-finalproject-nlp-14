@@ -9,13 +9,13 @@ import {
   DialogDescription,
   Button,
   Input,
-  ScrollArea,
   Avatar,
   AvatarFallback,
 } from '@/app/components/ui';
 import { useTeamStore } from '@/stores/teamStore';
 import { teamService } from '@/services/teamService';
 import { meetingService } from '@/services/meetingService';
+import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 import { cn } from '@/lib/utils';
@@ -156,10 +156,15 @@ export function CreateMeetingModal({ open, onOpenChange }: CreateMeetingModalPro
     setStep,
   ]);
 
-  const handleEnterMeeting = useCallback(() => {
+  const handleEnterMeeting = useCallback(async () => {
     if (createdMeetingId) {
-      navigate(`/dashboard/meetings/${createdMeetingId}/room`);
-      handleClose();
+      try {
+        await api.post(`/meetings/${createdMeetingId}/start`);
+        navigate(`/dashboard/meetings/${createdMeetingId}/room`);
+        handleClose();
+      } catch (error) {
+        console.error('Failed to start meeting:', error);
+      }
     }
   }, [createdMeetingId, navigate, handleClose]);
 
@@ -395,9 +400,14 @@ function MeetingInfoStep({
 
       <div className="flex gap-2 pt-4">
         <Button
-          variant="outline"
+          variant="ghost"
           onClick={onCancel}
-          className="flex-1"
+          className={cn(
+            'flex-1 hover:bg-white/20 hover:text-white',
+            canProceed
+              ? 'bg-white/10 text-white/70'
+              : 'bg-white/5 text-white/40'
+          )}
         >
           취소
         </Button>
@@ -491,8 +501,8 @@ function InviteMembersStep({
           팀원이 없습니다. 팀 설정에서 멤버를 초대하세요.
         </div>
       ) : (
-        <ScrollArea className="max-h-[300px]">
-          <div className="space-y-2 pr-4">
+        <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
+          <div className="space-y-2">
             {members.map((member) => {
               const isCurrentUser = member.userId === currentUserId;
               const isSelected = selectedMemberIds.has(member.userId);
@@ -571,7 +581,7 @@ function InviteMembersStep({
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
       )}
 
       {/* Error Message */}
@@ -584,9 +594,9 @@ function InviteMembersStep({
       {/* Action Buttons */}
       <div className="flex gap-2 pt-4">
         <Button
-          variant="outline"
+          variant="ghost"
           onClick={onBack}
-          className="gap-2"
+          className="gap-2 bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
           disabled={isSubmitting}
         >
           <ChevronLeft className="w-4 h-4" />
@@ -650,7 +660,7 @@ function SuccessStep({
 
       {/* Action Buttons */}
       <div className="flex gap-2 pt-4">
-        <Button variant="outline" onClick={onClose} className="flex-1">
+        <Button variant="ghost" onClick={onClose} className="flex-1 bg-white/10 text-white/70 hover:bg-white/20 hover:text-white">
           닫기
         </Button>
         <Button onClick={onEnterMeeting} className="flex-1 gap-2">

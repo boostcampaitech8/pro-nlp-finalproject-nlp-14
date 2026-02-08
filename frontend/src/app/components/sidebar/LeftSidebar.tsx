@@ -4,7 +4,6 @@ import { Logo } from './Logo';
 import { CurrentSession } from './CurrentSession';
 import { Navigation } from './Navigation';
 import { MiniCard } from './MiniCard';
-import { ScrollArea } from '@/app/components/ui';
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
 import { useTeamStore } from '@/stores/teamStore';
 import { CreateTeamModal } from './CreateTeamModal';
@@ -78,11 +77,11 @@ export function LeftSidebar() {
       </div>
 
       {/* 네비게이션 */}
-      <ScrollArea className="flex-1">
-        <nav className="p-4">
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <nav className="h-full">
           <Navigation />
         </nav>
-      </ScrollArea>
+      </div>
 
       {/* 미니 카드 */}
       <div className="p-3 border-t border-glass">

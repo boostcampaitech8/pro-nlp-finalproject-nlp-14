@@ -81,9 +81,8 @@ export function TeamDetailPage() {
   };
 
   // 멤버 제거
-  const handleRemoveMember = async (userId: string, memberName: string) => {
+  const handleRemoveMember = async (userId: string, _memberName: string) => {
     if (!teamId) return;
-    if (!confirm(`${memberName}님을 팀에서 제거하시겠습니까?`)) return;
     await removeMember(teamId, userId);
   };
 

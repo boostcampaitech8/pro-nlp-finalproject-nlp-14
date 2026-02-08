@@ -357,11 +357,23 @@ export const useCommandStore = create<CommandState>((set, get) => ({
   },
 
   createNewSession: async () => {
-    const { sessions } = useCommandStore.getState();
+    const { sessions, removeSession } = useCommandStore.getState();
+
+    // 세션이 꽉 차면 가장 오래전에 접근한 세션을 자동 삭제
     if (sessions.length >= MAX_SPOTLIGHT_SESSIONS) {
-      console.warn(`세션 최대 개수(${MAX_SPOTLIGHT_SESSIONS})에 도달했습니다.`);
-      return null;
+      const oldest = [...sessions].sort(
+        (a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime(),
+      )[0];
+      if (oldest) {
+        try {
+          await spotlightApi.deleteSession(oldest.id);
+          removeSession(oldest.id);
+        } catch (e) {
+          console.error('Failed to remove oldest session:', e);
+        }
+      }
     }
+
     try {
       const session = await spotlightApi.createSession();
       set((state) => ({
