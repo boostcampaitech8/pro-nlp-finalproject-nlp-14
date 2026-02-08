@@ -8,12 +8,15 @@ import { ScrollArea } from '@/app/components/ui';
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
 import { useTeamStore } from '@/stores/teamStore';
 import { CreateTeamModal } from './CreateTeamModal';
+import { CreateMeetingModal } from './CreateMeetingModal';
 import { useCreateTeamModalStore } from '@/app/stores/createTeamModalStore';
+import { useMeetingModalStore } from '@/app/stores/meetingModalStore';
 
 export function LeftSidebar() {
   const { meetingId, participants, connectionState } = useMeetingRoomStore();
   const { currentMeeting, fetchMeeting } = useTeamStore();
   const { isOpen: isCreateTeamOpen, closeModal: closeCreateTeam } = useCreateTeamModalStore();
+  const { isOpen: isMeetingModalOpen, closeModal: closeMeetingModal } = useMeetingModalStore();
   const [duration, setDuration] = useState<string>('');
   const startTimeRef = useRef<Date | null>(null);
 
@@ -90,6 +93,12 @@ export function LeftSidebar() {
       <CreateTeamModal
         open={isCreateTeamOpen}
         onOpenChange={(open) => !open && closeCreateTeam()}
+      />
+
+      {/* 회의 생성 모달 */}
+      <CreateMeetingModal
+        open={isMeetingModalOpen}
+        onOpenChange={(open) => !open && closeMeetingModal()}
       />
     </aside>
   );
