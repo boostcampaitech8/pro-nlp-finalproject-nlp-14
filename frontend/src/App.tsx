@@ -9,6 +9,7 @@ import { GoogleCallbackPage } from '@/pages/GoogleCallbackPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { InviteAcceptPage } from '@/pages/InviteAcceptPage';
 import { NaverCallbackPage } from '@/pages/NaverCallbackPage';
+import { IntroducePage } from '@/pages/IntroducePage';
 import { MeetingDetailPage } from '@/dashboard/pages/MeetingDetailPage';
 import MeetingRoomPage from '@/dashboard/pages/MeetingRoomPage';
 import { MinutesViewPage } from '@/dashboard/pages/MinutesViewPage';
@@ -23,8 +24,8 @@ function PrivateRoute({ children }: { children: ReactNode }) {
   logger.log('[PrivateRoute] path:', location.pathname, 'isAuthenticated:', isAuthenticated);
 
   if (!isAuthenticated) {
-    logger.log('[PrivateRoute] Redirecting to /login');
-    return <Navigate to="/login" replace />;
+    logger.log('[PrivateRoute] Redirecting to /introduce');
+    return <Navigate to="/introduce" replace />;
   }
 
   return <>{children}</>;
@@ -37,6 +38,9 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/naver/callback" element={<NaverCallbackPage />} />
       <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
+
+      {/* 소개 페이지 (비인증 접근 가능) */}
+      <Route path="/introduce" element={<IntroducePage />} />
 
       {/* 초대 링크 수락 (비인증 상태에서도 미리보기 가능) */}
       <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />

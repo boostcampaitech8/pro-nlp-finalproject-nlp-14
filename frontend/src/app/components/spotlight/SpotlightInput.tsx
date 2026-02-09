@@ -1,6 +1,6 @@
 // Spotlight 입력창 컴포넌트
 import { useRef, useEffect } from 'react';
-import { Command, Loader2, Send } from 'lucide-react';
+import { Loader2, Send } from 'lucide-react';
 import { useCommand } from '@/app/hooks/useCommand';
 import { useCommandStore } from '@/app/stores/commandStore';
 import { cn } from '@/lib/utils';
@@ -92,13 +92,13 @@ export function SpotlightInput() {
         isInputFocused && 'border-mit-primary/50 shadow-input-focus'
       )}
     >
-      <div className="icon-container flex-shrink-0">
+      <span className="text-white/30 text-sm flex-shrink-0">
         {isProcessing ? (
-          <Loader2 className="w-5 h-5 text-white animate-spin" />
+          <Loader2 className="w-4 h-4 text-white/50 animate-spin" />
         ) : (
-          <Command className="w-5 h-5 text-white" />
+          '>'
         )}
-      </div>
+      </span>
 
       {/* 입력 필드 */}
       <textarea
