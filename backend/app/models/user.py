@@ -16,6 +16,7 @@ class AuthProvider(str, Enum):
     GOOGLE = "google"
     GITHUB = "github"
     SYSTEM = "system"  # 시스템 사용자 (AI Agent 등)
+    GUEST = "guest"  # 게스트 사용자 (POC 체험용)
 
 
 class User(Base):

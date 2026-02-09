@@ -50,13 +50,10 @@ export type RecordingListResponse = components['schemas']['RecordingListResponse
 export type RecordingDownloadResponse = components['schemas']['RecordingDownloadResponse'];
 
 // 트랜스크립트 타입 별칭
-export type TranscriptStatus = components['schemas']['TranscriptStatus'];
-export type TranscriptSegment = components['schemas']['TranscriptSegment'];
-export type Utterance = components['schemas']['Utterance'];
-export type MeetingTranscript = components['schemas']['MeetingTranscript'];
-export type TranscribeRequest = components['schemas']['TranscribeRequest'];
-export type TranscribeResponse = components['schemas']['TranscribeResponse'];
-export type TranscriptStatusResponse = components['schemas']['TranscriptStatusResponse'];
+export type UtteranceItem = components['schemas']['UtteranceItem'];
+export type GetMeetingTranscriptsResponse = components['schemas']['GetMeetingTranscriptsResponse'];
+export type CreateTranscriptRequest = components['schemas']['CreateTranscriptRequest'];
+export type CreateTranscriptResponse = components['schemas']['CreateTranscriptResponse'];
 
 // 수동 추가 (API contract 업데이트 후 삭제 예정)
 export interface TranscriptDownloadResponse {

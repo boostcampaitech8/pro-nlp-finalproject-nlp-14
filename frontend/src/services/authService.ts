@@ -38,6 +38,12 @@ export const authService = {
     return response.data;
   },
 
+  // 게스트 로그인
+  async guestLogin(): Promise<AuthResponse> {
+    const response = await api.post<AuthResponse>('/auth/guest');
+    return response.data;
+  },
+
   async logout(): Promise<void> {
     await api.post('/auth/logout');
   },

@@ -17,6 +17,7 @@ from app.schemas import (
 )
 from app.services.auth.auth_service import AuthService
 from app.services.auth.google_oauth_service import GoogleOAuthService
+from app.services.auth.guest_auth_service import GuestAuthService
 from app.services.auth.naver_oauth_service import NaverOAuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -35,6 +36,11 @@ def get_naver_oauth_service(db: AsyncSession = Depends(get_db)) -> NaverOAuthSer
 def get_google_oauth_service(db: AsyncSession = Depends(get_db)) -> GoogleOAuthService:
     """Google OAuth 서비스 의존성"""
     return GoogleOAuthService(db)
+
+
+def get_guest_auth_service(db: AsyncSession = Depends(get_db)) -> GuestAuthService:
+    """게스트 인증 서비스 의존성"""
+    return GuestAuthService(db)
 
 
 @router.get(
@@ -140,6 +146,27 @@ async def google_callback(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "AUTH_FAILED", "message": f"Authentication failed: {str(e)}"},
+        )
+
+
+@router.post(
+    "/guest",
+    response_model=AuthResponse,
+    response_model_by_alias=True,
+    responses={
+        500: {"model": ErrorResponse},
+    },
+)
+async def guest_login(
+    guest_service: Annotated[GuestAuthService, Depends(get_guest_auth_service)],
+) -> AuthResponse:
+    """게스트 로그인 - 즉시 게스트 계정 생성 및 토큰 발급"""
+    try:
+        return await guest_service.authenticate()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "GUEST_LOGIN_FAILED", "message": f"Guest login failed: {str(e)}"},
         )
 
 

@@ -6,8 +6,9 @@ components:
       enum:
         - naver
         - google
+        - guest
       default: naver
-      description: 인증 제공자 (네이버/구글 OAuth)
+      description: 인증 제공자 (네이버/구글 OAuth, 게스트)
 
     # 네이버 OAuth 로그인 URL 응답
     NaverLoginUrlResponse:

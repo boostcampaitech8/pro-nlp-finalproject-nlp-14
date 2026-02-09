@@ -150,6 +150,8 @@ paths:
     $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1google~1login'
   /api/v1/auth/google/callback:
     $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1google~1callback'
+  /api/v1/auth/guest:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1guest'
   /api/v1/auth/refresh:
     $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1refresh'
   /api/v1/auth/logout:
