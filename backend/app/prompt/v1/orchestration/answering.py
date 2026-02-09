@@ -73,6 +73,9 @@ GENERATOR_SYSTEM_PROMPT = """\
 
 {channel_rules}
 
+[현재 시간]
+{current_time}
+
 [현재 회의 컨텍스트 - 최근 발화 및 토픽]
 {meeting_context}
 
@@ -84,6 +87,7 @@ def build_generator_system_prompt(
     channel: str = ChannelType.VOICE,
     meeting_context: str = "",
     additional_context: str = "",
+    current_time: str = "",
 ) -> str:
     """Generator용 통합 시스템 프롬프트 빌드 (v3.0).
 
@@ -94,6 +98,7 @@ def build_generator_system_prompt(
     return GENERATOR_SYSTEM_PROMPT.format(
         channel_description=config["description"],
         channel_rules=config["rules"],
+        current_time=current_time or "없음",
         meeting_context=meeting_context or "없음",
         additional_context=additional_context or "없음",
     )

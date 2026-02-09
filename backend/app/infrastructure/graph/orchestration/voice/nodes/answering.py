@@ -1,6 +1,7 @@
 """Voice Answering Node - 항상 voice 채널 사용"""
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from langchain_core.messages import AIMessage
 
@@ -37,6 +38,8 @@ async def generate_answer(state: VoiceOrchestrationState):
 
     # Voice는 항상 VOICE 채널
     channel = ChannelType.VOICE
+    KST = timezone(timedelta(hours=9))
+    current_time = datetime.now(KST).isoformat()
     logger.info(f"Voice mode, channel: {channel}")
 
     # 시스템 프롬프트 선택 (guide vs 일반)
@@ -53,6 +56,7 @@ async def generate_answer(state: VoiceOrchestrationState):
             channel=channel,
             meeting_context=planning_context or "없음",
             additional_context=additional_context or "없음",
+            current_time=current_time,
         )
 
     # messages 배열 기반으로 chat_messages 구성

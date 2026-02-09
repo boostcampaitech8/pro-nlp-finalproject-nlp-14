@@ -1,7 +1,6 @@
 """Utility Query Tools
 
 General utility tools for common queries:
-- Current datetime (KST)
 - User profile
 - Upcoming meetings
 - Meeting transcript
@@ -33,31 +32,6 @@ logger = logging.getLogger(__name__)
 
 # KST timezone
 KST = ZoneInfo("Asia/Seoul")
-
-# Korean weekday names
-WEEKDAY_KR = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
-
-
-@mit_tool(category="query")
-async def get_current_datetime(*, _user_id: Annotated[str, InjectedToolArg] = "") -> dict:
-    """현재 날짜와 시간을 조회합니다. 한국 표준시(KST) 기준입니다."""
-    logger.info(f"Executing get_current_datetime for user {_user_id}")
-
-    now = datetime.now(KST)
-    weekday_en = now.strftime("%A")
-    weekday_kr = WEEKDAY_KR[now.weekday()]
-
-    return {
-        "datetime": {
-            "iso": now.isoformat(),
-            "date": now.strftime("%Y-%m-%d"),
-            "time": now.strftime("%H:%M:%S"),
-            "weekday": weekday_en,
-            "weekday_kr": weekday_kr,
-            "formatted": now.strftime("%Y년 %m월 %d일 %H시 %M분"),
-            "timezone": "Asia/Seoul (KST)",
-        }
-    }
 
 
 @mit_tool(category="query")

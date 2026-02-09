@@ -48,6 +48,8 @@ async def generate_answer(state: SpotlightOrchestrationState):
     planning_context = state.get("planning_context", "")
     simple_router_output = state.get("simple_router_output", {}) or {}
     simple_category = simple_router_output.get("category")
+    user_context = state.get("user_context", {}) or {}
+    current_time = user_context.get("current_time", "")
 
     # Mutation 성공 시 LLM 호출 없이 결과를 직접 반환
     mutation_success_markers = [
@@ -91,6 +93,7 @@ async def generate_answer(state: SpotlightOrchestrationState):
             channel=channel,
             meeting_context=planning_context or "없음",
             additional_context=additional_context or "없음",
+            current_time=current_time,
         )
 
     # messages 배열 기반으로 chat_messages 구성

@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph.state import CompiledStateGraph
@@ -48,7 +48,8 @@ class SpotlightAgentService:
         from app.core.database import async_session_maker
         from app.services.team_service import TeamService
 
-        current_time = datetime.now(timezone.utc).isoformat()
+        KST = timezone(timedelta(hours=9))
+        current_time = datetime.now(KST).isoformat()
 
         try:
             user_uuid = UUID(str(user_id))
@@ -159,6 +160,10 @@ class SpotlightAgentService:
             if user_context is None:
                 user_context = await self._get_user_context(user_id)
                 logger.info(f"사용자 컨텍스트 조회 완료: teams={len(user_context.get('teams', []))}개")
+            else:
+                # 매 턴마다 현재 시간 갱신
+                KST = timezone(timedelta(hours=9))
+                user_context["current_time"] = datetime.now(KST).isoformat()
 
             graph_input = {
                 "messages": [HumanMessage(content=user_input)] if user_input else [],
