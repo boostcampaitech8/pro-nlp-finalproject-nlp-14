@@ -34,6 +34,10 @@ class RouterResponseMapper:
     # 간단한 쿼리로 판단할 카테고리 (Planning 스킵)
     SIMPLE_CATEGORIES = {"simple_talk", "guide"}
 
+    # Mutation 의도 감지 키워드 (action + domain 조합)
+    _MUTATION_ACTION_KEYWORDS = ["만들", "생성", "추가", "등록", "수정", "변경", "삭제", "취소", "제거", "잡아"]
+    _DOMAIN_KEYWORDS = ["회의", "미팅", "팀", "일정", "meeting"]
+
     @classmethod
     def map_response(cls, clova_response: dict, query: str) -> SimpleRouterOutput:
         """Clova Router 응답을 SimpleRouterOutput으로 변환
@@ -90,6 +94,15 @@ class RouterResponseMapper:
             is_simple = False
             confidence = 0.9
 
+        # Mutation-intent 안전장치: 도구 호출이 필요한 쿼리가 simple로 분류되면 오버라이드
+        if is_simple and cls._has_mutation_intent(query):
+            logger.info(
+                f"Mutation intent 감지, simple → planning_needed 오버라이드: {query}"
+            )
+            is_simple = False
+            category = "planning_needed"
+            confidence = 0.95
+
         # simple_response 생성 (간단한 쿼리일 경우)
         simple_response = cls._generate_simple_response(category, query) if is_simple else None
 
@@ -112,6 +125,14 @@ class RouterResponseMapper:
             confidence=confidence,
             reasoning=reasoning,
         )
+
+    @classmethod
+    def _has_mutation_intent(cls, query: str) -> bool:
+        """쿼리에 mutation 의도(action + domain)가 포함되어 있는지 확인"""
+        q = query.lower()
+        has_action = any(kw in q for kw in cls._MUTATION_ACTION_KEYWORDS)
+        has_domain = any(kw in q for kw in cls._DOMAIN_KEYWORDS)
+        return has_action and has_domain
 
     @staticmethod
     def _generate_simple_response(category: str, query: str) -> str | None:

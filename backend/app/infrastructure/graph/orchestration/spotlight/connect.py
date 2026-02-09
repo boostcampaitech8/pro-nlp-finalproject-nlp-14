@@ -42,10 +42,26 @@ def route_by_tool_need(state: SpotlightOrchestrationState) -> str:
             - "generator": 그 외 경우 (직접 응답 생성)
     """
     # 새 Tool 시스템: selected_tool이 있으면 tools 노드로
-    if state.get("selected_tool"): 
+    if state.get("selected_tool"):
         return "tools"
 
     return "mit_tools_analyze" if state.get("need_tools", False) else "generator"
+
+
+def route_after_tools(state: SpotlightOrchestrationState) -> str:
+    """Tool 실행 후 라우팅
+
+    - cancelled (silent): END → 그래프 종료 (auto-cancel, 새 메시지가 이어서 처리됨)
+    - cancelled (explicit): generator → 사용자에게 취소 사실 전달
+    - executed/error: planner → ReAct re-planning
+    """
+    status = state.get("tool_execution_status")
+    if status == "cancelled":
+        tool_results = state.get("tool_results", "")
+        if not tool_results or not tool_results.strip():
+            return END  # Silent cancel - 그래프 즉시 종료
+        return "generator"  # 명시적 cancel - 사용자에게 응답
+    return "planner"  # 도구 실행 완료 - ReAct re-planning
 
 
 
@@ -57,7 +73,7 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
 
     Workflow:
         planner -> [tools | mit_tools_analyze | generator]
-        tools -> planner (interrupt()가 HITL 중단 처리)
+        tools -> [planner | generator | END] (cancel 여부에 따라 분기)
         mit_tools_analyze -> mit_tools_search -> planner
         planner -> [tools | mit_tools_analyze | generator]
         generator -> END
@@ -93,8 +109,16 @@ def build_spotlight_orchestration_workflow() -> StateGraph:
         },
     )
     
-    # Tools -> Planner (interrupt()가 HITL 중단을 자동 처리)
-    workflow.add_edge("tools", "planner")
+    # Tools -> 조건부 라우팅 (cancel/silent/executed에 따라 분기)
+    workflow.add_conditional_edges(
+        "tools",
+        route_after_tools,
+        {
+            "planner": "planner",     # 도구 실행 완료 → ReAct re-planning
+            "generator": "generator", # 명시적 cancel → 사용자에게 응답
+            END: END,                 # silent cancel → 그래프 즉시 종료
+        },
+    )
 
     # MIT-Tools Analyze -> MIT-Tools Search (항상)
     workflow.add_edge("mit_tools_analyze", "mit_tools_search")

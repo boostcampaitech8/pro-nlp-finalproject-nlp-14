@@ -1,10 +1,21 @@
 import logging
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage
 
 # 공유 도구 레지스트리에서 모든 도구 가져오기 (Query + Mutation)
 import app.infrastructure.graph.orchestration.shared.tools  # noqa: F401
 from app.infrastructure.graph.integration.llm import get_planner_llm
+from app.infrastructure.graph.orchestration.shared.message_utils import (
+    build_planner_chat_messages,
+    extract_last_human_query,
+)
+from app.infrastructure.graph.orchestration.shared.planning_utils import (
+    MUTATION_SUCCESS_MARKERS,
+    PLANNING_MAX_RETRY,
+    detect_composite_query,
+    extract_next_step_query,
+    is_subquery,
+)
 from app.infrastructure.graph.orchestration.shared.tools.registry import (
     get_all_tools,
     get_tool_category,
@@ -15,48 +26,6 @@ from app.prompt.v1.orchestration.spotlight.planning import build_spotlight_syste
 from ..state import SpotlightOrchestrationState
 
 logger = logging.getLogger(__name__)
-
-PLANNING_MAX_RETRY = 3
-MUTATION_SUCCESS_MARKERS = [
-    "생성되었습니다",
-    "수정되었습니다",
-    "삭제되었습니다",
-    '"success": true',
-    "'success': True",
-]
-
-
-def _is_subquery(query: str) -> bool:
-    """Replanning에서 생성된 서브-쿼리인지 확인."""
-    subquery_keywords = [
-        "이전에 찾은",
-        "그 담당자",
-        "그 사람",
-        "그 액션",
-        "그 팀원",
-        "그 팀",
-        "그 결정",
-        "찾은",
-    ]
-    return any(kw in query for kw in subquery_keywords)
-
-
-def _detect_composite_query(query: str) -> bool:
-    """복합 쿼리(여러 단계의 검색이 필요한 쿼리) 감지."""
-    assignment_keywords = ["맡고 있는", "담당", "책임자", "담당자", "맡은"]
-    team_keywords = ["팀원", "같은 팀", "팀에서", "팀의"]
-    has_assignment = any(kw in query for kw in assignment_keywords)
-    has_team = any(kw in query for kw in team_keywords)
-    return has_assignment and has_team
-
-
-def _extract_next_step_query(query: str) -> str:
-    """Turn 1 결과를 바탕으로 Turn 2 서브-쿼리 생성."""
-    if "팀원" in query:
-        return "이전에 찾은 담당자와 같은 팀의 팀원은 누구인가?"
-    if "같은 팀" in query or "팀에서" in query or "팀의" in query:
-        return "이전에 찾은 담당자와 같은 팀의 팀원들은 누구인가?"
-    return "이전에 찾은 담당자의 팀 정보는?"
 
 
 async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrationState:
@@ -76,7 +45,7 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
     logger.info("Planning 단계 진입")
 
     messages = state.get("messages", [])
-    query = messages[-1].content if messages else ""
+    query = extract_last_human_query(messages)
     tool_results = state.get("tool_results", "")
     retry_count = state.get("retry_count", 0)
 
@@ -119,13 +88,13 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
         )
 
     if tool_results and "[MIT Search 결과" in tool_results:
-        if _detect_composite_query(query) and not _is_subquery(query):
+        if detect_composite_query(query) and not is_subquery(query):
             logger.info("복합 쿼리 감지 → 다음 단계 replanning")
             return SpotlightOrchestrationState(
                 plan="복합 쿼리 다음 단계",
                 need_tools=True,
                 can_answer=False,
-                next_subquery=_extract_next_step_query(query),
+                next_subquery=extract_next_step_query(query),
                 retry_count=retry_count + 1,
             )
 
@@ -151,32 +120,13 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
     user_context = state.get("user_context", {})
     system_prompt = build_spotlight_system_prompt(user_context)
 
-    # 이전 도구 실행 결과를 Observation으로 컨텍스트에 포함
+    # 컨텍스트가 있으면 시스템 프롬프트에 추가 (tool_results는 ToolMessage로 message history에 포함됨)
     planning_context = state.get("planning_context", "")
-    if tool_results:
-        if planning_context:
-            planning_context = f"[Observation (이전 도구 실행 결과)]\n{tool_results}\n\n{planning_context}"
-        else:
-            planning_context = f"[Observation (이전 도구 실행 결과)]\n{tool_results}"
-        logger.info(f"[ReAct Observation] tool_results를 planning_context에 포함 (길이: {len(tool_results)})")
-
-    # 컨텍스트가 있으면 시스템 프롬프트에 추가
     if planning_context:
         system_prompt += f"\n\n[컨텍스트]\n{planning_context}"
 
-    # 메시지 구성
-    chat_messages = [SystemMessage(content=system_prompt)]
-
-    # 이전 대화 히스토리 포함 (최근 10개, 현재 메시지 제외)
-    if len(messages) > 1:
-        for msg in messages[-11:-1]:
-            if msg.type == "human":
-                chat_messages.append(HumanMessage(content=msg.content))
-            else:
-                chat_messages.append(AIMessage(content=msg.content))
-
-    # 현재 메시지
-    chat_messages.append(HumanMessage(content=query))
+    # 메시지 구성 (윈도잉 + orphan ToolMessage 필터링, HumanMessage는 window에 이미 포함)
+    chat_messages = build_planner_chat_messages(system_prompt, messages)
 
     try:
         # 진단 로깅: LLM에 전송되는 도구 정보
@@ -232,15 +182,12 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
             logger.info(f"응답 내용: {response.content[:100]}..." if response.content else "응답 없음")
 
             return SpotlightOrchestrationState(
-                messages=[response],
-                response=response.content,
                 can_answer=True,
                 need_tools=False,
                 plan=f"[Thought] {thought[:100]}" if thought else "직접 응답",
                 selected_tool=None,
                 tool_category=None,
                 tool_args={},
-                missing_requirements=[],
             )
 
     except Exception as e:

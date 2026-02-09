@@ -1,12 +1,23 @@
 """Voice 단순화된 Tool Execution Node - Query 도구만, HITL 없음"""
 
+import json
 import logging
+
+from langchain_core.messages import ToolMessage
 
 from app.infrastructure.graph.orchestration.shared.tools.registry import get_tool_by_name
 
 from ..state import VoiceOrchestrationState
 
 logger = logging.getLogger(__name__)
+
+
+def _get_tool_call_id(state: VoiceOrchestrationState) -> str:
+    """planner의 AIMessage에서 tool_call_id 추출."""
+    messages = state.get("messages", [])
+    if messages and hasattr(messages[-1], "tool_calls") and messages[-1].tool_calls:
+        return messages[-1].tool_calls[0]["id"]
+    return "unknown"
 
 
 async def execute_tools(state: VoiceOrchestrationState) -> VoiceOrchestrationState:
@@ -27,11 +38,14 @@ async def execute_tools(state: VoiceOrchestrationState) -> VoiceOrchestrationSta
     selected_tool = state.get("selected_tool")
     user_id = state.get("user_id")
     tool_args = state.get("tool_args", {})
+    tool_call_id = _get_tool_call_id(state)
 
     if not selected_tool:
         logger.warning("No tool selected")
+        content = "도구가 선택되지 않았습니다."
         return VoiceOrchestrationState(
-            tool_results="도구가 선택되지 않았습니다.",
+            messages=[ToolMessage(content=content, tool_call_id=tool_call_id, name="unknown")],
+            tool_results=content,
             selected_tool=None,
             tool_args={},
             tool_category=None,
@@ -41,8 +55,10 @@ async def execute_tools(state: VoiceOrchestrationState) -> VoiceOrchestrationSta
     tool = get_tool_by_name(selected_tool)
     if not tool:
         logger.error(f"Tool not found: {selected_tool}")
+        content = f"'{selected_tool}' 도구를 찾을 수 없습니다."
         return VoiceOrchestrationState(
-            tool_results=f"'{selected_tool}' 도구를 찾을 수 없습니다.",
+            messages=[ToolMessage(content=content, tool_call_id=tool_call_id, name=selected_tool)],
+            tool_results=content,
             selected_tool=None,
             tool_args={},
             tool_category=None,
@@ -61,16 +77,24 @@ async def execute_tools(state: VoiceOrchestrationState) -> VoiceOrchestrationSta
         logger.debug(f"Tool result: {str(result)[:200]}...")
 
         # 결과 포맷팅
-        if isinstance(result, dict):
-            result_str = str(result)
-        else:
-            result_str = str(result)
+        result_str = json.dumps(result, ensure_ascii=False, default=str) if isinstance(result, dict) else str(result)
 
-        return VoiceOrchestrationState(tool_results=f"\n[{selected_tool} 결과]\n{result_str}\n")
+        tool_results = f"\n[{selected_tool} 결과]\n{result_str}\n"
+        return VoiceOrchestrationState(
+            messages=[ToolMessage(content=tool_results, tool_call_id=tool_call_id, name=selected_tool)],
+            tool_results=tool_results,
+            selected_tool=None,
+            tool_args={},
+            tool_category=None,
+        )
 
     except Exception as e:
         logger.error(f"Tool [{selected_tool}] 실행 실패: {e}", exc_info=True)
+        content = f"\n[{selected_tool} 오류]\n{str(e)}\n"
         return VoiceOrchestrationState(
-            tool_results=f"\n[{selected_tool} 오류]\n{str(e)}\n",
+            messages=[ToolMessage(content=content, tool_call_id=tool_call_id, name=selected_tool or "unknown")],
+            tool_results=content,
             selected_tool=None,
+            tool_args={},
+            tool_category=None,
         )

@@ -1,5 +1,6 @@
 """Unified Tool Execution Node with HITL Support (interrupt 기반)"""
 
+import json
 import logging
 from uuid import UUID, uuid4
 
@@ -7,10 +8,13 @@ from langgraph.types import interrupt
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from langchain_core.messages import ToolMessage
+
 from app.core.database import async_session_maker
 from app.models.team import TeamMember
 
 from ..state import SpotlightOrchestrationState
+from app.infrastructure.graph.orchestration.shared.state_utils import RESET_TOOL_RESULTS
 from app.infrastructure.graph.orchestration.shared.tools.base import ToolCategory
 from app.infrastructure.graph.orchestration.shared.tools.registry import get_tool_by_name, get_tool_metadata
 
@@ -107,6 +111,14 @@ def get_tool_category_from_metadata(tool_name: str) -> str:
     return "query"
 
 
+def _get_tool_call_id(state: SpotlightOrchestrationState) -> str:
+    """planner의 AIMessage에서 tool_call_id 추출."""
+    messages = state.get("messages", [])
+    if messages and hasattr(messages[-1], "tool_calls") and messages[-1].tool_calls:
+        return messages[-1].tool_calls[0]["id"]
+    return "unknown"
+
+
 async def execute_tools(state: SpotlightOrchestrationState) -> SpotlightOrchestrationState:
     """Spotlight 도구 실행 노드 (HITL interrupt 기반)
 
@@ -125,11 +137,15 @@ async def execute_tools(state: SpotlightOrchestrationState) -> SpotlightOrchestr
     user_id = state.get("user_id")
     tool_args = state.get("tool_args", {})
 
+    tool_call_id = _get_tool_call_id(state)
+
     # No tool selected - return early
     if not selected_tool:
         logger.warning("No tool selected")
+        content = "도구가 선택되지 않았습니다."
         return SpotlightOrchestrationState(
-            tool_results="도구가 선택되지 않았습니다.",
+            messages=[ToolMessage(content=content, tool_call_id=tool_call_id, name="unknown")],
+            tool_results=content,
             selected_tool=None,
             tool_args={},
             tool_category=None,
@@ -139,8 +155,10 @@ async def execute_tools(state: SpotlightOrchestrationState) -> SpotlightOrchestr
     tool = get_tool_by_name(selected_tool)
     if not tool:
         logger.error(f"Tool not found: {selected_tool}")
+        content = f"'{selected_tool}' 도구를 찾을 수 없습니다."
         return SpotlightOrchestrationState(
-            tool_results=f"'{selected_tool}' 도구를 찾을 수 없습니다.",
+            messages=[ToolMessage(content=content, tool_call_id=tool_call_id, name=selected_tool)],
+            tool_results=content,
             selected_tool=None,
             tool_args={},
             tool_category=None,
@@ -246,9 +264,25 @@ async def execute_tools(state: SpotlightOrchestrationState) -> SpotlightOrchestr
 
         # 사용자 취소
         if user_response.get("action") == "cancel":
-            logger.info(f"[HITL] 사용자 취소: {selected_tool}")
+            silent = user_response.get("silent", False)
+            logger.info(f"[HITL] 사용자 취소: {selected_tool}, silent={silent}")
+            if silent:
+                # Silent cancel: RESET_TOOL_RESULTS로 누적된 tool_results 초기화
+                # → route_after_tools에서 빈 문자열로 판별 → END
+                return SpotlightOrchestrationState(
+                    messages=[ToolMessage(content="", tool_call_id=tool_call_id, name=selected_tool)],
+                    tool_results=RESET_TOOL_RESULTS,
+                    tool_execution_status="cancelled",
+                    selected_tool=None,
+                    tool_args={},
+                    tool_category=None,
+                )
+            # 명시적 cancel: 취소 메시지를 tool_results에 기록
+            content = "작업이 취소되었습니다."
             return SpotlightOrchestrationState(
-                tool_results="작업이 취소되었습니다.",
+                messages=[ToolMessage(content=content, tool_call_id=tool_call_id, name=selected_tool)],
+                tool_results=content,
+                tool_execution_status="cancelled",
                 selected_tool=None,
                 tool_args={},
                 tool_category=None,
@@ -270,18 +304,18 @@ async def execute_tools(state: SpotlightOrchestrationState) -> SpotlightOrchestr
         logger.info(f"Tool execution result: {result}")
 
         # Format result for state
-        if isinstance(result, dict):
-            if result.get("error"):
-                tool_results = f"오류: {result['error']}"
-            elif result.get("message"):
-                tool_results = result["message"]
-            else:
-                tool_results = str(result)
+        if isinstance(result, dict) and result.get("error"):
+            tool_results = f"\n[{selected_tool} 오류]\n{result['error']}\n"
+        elif isinstance(result, dict) and result.get("message"):
+            tool_results = f"\n[{selected_tool} 결과]\n{result['message']}\n"
         else:
-            tool_results = str(result)
+            result_str = json.dumps(result, ensure_ascii=False, default=str) if isinstance(result, dict) else str(result)
+            tool_results = f"\n[{selected_tool} 결과]\n{result_str}\n"
 
         return SpotlightOrchestrationState(
+            messages=[ToolMessage(content=tool_results, tool_call_id=tool_call_id, name=selected_tool)],
             tool_results=tool_results,
+            tool_execution_status="executed",
             selected_tool=None,
             tool_args={},
             tool_category=None,
@@ -289,8 +323,11 @@ async def execute_tools(state: SpotlightOrchestrationState) -> SpotlightOrchestr
 
     except Exception as e:
         logger.error(f"Tool execution failed: {e}", exc_info=True)
+        content = f"\n[{selected_tool} 오류]\n{str(e)}\n"
         return SpotlightOrchestrationState(
-            tool_results=f"도구 실행 중 오류가 발생했습니다: {str(e)}",
+            messages=[ToolMessage(content=content, tool_call_id=tool_call_id, name=selected_tool or "unknown")],
+            tool_results=content,
+            tool_execution_status="error",
             selected_tool=None,
             tool_args={},
             tool_category=None,
