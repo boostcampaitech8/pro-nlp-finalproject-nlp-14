@@ -230,11 +230,14 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
       return null;
     };
 
+    const isFilled = currentValue.trim() !== '';
     const baseClass = cn(
-      'inline-block px-1.5 py-0.5 mx-1 rounded-md border-b border-white/20',
-      'bg-white/0 text-white/90',
-      'focus:outline-none focus:border-mit-primary/70 focus:bg-white/10',
-      'min-w-[72px] text-center transition-colors'
+      'inline-block px-2 py-0.5 mx-0.5 rounded align-baseline leading-normal',
+      'min-w-[72px] text-center transition-all duration-200',
+      'focus:outline-none focus:ring-1 focus:ring-amber-300/50',
+      isFilled
+        ? 'bg-amber-400/15 text-white font-medium'
+        : 'bg-amber-400/25 text-white/80 placeholder:text-white/40'
     );
 
     if (inputType === 'select' && field?.options) {
@@ -247,7 +250,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
           onChange={(e) => handleInputChange(paramName, e.target.value)}
           onKeyDown={(e) => handleKeyDown(e, inputIndex)}
           disabled={isSubmitting}
-          className={cn(baseClass, 'cursor-pointer appearance-none pr-5', currentValue && 'text-mit-primary font-medium')}
+          className={cn(baseClass, 'cursor-pointer appearance-none pr-5', isFilled && 'font-medium')}
           title={displayHint || undefined}
         >
           <option value="" className="bg-gray-800">{field.placeholder || '선택'}</option>
@@ -270,7 +273,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
           onChange={(e) => handleInputChange(paramName, e.target.value)}
           onKeyDown={(e) => handleKeyDown(e, inputIndex)}
           disabled={isSubmitting}
-        className={cn(baseClass, 'min-w-[170px]', currentValue && 'text-mit-primary font-medium')}
+        className={cn(baseClass, 'min-w-[170px]', isFilled && 'font-medium')}
         />
       );
     }
@@ -286,7 +289,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
         onKeyDown={(e) => handleKeyDown(e, inputIndex)}
         placeholder={field?.placeholder || paramName}
         disabled={isSubmitting}
-        className={cn(baseClass, currentValue && 'text-mit-primary font-medium')}
+        className={cn(baseClass, isFilled && 'font-medium')}
         style={{ width: `${Math.max(72, (currentValue.length || 6) * 11)}px` }}
       />
     );
@@ -447,7 +450,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
         {/* 헤더 */}
         <div className="flex items-center gap-2 mb-3">
           <AlertCircle className="w-4 h-4 text-mit-primary" />
-          <span className="font-medium text-white/90">확인이 필요합니다</span>
+          <span className="font-medium text-white/90">다음 내용을 확인해주세요</span>
         </div>
 
         {/* 작업 내용 */}
@@ -456,7 +459,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
             // 템플릿 모드: 자연어 + 인라인 input
             <div className="py-2">
               {renderTemplate()}
-              <p className="text-white/40 text-xs mt-3">Tab 키로 다음 입력 필드로 이동</p>
+              <p className="text-white/40 text-xs mt-3">Tab 키로 다음 항목으로 이동할 수 있어요</p>
             </div>
           ) : (
             // 기존 모드: 테이블 형태
@@ -466,7 +469,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
               {/* 필수 입력 필드 */}
               {isPending && requiredFields.length > 0 && (
                 <div className="space-y-3 mb-3">
-                  <p className="text-white/60 text-xs">필수 입력 항목:</p>
+                  <p className="text-white/60 text-xs">필수 항목</p>
                   {requiredFields.map((field) => (
                     <div key={field.name} className="space-y-1">
                       <label className="text-xs text-white/70">
@@ -481,7 +484,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
               {/* 선택적 입력 필드 */}
               {isPending && optionalFields.length > 0 && (
                 <div className="space-y-3 mb-3">
-                  <p className="text-white/60 text-xs">선택 입력 항목:</p>
+                  <p className="text-white/60 text-xs">선택 항목</p>
                   {optionalFields.map((field) => (
                     <div key={field.name} className="space-y-1">
                       <label className="text-xs text-white/70">{formatParamKey(field.name)}</label>
@@ -512,7 +515,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
               ) : (
                 <Check className="w-4 h-4" />
               )}
-              {isSubmitting ? '처리 중...' : '확인'}
+              {isSubmitting ? '처리 중...' : '확인하기'}
             </button>
             <button
               onClick={handleCancel}
@@ -539,12 +542,12 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
             {isConfirmed ? (
               <>
                 <Check className="w-4 h-4" />
-                승인됨
+                확인 완료
               </>
             ) : (
               <>
                 <X className="w-4 h-4" />
-                {hitlCancelReason === 'auto' ? '취소됨 · 자동 취소' : '취소됨'}
+                {hitlCancelReason === 'auto' ? '자동으로 취소되었어요' : '취소되었어요'}
               </>
             )}
           </div>

@@ -94,7 +94,7 @@ export function SpotlightInput() {
     >
       <span className="text-white/30 text-sm flex-shrink-0">
         {isProcessing ? (
-          <Loader2 className="w-4 h-4 text-white/50 animate-spin" />
+          <Loader2 className="w-5 h-5 text-white animate-spin" aria-hidden="true" />
         ) : (
           '>'
         )}
@@ -109,7 +109,8 @@ export function SpotlightInput() {
         onKeyDown={handleKeyDown}
         onFocus={() => setInputFocused(true)}
         onBlur={() => setInputFocused(false)}
-        placeholder={isChatMode ? '메시지를 입력하세요...' : 'Mit에게 무엇이든 물어보세요...'}
+        placeholder={isChatMode ? '이어서 질문해보세요...' : '회의를 시작하거나, 무엇이든 물어보세요...'}
+        aria-label="Mit에게 메시지 입력"
         className="flex-1 bg-transparent text-[15px] text-white placeholder:text-white/40 outline-none resize-none min-h-[24px] max-h-[150px] leading-6 overflow-y-auto scrollbar-hide"
       />
 
@@ -130,7 +131,8 @@ export function SpotlightInput() {
             'flex-shrink-0 p-1.5 rounded-full transition-colors',
             isSendDisabled ? 'text-white/25 cursor-not-allowed' : 'text-white/70 hover:text-white'
           )}
-          title="전송 (Enter)"
+          title="보내기 (Enter)"
+          aria-label="메시지 보내기"
         >
           <Send className="w-4 h-4" />
         </button>

@@ -28,7 +28,7 @@ function CommandCard({ item }: CommandCardProps) {
                 STATUS_COLORS[item.status]
               )}
             >
-              {item.status === 'success' ? '완료' : item.status === 'error' ? '실패' : '진행'}
+              {item.status === 'success' ? '완료' : item.status === 'error' ? '실패' : '진행 중'}
             </span>
           </div>
           <p className="text-card-desc truncate">{item.result}</p>
@@ -49,10 +49,10 @@ export function CommandHistory() {
     return (
       <div className="w-full max-w-4xl mx-auto text-center py-8">
         <p className="text-white/40 text-sm">
-          아직 실행한 명령이 없습니다
+          아직 활동 내역이 없어요
         </p>
         <p className="text-white/30 text-xs mt-1">
-          위의 추천 명령을 클릭하거나 직접 입력해보세요
+          위의 카드를 눌러 시작하거나, 직접 입력해보세요
         </p>
       </div>
     );

@@ -32,18 +32,18 @@ export function CurrentSession({
     return (
       <button
         onClick={() => openModal()}
-        className="w-full p-4 rounded-xl bg-gradient-to-r from-mit-primary/20 to-mit-purple/20 hover:from-mit-primary/30 hover:to-mit-purple/30 border border-mit-primary/25 hover:border-mit-primary/40 transition-all group"
+        className="w-full p-4 rounded-xl bg-gradient-to-r from-mit-primary/80 to-mit-purple/80 hover:from-mit-primary hover:to-mit-purple border border-mit-primary/30 hover:border-mit-primary/50 shadow-[0_2px_16px_rgba(99,102,241,0.25)] hover:shadow-[0_4px_20px_rgba(99,102,241,0.4)] transition-all group"
       >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mit-primary to-mit-purple flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
             <Video className="w-5 h-5 text-white" />
           </div>
           <div className="text-left">
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-semibold text-white">
               새 회의 시작
             </p>
-            <p className="text-xs text-white/40 group-hover:text-white/60 transition-colors">
-              팀원과 회의 시작
+            <p className="text-xs text-white/60 group-hover:text-white/80 transition-colors">
+              팀원을 초대해 회의를 시작하세요
             </p>
           </div>
         </div>
@@ -59,7 +59,7 @@ export function CurrentSession({
       <div className="flex items-center gap-2 mb-2">
         <div className="w-2 h-2 rounded-full bg-mit-success animate-pulse" />
         <span className="text-[11px] font-medium text-mit-success uppercase tracking-wide">
-          Live
+          진행 중
         </span>
       </div>
 
@@ -70,7 +70,7 @@ export function CurrentSession({
       <div className="flex items-center gap-4 text-meta">
         <div className="flex items-center gap-1">
           <Users className="w-3.5 h-3.5" />
-          <span>{participantCount}명 참여</span>
+          <span>{participantCount}명 참여 중</span>
         </div>
         {duration && (
           <div className="flex items-center gap-1">

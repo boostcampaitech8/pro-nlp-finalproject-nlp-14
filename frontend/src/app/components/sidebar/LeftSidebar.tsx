@@ -5,7 +5,7 @@ import { Info } from 'lucide-react';
 import { Logo } from './Logo';
 import { CurrentSession } from './CurrentSession';
 import { Navigation } from './Navigation';
-import { MiniCard } from './MiniCard';
+
 import { useMeetingRoomStore } from '@/stores/meetingRoomStore';
 import { useTeamStore } from '@/stores/teamStore';
 import { CreateTeamModal } from './CreateTeamModal';
@@ -103,7 +103,7 @@ export function LeftSidebar() {
             </div>
           </div>
         </Link>
-        <MiniCard />
+        {/* <MiniCard /> */}
       </div>
 
       {/* 팀 생성 모달 */}

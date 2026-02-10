@@ -113,14 +113,14 @@ interface NavItem {
 }
 
 const mainNavItems: NavItem[] = [
-  { id: 'home', label: 'Home', icon: Home, href: '/' },
-  { id: 'search', label: 'Search', icon: Search, href: '/search' },
-  { id: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
+  { id: 'home', label: '홈', icon: Home, href: '/' },
+  { id: 'search', label: '검색', icon: Search, href: '/search' },
+  { id: 'calendar', label: '캘린더', icon: Calendar, href: '/calendar' },
 ];
 
 const bottomNavItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
+  { id: 'dashboard', label: '대시보드', icon: LayoutDashboard, href: '/dashboard' },
+  { id: 'settings', label: '설정', icon: Settings, href: '/settings' },
 ];
 
 // ─── Navigation 본체 ────────────────────────────────────────
@@ -206,10 +206,10 @@ export function Navigation() {
       }}
       disabled={disabled}
       className={cn(
-        'w-5 h-5 rounded flex items-center justify-center transition-colors',
+        'w-5 h-5 rounded flex items-center justify-center transition-all',
         disabled
           ? 'text-white/15 cursor-not-allowed'
-          : 'text-white/30 hover:text-white/60 hover:bg-white/5',
+          : 'text-white/40 hover:text-mit-primary hover:bg-mit-primary/10',
       )}
       title={titleText}
     >
@@ -218,7 +218,7 @@ export function Navigation() {
   );
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden" role="navigation" aria-label="메인 네비게이션">
       {/* ── Main (상단 고정, 폴드 없음) ── */}
       <div className="flex-shrink-0">
         <div className="space-y-0.5 py-1 px-2">{mainNavItems.map(renderNavItem)}</div>
@@ -229,21 +229,21 @@ export function Navigation() {
       {/* ── Teams ── */}
       <CollapsibleSection
         id="teams"
-        title="Teams"
+        title="팀"
         count={teams.length}
         scrollable
         action={teams.length > 0 ? plusButton(openCreateTeamModal, false, '새 팀 만들기') : undefined}
       >
         <div className="space-y-0.5">
           {teamsLoading && teams.length === 0 ? (
-            <div className="px-3 py-2 text-white/30 text-sm">Loading...</div>
+            <div className="px-3 py-2 text-white/30 text-sm">불러오는 중...</div>
           ) : teams.length === 0 ? (
             <button
               onClick={openCreateTeamModal}
-              className="mx-2 w-[calc(100%-16px)] flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/70 hover:text-white transition-all group"
+              className="mx-2 w-[calc(100%-16px)] flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-gradient-to-r from-mit-primary/15 to-mit-purple/15 hover:from-mit-primary/25 hover:to-mit-purple/25 border border-mit-primary/20 hover:border-mit-primary/35 text-white/80 hover:text-white transition-all group"
             >
-              <Plus className="w-4 h-4 text-white/40 group-hover:text-white/70 transition-colors" />
-              <p className="text-sm">새 팀 만들기</p>
+              <Plus className="w-4 h-4 text-mit-primary/60 group-hover:text-mit-primary transition-colors" />
+              <p className="text-sm">첫 팀을 만들어보세요</p>
             </button>
           ) : (
             teams.map((team) => {
@@ -272,7 +272,7 @@ export function Navigation() {
       {/* ── Meetings ── */}
       <CollapsibleSection
         id="meetings"
-        title="Meetings"
+        title="회의"
         count={sidebarMeetings.length}
         scrollable
       >
@@ -285,7 +285,7 @@ export function Navigation() {
             </div>
           ) : sidebarMeetings.length === 0 ? (
             <p className="px-3 py-2 text-white/30 text-xs">
-              진행 중이거나 예정된 회의가 없습니다
+              예정된 회의가 없어요
             </p>
           ) : (
             sidebarMeetings.map((meeting) => {
@@ -330,7 +330,7 @@ export function Navigation() {
                         </span>
                       ) : (
                         <span className="block text-[11px] text-white/20 truncate">
-                          {isOngoing ? '진행 중' : '예정'}
+                          {isOngoing ? '진행 중' : '예정됨'}
                         </span>
                       )}
                     </div>
@@ -345,7 +345,7 @@ export function Navigation() {
       {/* ── Spotlight ── */}
       <CollapsibleSection
         id="spotlight"
-        title="Spotlight"
+        title="스포트라이트"
         count={sessions.length}
         scrollable
         action={plusButton(handleNewSession, false, '새 대화')}
@@ -362,7 +362,7 @@ export function Navigation() {
               onClick={handleNewSession}
               className="px-3 py-2 text-white/50 text-sm hover:text-white/70 block w-full text-left"
             >
-              새 대화를 시작하세요
+              Mit에게 질문해보세요
             </button>
           ) : (
             sessions.map((session) => {
@@ -397,7 +397,7 @@ export function Navigation() {
                       handleDeleteSession(session.id);
                     }}
                     className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-0 group-hover/session:opacity-100 text-white/30 hover:text-red-400 transition-all"
-                    title="세션 삭제"
+                    title="대화 삭제"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -409,7 +409,7 @@ export function Navigation() {
       </CollapsibleSection>
 
       {/* ── System ── */}
-      <CollapsibleSection id="system" title="System">
+      <CollapsibleSection id="system" title="시스템">
         <div className="space-y-0.5">{bottomNavItems.map(renderNavItem)}</div>
       </CollapsibleSection>
       </div>{/* end 중간 섹션 */}
@@ -422,7 +422,7 @@ export function Navigation() {
           className={cn('nav-item w-full', authLoading && 'opacity-50 cursor-not-allowed')}
         >
           <LogOut className="w-[18px] h-[18px]" />
-          <span className="text-[14px]">Logout</span>
+          <span className="text-[14px]">로그아웃</span>
         </button>
       </div>
     </div>

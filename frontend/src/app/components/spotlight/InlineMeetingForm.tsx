@@ -76,7 +76,7 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
           setMembers(team.members || []);
         })
         .catch(() => {
-          setError('팀원 정보를 불러오는데 실패했습니다.');
+          setError('팀원 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.');
         })
         .finally(() => {
           setIsLoadingMembers(false);
@@ -154,7 +154,7 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
       setInviteResults({ succeeded, failed });
       setStep('success');
     } catch {
-      setError('회의 생성에 실패했습니다.');
+      setError('회의를 만들지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsSubmitting(false);
     }
@@ -166,7 +166,7 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
       await api.post(`/meetings/${createdMeetingId}/start`);
       navigate(`/dashboard/meetings/${createdMeetingId}/room`);
     } catch {
-      setError('회의 시작에 실패했습니다.');
+      setError('회의실에 입장하지 못했어요. 잠시 후 다시 시도해주세요.');
     }
   }, [createdMeetingId, navigate]);
 
@@ -207,21 +207,21 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
         className="pt-4 pb-1 px-1 space-y-3"
         onKeyDown={handleKeyDown}
       >
-        <div className="flex items-center gap-2 text-sm text-green-400">
+        <div className="flex items-center gap-2 text-sm text-green-400" role="status">
           <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
             <Check className="w-3 h-3" />
           </div>
-          <span>회의가 생성되었습니다</span>
+          <span>회의가 만들어졌어요</span>
         </div>
         {inviteResults.succeeded > 0 && (
           <p className="text-xs text-white/50">
-            {inviteResults.succeeded}명 초대 완료
+            {inviteResults.succeeded}명에게 초대를 보냈어요
             {inviteResults.failed > 0 && (
-              <span className="text-amber-400 ml-2">{inviteResults.failed}명 초대 실패</span>
+              <span className="text-amber-400 ml-2">{inviteResults.failed}명 초대에 문제가 있었어요</span>
             )}
           </p>
         )}
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-red-400" role="alert">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button
             variant="ghost"
@@ -232,7 +232,7 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
             닫기
           </Button>
           <Button size="sm" onClick={handleEnterMeeting} className="gap-1.5">
-            회의실 입장
+            회의실로 이동
             <ArrowRight className="w-3.5 h-3.5" />
           </Button>
         </div>
@@ -267,12 +267,12 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
             <Loader2 className="w-4 h-4 animate-spin text-white/40" />
           </div>
         ) : membersExcludingCurrentUser.length === 0 ? (
-          <p className="text-xs text-white/40 text-center py-3">초대할 팀원이 없습니다</p>
+          <p className="text-xs text-white/40 text-center py-3">초대할 수 있는 팀원이 없어요</p>
         ) : (
           <div className="max-h-[200px] overflow-y-auto scrollbar-hide space-y-1">
             {membersExcludingCurrentUser.map((member) => {
               const isSelected = selectedMemberIds.has(member.userId);
-              const memberName = member.user?.name || '알 수 없음';
+              const memberName = member.user?.name || '이름 미확인';
 
               return (
                 <button
@@ -310,7 +310,7 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
           </div>
         )}
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-red-400" role="alert">{error}</p>}
 
         <div className="flex justify-between gap-2">
           <button
@@ -330,7 +330,7 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
             {isSubmitting ? (
               <>
                 <Loader2 className="w-3 h-3 animate-spin" />
-                생성 중...
+                만드는 중...
               </>
             ) : selectedCount > 0 ? (
               `회의 만들기 (${selectedCount}명 초대)`
@@ -370,7 +370,7 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
         <Input
           value={meetingTitle}
           onChange={(e) => setMeetingTitle(e.target.value)}
-          placeholder="회의 제목"
+          placeholder="회의 제목을 입력해주세요"
           autoFocus
           className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-purple-400/40 transition-colors"
         />
@@ -379,12 +379,12 @@ export function InlineMeetingForm({ onClose }: InlineMeetingFormProps) {
       <textarea
         value={meetingDescription}
         onChange={(e) => setMeetingDescription(e.target.value)}
-        placeholder="회의 설명 (선택)"
+        placeholder="회의 내용을 간단히 적어주세요 (선택)"
         rows={2}
         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-purple-400/40 transition-colors resize-none"
       />
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-400" role="alert">{error}</p>}
 
       <div className="flex justify-end gap-2">
         <button
