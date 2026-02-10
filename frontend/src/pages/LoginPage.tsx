@@ -8,7 +8,7 @@ import logger from '@/utils/logger';
 export function LoginPage() {
   logger.log('[LoginPage] Rendering...');
   const { isAuthenticated } = useAuth();
-  const { loginWithNaver, loginWithGoogle, isLoading, error, clearError } = useAuthStore();
+  const { loginWithNaver, loginWithGoogle, loginAsGuest, isLoading, error, clearError } = useAuthStore();
   const navigate = useNavigate();
   logger.log('[LoginPage] isAuthenticated:', isAuthenticated);
 
@@ -36,6 +36,14 @@ export function LoginPage() {
   const handleGoogleLogin = async () => {
     try {
       await loginWithGoogle();
+    } catch {
+      // 에러는 store에서 처리됨
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    try {
+      await loginAsGuest();
     } catch {
       // 에러는 store에서 처리됨
     }
@@ -92,8 +100,31 @@ export function LoginPage() {
             </button>
           </div>
 
+          {/* 구분선 */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-white text-gray-400">또는</span>
+            </div>
+          </div>
+
+          {/* 게스트 로그인 버튼 */}
+          <button
+            onClick={handleGuestLogin}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <span>로그인 중...</span>
+            ) : (
+              <span>게스트로 시작하기</span>
+            )}
+          </button>
+
           <p className="mt-6 text-center text-sm text-gray-500">
-            소셜 계정으로 간편하게 로그인하세요
+            소셜 계정으로 로그인하거나, 게스트로 바로 시작하세요
           </p>
         </div>
       </div>

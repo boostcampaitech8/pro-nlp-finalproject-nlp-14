@@ -84,6 +84,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/guest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 게스트 로그인
+         * @description 게스트 계정을 즉시 생성하고 JWT 토큰을 발급합니다. OAuth 인증 없이 바로 서비스를 체험할 수 있습니다.
+         */
+        post: operations["guestLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/refresh": {
         parameters: {
             query?: never;
@@ -472,67 +492,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/meetings/{meetingId}/transcribe": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 회의 STT 변환 시작
-         * @description 회의의 모든 녹음에 대해 STT 변환을 시작합니다.
-         *     비동기로 처리되며, 진행 상태는 GET /transcript/status로 조회합니다.
-         */
-        post: operations["startMeetingTranscription"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/meetings/{meetingId}/transcript": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 회의 트랜스크립트 조회
-         * @description 회의의 전체 트랜스크립트(화자별 발화 병합 결과)를 조회합니다.
-         */
-        get: operations["getMeetingTranscript"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/meetings/{meetingId}/transcript/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * STT 변환 상태 조회
-         * @description 회의 STT 변환 작업의 진행 상태를 조회합니다.
-         */
-        get: operations["getTranscriptStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/meetings/{meeting_id}/transcripts": {
         parameters: {
             query?: never;
@@ -554,6 +513,28 @@ export interface paths {
          *     path의 meeting_id와 body의 meetingId가 일치해야 합니다.
          */
         post: operations["createTranscriptSegment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meetings/{meetingId}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 회의 채팅 메시지 조회
+         * @description 회의의 채팅 메시지를 시간순으로 조회합니다.
+         *     - 페이지네이션 지원 (기본 100개, 최대 500개)
+         *     - 오래된 메시지부터 정렬
+         */
+        get: operations["getChatMessages"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -601,11 +582,11 @@ export interface components {
          */
         Timestamp: string;
         /**
-         * @description 인증 제공자 (네이버/구글 OAuth)
+         * @description 인증 제공자 (네이버/구글 OAuth, 게스트)
          * @default naver
          * @enum {string}
          */
-        AuthProvider: "naver" | "google";
+        AuthProvider: "naver" | "google" | "guest";
         User: {
             id: components["schemas"]["UUID"];
             /**
@@ -901,95 +882,26 @@ export interface components {
              */
             expiresInSeconds: number;
         };
-        /**
-         * @description 회의록 트랜스크립트 상태:
-         *     - pending: 대기 중
-         *     - processing: 처리 중
-         *     - completed: 완료
-         *     - failed: 실패
-         * @enum {string}
-         */
-        TranscriptStatus: "pending" | "processing" | "completed" | "failed";
-        TranscriptSegment: {
-            /** @description 세그먼트 ID */
-            id: number;
-            /** @description 시작 시간 (밀리초) */
-            startMs: number;
-            /** @description 종료 시간 (밀리초) */
-            endMs: number;
-            /** @description 해당 구간 텍스트 */
-            text: string;
-        };
-        Utterance: {
-            /** @description 발화 ID */
-            id: number;
-            speakerId: components["schemas"]["UUID"];
-            /** @description 화자 이름 */
-            speakerName: string;
-            /** @description 시작 시간 (밀리초) */
-            startMs: number;
-            /** @description 종료 시간 (밀리초) */
-            endMs: number;
-            /** @description 발화 텍스트 */
-            text: string;
-            /**
-             * Format: date-time
-             * @description 실제 발화 시각 (wall-clock time, ISO 8601)
-             */
-            timestamp: string;
-        };
-        MeetingTranscript: {
+        /** @description 채팅 메시지 */
+        ChatMessage: {
             id: components["schemas"]["UUID"];
-            meetingId: components["schemas"]["UUID"];
-            status: components["schemas"]["TranscriptStatus"];
-            /** @description 전체 텍스트 (화자 라벨 포함) */
-            fullText?: string | null;
-            /** @description 화자별 발화 목록 */
-            utterances?: components["schemas"]["Utterance"][] | null;
-            /** @description 전체 녹음 길이 (밀리초) */
-            totalDurationMs?: number | null;
-            /** @description 화자 수 */
-            speakerCount?: number | null;
-            /**
-             * Format: date-time
-             * @description 회의 실제 시작 시각
-             */
-            meetingStart?: string | null;
-            /**
-             * Format: date-time
-             * @description 회의 실제 종료 시각
-             */
-            meetingEnd?: string | null;
-            /** @description MinIO에 저장된 회의록 파일 경로 */
-            filePath?: string | null;
-            createdAt: components["schemas"]["Timestamp"];
-            /** Format: date-time */
-            updatedAt?: string | null;
-            /** @description 실패 시 에러 메시지 */
-            error?: string | null;
+            meeting_id: components["schemas"]["UUID"];
+            user_id: components["schemas"]["UUID"];
+            /** @description 작성자 이름 */
+            user_name: string;
+            /** @description 메시지 내용 (Markdown 지원) */
+            content: string;
+            created_at: components["schemas"]["Timestamp"];
         };
-        TranscribeRequest: {
-            /**
-             * @description 우선 언어 코드 (ko, en 등)
-             * @default ko
-             */
-            language: string;
-        };
-        TranscribeResponse: {
-            transcriptId: components["schemas"]["UUID"];
-            status: components["schemas"]["TranscriptStatus"];
-            /** @description 상태 메시지 */
-            message?: string;
-        };
-        TranscriptStatusResponse: {
-            transcriptId: components["schemas"]["UUID"];
-            status: components["schemas"]["TranscriptStatus"];
-            /** @description 전체 녹음 수 */
-            totalRecordings: number;
-            /** @description 처리 완료된 녹음 수 */
-            processedRecordings: number;
-            /** @description 실패 시 에러 메시지 */
-            error?: string | null;
+        /** @description 채팅 메시지 목록 응답 */
+        ChatMessageListResponse: {
+            messages: components["schemas"]["ChatMessage"][];
+            /** @description 전체 메시지 수 */
+            total: number;
+            /** @description 현재 페이지 */
+            page: number;
+            /** @description 페이지당 메시지 수 */
+            limit: number;
         };
         UtteranceItem: {
             /** @description Transcript segment ID */
@@ -1205,6 +1117,35 @@ export interface operations {
             };
             /** @description 인증 실패 */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    guestLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 게스트 로그인 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description 서버 에러 */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2594,166 +2535,6 @@ export interface operations {
             };
         };
     };
-    startMeetingTranscription: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                meetingId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["TranscribeRequest"];
-            };
-        };
-        responses: {
-            /** @description STT 변환 작업 시작됨 */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TranscribeResponse"];
-                };
-            };
-            /** @description 잘못된 요청 (완료된 녹음이 없음) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 인증 실패 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 권한 없음 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 회의를 찾을 수 없음 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    getMeetingTranscript: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                meetingId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 트랜스크립트 조회 성공 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MeetingTranscript"];
-                };
-            };
-            /** @description 인증 실패 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 권한 없음 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 회의 또는 트랜스크립트를 찾을 수 없음 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    getTranscriptStatus: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                meetingId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 상태 조회 성공 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TranscriptStatusResponse"];
-                };
-            };
-            /** @description 인증 실패 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 권한 없음 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 회의 또는 트랜스크립트를 찾을 수 없음 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     getMeetingTranscripts: {
         parameters: {
             query?: never;
@@ -2885,6 +2666,61 @@ export interface operations {
                     "application/json": {
                         detail?: Record<string, never>[];
                     };
+                };
+            };
+        };
+    };
+    getChatMessages: {
+        parameters: {
+            query?: {
+                /** @description 페이지 번호 */
+                page?: number;
+                /** @description 페이지당 메시지 수 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description 회의 ID */
+                meetingId: components["schemas"]["UUID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 채팅 메시지 목록 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageListResponse"];
+                };
+            };
+            /** @description 인증되지 않음 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 회의 참여자가 아님 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 회의를 찾을 수 없음 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

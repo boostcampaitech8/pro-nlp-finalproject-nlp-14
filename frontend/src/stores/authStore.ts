@@ -32,6 +32,7 @@ interface AuthState {
   handleNaverCallback: (code: string, state: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   handleGoogleCallback: (code: string, state: string) => Promise<void>;
+  loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   clearError: () => void;
@@ -106,6 +107,20 @@ export const useAuthStore = create<AuthState>((set) => {
         set({ user: response.user, isAuthenticated: true, isLoading: false });
       } catch (error) {
         const message = getErrorMessage(error, 'Google login failed');
+        set({ error: message, isLoading: false });
+        throw error;
+      }
+    },
+
+    loginAsGuest: async () => {
+      set({ isLoading: true, error: null });
+      try {
+        const response = await authService.guestLogin();
+        localStorage.setItem('accessToken', response.tokens.accessToken);
+        localStorage.setItem('refreshToken', response.tokens.refreshToken);
+        set({ user: response.user, isAuthenticated: true, isLoading: false });
+      } catch (error) {
+        const message = getErrorMessage(error, 'Guest login failed');
         set({ error: message, isLoading: false });
         throw error;
       }
