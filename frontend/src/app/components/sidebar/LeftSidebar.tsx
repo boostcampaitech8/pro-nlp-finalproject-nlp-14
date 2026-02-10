@@ -103,7 +103,7 @@ export function LeftSidebar() {
             </div>
           </div>
         </Link>
-        <MiniCard />
+        {/* <MiniCard /> */}
       </div>
 
       {/* 팀 생성 모달 */}
