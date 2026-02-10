@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Video,
   X,
+  Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTeamStore } from '@/stores/teamStore';
@@ -113,6 +114,7 @@ interface NavItem {
 }
 
 const mainNavItems: NavItem[] = [
+  { id: 'introduce', label: '서비스 소개', icon: Info, href: '/introduce' },
   { id: 'home', label: '홈', icon: Home, href: '/' },
   { id: 'search', label: '검색', icon: Search, href: '/search' },
   { id: 'calendar', label: '캘린더', icon: Calendar, href: '/calendar' },

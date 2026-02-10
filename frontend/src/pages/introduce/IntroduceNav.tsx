@@ -24,12 +24,29 @@ export function IntroduceNav() {
           </div>
         </div>
 
-        {/* Auth-dependent button */}
-        <Link to={isAuthenticated ? '/' : '/login'}>
-          <Button variant="glass" size="sm">
-            {isAuthenticated ? 'Spotlight으로 돌아가기' : '로그인'}
-          </Button>
-        </Link>
+        {/* Auth-dependent buttons */}
+        <div className="flex items-center gap-2">
+          {isAuthenticated ? (
+            <Link to="/">
+              <Button variant="glass" size="sm">
+                Spotlight으로 돌아가기
+              </Button>
+            </Link>
+          ) : (
+            <>
+              <Link to="/login">
+                <Button variant="glass" size="sm">
+                  로그인
+                </Button>
+              </Link>
+              <Link to="/login">
+                <Button size="sm" className="bg-gradient-to-r from-mit-primary to-mit-purple hover:from-mit-primary/90 hover:to-mit-purple/90 text-white font-semibold shadow-[0_2px_12px_rgba(99,102,241,0.3)]">
+                  무료로 시작하기
+                </Button>
+              </Link>
+            </>
+          )}
+        </div>
       </div>
     </nav>
   );
