@@ -36,10 +36,10 @@ const variantStyles: Record<CardVariant, {
   desc: string;
 }> = {
   primary: {
-    card: 'bg-gradient-to-br from-mit-primary/20 via-purple-500/15 to-purple-600/5 border-purple-400/25 shadow-[0_4px_20px_rgba(168,85,247,0.1)] hover:border-purple-400/40 hover:shadow-[0_16px_48px_rgba(168,85,247,0.2)]',
-    icon: 'bg-gradient-to-br from-mit-primary to-mit-purple shadow-[0_0_16px_rgba(168,85,247,0.25)] group-hover:shadow-[0_0_28px_rgba(168,85,247,0.4)]',
-    title: 'text-white/50',
-    desc: 'text-white font-medium group-hover:text-white',
+    card: 'bg-gradient-to-br from-mit-primary/40 via-purple-500/30 to-mit-purple/20 border-purple-400/35 shadow-[0_4px_24px_rgba(99,102,241,0.2)] hover:from-mit-primary/55 hover:via-purple-500/40 hover:to-mit-purple/30 hover:border-purple-400/50 hover:shadow-[0_8px_32px_rgba(99,102,241,0.35)]',
+    icon: 'bg-gradient-to-br from-mit-primary to-mit-purple shadow-[0_0_20px_rgba(99,102,241,0.35)] group-hover:shadow-[0_0_28px_rgba(99,102,241,0.5)]',
+    title: 'text-white/60',
+    desc: 'text-white font-semibold group-hover:text-white',
   },
   accent: {
     card: 'bg-gradient-to-br from-sky-500/10 via-cyan-500/5 to-transparent border-sky-400/15 hover:border-sky-400/30 hover:shadow-[0_12px_36px_rgba(56,189,248,0.1)]',

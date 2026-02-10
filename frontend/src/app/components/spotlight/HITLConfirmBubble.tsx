@@ -230,11 +230,14 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
       return null;
     };
 
+    const isFilled = currentValue.trim() !== '';
     const baseClass = cn(
-      'inline-block px-1.5 py-0.5 mx-1 rounded-md border-b border-white/20',
-      'bg-white/0 text-white/90',
-      'focus:outline-none focus:border-mit-primary/70 focus:bg-white/10',
-      'min-w-[72px] text-center transition-colors'
+      'inline-block px-2 py-0.5 mx-0.5 rounded align-baseline leading-normal',
+      'min-w-[72px] text-center transition-all duration-200',
+      'focus:outline-none focus:ring-1 focus:ring-amber-300/50',
+      isFilled
+        ? 'bg-amber-400/15 text-white font-medium'
+        : 'bg-amber-400/25 text-white/80 placeholder:text-white/40'
     );
 
     if (inputType === 'select' && field?.options) {
@@ -247,7 +250,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
           onChange={(e) => handleInputChange(paramName, e.target.value)}
           onKeyDown={(e) => handleKeyDown(e, inputIndex)}
           disabled={isSubmitting}
-          className={cn(baseClass, 'cursor-pointer appearance-none pr-5', currentValue && 'text-mit-primary font-medium')}
+          className={cn(baseClass, 'cursor-pointer appearance-none pr-5', isFilled && 'font-medium')}
           title={displayHint || undefined}
         >
           <option value="" className="bg-gray-800">{field.placeholder || '선택'}</option>
@@ -270,7 +273,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
           onChange={(e) => handleInputChange(paramName, e.target.value)}
           onKeyDown={(e) => handleKeyDown(e, inputIndex)}
           disabled={isSubmitting}
-        className={cn(baseClass, 'min-w-[170px]', currentValue && 'text-mit-primary font-medium')}
+        className={cn(baseClass, 'min-w-[170px]', isFilled && 'font-medium')}
         />
       );
     }
@@ -286,7 +289,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
         onKeyDown={(e) => handleKeyDown(e, inputIndex)}
         placeholder={field?.placeholder || paramName}
         disabled={isSubmitting}
-        className={cn(baseClass, currentValue && 'text-mit-primary font-medium')}
+        className={cn(baseClass, isFilled && 'font-medium')}
         style={{ width: `${Math.max(72, (currentValue.length || 6) * 11)}px` }}
       />
     );
