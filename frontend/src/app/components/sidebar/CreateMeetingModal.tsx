@@ -72,7 +72,7 @@ export function CreateMeetingModal({ open, onOpenChange }: CreateMeetingModalPro
           setMembers(team.members || []);
         })
         .catch((error) => {
-          setMembersError('팀원 정보를 불러오는데 실패했습니다.');
+          setMembersError('팀원 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.');
           console.error('Failed to load team members:', error);
         })
         .finally(() => {
@@ -142,7 +142,7 @@ export function CreateMeetingModal({ open, onOpenChange }: CreateMeetingModalPro
       setStep('success');
     } catch (error) {
       console.error('Failed to create meeting:', error);
-      setSubmitError('회의 생성에 실패했습니다. 다시 시도해주세요.');
+      setSubmitError('회의를 만들지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsSubmitting(false);
     }
@@ -211,9 +211,9 @@ export function CreateMeetingModal({ open, onOpenChange }: CreateMeetingModalPro
             <div>
               <DialogTitle>새 회의 만들기</DialogTitle>
               <DialogDescription>
-                {step === 'info' && '회의 정보를 입력하세요'}
-                {step === 'invite' && '팀원을 초대하세요'}
-                {step === 'success' && '회의가 생성되었습니다'}
+                {step === 'info' && '회의 정보를 입력해주세요'}
+                {step === 'invite' && '팀원을 초대해주세요'}
+                {step === 'success' && '회의가 만들어졌어요'}
               </DialogDescription>
             </div>
           </div>
@@ -369,7 +369,7 @@ function MeetingInfoStep({
           onChange={(e) => onTeamIdChange(e.target.value)}
           className={inputBaseClasses}
         >
-          <option value="">팀을 선택하세요</option>
+          <option value="">팀을 선택해주세요</option>
           {teams.map((team) => (
             <option key={team.id} value={team.id} className="bg-gray-900">
               {team.name}
@@ -383,7 +383,7 @@ function MeetingInfoStep({
         <Input
           value={meetingTitle}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="회의 제목을 입력하세요"
+          placeholder="회의 제목을 입력해주세요"
           className={inputBaseClasses}
         />
       </div>
@@ -393,7 +393,7 @@ function MeetingInfoStep({
         <textarea
           value={meetingDescription}
           onChange={(e) => onDescriptionChange(e.target.value)}
-          placeholder="회의 설명을 입력하세요"
+          placeholder="회의 내용을 간단히 적어주세요"
           className={cn(inputBaseClasses, 'min-h-[100px] resize-none')}
         />
       </div>
@@ -498,7 +498,7 @@ function InviteMembersStep({
         </div>
       ) : members.length === 0 ? (
         <div className="text-center py-8 text-white/50 text-sm">
-          팀원이 없습니다. 팀 설정에서 멤버를 초대하세요.
+          아직 초대할 수 있는 팀원이 없어요. 팀 설정에서 멤버를 초대해보세요.
         </div>
       ) : (
         <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
@@ -608,7 +608,7 @@ function InviteMembersStep({
           className="flex-1"
         >
           {isSubmitting
-            ? '생성 중...'
+            ? '만드는 중...'
             : `회의 만들기 (${selectedCount}명 초대)`}
         </Button>
       </div>
@@ -641,7 +641,7 @@ function SuccessStep({
       {/* Title */}
       <div>
         <h3 className="text-xl font-semibold text-white mb-2">
-          회의가 생성되었습니다!
+          회의가 만들어졌어요!
         </h3>
         <p className="text-white/70">{meetingTitle}</p>
       </div>
@@ -664,7 +664,7 @@ function SuccessStep({
           닫기
         </Button>
         <Button onClick={onEnterMeeting} className="flex-1 gap-2">
-          회의실 입장
+          회의실로 이동
           <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
