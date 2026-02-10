@@ -73,7 +73,7 @@ function SuggestionCard({ suggestion, variant = 'default', expanded, onSelect, c
     >
       <button
         onClick={() => !expanded && onSelect(suggestion.command, suggestion.category)}
-        className={`relative w-full p-4 rounded-xl backdrop-blur-lg border ${styles.card} ${!expanded ? 'hover:-translate-y-1' : ''} transition-all duration-300 text-left group ${expanded ? '' : 'overflow-hidden'}`}
+        className={`relative w-full h-full p-4 rounded-xl backdrop-blur-lg border ${styles.card} ${!expanded ? 'hover:-translate-y-1' : ''} transition-all duration-300 text-left group ${expanded ? '' : 'overflow-hidden'}`}
       >
         {glowOverlay}
         <div className="relative flex items-start gap-3">

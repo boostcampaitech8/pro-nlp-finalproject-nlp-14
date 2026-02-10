@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Layers, ChevronDown } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Button } from '@/app/components/ui/button';
-import { useAuth } from '@/hooks/useAuth';
 import { HERO } from './constants';
 
 function TypewriterDemo() {
@@ -64,8 +61,6 @@ function TypewriterDemo() {
 }
 
 export function HeroSection() {
-  const { isAuthenticated } = useAuth();
-
   const handleScrollDown = () => {
     document.getElementById('problem')?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -83,7 +78,7 @@ export function HeroSection() {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 text-center max-w-3xl"
+        className="relative z-10 text-center max-w-3xl pb-20"
       >
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
@@ -118,30 +113,20 @@ export function HeroSection() {
           </div>
         </div>
 
-        {/* CTA Buttons */}
-        <div className="flex items-center justify-center gap-4">
-          <Link to={isAuthenticated ? '/' : '/login'}>
-            <Button className="bg-gradient-to-r from-mit-primary to-mit-purple hover:from-mit-primary/90 hover:to-mit-purple/90 text-white px-8 h-12 text-base font-semibold rounded-xl shadow-[0_4px_20px_rgba(99,102,241,0.3)]">
-              {isAuthenticated ? 'Spotlight으로 이동' : HERO.ctaPrimary}
-            </Button>
-          </Link>
-          <Button variant="glass" className="h-12 px-6 text-base rounded-xl" onClick={handleScrollDown}>
-            {HERO.ctaSecondary}
-          </Button>
-        </div>
-
         {/* Typewriter Demo */}
         <TypewriterDemo />
+
       </motion.div>
 
       {/* Scroll Indicator */}
       <motion.button
         onClick={handleScrollDown}
-        className="absolute bottom-8 text-white/30 hover:text-white/60 transition-colors"
+        className="absolute bottom-8 flex flex-col items-center gap-1.5 text-white/30 hover:text-white/60 transition-colors"
         animate={{ y: [0, 8, 0] }}
         transition={{ duration: 2, repeat: Infinity }}
       >
-        <ChevronDown className="w-6 h-6" />
+        <span className="text-xs">더 알아보기</span>
+        <ChevronDown className="w-5 h-5" />
       </motion.button>
     </section>
   );

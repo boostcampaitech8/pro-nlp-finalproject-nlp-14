@@ -1,7 +1,5 @@
 // 좌측 사이드바 (280px)
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { Info } from 'lucide-react';
 import { Logo } from './Logo';
 import { CurrentSession } from './CurrentSession';
 import { Navigation } from './Navigation';
@@ -85,26 +83,7 @@ export function LeftSidebar() {
         </nav>
       </div>
 
-      {/* 서비스 소개 + 미니 카드 */}
-      <div className="p-3 border-t border-glass space-y-2">
-        <Link
-          to="/introduce"
-          className="block p-3 rounded-xl bg-gradient-to-r from-mit-primary/15 to-mit-purple/15 border border-mit-primary/25 hover:from-mit-primary/25 hover:to-mit-purple/25 hover:border-mit-primary/40 transition-all duration-200 group"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-mit-primary to-mit-purple flex items-center justify-center flex-shrink-0">
-              <Info className="w-3.5 h-3.5 text-white" />
-            </div>
-            <div>
-              <span className="text-[13px] font-semibold text-white group-hover:text-white">
-                서비스 소개
-              </span>
-              <p className="text-[10px] text-white/40">Mit이 처음이신가요?</p>
-            </div>
-          </div>
-        </Link>
-        {/* <MiniCard /> */}
-      </div>
+      {/* <MiniCard /> */}
 
       {/* 팀 생성 모달 */}
       <CreateTeamModal
