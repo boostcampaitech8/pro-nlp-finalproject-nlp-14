@@ -76,7 +76,7 @@ export function ChatBubble({ message, streaming = false }: ChatBubbleProps) {
           className={cn(
             'max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
             isUser
-              ? 'bg-mit-primary text-white rounded-br-md'
+              ? 'bg-mit-primary/20 backdrop-blur-lg border border-mit-primary/30 text-white rounded-br-md'
               : 'glass-card text-white/90 rounded-bl-md'
           )}
         >
