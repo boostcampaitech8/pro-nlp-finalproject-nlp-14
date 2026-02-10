@@ -38,14 +38,11 @@ export type {
   RecordingListResponse,
   RecordingStatus,
   // Transcript
-  MeetingTranscript,
-  TranscribeRequest,
-  TranscribeResponse,
+  GetMeetingTranscriptsResponse,
+  CreateTranscriptRequest,
+  CreateTranscriptResponse,
   TranscriptDownloadResponse,
-  TranscriptSegment,
-  TranscriptStatus,
-  TranscriptStatusResponse,
-  Utterance,
+  UtteranceItem,
 } from '@mit/shared-types';
 
 // PR Review types (local)
