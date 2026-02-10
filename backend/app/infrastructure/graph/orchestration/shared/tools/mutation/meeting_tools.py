@@ -117,7 +117,6 @@ async def create_meeting(
 @mit_tool(
     category="mutation",
     modes=[ToolMode.SPOTLIGHT],
-    display_template="회의 정보를 수정할까요?",
     hitl_fields={
         "meeting_id": {
             "input_type": "text",
@@ -126,10 +125,12 @@ async def create_meeting(
         "title": {
             "input_type": "text",
             "placeholder": "새로운 회의 제목",
+            "required": False,
         },
         "scheduled_at": {
             "input_type": "datetime",
             "placeholder": "새로운 회의 일시",
+            "required": False,
         },
     },
 )

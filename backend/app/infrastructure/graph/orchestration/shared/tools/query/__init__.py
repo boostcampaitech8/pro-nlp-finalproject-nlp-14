@@ -24,7 +24,6 @@ __all__ = [
     "get_team",
     "get_team_members",
     # Utility tools
-    "get_current_datetime",
     "get_user_profile",
     "get_upcoming_meetings",
     "get_meeting_transcript",

@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage
@@ -23,7 +23,8 @@ async def get_user_context(user_id: str) -> dict:
     from app.core.database import async_session_maker
     from app.services.team_service import TeamService
 
-    current_time = datetime.now(timezone.utc).isoformat()
+    KST = timezone(timedelta(hours=9))
+    current_time = datetime.now(KST).isoformat()
 
     try:
         user_uuid = UUID(str(user_id))

@@ -83,7 +83,6 @@ async def create_team(
 @mit_tool(
     category="mutation",
     modes=[ToolMode.SPOTLIGHT],
-    display_template="팀 정보를 수정할까요?",
     hitl_fields={
         "team_id": {
             "input_type": "select",
@@ -94,10 +93,12 @@ async def create_team(
         "name": {
             "input_type": "text",
             "placeholder": "새로운 팀 이름",
+            "required": False,
         },
         "description": {
             "input_type": "textarea",
             "placeholder": "새로운 팀 설명",
+            "required": False,
         },
     },
 )

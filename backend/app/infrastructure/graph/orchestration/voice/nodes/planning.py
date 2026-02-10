@@ -1,6 +1,7 @@
 """Voice Planning Node - Query 도구만 사용"""
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from langchain_core.messages import AIMessage
 
@@ -103,7 +104,9 @@ async def create_plan(state: VoiceOrchestrationState) -> VoiceOrchestrationState
     llm_with_tools = llm.bind_tools(langchain_tools)
 
     # Voice 시스템 프롬프트
-    system_prompt = build_voice_system_prompt(meeting_id)
+    KST = timezone(timedelta(hours=9))
+    current_time = datetime.now(KST).isoformat()
+    system_prompt = build_voice_system_prompt(meeting_id, current_time=current_time)
 
     # 컨텍스트가 있으면 시스템 프롬프트에 추가 (tool_results는 ToolMessage로 message history에 포함됨)
     planning_context = state.get("planning_context", "")
