@@ -57,7 +57,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
       setTeamName('');
       setTeamDescription('');
     } catch (err) {
-      setError('팀 생성에 실패했습니다. 다시 시도해주세요.');
+      setError('팀을 만들지 못했어요. 잠시 후 다시 시도해주세요.');
       console.error('Team creation error:', err);
     } finally {
       setIsCreating(false);
@@ -92,7 +92,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
       await navigator.clipboard.writeText(localInviteLink.inviteUrl);
       setCopied(true);
     } catch {
-      setError('클립보드 복사에 실패했습니다.');
+      setError('복사하지 못했어요. 링크를 직접 선택해 복사해주세요.');
     }
   };
 
@@ -102,7 +102,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
     setInviteLinkLoading(true);
     generateInviteLink(createdTeamId)
       .then((link) => setLocalInviteLink(link))
-      .catch(() => setError('초대 링크 생성에 실패했습니다.'))
+      .catch(() => setError('초대 링크를 만들지 못했어요.'))
       .finally(() => setInviteLinkLoading(false));
   };
 
@@ -127,7 +127,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
             // 자동 복사 실패는 무시 (수동 복사 가능)
           }
         })
-        .catch(() => setError('초대 링크 생성에 실패했습니다.'))
+        .catch(() => setError('초대 링크를 만들지 못했어요.'))
         .finally(() => setInviteLinkLoading(false));
     }
   }, [step, createdTeamId, generateInviteLink]);
@@ -148,7 +148,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
                 <div>
                   <DialogTitle className="text-white">새 팀 만들기</DialogTitle>
                   <DialogDescription className="text-white/50">
-                    팀을 만들고 회의를 시작하세요
+                    팀을 만들면 바로 회의를 시작할 수 있어요
                   </DialogDescription>
                 </div>
               </div>
@@ -164,7 +164,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
                 <Input
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
-                  placeholder="예: 개발팀"
+                  placeholder="팀 이름을 입력해주세요 (예: 개발팀)"
                   className={inputBaseClasses}
                   disabled={isCreating}
                   required
@@ -179,7 +179,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
                 <textarea
                   value={teamDescription}
                   onChange={(e) => setTeamDescription(e.target.value)}
-                  placeholder="팀에 대한 설명을 입력하세요"
+                  placeholder="팀에 대해 간단히 적어주세요"
                   rows={3}
                   disabled={isCreating}
                   className={cn(inputBaseClasses, 'resize-none')}
@@ -209,7 +209,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
                   variant="default"
                   disabled={isCreating || !teamName.trim()}
                 >
-                  {isCreating ? '생성 중...' : '팀 만들기'}
+                  {isCreating ? '만드는 중...' : '팀 만들기'}
                 </Button>
               </div>
             </form>
@@ -222,9 +222,9 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
                   <Check className="w-5 h-5 text-green-400" />
                 </div>
                 <div>
-                  <DialogTitle className="text-white">팀이 생성되었습니다!</DialogTitle>
+                  <DialogTitle className="text-white">팀이 만들어졌어요!</DialogTitle>
                   <DialogDescription className="text-white/50">
-                    팀원을 초대하여 회의를 시작하세요
+                    아래 링크를 팀원에게 공유해주세요
                   </DialogDescription>
                 </div>
               </div>
@@ -306,7 +306,7 @@ export function CreateTeamModal({ open, onOpenChange }: CreateTeamModalProps) {
                   variant="outline"
                   onClick={handleGoToTeam}
                 >
-                  팀 상세 보기
+                  팀 페이지로 이동
                 </Button>
               </div>
             </div>

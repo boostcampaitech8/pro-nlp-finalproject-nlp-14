@@ -53,7 +53,7 @@ export function SessionList() {
   if (sessionsLoading) {
     return (
       <div className="p-4 text-center text-white/60">
-        세션 로딩 중...
+        대화 목록을 불러오는 중...
       </div>
     );
   }
@@ -68,13 +68,13 @@ export function SessionList() {
         <div className="icon-container-sm bg-mit-primary/20">
           <Plus className="w-4 h-4 text-mit-primary" />
         </div>
-        <span className="text-sm text-white">새 대화 시작</span>
+        <span className="text-sm text-white">새 대화 시작하기</span>
       </button>
 
       {/* 세션 목록 */}
       {sessions.length === 0 ? (
         <div className="p-4 text-center text-white/40 text-sm">
-          대화 기록이 없습니다
+          아직 대화가 없어요. 새 대화를 시작해보세요!
         </div>
       ) : (
         <div className="space-y-1">
@@ -102,13 +102,14 @@ export function SessionList() {
                 <p className="text-sm text-white truncate">{session.title}</p>
                 <p className="text-xs text-white/40">
                   {formatRelativeTime(new Date(session.updated_at))}
-                  {session.message_count > 0 && ` · ${session.message_count}개 메시지`}
+                  {session.message_count > 0 && ` · 메시지 ${session.message_count}개`}
                 </p>
               </div>
 
               <button
                 onClick={(e) => handleDeleteSession(e, session.id)}
                 className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded transition-all"
+                aria-label="대화 삭제"
               >
                 <Trash2 className="w-4 h-4 text-white/40 hover:text-mit-warning" />
               </button>

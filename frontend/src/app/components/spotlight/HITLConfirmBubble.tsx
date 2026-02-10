@@ -447,7 +447,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
         {/* 헤더 */}
         <div className="flex items-center gap-2 mb-3">
           <AlertCircle className="w-4 h-4 text-mit-primary" />
-          <span className="font-medium text-white/90">확인이 필요합니다</span>
+          <span className="font-medium text-white/90">다음 내용을 확인해주세요</span>
         </div>
 
         {/* 작업 내용 */}
@@ -456,7 +456,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
             // 템플릿 모드: 자연어 + 인라인 input
             <div className="py-2">
               {renderTemplate()}
-              <p className="text-white/40 text-xs mt-3">Tab 키로 다음 입력 필드로 이동</p>
+              <p className="text-white/40 text-xs mt-3">Tab 키로 다음 항목으로 이동할 수 있어요</p>
             </div>
           ) : (
             // 기존 모드: 테이블 형태
@@ -466,7 +466,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
               {/* 필수 입력 필드 */}
               {isPending && requiredFields.length > 0 && (
                 <div className="space-y-3 mb-3">
-                  <p className="text-white/60 text-xs">필수 입력 항목:</p>
+                  <p className="text-white/60 text-xs">필수 항목</p>
                   {requiredFields.map((field) => (
                     <div key={field.name} className="space-y-1">
                       <label className="text-xs text-white/70">
@@ -481,7 +481,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
               {/* 선택적 입력 필드 */}
               {isPending && optionalFields.length > 0 && (
                 <div className="space-y-3 mb-3">
-                  <p className="text-white/60 text-xs">선택 입력 항목:</p>
+                  <p className="text-white/60 text-xs">선택 항목</p>
                   {optionalFields.map((field) => (
                     <div key={field.name} className="space-y-1">
                       <label className="text-xs text-white/70">{formatParamKey(field.name)}</label>
@@ -512,7 +512,7 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
               ) : (
                 <Check className="w-4 h-4" />
               )}
-              {isSubmitting ? '처리 중...' : '확인'}
+              {isSubmitting ? '처리 중...' : '확인하기'}
             </button>
             <button
               onClick={handleCancel}
@@ -539,12 +539,12 @@ export function HITLConfirmBubble({ message, onConfirm, onCancel }: HITLConfirmB
             {isConfirmed ? (
               <>
                 <Check className="w-4 h-4" />
-                승인됨
+                확인 완료
               </>
             ) : (
               <>
                 <X className="w-4 h-4" />
-                {hitlCancelReason === 'auto' ? '취소됨 · 자동 취소' : '취소됨'}
+                {hitlCancelReason === 'auto' ? '자동으로 취소되었어요' : '취소되었어요'}
               </>
             )}
           </div>

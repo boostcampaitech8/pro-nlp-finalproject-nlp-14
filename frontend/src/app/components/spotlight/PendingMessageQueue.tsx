@@ -30,7 +30,8 @@ export function PendingMessageQueue() {
               type="button"
               onClick={() => cancelPendingMessage(pending.id)}
               className="p-1 text-white/40 hover:text-white/70 transition-colors"
-              title="대기 메시지 취소"
+              title="보내기 취소"
+              aria-label="메시지 보내기 취소"
             >
               <X className="w-3 h-3" />
             </button>

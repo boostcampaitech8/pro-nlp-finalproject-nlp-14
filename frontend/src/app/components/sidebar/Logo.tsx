@@ -8,7 +8,7 @@ export function Logo() {
         <Layers className="w-5 h-5 text-white" />
       </div>
       <div>
-        <h1 className="text-lg font-bold text-white tracking-tight">Mit</h1>
+        <h1 className="text-lg font-bold text-white tracking-tight" aria-label="Mit - 회의 지능 도구">Mit</h1>
         <p className="text-[11px] text-white/40">Meeting Intelligence</p>
       </div>
     </div>

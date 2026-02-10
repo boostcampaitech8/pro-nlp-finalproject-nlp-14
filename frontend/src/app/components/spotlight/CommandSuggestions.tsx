@@ -38,20 +38,20 @@ const variantStyles: Record<CardVariant, {
   primary: {
     card: 'bg-gradient-to-br from-mit-primary/20 via-purple-500/15 to-purple-600/5 border-purple-400/25 shadow-[0_4px_20px_rgba(168,85,247,0.1)] hover:border-purple-400/40 hover:shadow-[0_16px_48px_rgba(168,85,247,0.2)]',
     icon: 'bg-gradient-to-br from-mit-primary to-mit-purple shadow-[0_0_16px_rgba(168,85,247,0.25)] group-hover:shadow-[0_0_28px_rgba(168,85,247,0.4)]',
-    title: 'text-white font-semibold',
-    desc: 'text-white/50 group-hover:text-white/70',
+    title: 'text-white/50',
+    desc: 'text-white font-medium group-hover:text-white',
   },
   accent: {
     card: 'bg-gradient-to-br from-sky-500/10 via-cyan-500/5 to-transparent border-sky-400/15 hover:border-sky-400/30 hover:shadow-[0_12px_36px_rgba(56,189,248,0.1)]',
     icon: 'bg-sky-500/15 border border-sky-400/20 group-hover:bg-sky-500/25 group-hover:border-sky-400/30',
-    title: 'text-white/90 font-medium group-hover:text-white',
-    desc: 'text-white/40 group-hover:text-white/60',
+    title: 'text-white/45 group-hover:text-white/60',
+    desc: 'text-white/80 font-medium group-hover:text-white',
   },
   default: {
     card: 'bg-white/[0.03] border-white/[0.06] hover:bg-purple-500/[0.08] hover:border-purple-400/20 hover:shadow-[0_12px_36px_rgba(168,85,247,0.12)]',
     icon: 'bg-white/[0.06] border border-white/[0.08] group-hover:bg-purple-500/15 group-hover:border-purple-400/20',
-    title: 'text-white/80 font-medium group-hover:text-white',
-    desc: 'text-white/35 group-hover:text-white/55',
+    title: 'text-white/40 group-hover:text-white/55',
+    desc: 'text-white/70 font-medium group-hover:text-white/90',
   },
 };
 
@@ -85,10 +85,10 @@ function SuggestionCard({ suggestion, variant = 'default', expanded, onSelect, c
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className={`text-sm mb-0.5 transition-colors duration-200 ${styles.title}`}>
+            <h3 className={`text-[11px] mb-1 transition-colors duration-200 ${styles.title}`}>
               {suggestion.title}
             </h3>
-            <p className={`text-xs transition-colors duration-200 line-clamp-2 ${styles.desc}`}>
+            <p className={`text-sm leading-snug transition-colors duration-200 line-clamp-2 ${styles.desc}`}>
               {suggestion.description}
             </p>
           </div>
@@ -143,7 +143,7 @@ export function CommandSuggestions() {
 
   const displaySuggestions = suggestions.slice(0, SUGGESTIONS_DISPLAY_LIMIT).map((s) => {
     if (s.category === 'meeting' && !hasTeams) {
-      return { ...s, title: '새 팀 만들기', description: '팀을 만들고 회의를 시작하세요', icon: 'users' };
+      return { ...s, title: '팀 만들기', description: '팀을 만들면 바로 회의를 시작할 수 있어요', icon: 'users' };
     }
     return s;
   });
@@ -163,7 +163,7 @@ export function CommandSuggestions() {
   return (
     <div className="w-full max-w-2xl mx-auto">
       <h2 className="text-section-header text-center mb-4">
-        빠른 명령
+        무엇을 도와드릴까요?
       </h2>
 
       <motion.div

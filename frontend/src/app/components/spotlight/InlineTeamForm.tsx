@@ -34,7 +34,7 @@ export function InlineTeamForm({ onClose }: InlineTeamFormProps) {
       const team = await createTeam({ name: teamName.trim() });
       setCreatedTeamId(team.id);
     } catch {
-      setError('팀 생성에 실패했습니다.');
+      setError('팀을 만들지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsCreating(false);
     }
@@ -64,7 +64,7 @@ export function InlineTeamForm({ onClose }: InlineTeamFormProps) {
       await navigator.clipboard.writeText(inviteLink.inviteUrl);
       setCopied(true);
     } catch {
-      setError('복사에 실패했습니다.');
+      setError('복사하지 못했어요. 링크를 직접 선택해 복사해주세요.');
     }
   }, [inviteLink]);
 
@@ -96,11 +96,11 @@ export function InlineTeamForm({ onClose }: InlineTeamFormProps) {
         animate={{ opacity: 1 }}
         className="pt-4 pb-1 px-1 space-y-3"
       >
-        <div className="flex items-center gap-2 text-sm text-green-400">
+        <div className="flex items-center gap-2 text-sm text-green-400" role="status">
           <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
             <Check className="w-3 h-3" />
           </div>
-          <span>팀이 생성되었습니다!</span>
+          <span>팀이 만들어졌어요!</span>
         </div>
 
         {/* 초대 링크 */}
@@ -136,7 +136,7 @@ export function InlineTeamForm({ onClose }: InlineTeamFormProps) {
             닫기
           </Button>
           <Button size="sm" onClick={handleGoToTeam} className="gap-1.5">
-            팀 상세 보기
+            팀 페이지로 이동
             <ExternalLink className="w-3.5 h-3.5" />
           </Button>
         </div>
@@ -156,14 +156,14 @@ export function InlineTeamForm({ onClose }: InlineTeamFormProps) {
       <Input
         value={teamName}
         onChange={(e) => setTeamName(e.target.value)}
-        placeholder="팀 이름 (예: 개발팀)"
+        placeholder="팀 이름을 입력해주세요 (예: 개발팀)"
         autoFocus
         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-purple-400/40 transition-colors"
       />
 
       {/* 에러 */}
       {error && (
-        <p className="text-xs text-red-400">{error}</p>
+        <p className="text-xs text-red-400" role="alert">{error}</p>
       )}
 
       {/* 액션 버튼 */}
@@ -184,7 +184,7 @@ export function InlineTeamForm({ onClose }: InlineTeamFormProps) {
           {isCreating ? (
             <>
               <Loader2 className="w-3 h-3 animate-spin" />
-              생성 중...
+              만드는 중...
             </>
           ) : (
             '팀 만들기'
