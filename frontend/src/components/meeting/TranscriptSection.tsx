@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback } from 'react';
 
 import { transcriptService } from '@/services/transcriptService';
-import type { MeetingTranscript } from '@/types';
+import type { GetMeetingTranscriptsResponse } from '@/types';
 
 interface TranscriptSectionProps {
   meetingId: string;
@@ -30,7 +30,7 @@ function formatTimestamp(timestamp: string | null | undefined): string {
 }
 
 export function TranscriptSection({ meetingId }: TranscriptSectionProps) {
-  const [transcript, setTranscript] = useState<MeetingTranscript | null>(null);
+  const [transcript, setTranscript] = useState<GetMeetingTranscriptsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
