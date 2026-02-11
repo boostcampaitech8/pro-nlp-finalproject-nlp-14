@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import type { ConnectionState, RoomParticipant } from '@/types/webrtc';
-import type { ChatMessage } from '@/types/chat';
+import type { AgentState, ChatMessage } from '@/types/chat';
 import {
   loadAudioSettings,
   saveAudioSettings,
@@ -49,6 +49,10 @@ interface MeetingRoomState {
   // 채팅
   chatMessages: ChatMessage[];
 
+  // Agent 상태
+  agentState: AgentState;
+  agentStatusText: string | null;
+
   // Actions
   setMeetingInfo: (meetingId: string, status: string) => void;
   setConnectionState: (state: ConnectionState) => void;
@@ -76,6 +80,10 @@ interface MeetingRoomState {
   addRemoteScreenStream: (userId: string, stream: MediaStream) => void;
   removeRemoteScreenStream: (userId: string) => void;
   updateParticipantScreenSharing: (userId: string, isSharing: boolean) => void;
+
+  // Agent 상태 Actions
+  setAgentState: (state: AgentState) => void;
+  setAgentStatusText: (text: string | null) => void;
 
   // 채팅 Actions
   addChatMessage: (message: ChatMessage) => void;
@@ -110,6 +118,9 @@ const initialState = {
   remoteScreenStreams: new Map<string, MediaStream>(),
   // 채팅
   chatMessages: [] as ChatMessage[],
+  // Agent 상태
+  agentState: 'idle' as AgentState,
+  agentStatusText: null as string | null,
 };
 
 export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
@@ -259,6 +270,15 @@ export const useMeetingRoomStore = create<MeetingRoomState>((set, get) => ({
       participants.set(userId, { ...participant, isScreenSharing: isSharing });
       set({ participants });
     }
+  },
+
+  // Agent 상태 Actions
+  setAgentState: (agentState) => {
+    set({ agentState });
+  },
+
+  setAgentStatusText: (agentStatusText) => {
+    set({ agentStatusText });
   },
 
   // 채팅 Actions

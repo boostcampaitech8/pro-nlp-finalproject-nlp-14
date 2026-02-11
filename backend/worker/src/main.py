@@ -339,6 +339,9 @@ class RealtimeWorker:
                     self._clear_tts_queue()
                 logger.info(f"Wake word 인터럽트 발동: user={user_id}")
 
+                # 프론트에 listening 상태 전송
+                await self.bot.send_agent_state("listening")
+
                 # Wake word 감지 타임스탬프 기록
                 if self._metrics:
                     self._metrics.mark_wakeword_detected(user_id)
@@ -514,6 +517,9 @@ class RealtimeWorker:
         # (wake word 발화로 인한 인터럽트가 새 응답에 영향주지 않도록)
         self._tts_interrupt_event.clear()
 
+        # 프론트에 thinking 상태 전송
+        await self.bot.send_agent_state("thinking")
+
         try:
             # 1. Context update 호출 (선준비 안 된 경우만)
             if not skip_context and pre_transcript_id:
@@ -535,17 +541,16 @@ class RealtimeWorker:
                 content = event.get("content", "")
                 logger.info(f"[EVENT #{event_count}] type={event_type}")
 
-                # ===== 상태 메시지: 채팅 + TTS =====
+                # ===== 상태 메시지: 프로필 위 텍스트로 표시 =====
                 if event_type == "status":
                     if content:
-                        logger.info(f"[CHAT SEND] {content}")
-                        await self.bot.send_chat_message(content)
-                        self._enqueue_tts(content)  # TTS 큐에 즉시 추가
+                        logger.info(f"[STATUS] {content}")
+                        await self.bot.send_agent_status(content)
                     continue
 
                 # ===== 최종 답변: TTS + 채팅 =====
                 if event_type == "message":
-                    # Agent 첫 토큰 시점 기록
+                    # Agent 첫 토큰 시점 기록 + speaking 상태 전송
                     if (
                         not self._agent_first_token_recorded
                         and self._metrics
@@ -553,6 +558,7 @@ class RealtimeWorker:
                     ):
                         self._metrics.mark_agent_first_token(self._wakeword_user_id)
                         self._agent_first_token_recorded = True
+                        await self.bot.send_agent_state("speaking")
 
                     if content:
                         logger.debug(f"[MESSAGE] len={len(content)}")
@@ -592,6 +598,9 @@ class RealtimeWorker:
             raise
         except Exception as e:
             logger.warning(f"Agent 스트리밍 실패: {e}")
+        finally:
+            # 파이프라인 완료/취소/에러 시 idle 상태 전송
+            await self.bot.send_agent_state("idle")
 
     async def _tts_loop(self) -> None:
         """TTS 큐를 처리해 LiveKit으로 오디오 전송"""

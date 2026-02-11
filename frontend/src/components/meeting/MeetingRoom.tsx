@@ -65,6 +65,9 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
     // 채팅
     chatMessages,
     sendChatMessage,
+    // Agent 상태
+    agentState,
+    agentStatusText,
   } = useLiveKit(meetingId);
 
   // MIT 에이전트 참여 여부 확인
@@ -346,6 +349,8 @@ export function MeetingRoom({ meetingId, userId, meetingTitle, onLeave }: Meetin
                   onVolumeChange={changeRemoteVolume}
                   isHost={isHost}
                   onForceMute={forceMute}
+                  agentState={agentState}
+                  agentStatusText={agentStatusText}
                 />
               </div>
             )}

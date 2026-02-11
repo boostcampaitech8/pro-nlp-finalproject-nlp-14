@@ -3,6 +3,7 @@
  */
 
 import type { RoomParticipant } from '@/types/webrtc';
+import type { AgentState } from '@/types/chat';
 import { DEFAULT_AI_AGENT } from '@/constants';
 import type { AudioLevel } from '@/hooks/useAudioLevel';
 import { VolumeSlider } from './VolumeSlider';
@@ -16,6 +17,8 @@ interface ParticipantListProps {
   onVolumeChange: (userId: string, volume: number) => void;
   isHost?: boolean; // 현재 사용자가 Host인지 여부
   onForceMute?: (userId: string, muted: boolean) => void; // Host의 강제 음소거 콜백
+  agentState?: AgentState; // 부덕이 상태
+  agentStatusText?: string | null; // 부덕이 상태 텍스트 (프로필 위 표시)
 }
 
 /**
@@ -55,6 +58,8 @@ export function ParticipantList({
   onVolumeChange,
   isHost = false,
   onForceMute,
+  agentState = 'idle',
+  agentStatusText,
 }: ParticipantListProps) {
   const participantArray = Array.from(participants.values());
 
@@ -80,26 +85,37 @@ export function ParticipantList({
           return (
             <li
               key={participant.userId}
-              className={`p-2 rounded transition-colors ${
+              className={`p-2 rounded transition-colors overflow-visible ${
                 isSpeaking ? 'bg-gray-600 ring-1 ring-green-400' : 'bg-gray-700'
               }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {/* 아바타 - 발화 시 테두리 효과 */}
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium transition-all flex-shrink-0 overflow-hidden ${
-                      isAgent ? 'bg-purple-500/20 border border-purple-500/40' : 'bg-blue-500'
-                    } ${isSpeaking ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-gray-700' : ''}`}
-                  >
-                    {isAgent && agentAvatarUrl ? (
-                      <img
-                        src={agentAvatarUrl}
-                        alt={`${participant.userName} 프로필`}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      avatarInitial
+                  <div className="relative flex-shrink-0">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium transition-all overflow-hidden ${
+                        isAgent ? 'bg-purple-500/20 border border-purple-500/40' : 'bg-blue-500'
+                      } ${isSpeaking ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-gray-700' : ''}`}
+                    >
+                      {isAgent && agentAvatarUrl ? (
+                        <img
+                          src={agentAvatarUrl}
+                          alt={`${participant.userName} 프로필`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        avatarInitial
+                      )}
+                    </div>
+                    {/* Agent 상태 텍스트 오버레이 (아바타 우측 위) */}
+                    {isAgent && agentStatusText && (
+                      <div
+                        key={agentStatusText}
+                        className="absolute -top-1 right-full mr-2 z-10 w-[200px] px-2.5 py-1.5 text-[11px] leading-relaxed text-gray-800 bg-white rounded-lg shadow-md animate-fade-in after:content-[''] after:absolute after:top-3 after:-right-1.5 after:border-[6px] after:border-transparent after:border-l-white"
+                      >
+                        {agentStatusText}
+                      </div>
                     )}
                   </div>
                   {/* 이름 */}
@@ -113,6 +129,44 @@ export function ParticipantList({
                   {participant.role === 'host' && (
                     <span className="px-1.5 py-0.5 text-xs bg-yellow-500 text-black rounded flex-shrink-0">
                       Host
+                    </span>
+                  )}
+                  {/* Agent 상태 뱃지 */}
+                  {isAgent && agentState !== 'idle' && (
+                    <span
+                      className={`px-1.5 py-0.5 text-xs rounded flex-shrink-0 flex items-center gap-1 ${
+                        agentState === 'listening'
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : agentState === 'thinking'
+                            ? 'bg-yellow-500/20 text-yellow-400'
+                            : 'bg-green-500/20 text-green-400'
+                      }`}
+                    >
+                      <span className="relative flex h-2 w-2">
+                        <span
+                          className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                            agentState === 'listening'
+                              ? 'bg-blue-400'
+                              : agentState === 'thinking'
+                                ? 'bg-yellow-400'
+                                : 'bg-green-400'
+                          }`}
+                        />
+                        <span
+                          className={`relative inline-flex rounded-full h-2 w-2 ${
+                            agentState === 'listening'
+                              ? 'bg-blue-500'
+                              : agentState === 'thinking'
+                                ? 'bg-yellow-500'
+                                : 'bg-green-500'
+                          }`}
+                        />
+                      </span>
+                      {agentState === 'listening'
+                        ? '듣는 중'
+                        : agentState === 'thinking'
+                          ? '생각 중'
+                          : '말하는 중'}
                     </span>
                   )}
                 </div>

@@ -45,7 +45,7 @@ setLogLevel(isDevMode ? LogLevel.debug : LogLevel.warn);
 
 // DataPacket 메시지 타입
 interface DataMessage {
-  type: 'vad_event' | 'chat_message' | 'force_mute' | 'mute_state';
+  type: 'vad_event' | 'chat_message' | 'force_mute' | 'mute_state' | 'agent_state' | 'agent_status';
   payload: unknown;
 }
 
@@ -70,6 +70,14 @@ interface ForceMutePayload {
 
 interface MuteStatePayload {
   muted: boolean;
+}
+
+interface AgentStatePayload {
+  state: 'idle' | 'listening' | 'thinking' | 'speaking';
+}
+
+interface AgentStatusPayload {
+  text: string;
 }
 
 // LiveKit 토큰 응답
@@ -126,6 +134,10 @@ export function useLiveKit(meetingId: string) {
   const chatMessages = useMeetingRoomStore((s) => s.chatMessages);
   const addChatMessage = useMeetingRoomStore((s) => s.addChatMessage);
   const setChatMessages = useMeetingRoomStore((s) => s.setChatMessages);
+  const agentState = useMeetingRoomStore((s) => s.agentState);
+  const setAgentState = useMeetingRoomStore((s) => s.setAgentState);
+  const agentStatusText = useMeetingRoomStore((s) => s.agentStatusText);
+  const setAgentStatusText = useMeetingRoomStore((s) => s.setAgentStatusText);
   const reset = useMeetingRoomStore((s) => s.reset);
 
   // 화면공유 상태
@@ -329,12 +341,30 @@ export function useLiveKit(meetingId: string) {
             logger.debug('[useLiveKit] VAD event from:', participant?.identity);
             break;
           }
+
+          case 'agent_state': {
+            const agentStatePayload = message.payload as AgentStatePayload;
+            logger.log('[useLiveKit] Agent state:', agentStatePayload.state);
+            setAgentState(agentStatePayload.state);
+            // speaking/idle 전환 시 상태 텍스트 클리어
+            if (agentStatePayload.state === 'speaking' || agentStatePayload.state === 'idle') {
+              setAgentStatusText(null);
+            }
+            break;
+          }
+
+          case 'agent_status': {
+            const statusPayload = message.payload as AgentStatusPayload;
+            logger.log('[useLiveKit] Agent status:', statusPayload.text);
+            setAgentStatusText(statusPayload.text);
+            break;
+          }
         }
       } catch (err) {
         logger.error('[useLiveKit] Failed to parse data packet:', err);
       }
     },
-    [addChatMessage, setAudioMuted, updateParticipantMute]
+    [addChatMessage, setAudioMuted, updateParticipantMute, setAgentState, setAgentStatusText]
   );
 
   /**
@@ -1139,6 +1169,9 @@ export function useLiveKit(meetingId: string) {
     chatMessages,
     // VAD 상태
     isSpeaking: vad.isSpeaking,
+    // Agent 상태
+    agentState,
+    agentStatusText,
 
     // 액션
     joinRoom,
