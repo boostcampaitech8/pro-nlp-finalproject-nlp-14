@@ -345,6 +345,52 @@ class LiveKitBot:
         except Exception as e:
             logger.warning(f"채팅 메시지 전송 실패: {e}")
 
+    async def send_agent_state(self, state: str) -> None:
+        """DataPacket으로 에이전트 상태 전송"""
+        if not self._ctx.room or not self._ctx.is_connected:
+            return
+
+        try:
+            import json
+
+            payload = {
+                "type": "agent_state",
+                "payload": {
+                    "state": state,
+                },
+            }
+
+            await self._ctx.room.local_participant.publish_data(
+                json.dumps(payload),
+                reliable=True,
+            )
+            logger.debug(f"Agent 상태 전송: {state}")
+        except Exception as e:
+            logger.warning(f"Agent 상태 전송 실패: {e}")
+
+    async def send_agent_status(self, text: str) -> None:
+        """DataPacket으로 에이전트 상태 텍스트 전송 (프로필 위 표시용)"""
+        if not self._ctx.room or not self._ctx.is_connected:
+            return
+
+        try:
+            import json
+
+            payload = {
+                "type": "agent_status",
+                "payload": {
+                    "text": text,
+                },
+            }
+
+            await self._ctx.room.local_participant.publish_data(
+                json.dumps(payload),
+                reliable=True,
+            )
+            logger.debug(f"Agent 상태 텍스트 전송: {text[:30]}")
+        except Exception as e:
+            logger.warning(f"Agent 상태 텍스트 전송 실패: {e}")
+
     def _on_participant_connected(self, participant: rtc.RemoteParticipant) -> None:
         """참여자 입장 이벤트"""
         asyncio.create_task(self._handle_participant_joined(participant))

@@ -9,3 +9,5 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
 }
+
+export type AgentState = 'idle' | 'listening' | 'thinking' | 'speaking';
