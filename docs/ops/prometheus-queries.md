@@ -221,7 +221,49 @@ round(sum(increase(mit_realtime_worker_jobs_total{status="created"}[$__interval]
 
 ---
 
-## 6. Pod 리소스
+## 6. 사용자 활동 로그
+
+> 메트릭: `mit_activity_events_total` (labels: `event_type`, `page_path`)
+> Grafana Query Options에서 **Min interval: 1m** 설정 권장
+
+### 전체 활동 이벤트 수 (구간별)
+```
+round(sum(increase(mit_activity_events_total[$__interval])))
+```
+
+### 이벤트 타입별 추이
+```
+sum by (event_type) (rate(mit_activity_events_total[$__rate_interval]))
+```
+
+### 페이지별 방문 수 (구간별)
+```
+round(sum by (page_path) (increase(mit_activity_events_total[$__interval])))
+```
+
+### 특정 이벤트만 (예: click)
+```
+round(sum(increase(mit_activity_events_total{event_type="click"}[$__interval])))
+```
+
+### 선택한 전체 기간 총합 (Stat 패널용)
+```
+round(sum(increase(mit_activity_events_total[$__range])))
+```
+
+### 가장 많이 방문한 페이지 TOP 5
+```
+topk(5, sum by (page_path) (increase(mit_activity_events_total[$__range])))
+```
+
+> **Loki 로그 조회**: 개별 이벤트 원본은 Grafana > Explore > Loki에서 확인
+> ```
+> {pod=~"backend.*"} |= "activity_log"
+> ```
+
+---
+
+## 7. Pod 리소스
 
 ### Pod별 CPU 사용량
 ```
@@ -240,7 +282,7 @@ sum by (pod) (kube_pod_container_status_restarts_total{namespace="mit"})
 
 ---
 
-## 7. Grafana 대시보드용
+## 8. Grafana 대시보드용
 
 ### 활성 요청 수 (Stat 패널)
 ```
