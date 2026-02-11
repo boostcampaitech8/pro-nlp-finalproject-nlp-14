@@ -20,8 +20,8 @@ from app.infrastructure.graph.orchestration.shared.planning_utils import (
     is_subquery,
 )
 from app.infrastructure.graph.orchestration.shared.tools.registry import (
-    get_query_tools,
     get_tool_category,
+    get_voice_tools,
 )
 from app.prompt.v1.orchestration.voice.planning import build_voice_system_prompt
 
@@ -95,18 +95,21 @@ async def create_plan(state: VoiceOrchestrationState) -> VoiceOrchestrationState
             tool_args={},
         )
 
-    # Query 도구만 가져오기 (Voice 전용)
-    langchain_tools = get_query_tools()
+    # Voice 전용 도구만 가져오기 (모드 필터링 적용)
+    langchain_tools = get_voice_tools()
     logger.info(f"Voice mode, tools count: {len(langchain_tools)}")
 
     # bind_tools 적용
     llm = get_planner_llm()
     llm_with_tools = llm.bind_tools(langchain_tools)
 
-    # Voice 시스템 프롬프트
+    # Voice 시스템 프롬프트 (팀 컨텍스트 포함)
     KST = timezone(timedelta(hours=9))
     current_time = datetime.now(KST).isoformat()
-    system_prompt = build_voice_system_prompt(meeting_id, current_time=current_time)
+    team_context = state.get("team_context")
+    system_prompt = build_voice_system_prompt(
+        meeting_id, current_time=current_time, team_context=team_context
+    )
 
     # 컨텍스트가 있으면 시스템 프롬프트에 추가 (tool_results는 ToolMessage로 message history에 포함됨)
     planning_context = state.get("planning_context", "")
