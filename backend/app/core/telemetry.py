@@ -142,6 +142,7 @@ class MITMetrics:
         self._init_arq_metrics()
         self._init_realtime_metrics()
         self._init_k8s_metrics()
+        self._init_activity_metrics()
 
     def _init_http_metrics(self) -> None:
         """HTTP 요청 메트릭"""
@@ -202,6 +203,13 @@ class MITMetrics:
             name="mit_tts_synthesis_duration_seconds",
             description="TTS 텍스트 → 오디오 합성 시간",
             unit="s",
+        )
+
+    def _init_activity_metrics(self) -> None:
+        """사용자 활동 로그 메트릭"""
+        self.activity_events_total = self.meter.create_counter(
+            name="mit_activity_events_total",
+            description="사용자 활동 이벤트 수",
         )
 
     def _init_k8s_metrics(self) -> None:

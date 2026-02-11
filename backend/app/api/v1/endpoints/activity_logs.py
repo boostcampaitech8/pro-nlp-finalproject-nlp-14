@@ -1,21 +1,19 @@
 """사용자 활동 로그 API 엔드포인트"""
 
-import csv
-import io
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
 from app.core.database import get_db
-from app.models.user import User
+from app.core.telemetry import get_mit_metrics
 from app.models.user_activity_log import UserActivityLog
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/logs", tags=["Activity Logs"])
 
@@ -35,28 +33,6 @@ class ActivityLogBatchInput(BaseModel):
     user_id: str | None = Field(None, description="로그인된 사용자 ID (JWT에서 추출)")
     events: list[ActivityEventInput] = Field(..., max_length=100)
 
-
-class ActivityLogResponse(BaseModel):
-    """활동 로그 응답"""
-    id: int
-    user_id: str | None
-    session_id: str
-    event_type: str
-    event_target: str | None
-    page_path: str
-    metadata: dict | None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class ActivityLogsListResponse(BaseModel):
-    """활동 로그 목록 응답"""
-    logs: list[ActivityLogResponse]
-    total: int
-    page: int
-    limit: int
 
 
 @router.post("/activity", status_code=201)
@@ -94,130 +70,20 @@ async def create_activity_logs(
 
     await db.flush()
 
-    return {"message": f"Created {len(logs)} activity logs", "count": len(logs)}
-
-
-@router.get("/activity", response_model=ActivityLogsListResponse)
-async def get_activity_logs(
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    start_date: datetime | None = Query(None, description="시작 날짜 (UTC)"),
-    end_date: datetime | None = Query(None, description="종료 날짜 (UTC)"),
-    event_type: str | None = Query(None, description="이벤트 타입 필터"),
-    session_id: str | None = Query(None, description="세션 ID 필터"),
-    page_path: str | None = Query(None, description="페이지 경로 필터"),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=100, ge=1, le=1000),
-):
-    """활동 로그 조회 (인증 필요)
-
-    필터 조건에 맞는 활동 로그를 조회합니다.
-    """
-    query = select(UserActivityLog)
-    count_query = select(func.count(UserActivityLog.id))
-
-    # Apply filters
-    if start_date:
-        query = query.where(UserActivityLog.created_at >= start_date)
-        count_query = count_query.where(UserActivityLog.created_at >= start_date)
-    if end_date:
-        query = query.where(UserActivityLog.created_at <= end_date)
-        count_query = count_query.where(UserActivityLog.created_at <= end_date)
-    if event_type:
-        query = query.where(UserActivityLog.event_type == event_type)
-        count_query = count_query.where(UserActivityLog.event_type == event_type)
-    if session_id:
-        query = query.where(UserActivityLog.session_id == session_id)
-        count_query = count_query.where(UserActivityLog.session_id == session_id)
-    if page_path:
-        query = query.where(UserActivityLog.page_path.ilike(f"%{page_path}%"))
-        count_query = count_query.where(UserActivityLog.page_path.ilike(f"%{page_path}%"))
-
-    # Pagination
-    query = query.order_by(UserActivityLog.created_at.desc())
-    query = query.offset((page - 1) * limit).limit(limit)
-
-    result = await db.execute(query)
-    logs = result.scalars().all()
-
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-
-    return ActivityLogsListResponse(
-        logs=[
-            ActivityLogResponse(
-                id=log.id,
-                user_id=str(log.user_id) if log.user_id else None,
-                session_id=log.session_id,
-                event_type=log.event_type,
-                event_target=log.event_target,
-                page_path=log.page_path,
-                metadata=log.event_metadata,
-                created_at=log.created_at,
+    mit_metrics = get_mit_metrics()
+    for event in data.events:
+        logger.info(
+            "activity_log | session=%s | event_type=%s | page_path=%s | user_id=%s | target=%s",
+            data.session_id,
+            event.event_type,
+            event.page_path,
+            data.user_id or "anonymous",
+            event.event_target or "",
+        )
+        if mit_metrics:
+            mit_metrics.activity_events_total.add(
+                1,
+                {"event_type": event.event_type, "page_path": event.page_path},
             )
-            for log in logs
-        ],
-        total=total,
-        page=page,
-        limit=limit,
-    )
 
-
-@router.get("/activity/export")
-async def export_activity_logs(
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    start_date: datetime | None = Query(None, description="시작 날짜 (UTC)"),
-    end_date: datetime | None = Query(None, description="종료 날짜 (UTC)"),
-    event_type: str | None = Query(None, description="이벤트 타입 필터"),
-):
-    """활동 로그 CSV 내보내기 (인증 필요)
-
-    필터 조건에 맞는 활동 로그를 CSV 파일로 내보냅니다.
-    """
-    query = select(UserActivityLog)
-
-    if start_date:
-        query = query.where(UserActivityLog.created_at >= start_date)
-    if end_date:
-        query = query.where(UserActivityLog.created_at <= end_date)
-    if event_type:
-        query = query.where(UserActivityLog.event_type == event_type)
-
-    query = query.order_by(UserActivityLog.created_at.desc())
-
-    result = await db.execute(query)
-    logs = result.scalars().all()
-
-    # Generate CSV
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "id", "user_id", "session_id", "event_type",
-        "event_target", "page_path", "metadata",
-        "user_agent", "ip_address", "created_at"
-    ])
-
-    for log in logs:
-        writer.writerow([
-            log.id,
-            str(log.user_id) if log.user_id else "",
-            log.session_id,
-            log.event_type,
-            log.event_target or "",
-            log.page_path,
-            str(log.event_metadata) if log.event_metadata else "",
-            log.user_agent or "",
-            log.ip_address or "",
-            log.created_at.isoformat(),
-        ])
-
-    output.seek(0)
-
-    filename = f"activity_logs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
+    return {"message": f"Created {len(logs)} activity logs", "count": len(logs)}
