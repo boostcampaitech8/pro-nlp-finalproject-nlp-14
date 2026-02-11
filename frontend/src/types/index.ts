@@ -45,6 +45,20 @@ export type {
   UtteranceItem,
 } from '@mit/shared-types';
 
+// Transcript types (local - shared-types에 미정의)
+export interface Utterance {
+  id: string;
+  timestamp: string;
+  speakerName: string;
+  text: string;
+}
+
+export interface MeetingTranscript {
+  utterances: Utterance[];
+  totalDurationMs?: number | null;
+  speakerCount?: number | null;
+}
+
 // PR Review types (local)
 export type {
   DecisionStatus,
