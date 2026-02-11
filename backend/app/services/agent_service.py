@@ -36,6 +36,46 @@ class AgentService:
         self.llm_client = llm_client
         self._app: CompiledStateGraph | None = None  # lazy init
 
+    async def _get_team_context(self, meeting_id: str, user_id: str) -> dict:
+        """meeting_id에서 팀 정보를 조회하여 team_context를 반환.
+
+        Spotlight의 _get_user_context 패턴을 따름.
+        실패 시 빈 dict 반환 (graceful fallback).
+        """
+        from uuid import UUID
+
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.models.meeting import Meeting
+        from app.models.team import Team
+
+        try:
+            meeting_uuid = UUID(str(meeting_id))
+            async with async_session_maker() as db:
+                # meeting → team_id 조회
+                result = await db.execute(
+                    select(Meeting.team_id).where(Meeting.id == meeting_uuid)
+                )
+                team_id = result.scalar_one_or_none()
+                if not team_id:
+                    logger.warning(f"Meeting not found: {meeting_id}")
+                    return {}
+
+                # team_id → team name 조회
+                result = await db.execute(
+                    select(Team.name).where(Team.id == team_id)
+                )
+                team_name = result.scalar_one_or_none() or ""
+
+                return {
+                    "team_id": str(team_id),
+                    "team_name": team_name,
+                }
+        except Exception as e:
+            logger.warning(f"팀 컨텍스트 조회 실패 (meeting_id={meeting_id}): {e}")
+            return {}
+
     async def _get_app(self) -> CompiledStateGraph:
         """컴파일된 Voice 오케스트레이션 lazy 로드 (checkpointer 포함)"""
         if self._app is None:
@@ -99,6 +139,9 @@ class AgentService:
             threshold=ctx_manager.config.topic_search_threshold,
         )
 
+        # 팀 컨텍스트 조회 (meeting → team)
+        team_context = await self._get_team_context(meeting_id, user_id)
+
         # Orchestration Graph 초기 상태 구성
         # 주의: messages에 현재 질문만 넣음 → checkpointer가 이전 대화를 복원하여 병합
         initial_state = {
@@ -110,6 +153,7 @@ class AgentService:
             "retry_count": 0,
             "planning_context": planning_context,
             "additional_context": additional_context,
+            "team_context": team_context,
         }
 
         # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱
@@ -201,6 +245,9 @@ class AgentService:
             threshold=ctx_manager.config.topic_search_threshold,
         )
 
+        # 팀 컨텍스트 조회 (meeting → team)
+        team_context = await self._get_team_context(meeting_id, user_id)
+
         # 4. Orchestration Graph 초기 상태 구성
         initial_state = {
             "messages": [HumanMessage(content=user_input)],
@@ -211,6 +258,7 @@ class AgentService:
             "retry_count": 0,
             "planning_context": planning_context,
             "additional_context": additional_context,
+            "team_context": team_context,
         }
 
         # thread_id 기반 config (멀티턴 핵심) + Langfuse 트레이싱

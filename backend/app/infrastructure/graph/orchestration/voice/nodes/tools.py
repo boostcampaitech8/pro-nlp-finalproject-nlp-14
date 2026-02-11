@@ -66,13 +66,10 @@ async def execute_tools(state: VoiceOrchestrationState) -> VoiceOrchestrationSta
 
     logger.info(f"Executing Query tool: {selected_tool}")
 
-    # _user_id 인젝션
-    if "_user_id" in tool.args:
-        tool_args["_user_id"] = user_id
-
     try:
-        # Voice는 Query 도구만 사용하므로 즉시 실행
-        result = await tool.ainvoke(tool_args)
+        # tool.coroutine 직접 호출 (_user_id는 InjectedToolArg로 스키마에 없어서 ainvoke로는 전달 불가)
+        invoke_args = {"_user_id": user_id, **tool_args}
+        result = await tool.coroutine(**invoke_args)
         logger.info(f"Tool [{selected_tool}] 실행 성공")
         logger.debug(f"Tool result: {str(result)[:200]}...")
 

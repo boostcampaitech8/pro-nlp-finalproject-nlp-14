@@ -26,7 +26,7 @@ from app.models.user import User
 from app.services.minutes_service import MinutesService
 from app.services.transcript_service import TranscriptService
 
-from ..decorators import mit_tool
+from ..decorators import ToolMode, mit_tool
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 KST = ZoneInfo("Asia/Seoul")
 
 
-@mit_tool(category="query")
+@mit_tool(category="query", modes=[ToolMode.SPOTLIGHT])
 async def get_user_profile(*, _user_id: Annotated[str, InjectedToolArg] = "") -> dict:
     """현재 사용자의 프로필 정보를 조회합니다. 이름, 이메일, 가입일 등을 확인할 수 있습니다."""
     logger.info(f"Executing get_user_profile for user {_user_id}")
@@ -62,7 +62,7 @@ async def get_user_profile(*, _user_id: Annotated[str, InjectedToolArg] = "") ->
         }
 
 
-@mit_tool(category="query")
+@mit_tool(category="query", modes=[ToolMode.SPOTLIGHT])
 async def get_upcoming_meetings(
     limit: int = 5,
     *,

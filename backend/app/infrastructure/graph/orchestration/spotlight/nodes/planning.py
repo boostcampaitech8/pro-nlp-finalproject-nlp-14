@@ -17,7 +17,7 @@ from app.infrastructure.graph.orchestration.shared.planning_utils import (
     is_subquery,
 )
 from app.infrastructure.graph.orchestration.shared.tools.registry import (
-    get_all_tools,
+    get_spotlight_tools,
     get_tool_category,
 )
 from app.prompt.v1.orchestration.planning import TOOL_UNAVAILABLE_MESSAGES  # noqa: F401
@@ -108,8 +108,8 @@ async def create_plan(state: SpotlightOrchestrationState) -> SpotlightOrchestrat
             tool_args={},
         )
 
-    # Spotlight는 모든 도구 사용 (Query + Mutation)
-    langchain_tools = get_all_tools()
+    # Spotlight 전용 도구만 가져오기 (모드 필터링 적용)
+    langchain_tools = get_spotlight_tools()
     logger.info(f"Spotlight mode, tools count: {len(langchain_tools)}")
 
     # bind_tools 적용

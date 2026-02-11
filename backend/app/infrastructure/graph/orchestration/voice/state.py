@@ -62,3 +62,6 @@ class VoiceOrchestrationState(TypedDict):
     planning_context: NotRequired[str]
     additional_context: NotRequired[str]
     skip_planning: NotRequired[bool]
+
+    # 팀 컨텍스트 (meeting → team 해석 결과)
+    team_context: NotRequired[dict]  # {"team_id": "...", "team_name": "...", "current_time": "..."}
