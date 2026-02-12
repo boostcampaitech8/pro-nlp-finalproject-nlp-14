@@ -94,24 +94,12 @@ export function HeroSection() {
         </div>
 
         {/* Headline */}
-        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6 whitespace-nowrap">
           {HERO.headline}
         </h1>
         <p className="text-lg text-white/60 leading-relaxed max-w-2xl mx-auto mb-10">
           {HERO.subtext}
         </p>
-
-        {/* Mascot */}
-        <div className="flex justify-center mb-10">
-          <div className="relative">
-            <img
-              src="/agent.png"
-              alt="부덕이 마스코트"
-              className="w-24 h-24 rounded-2xl animate-float"
-            />
-            <div className="absolute inset-0 rounded-2xl shadow-[0_0_40px_rgba(139,92,246,0.3)]" />
-          </div>
-        </div>
 
         {/* Typewriter Demo */}
         <TypewriterDemo />

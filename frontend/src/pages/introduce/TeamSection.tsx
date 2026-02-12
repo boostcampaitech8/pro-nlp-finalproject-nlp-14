@@ -1,6 +1,9 @@
 import { motion } from 'framer-motion';
 import { Users } from 'lucide-react';
-import { TEAM } from './constants';
+import { Link } from 'react-router-dom';
+import { Button } from '@/app/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
+import { TEAM, CTA } from './constants';
 
 const containerVariants = {
   hidden: {},
@@ -50,6 +53,8 @@ function AvatarStack() {
 }
 
 export function TeamSection() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <section id="team" className="py-24 sm:py-32 px-6">
       <div className="max-w-3xl mx-auto text-center">
@@ -63,7 +68,7 @@ export function TeamSection() {
           <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
             {TEAM.headline}
           </h2>
-          <p className="text-lg text-white/60 mb-12">{TEAM.subtext}</p>
+          {TEAM.subtext && <p className="text-lg text-white/60 mb-12">{TEAM.subtext}</p>}
         </motion.div>
 
         <AvatarStack />
@@ -85,6 +90,32 @@ export function TeamSection() {
               {feature.label}
             </motion.span>
           ))}
+        </motion.div>
+
+        {/* CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-50px' }}
+          transition={{ duration: 0.5 }}
+          className="mt-16"
+        >
+          <Link to={isAuthenticated ? '/' : '/login'}>
+            <Button className="bg-gradient-to-r from-mit-primary to-mit-purple hover:from-mit-primary/90 hover:to-mit-purple/90 text-white px-10 h-14 text-lg font-semibold rounded-xl shadow-[0_4px_24px_rgba(99,102,241,0.4)] animate-[nudge-glow_2s_ease-in-out_infinite]">
+              {isAuthenticated ? 'Spotlight으로 이동' : CTA.ctaPrimary}
+            </Button>
+          </Link>
+          {!isAuthenticated && (
+            <p className="mt-6 text-sm text-white/40">
+              {CTA.loginText}{' '}
+              <Link
+                to="/login"
+                className="text-mit-primary hover:text-mit-primary/80 transition-colors underline underline-offset-4"
+              >
+                {CTA.loginLink}
+              </Link>
+            </p>
+          )}
         </motion.div>
       </div>
     </section>

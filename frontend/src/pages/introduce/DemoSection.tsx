@@ -325,10 +325,10 @@ export function DemoSection() {
         >
           <p className="text-section-header mb-3">PRODUCT PREVIEW</p>
           <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
-            실제 이렇게 동작합니다
+            회의 끝나고 5분 후
           </h2>
           <p className="text-white/50 text-base max-w-2xl mx-auto">
-            회의가 끝나면 AI가 자동으로 안건별 결정사항을 정리하고, 팀원들이 리뷰하고, Spotlight으로 언제든 검색할 수 있습니다.
+            AI가 정리한 회의록, 팀이 함께 리뷰합니다.
           </p>
         </motion.div>
 
