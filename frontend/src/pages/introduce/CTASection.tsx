@@ -24,18 +24,6 @@ export function CTASection() {
         transition={{ duration: 0.6 }}
         className="relative z-10 text-center"
       >
-        {/* Large Mascot */}
-        <div className="flex justify-center mb-10">
-          <div className="relative">
-            <img
-              src="/agent.png"
-              alt="부덕이"
-              className="w-32 h-32 rounded-2xl animate-float"
-            />
-            <div className="absolute inset-0 rounded-2xl shadow-[0_0_60px_rgba(139,92,246,0.4)]" />
-          </div>
-        </div>
-
         <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-10">
           {CTA.headline}
         </h2>

@@ -6,12 +6,11 @@ import { FeaturesSection } from './introduce/FeaturesSection';
 import { DemoSection } from './introduce/DemoSection';
 import { DifferentiationSection } from './introduce/DifferentiationSection';
 import { TeamSection } from './introduce/TeamSection';
-import { CTASection } from './introduce/CTASection';
 import { CommitTimeline } from './introduce/CommitTimeline';
 
 export function IntroducePage() {
   useEffect(() => {
-    document.title = 'Mit — 회의의 진실을 관리하세요';
+    document.title = 'Mit — 팀의 모든 결정, 놓치지 않게';
     return () => {
       document.title = 'Mit';
     };
@@ -28,7 +27,6 @@ export function IntroducePage() {
         <DemoSection />
         <DifferentiationSection />
         <TeamSection />
-        <CTASection />
       </main>
     </div>
   );

@@ -25,9 +25,9 @@ export interface TeamFeature {
 }
 
 export const HERO = {
-  headline: '회의의 진실을 관리하세요',
+  headline: '팀의 모든 결정, 놓치지 않게',
   subtext:
-    'Git이 코드의 진실을 관리하듯, Mit은 조직 회의의 모든 결정과 맥락을 추적합니다.',
+    'Mit은 회의 속 결정과 맥락을 자동으로 기록하고, 언제든 다시 찾을 수 있게 합니다.',
   typewriterText: '@부덕이 오늘 회의 요약해줘',
   aiResponse:
     '오늘 회의에서 총 3건의 결정 사항이 있었습니다. 가장 중요한 안건은 Q1 로드맵 확정이며, 담당자는 김개발님으로 배정되었습니다.',
@@ -36,7 +36,7 @@ export const HERO = {
 } as const;
 
 export const PROBLEM = {
-  headline: '회의 끝나면, 결정도 끝나시나요?',
+  headline: '회의는 잘 끝난 것 같은데...',
   mascotBubble: '이런 경험 있지 않으세요?',
   painPoints: [
     {
@@ -52,40 +52,40 @@ export const PROBLEM = {
     {
       icon: GitBranch,
       title: '반복되는 논의',
-      description: '동일한 안건이 반복 논의됩니다',
+      description: '같은 안건, 같은 논의, 다른 회의',
     },
   ] satisfies PainPoint[],
 } as const;
 
 export const FEATURES = {
-  headline: '핵심 기능',
+  headline: 'Mit이 회의에 들어가면',
   cards: [
     {
       icon: Video,
       title: '실시간 AI 회의',
       description:
-        'AI가 회의에 참여하여 실시간으로 내용을 분석하고, 핵심 논점을 자동으로 감지합니다.',
+        '기록은 걱정 마세요. AI가 실시간으로.',
       variant: 'primary',
     },
     {
       icon: Command,
       title: 'Spotlight AI 에이전트',
       description:
-        '자연어로 회의 내용을 검색하고, AI 에이전트가 즉시 답변합니다.',
+        '기억이 가물가물한 지난 결정 사항, 검색으로 편하게!',
       variant: 'accent',
     },
     {
       icon: FileText,
       title: '자동 회의록',
       description:
-        '회의가 끝나면 자동으로 구조화된 회의록이 생성됩니다. 결정사항, 액션아이템까지.',
+        '더 이상 회의록을 쓰지 않아도 됩니다. 결정사항부터 액션아이템까지.',
       variant: 'default',
     },
     {
       icon: GitBranch,
       title: '조직 지식 그래프',
       description:
-        '회의 간 연결고리를 추적하고, 조직의 의사결정 히스토리를 시각화합니다.',
+        '흩어진 회의, 하나의 흐름으로.',
       variant: 'graph',
     },
   ] satisfies FeatureCard[],
@@ -112,34 +112,34 @@ export const DEMO = {
 } as const;
 
 export const DIFFERENTIATION = {
-  headline: '왜 Mit인가',
+  headline: '같은 회의, 다른 결과',
   rows: [
     {
       category: '회의 후 결과물',
       general: '수동 회의록 또는 없음',
-      mit: 'AI 자동 생성 구조화된 회의록',
+      mit: 'AI가 정리한 회의록, 바로 공유',
     },
     {
       category: '의사결정 추적',
       general: '개인 기억에 의존',
-      mit: '모든 결정의 맥락과 히스토리 보존',
+      mit: '왜 그렇게 결정했는지, 언제든 검색',
     },
     {
       category: '조직 지식',
       general: '담당자 퇴사 시 소실',
-      mit: '지식 그래프로 영구 보존',
+      mit: '사람이 바뀌어도 맥락은 남게',
     },
     {
       category: '인터페이스',
       general: '복잡한 대시보드',
-      mit: 'Spotlight 자연어 검색',
+      mit: '물어보면 답하는 Spotlight',
     },
   ] satisfies ComparisonRow[],
 } as const;
 
 export const TEAM = {
   headline: '팀과 함께 시작하세요',
-  subtext: '팀원을 초대하고 함께 회의의 가치를 극대화하세요.',
+  subtext: '',
   features: [
     { label: '팀 관리' },
     { label: '초대 링크' },
@@ -150,7 +150,7 @@ export const TEAM = {
 } as const;
 
 export const CTA = {
-  headline: '첫 번째 회의를 커밋하세요',
+  headline: '첫 번째 회의를 기록하세요',
   ctaPrimary: '무료로 시작하기',
   loginText: '이미 계정이 있으신가요?',
   loginLink: '로그인',
@@ -163,5 +163,4 @@ export const SECTION_IDS = [
   'demo',
   'differentiation',
   'team',
-  'cta',
 ] as const;
