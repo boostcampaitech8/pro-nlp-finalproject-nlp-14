@@ -172,7 +172,7 @@ releases:
         kube-state-metrics:
           enabled: true
         prometheus-node-exporter:
-          enabled: true
+          enabled: false
 
   # ===========================================
   # Loki (Logs 저장소, 버전 고정)
@@ -214,6 +214,8 @@ releases:
         chunksCache:
           enabled: false
         resultsCache:
+          enabled: false
+        lokiCanary:
           enabled: false
         singleBinary:
           replicas: 1

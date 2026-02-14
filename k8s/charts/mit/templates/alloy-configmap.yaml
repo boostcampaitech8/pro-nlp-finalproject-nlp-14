@@ -61,6 +61,17 @@ data:
     }
 
     // ===========================================
+    // 노드 메트릭 수집 (node-exporter 대체)
+    // ===========================================
+    prometheus.exporter.unix "node" {
+    }
+
+    prometheus.scrape "node" {
+      targets    = prometheus.exporter.unix.node.targets
+      forward_to = [prometheus.remote_write.default.receiver]
+    }
+
+    // ===========================================
     // Kubernetes Pod 로그 수집
     // ===========================================
 
