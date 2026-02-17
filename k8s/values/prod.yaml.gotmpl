@@ -68,10 +68,10 @@ livekit:
   # 배포 후: kubectl label node <노드1> mit/livekit=true
   nodeSelector:
     mit/livekit: "true"
-  # RTC 설정 (프로덕션: 서버 외부 IP 사용)
+  # RTC 설정 (프로덕션: LB 공인 IP를 ICE candidate로 광고)
   rtc:
-    nodeIp: ""  # 빈 문자열 = 자동 감지
-    useExternalIp: true
+    nodeIp: {{ requiredEnv "LB_EXTERNAL_IP" }}
+    useExternalIp: false
     tcpPort: 7881
     portRangeStart: 50000
     portRangeEnd: 51000
