@@ -110,6 +110,10 @@ releases:
             use_external_ip: {{ .Values.livekit.rtc.useExternalIp }}
             {{- if .Values.livekit.rtc.nodeIp }}
             node_ip: {{ .Values.livekit.rtc.nodeIp }}
+            enable_loopback_candidate: true
+            ips:
+              includes:
+                - "{{ .Values.livekit.rtc.nodeIp }}/32"
             {{- end }}
           logging:
             level: info

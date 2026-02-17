@@ -12,6 +12,7 @@
 #   ./k8s/scripts/deploy-prod.sh --db-status           # DB 마이그레이션 상태
 #   ./k8s/scripts/deploy-prod.sh --neo4j-update        # Neo4j 스키마 업데이트
 #   ./k8s/scripts/deploy-prod.sh --setup-ghcr          # GHCR 인증 시크릿 (최초 1회)
+#   ./k8s/scripts/deploy-prod.sh --setup-network       # LiveKit 네트워크 설정 (노드 최초 1회)
 #   ./k8s/scripts/deploy-prod.sh --help                # 도움말
 #
 # 사전 요구사항:
@@ -172,6 +173,52 @@ db_status() {
     kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/alembic current
 }
 
+# LiveKit 네트워크 설정 (노드 최초 1회, sudo 필요)
+# - loopback에 외부 IP 바인딩 (GCP는 외부 IP가 NAT이라 LiveKit이 직접 감지 불가)
+# - reverse path filtering 완화 (loopback에 바인딩된 외부 IP로 패킷 수신 허용)
+setup_network() {
+    if [ -z "$LB_EXTERNAL_IP" ]; then
+        log_error "LB_EXTERNAL_IP 환경변수가 필요합니다"
+        exit 1
+    fi
+
+    log_info "LiveKit 네트워크 설정: $LB_EXTERNAL_IP"
+
+    # 1) sysctl - reverse path filtering 완화
+    log_info "sysctl 설정 (rp_filter=2)"
+    sudo tee /etc/sysctl.d/99-livekit.conf > /dev/null <<EOF
+# LiveKit WebRTC: loopback에 바인딩된 외부 IP로 들어오는 패킷 허용
+net.ipv4.conf.all.rp_filter=2
+net.ipv4.conf.default.rp_filter=2
+net.ipv4.conf.ens4.rp_filter=2
+EOF
+    sudo sysctl --system > /dev/null
+
+    # 2) systemd - loopback에 외부 IP 영구 바인딩
+    log_info "systemd 서비스 설정 (loopback IP)"
+    sudo tee /etc/systemd/system/livekit-loopback-ip.service > /dev/null <<EOF
+[Unit]
+Description=Add LiveKit external IP to loopback
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/ip addr add ${LB_EXTERNAL_IP}/32 dev lo
+ExecStop=/sbin/ip addr del ${LB_EXTERNAL_IP}/32 dev lo
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now livekit-loopback-ip.service
+
+    log_info "네트워크 설정 완료"
+    log_info "  sysctl: /etc/sysctl.d/99-livekit.conf"
+    log_info "  systemd: livekit-loopback-ip.service (enabled)"
+    ip addr show dev lo | grep "$LB_EXTERNAL_IP" && log_info "  loopback IP 확인: $LB_EXTERNAL_IP ✓"
+}
+
 # Neo4j 스키마 업데이트
 neo4j_update() {
     log_info "Neo4j 스키마 업데이트"
@@ -204,6 +251,14 @@ case "${1:-}" in
     --neo4j-update)
         neo4j_update
         ;;
+    --setup-network)
+        # .env에서 LB_EXTERNAL_IP 로드
+        ENV_FILE="$ROOT_DIR/.env"
+        if [ -f "$ENV_FILE" ]; then
+            set -a; source "$ENV_FILE"; set +a
+        fi
+        setup_network
+        ;;
     --help|-h)
         echo "사용법: $0 [옵션]"
         echo ""
@@ -224,6 +279,7 @@ case "${1:-}" in
         echo ""
         echo "설정:"
         echo "  --setup-ghcr              GHCR 인증 시크릿 (최초 1회)"
+        echo "  --setup-network           LiveKit 네트워크 설정 (노드 최초 1회, sudo 필요)"
         echo ""
         echo "이미지 태그:"
         echo "  기본값은 k8s/image-tags.yaml에서 로드"
