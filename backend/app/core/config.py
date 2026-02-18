@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     clova_router_id: str = ""  # Clova Studio Router ID
     clova_router_version: int = 1  # Router 버전 (1 이상)
 
+    # OpenTelemetry
+    otel_sdk_disabled: bool = False
+
     # Langfuse (LLM Observability)
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
