@@ -62,9 +62,9 @@ livekit:
   webhookUrls:
     - "http://host.docker.internal:8000/api/v1/livekit/webhook"  # 로컬 백엔드
     - "http://backend:8000/api/v1/livekit/webhook"               # k8s 백엔드
-  # RTC 설정 (로컬: 127.0.0.1로 ICE 후보 광고)
+  # RTC 설정 (로컬: nodeIp 비워서 자동 감지, hostNetwork 사용)
   rtc:
-    nodeIp: "127.0.0.1"
+    nodeIp: ""
     useExternalIp: false
     tcpPort: 7881
     portRangeStart: 50000
