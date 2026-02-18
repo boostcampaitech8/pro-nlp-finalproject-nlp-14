@@ -99,19 +99,23 @@ dev-db-logs:
 	@cd $(LOCAL_DB_DIR) && docker compose --profile db logs -f postgres neo4j
 
 infra:
-	@echo "=== 1/5: 로컬 DB 시작 (PostgreSQL, Neo4j) ==="
+	@echo "=== 1/6: 로컬 DB 시작 (PostgreSQL, Neo4j) ==="
 	@$(MAKE) dev-db-up
 	@echo ""
-	@echo "=== 2/5: k3d 클러스터 준비 ==="
+	@echo "=== 2/6: DB 마이그레이션 (PostgreSQL + Neo4j) ==="
+	@$(MAKE) db-upgrade
+	@$(MAKE) neo4j-init
+	@echo ""
+	@echo "=== 3/6: k3d 클러스터 준비 ==="
 	@$(MAKE) k8s-setup
 	@echo ""
-	@echo "=== 3/5: k3d 인프라 배포 (Redis, LiveKit) ==="
+	@echo "=== 4/6: k3d 인프라 배포 (Redis, LiveKit) ==="
 	@$(MAKE) k8s-infra
 	@echo ""
-	@echo "=== 4/5: realtime worker 이미지 빌드/푸시 ==="
+	@echo "=== 5/6: realtime worker 이미지 빌드/푸시 ==="
 	@$(MAKE) k8s-build-worker
 	@echo ""
-	@echo "=== 5/5: 포트 포워딩 (Redis, LiveKit, Grafana) ==="
+	@echo "=== 6/6: 포트 포워딩 (Redis, LiveKit, Grafana) ==="
 	@$(MAKE) k8s-pf
 	@echo ""
 	@echo "=== infra 준비 완료 ==="

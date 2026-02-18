@@ -49,37 +49,18 @@ helm plugin install https://github.com/databus23/helm-diff
 k8s 전체 배포 후, fe/be는 로컬에서도 실행하여 실시간 개발.
 
 ```bash
-# 1. 클러스터 생성 (최초 1회)
-make k8s-setup
+# postgresql, neo4j, livekit, redis, realtime worker (docker, k3s 도커 업로드)
+make infra
 
-# 2. infra 빌드 및 배포 (초기화 대기)
-make k8s-infra
-
-# 3. realtime worker 빌드
-make k8s-build-worker
-
-# 4. 포트 포워딩
-make k8s-pf
-
-# 5. fe / be 로컬 실행
+# frontend, backend, arq worker 실행
+make install
 make dev
-
-```
-
-### 개별 서비스 재빌드
-
-```bash
-make k8s-push           # 전체 빌드 & 재시작
-make k8s-push-be        # Backend 빌드 & 재시작
-make k8s-push-fe        # Frontend 빌드 & 재시작
-make k8s-push-worker    # Worker 빌드 & 재시작
 ```
 
 ### 상태 확인
 
 ```bash
 make k8s-status              # Pod 상태
-make k8s-db-status           # 마이그레이션 상태
 make k8s-logs svc=backend    # 서비스 별 로그
 make k8s-logs svc=frontend
 kubectl -n mit logs job/realtime-worker-meeting-<meetingid> # 워커 로그
