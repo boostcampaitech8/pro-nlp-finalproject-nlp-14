@@ -34,20 +34,20 @@ backend:
 frontend:
   port: 80
 
-# Database (외부 서버)
+# Database (로컬 하드코딩)
 database:
-  url: {{ requiredEnv "DATABASE_URL" }}
+  url: postgresql+asyncpg://mit:mitpassword@localhost:5432/mit
 
 # Redis - ConfigMap, LiveKit차트에서 공유
 redis:
   host: redis-master
   port: 6379
 
-# Neo4j (외부 서버)
+# Neo4j (로컬 하드코딩)
 neo4j:
-  uri: {{ requiredEnv "NEO4J_URI" }}
+  uri: bolt://localhost:7687
   user: neo4j
-  password: {{ requiredEnv "NEO4J_PASSWORD" }}
+  password: mitpassword
 
 # LiveKit - Secret, LiveKit차트, ConfigMap에서 공유
 # 서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지
@@ -55,9 +55,9 @@ neo4j:
 livekit:
   host: lk-server
   port: 80
-  apiKey: mit-api-key
-  apiSecret: secret-change-in-production-min-32-chars
-  externalUrl: "ws://localhost/livekit"  # Ingress 경유
+  apiKey: {{ env "LIVEKIT_API_KEY" | default "mit-api-key" }}
+  apiSecret: {{ env "LIVEKIT_API_SECRET" | default "secret-change-in-production-min-32-chars" }}
+  externalUrl: {{ env "LIVEKIT_EXTERNAL_URL" | default "ws://localhost/livekit" | quote }}  # Ingress 경유
   # 로컬 개발: 두 URL 모두 등록 (로컬 백엔드 + k8s 백엔드)
   webhookUrls:
     - "http://host.docker.internal:8000/api/v1/livekit/webhook"  # 로컬 백엔드

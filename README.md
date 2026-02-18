@@ -10,15 +10,21 @@ make install
 
 # 2. 환경변수 설정
 cp .env.dev.example .env
-# .env에 DB, OAuth 등 입력
+# .env에 OAuth 등 입력
 
-# 3. k3d 인프라 세팅
+# 3. 인프라 준비 (로컬 DB + k3d Redis/LiveKit + worker 이미지)
+make infra
+
+# 또는 수동 단계 실행 시:
+make dev-db-up     # PostgreSQL, Neo4j
+
+# 4. k3d 인프라 세팅
 make k8s-setup     # 클러스터 생성 (최초 1회)
 make k8s-infra     # Redis, LiveKit 배포
 make k8s-build-worker
 make k8s-pf        # 포트 포워딩
 
-# 4. 개발 서버
+# 5. 개발 서버
 make dev
 ```
 
@@ -32,10 +38,12 @@ k3s 실제 production 배포 시 [deploy-prod.sh](k8s/deploy-prod.sh) 참고.
 ## 환경변수
 
 ```bash
-# DB (외부 - 개발 시에도 외부 디비 사용)
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
-NEO4J_URI=neo4j+s://xxx.databases.neo4j.io
+# DB (로컬 Docker: ./docker/db)
+DATABASE_URL=postgresql+asyncpg://mit:<POSTGRES_PASSWORD>@localhost:5432/mit
+NEO4J_URI=bolt://localhost:7687
 NEO4J_PASSWORD=
+REDIS_URL=redis://localhost:6379/0
+ARQ_REDIS_URL=redis://localhost:6379/1
 
 # OAuth
 GOOGLE_CLIENT_ID=
@@ -52,13 +60,19 @@ LIVEKIT_WS_URL=ws://localhost:7880
 NCP_CLOVASTUDIO_API_KEY=
 ```
 
+`make infra` + `make dev` 조합에서는 DB 관련 변수(`DATABASE_URL`, `NEO4J_*`)를 비워둬도 `docker/db` 기본값으로 자동 주입됩니다.
+
 ## 주요 명령어
 
 ```bash
 # 개발
-make dev              # FE + BE 실행
+make dev              # FE + BE + ARQ 실행
 make dev-fe           # Frontend만
 make dev-be           # Backend만
+make dev-arq          # ARQ Worker만
+make dev-db-up        # 로컬 PostgreSQL/Neo4j 시작
+make dev-db-down      # 로컬 PostgreSQL/Neo4j 중지
+make infra            # DB + k3d 인프라 일괄 시작
 
 # k8s
 make k8s-status       # Pod 상태
