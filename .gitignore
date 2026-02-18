@@ -65,6 +65,7 @@ temp/
 # Database
 *.sqlite3
 *.db
+docker/db/data/
 
 # MinIO / S3 uploads (local)
 uploads/

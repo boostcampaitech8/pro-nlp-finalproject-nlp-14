@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-fe dev-be dev-worker dev-arq build clean test-fe graph
+.PHONY: help install dev dev-fe dev-be dev-worker dev-arq dev-db-up dev-db-down dev-db-logs infra build clean test-fe graph
 .PHONY: db-migrate db-upgrade db-downgrade neo4j-init neo4j-seed
 .PHONY: k8s-setup k8s-infra k8s-observe k8s-deploy
 .PHONY: k8s-push k8s-push-be k8s-push-fe k8s-build-worker k8s-push-worker
@@ -9,6 +9,7 @@ DEV_OAUTH_ENV = \
 	NAVER_REDIRECT_URI=http://localhost:3000/auth/naver/callback \
 	GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
 
+LOCAL_DB_DIR ?= docker/db
 # ===================
 # Help
 # ===================
@@ -17,11 +18,15 @@ help:
 	@echo ""
 	@echo "Setup & Development:"
 	@echo "  make install        - Install all dependencies"
-	@echo "  make dev            - Run dev servers (FE + BE)"
+	@echo "  make dev            - Run dev servers (FE + BE + ARQ)"
 	@echo "  make dev-fe         - Run frontend dev server (http://localhost:3000)"
 	@echo "  make dev-be         - Run backend dev server (http://localhost:8000)"
 	@echo "  make dev-worker     - Run realtime worker"
 	@echo "  make dev-arq        - Run arq worker"
+	@echo "  make dev-db-up      - Start local PostgreSQL/Neo4j profile from docker/db"
+	@echo "  make dev-db-down    - Stop local PostgreSQL/Neo4j from docker/db"
+	@echo "  make dev-db-logs    - Tail local PostgreSQL/Neo4j logs"
+	@echo "  make infra          - Start DB compose + k3d infra (Redis/LiveKit/worker image)"
 	@echo ""
 	@echo "Graph:"
 	@echo "  make graph          - Run LangGraph orchestrator (interactive)"
@@ -63,7 +68,12 @@ install:
 	cd backend/worker && mkdir -p ./build && uv run python -m grpc_tools.protoc -I=. --python_out=./build --grpc_python_out=./build nest.proto
 
 dev:
-	$(DEV_OAUTH_ENV) pnpm run dev
+	$(DEV_OAUTH_ENV) pnpm exec concurrently \
+		--names FE,BE,ARQ \
+		--prefix-colors blue,green,yellow \
+		"pnpm run dev:fe" \
+		"pnpm run dev:be" \
+		"pnpm run dev:arq"
 
 dev-fe:
 	pnpm run dev:fe
@@ -75,7 +85,40 @@ dev-worker:
 	pnpm run dev:worker
 
 dev-arq:
-	cd backend && uv run python -m app.workers.run_worker
+		cd backend && uv run python -m app.workers.run_worker
+
+dev-db-up:
+	@cd $(LOCAL_DB_DIR) && docker compose --profile db up -d
+	@echo "PostgreSQL: localhost:5432"
+	@echo "Neo4j Bolt: localhost:7687"
+
+dev-db-down:
+	@cd $(LOCAL_DB_DIR) && docker compose down
+
+dev-db-logs:
+	@cd $(LOCAL_DB_DIR) && docker compose --profile db logs -f postgres neo4j
+
+infra:
+	@echo "=== 1/6: 로컬 DB 시작 (PostgreSQL, Neo4j) ==="
+	@$(MAKE) dev-db-up
+	@echo ""
+	@echo "=== 2/6: DB 마이그레이션 (PostgreSQL + Neo4j) ==="
+	@$(MAKE) db-upgrade
+	@$(MAKE) neo4j-init
+	@echo ""
+	@echo "=== 3/6: k3d 클러스터 준비 ==="
+	@$(MAKE) k8s-setup
+	@echo ""
+	@echo "=== 4/6: k3d 인프라 배포 (Redis, LiveKit) ==="
+	@$(MAKE) k8s-infra
+	@echo ""
+	@echo "=== 5/6: realtime worker 이미지 빌드/푸시 ==="
+	@$(MAKE) k8s-build-worker
+	@echo ""
+	@echo "=== 6/6: 포트 포워딩 (Redis, LiveKit, Grafana) ==="
+	@$(MAKE) k8s-pf
+	@echo ""
+	@echo "=== infra 준비 완료 ==="
 
 # ===================
 # Graph

@@ -47,6 +47,12 @@ def init_telemetry(
     Returns:
         (Tracer, Meter) 튜플
     """
+    from app.core.config import get_settings
+
+    if get_settings().otel_sdk_disabled:
+        logger.info("Telemetry disabled via OTEL_SDK_DISABLED")
+        return trace.get_tracer(service_name), metrics.get_meter(service_name)
+
     endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://alloy:4317")
 
     # Resource 설정 (서비스 메타데이터)
