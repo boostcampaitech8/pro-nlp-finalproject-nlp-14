@@ -36,8 +36,9 @@ Argo CD ApplicationSet 기반 GitOps 구성입니다.
 
 ### Sync 순서
 
-- core-infra -> core-apps -> prod-observability
-- sync-wave annotation으로 순서 보장
+- root app 기준 적용 순서: appproject(-1) -> core-infra(0) -> core-apps(10) -> prod-observability(20)
+- child Application은 동시 reconcile될 수 있으므로 엄밀한 순차 보장을 전제하지 않음
+- 안정화 방식: sync retry + initContainer 의존성 대기(redis/livekit)
 
 ### Bootstrap
 

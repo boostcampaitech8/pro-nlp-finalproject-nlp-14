@@ -28,9 +28,14 @@ spec:
                     app: backend
                 topologyKey: kubernetes.io/hostname
       initContainers:
-        - name: wait-for-alloy
+        - name: wait-for-dependencies
           image: busybox:1.36
-          command: ['sh', '-c', 'until nc -zv alloy 4317; do echo "Waiting for Alloy gRPC..."; sleep 2; done']
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z redis-master 6379; do echo "Waiting for Redis..."; sleep 2; done
+              until nc -z lk-server 80; do echo "Waiting for LiveKit..."; sleep 2; done
       containers:
         - name: backend
           image: {{ include "mit.image" (dict "Values" .Values "name" "backend") }}
