@@ -76,6 +76,12 @@ make k8s-clean
 
 [deploy-prod.sh](scripts/deploy-prod.sh) 참고.
 
+- Secret은 차트가 생성하지 않음
+- prod Secret SSOT: `GCP Secret Manager -> ESO -> Secret/mit-secrets`
+- local Secret 동기화: `k8s/scripts/sync-app-secret.sh` (local 전용)
+- 비비밀 배포값 SSOT: `k8s/values/prod.yaml.gotmpl`
+- 이미지 태그 SSOT: `k8s/image-tags.yaml`
+
 ## Makefile 타겟 요약
 
 | 타겟 | 설명 |
@@ -120,9 +126,11 @@ k8s/
 ├── scripts/
 │   ├── setup-k3d.sh      # 클러스터 생성
 │   ├── build.sh          # 이미지 빌드
+│   ├── sync-app-secret.sh # 앱 Secret 동기화(local 전용)
 │   ├── deploy.sh         # 배포
-│   └── cleanup.sh        # 클러스터 삭제
+│   └── deploy-prod.sh    # 프로덕션 배포
 ├── helmfile.yaml.gotmpl  # Helmfile 메인 설정
+├── image-tags.yaml       # 프로덕션 이미지 태그 SSOT
 └── k3d-config.yaml       # k3d 클러스터 설정
 ```
 

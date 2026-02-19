@@ -19,7 +19,6 @@ permissions:
   contents: write
   packages: write
   pull-requests: read
-  actions: write  # repository-dispatch로 CD workflow 트리거에 필요
 
 env:
   REGISTRY: ghcr.io
@@ -232,19 +231,19 @@ jobs:
 
           # 빌드된 서비스만 SHA 태그로 업데이트
           if [ "${{ needs.changes.outputs.backend }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
-            yq -i '.backend = "'$SHA'"' k8s/image-tags.yaml
+            yq -i '.images.backend.tag = "'$SHA'"' k8s/image-tags.yaml
             UPDATED="true"
             echo "✅ Backend tag updated to $SHA"
           fi
 
           if [ "${{ needs.changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ]; then
-            yq -i '.frontend = "'$SHA'"' k8s/image-tags.yaml
+            yq -i '.images.frontend.tag = "'$SHA'"' k8s/image-tags.yaml
             UPDATED="true"
             echo "✅ Frontend tag updated to $SHA"
           fi
 
           if [ "${{ needs.changes.outputs.worker }}" == "true" ] && [ "${{ needs.build-worker.result }}" == "success" ]; then
-            yq -i '.worker = "'$SHA'"' k8s/image-tags.yaml
+            yq -i '.images.worker.tag = "'$SHA'"' k8s/image-tags.yaml
             UPDATED="true"
             echo "✅ Worker tag updated to $SHA"
           fi
@@ -262,11 +261,3 @@ jobs:
           git add k8s/image-tags.yaml
           git commit -m "chore: update image tags to ${{ github.sha }} [skip ci]"
           git push
-
-      - name: Trigger CD workflow
-        if: steps.update.outputs.updated == 'true'
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: deploy
-          client-payload: '{"sha": "${{ github.sha }}", "ref": "${{ github.ref }}"}'

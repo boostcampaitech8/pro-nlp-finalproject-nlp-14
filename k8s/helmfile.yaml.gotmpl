@@ -18,6 +18,7 @@ environments:
   prod:
     values:
       - values/prod.yaml.gotmpl
+      - image-tags.yaml
 
 ---
 releases:
@@ -35,18 +36,14 @@ releases:
       - global: {{ .Values.global | toYaml | nindent 10 }}
         replicas: {{ .Values.replicas | toYaml | nindent 10 }}
         images: {{ .Values.images | toYaml | nindent 10 }}
+        secrets: {{ .Values.secrets | toYaml | nindent 10 }}
         backend: {{ .Values.backend | toYaml | nindent 10 }}
         frontend: {{ .Values.frontend | toYaml | nindent 10 }}
-        database: {{ .Values.database | toYaml | nindent 10 }}
         redis: {{ .Values.redis | toYaml | nindent 10 }}
         livekit: {{ .Values.livekit | toYaml | nindent 10 }}
         jwt: {{ .Values.jwt | toYaml | nindent 10 }}
         app: {{ .Values.app | toYaml | nindent 10 }}
         worker: {{ .Values.worker | toYaml | nindent 10 }}
-        neo4j: {{ .Values.neo4j | toYaml | nindent 10 }}
-        ncp: {{ .Values.ncp | toYaml | nindent 10 }}
-        langfuse: {{ .Values.langfuse | toYaml | nindent 10 }}
-        oauth: {{ .Values.oauth | toYaml | nindent 10 }}
         ingress: {{ .Values.ingress | toYaml | nindent 10 }}
         cloudflare: {{ .Values.cloudflare | toYaml | nindent 10 }}
         resources:
@@ -130,10 +127,10 @@ releases:
               {{- range .Values.livekit.webhookUrls }}
               - "{{ . }}"
               {{- end }}
-        # Secret 참조 (mit-secrets의 keys.yaml 필드)
+        # Secret 참조 (app Secret의 keys.yaml 필드)
         storeKeysInSecret:
           enabled: true
-          existingSecret: mit-secrets
+          existingSecret: {{ .Values.secrets.name }}
         service:
           type: ClusterIP
         replicaCount: 1  # WebRTC 특성상 단일 인스턴스 + 노드 고정
@@ -292,8 +289,10 @@ releases:
         {{- if index .Values "statefulNodeSelector" }}
         nodeSelector: {{ .Values.statefulNodeSelector | toYaml | nindent 10 }}
         {{- end }}
-        adminUser: admin
-        adminPassword: {{ .Values.observability.grafana.adminPassword | default "admin" }}
+        admin:
+          existingSecret: {{ .Values.secrets.name }}
+          userKey: GRAFANA_ADMIN_USER
+          passwordKey: GRAFANA_ADMIN_PASSWORD
         datasources:
           datasources.yaml:
             apiVersion: 1
@@ -308,4 +307,3 @@ releases:
         resources:
           requests: {{ .Values.resources.grafana.requests | toYaml | nindent 12 }}
           limits: {{ .Values.resources.grafana.limits | toYaml | nindent 12 }}
-

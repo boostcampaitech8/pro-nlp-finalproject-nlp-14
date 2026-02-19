@@ -33,7 +33,7 @@ make dev
 - API 문서: http://localhost:8000/docs
 
 k8s 세부 설정은 [k8s/README.md](k8s/README.md) 참고.
-k3s 실제 production 배포 시 [deploy-prod.sh](k8s/deploy-prod.sh) 참고.
+k3s 실제 production 배포 시 [deploy-prod.sh](k8s/scripts/deploy-prod.sh) 참고.
 
 ## 환경변수
 

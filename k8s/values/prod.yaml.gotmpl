@@ -1,5 +1,6 @@
-# 프로덕션 환경 - 여러 곳에서 참조되는 값만 관리
-# 시크릿은 환경변수에서 참조 (deploy.sh에서 .env.prod 로드)
+# 프로덕션 환경 - 선언형 기본값
+# - 비밀값: External Secret(ESO + GCP Secret Manager)로 mit-secrets 관리
+# - 비비밀값: 이 파일과 k8s/image-tags.yaml에서 관리
 
 global:
   namespace: mit
@@ -14,15 +15,19 @@ replicas:
   frontend: 2
   arqWorker: 2
 
-# 이미지 태그 (CI에서 SHA 기반, 환경변수로 오버라이드 가능)
+# 이미지 태그는 k8s/image-tags.yaml에서 override
 images:
   backend:
-    tag: {{ env "BACKEND_TAG" | default "latest" }}
+    tag: "latest"
   frontend:
-    tag: {{ env "FRONTEND_TAG" | default "latest" }}
+    tag: "latest"
   worker:
-    tag: {{ env "WORKER_TAG" | default "latest" }}
+    tag: "latest"
   pullSecret: "ghcr-secret"  # GHCR Private 레지스트리 인증용
+
+# 앱 환경변수 Secret 참조 이름 (Secret 본문은 외부에서 관리)
+secrets:
+  name: "mit-secrets"
 
 # Ingress (Traefik + Let's Encrypt)
 ingress:
@@ -39,28 +44,18 @@ backend:
 frontend:
   port: 80
 
-# Database (외부 서버)
-database:
-  url: {{ requiredEnv "DATABASE_URL" }}
-
 # Redis (standalone - 앱 레벨 Sentinel 미지원으로 단일 인스턴스 유지)
 redis:
   host: redis-master
   port: 6379
 
-# Neo4j (외부 서버)
-neo4j:
-  uri: {{ requiredEnv "NEO4J_URI" }}
-  user: neo4j
-  password: {{ requiredEnv "NEO4J_PASSWORD" }}
-
 # LiveKit (서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지)
-# 포트 80: Helm 차트가 서비스 80 → 컨테이너 7880 매핑
+# 포트 80: Helm 차트가 서비스 80 -> 컨테이너 7880 매핑
 livekit:
   host: lk-server
   port: 80
-  apiKey: {{ requiredEnv "LIVEKIT_API_KEY" }}
-  apiSecret: {{ requiredEnv "LIVEKIT_API_SECRET" }}
+  # Webhook 검증용 key (Secret의 keys.yaml key와 동일해야 함)
+  apiKey: "mit-api-key"
   externalUrl: "wss://www.mit-hub.com/livekit"
   webhookUrls:
     - "http://backend:8000/api/v1/livekit/webhook"
@@ -70,7 +65,7 @@ livekit:
     mit/livekit: "true"
   # RTC 설정 (프로덕션: LB 공인 IP를 ICE candidate로 광고)
   rtc:
-    nodeIp: {{ requiredEnv "LB_EXTERNAL_IP" }}
+    nodeIp: ""  # TODO: 실제 LB 공인 IP를 고정값으로 입력
     useExternalIp: false
     tcpPort: 7881
     portRangeStart: 50000
@@ -78,7 +73,6 @@ livekit:
 
 # JWT
 jwt:
-  secretKey: {{ requiredEnv "JWT_SECRET" }}
   accessTokenExpireMinutes: 30
   refreshTokenExpireDays: 7
 
@@ -94,40 +88,7 @@ app:
 # Worker
 worker:
   clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
-  # Clova STT API 키 배열 (동적 할당용)
-  clovaSttSecrets:
-    - {{ requiredEnv "CLOVA_STT_SECRET_0" }}
-    - {{ requiredEnv "CLOVA_STT_SECRET_1" }}
-    - {{ requiredEnv "CLOVA_STT_SECRET_2" }}
-    - {{ requiredEnv "CLOVA_STT_SECRET_3" }}
-    - {{ requiredEnv "CLOVA_STT_SECRET_4" }}
-  backendApiKey: {{ requiredEnv "BACKEND_API_KEY" }}
-  ttsServerUrl: {{ requiredEnv "TTS_SERVER_URL" }}
-  ttsVolumeScale: {{ env "TTS_VOLUME_SCALE" | default "0.70" }}
-
-# NCP Clova Studio
-ncp:
-  clovaStudioApiKey: {{ requiredEnv "NCP_CLOVASTUDIO_API_KEY" }}
-  clovaRouterId: {{ requiredEnv "CLOVA_ROUTER_ID" }}
-  clovaRouterVersion: {{ requiredEnv "CLOVA_ROUTER_VERSION" }}
-
-# Langfuse (LLM Observability)
-langfuse:
-  secretKey: {{ requiredEnv "LANGFUSE_SECRET_KEY" }}
-  publicKey: {{ requiredEnv "LANGFUSE_PUBLIC_KEY" }}
-  baseUrl: {{ env "LANGFUSE_BASE_URL" | default "https://cloud.langfuse.com" }}
-  tracingEnabled: {{ env "LANGFUSE_TRACING_ENABLED" | default "true" }}
-
-# OAuth
-oauth:
-  google:
-    clientId: {{ requiredEnv "GOOGLE_CLIENT_ID" }}
-    clientSecret: {{ requiredEnv "GOOGLE_CLIENT_SECRET" }}
-    redirectUri: {{ requiredEnv "GOOGLE_REDIRECT_URI" }}
-  naver:
-    clientId: {{ requiredEnv "NAVER_CLIENT_ID" }}
-    clientSecret: {{ requiredEnv "NAVER_CLIENT_SECRET" }}
-    redirectUri: {{ requiredEnv "NAVER_REDIRECT_URI" }}
+  ttsVolumeScale: "0.70"
 
 # Resources
 resources:
@@ -148,7 +109,7 @@ resources:
     limits:   { memory: "256Mi", cpu: "200m" }
     storage: 1Gi
   livekit:
-    requests: { memory: "512Mi",   cpu: "500m" }
+    requests: { memory: "512Mi", cpu: "500m" }
     limits:   { memory: "1Gi",   cpu: "1000m" }
   # Observability 스택
   prometheus:
@@ -172,7 +133,6 @@ observability:
     storage: 10Gi
   grafana:
     storage: 5Gi
-    adminPassword: {{ requiredEnv "GRAFANA_ADMIN_PASSWORD" }}
 
 # Redis 노드 고정 (노드1: LiveKit과 동일 노드)
 # 배포 후: kubectl label node <노드1> mit/redis=true
@@ -180,7 +140,7 @@ redisNodeSelector:
   mit/redis: "true"
 
 # Observability 스택 노드 고정 (local-path PV는 노드 로컬 디스크 사용)
-# Pod이 다른 노드로 재스케줄되면 기존 PV 데이터에 접근 불가 → 같은 노드 고정
+# Pod이 다른 노드로 재스케줄되면 기존 PV 데이터에 접근 불가 -> 같은 노드 고정
 # 배포 후: kubectl label node <노드2 또는 노드3> mit/stateful=true
 statefulNodeSelector:
   mit/stateful: "true"
@@ -188,4 +148,3 @@ statefulNodeSelector:
 # Cloudflare Tunnel (Grafana 접근용)
 cloudflare:
   enabled: true
-  tunnelToken: {{ requiredEnv "CLOUDFLARE_TUNNEL_TOKEN" }}

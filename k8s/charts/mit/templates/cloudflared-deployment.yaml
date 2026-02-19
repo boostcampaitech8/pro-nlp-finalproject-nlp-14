@@ -39,7 +39,7 @@ spec:
             - name: TUNNEL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: mit-secrets
+                  name: {{ include "mit.secretName" . }}
                   key: CLOUDFLARE_TUNNEL_TOKEN
           resources:
             requests:

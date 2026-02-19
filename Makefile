@@ -170,11 +170,7 @@ k8s-setup:
 	@./$(K8S_DIR)/scripts/setup-k3d.sh
 
 k8s-infra:
-	@echo "=== 1/2: Secret 생성 ==="
-	@kubectl create namespace mit --dry-run=client -o yaml | kubectl apply -f -
-	@./$(K8S_DIR)/scripts/deploy.sh local --selector svc=mit --args '--set global.enabled=false --set backend.enabled=false --set frontend.enabled=false --set worker.enabled=false' 2>/dev/null || true
-	@echo ""
-	@echo "=== 2/2: 인프라 배포 ==="
+	@echo "=== 인프라 배포 (local Secret 동기화 포함) ==="
 	@./$(K8S_DIR)/scripts/deploy.sh local --selector type=infra
 
 k8s-observe:

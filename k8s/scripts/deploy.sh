@@ -1,29 +1,24 @@
 #!/bin/bash
-# 환경변수 로드 후 helmfile 배포
+# helmfile 배포 (local은 Secret 동기화 포함)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(dirname "$SCRIPT_DIR")"
-ROOT_DIR="$(dirname "$K8S_DIR")"
 
 # 환경 선택 (기본: local), 나머지 인자는 helmfile에 전달
 ENV="${1:-local}"
-shift 2>/dev/null || true
+shift 1 2>/dev/null || true
 
 echo "=== $ENV 환경 배포 ==="
 
-# .env 파일 로드
-ENV_FILE="$ROOT_DIR/.env"
-if [ -f "$ENV_FILE" ]; then
-    echo ">>> $ENV_FILE 로드"
-    set -a
-    source "$ENV_FILE"
-    set +a
-fi
-
 cd "$K8S_DIR"
 
-# helmfile 실행 (시크릿은 .gotmpl에서 환경변수 참조)
+# 로컬 환경은 배포 전에 Secret을 클러스터와 동기화
+if [ "$ENV" = "local" ]; then
+    "$SCRIPT_DIR/sync-app-secret.sh" local
+fi
+
+# helmfile 실행
 # 추가 인자 예: --selector svc=postgres
 helmfile -f helmfile.yaml.gotmpl -e "$ENV" apply "$@"
 

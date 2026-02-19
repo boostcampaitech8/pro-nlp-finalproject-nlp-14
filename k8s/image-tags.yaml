@@ -1,3 +1,7 @@
-backend: "598db48"
-frontend: "c9738f2"
-worker: "5dd844f"
+images:
+  backend:
+    tag: "598db48"
+  frontend:
+    tag: "c9738f2"
+  worker:
+    tag: "5dd844f"

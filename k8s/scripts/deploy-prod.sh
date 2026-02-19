@@ -18,7 +18,7 @@
 # 사전 요구사항:
 #   - kubectl이 k3s 클러스터에 연결된 상태
 #   - helmfile 설치 (https://github.com/helmfile/helmfile)
-#   - .env.prod 파일 (시크릿 환경변수)
+#   - External Secret(예: ESO)로 app Secret 생성
 
 set -e
 
@@ -63,50 +63,21 @@ setup_ghcr_secret() {
     log_info "GHCR 시크릿 생성 완료"
 }
 
-# 이미지 태그 파일에서 환경변수 로드
-load_image_tags() {
-    local TAGS_FILE="$K8S_DIR/image-tags.yaml"
-    if [ -f "$TAGS_FILE" ]; then
-        log_info "이미지 태그 로드: $TAGS_FILE"
-
-        # yq가 설치되어 있는지 확인
-        if command -v yq &> /dev/null; then
-            export BACKEND_TAG="${BACKEND_TAG:-$(yq '.backend' "$TAGS_FILE")}"
-            export FRONTEND_TAG="${FRONTEND_TAG:-$(yq '.frontend' "$TAGS_FILE")}"
-            export WORKER_TAG="${WORKER_TAG:-$(yq '.worker' "$TAGS_FILE")}"
-        else
-            # yq가 없으면 grep/sed로 파싱 (fallback)
-            export BACKEND_TAG="${BACKEND_TAG:-$(grep '^backend:' "$TAGS_FILE" | sed 's/backend: *//')}"
-            export FRONTEND_TAG="${FRONTEND_TAG:-$(grep '^frontend:' "$TAGS_FILE" | sed 's/frontend: *//')}"
-            export WORKER_TAG="${WORKER_TAG:-$(grep '^worker:' "$TAGS_FILE" | sed 's/worker: *//')}"
-        fi
-
-        log_info "  Backend:  $BACKEND_TAG"
-        log_info "  Frontend: $FRONTEND_TAG"
-        log_info "  Worker:   $WORKER_TAG"
-    else
-        log_warn "이미지 태그 파일 없음, 기본값(latest) 사용"
-    fi
-}
-
 # 배포 실행
 deploy() {
     log_info "배포 시작"
 
-    # .env 파일 로드
-    ENV_FILE="$ROOT_DIR/.env"
-    if [ -f "$ENV_FILE" ]; then
-        log_info ".env 로드"
-        set -a
-        source "$ENV_FILE"
-        set +a
-    else
-        log_error ".env 파일 없음: $ENV_FILE"
+    local secret_name="mit-secrets"
+
+    # 네임스페이스 보장
+    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+    if ! kubectl get secret "$secret_name" -n "$NAMESPACE" >/dev/null 2>&1; then
+        log_error "Secret(${secret_name})이 없어 배포 불가"
+        log_error "해결: ESO/ExternalSecret로 ${secret_name} 생성 후 재시도"
         exit 1
     fi
-
-    # 이미지 태그 파일 로드 (환경변수로 덮어쓰기 가능)
-    load_image_tags
+    log_info "Secret 확인 완료: $secret_name"
 
     cd "$K8S_DIR"
 
@@ -280,10 +251,7 @@ case "${1:-}" in
         echo "설정:"
         echo "  --setup-ghcr              GHCR 인증 시크릿 (최초 1회)"
         echo "  --setup-network           LiveKit 네트워크 설정 (노드 최초 1회, sudo 필요)"
-        echo ""
-        echo "이미지 태그:"
-        echo "  기본값은 k8s/image-tags.yaml에서 로드"
-        echo "  환경변수로 덮어쓰기 가능: BACKEND_TAG, FRONTEND_TAG, WORKER_TAG"
+        echo "  (사전) app Secret 준비:   ESO/ExternalSecret로 mit-secrets 생성"
         ;;
     *)
         deploy

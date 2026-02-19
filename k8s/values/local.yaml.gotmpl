@@ -21,6 +21,9 @@ images:
     tag: "latest"
   pullSecret: ""  # 로컬 레지스트리는 인증 불필요
 
+secrets:
+  name: mit-secrets
+
 # Ingress (Traefik)
 ingress:
   className: traefik
@@ -34,20 +37,10 @@ backend:
 frontend:
   port: 80
 
-# Database (로컬 하드코딩)
-database:
-  url: postgresql+asyncpg://mit:mitpassword@localhost:5432/mit
-
 # Redis - ConfigMap, LiveKit차트에서 공유
 redis:
   host: redis-master
   port: 6379
-
-# Neo4j (로컬 하드코딩)
-neo4j:
-  uri: bolt://localhost:7687
-  user: neo4j
-  password: mitpassword
 
 # LiveKit - Secret, LiveKit차트, ConfigMap에서 공유
 # 서비스 이름 lk-server: LIVEKIT_PORT 환경변수 충돌 방지
@@ -55,9 +48,8 @@ neo4j:
 livekit:
   host: lk-server
   port: 80
-  apiKey: {{ env "LIVEKIT_API_KEY" | default "mit-api-key" }}
-  apiSecret: {{ env "LIVEKIT_API_SECRET" | default "secret-change-in-production-min-32-chars" }}
-  externalUrl: {{ env "LIVEKIT_EXTERNAL_URL" | default "ws://localhost/livekit" | quote }}  # Ingress 경유
+  apiKey: "mit-api-key"
+  externalUrl: "ws://localhost/livekit"  # Ingress 경유
   # 로컬 개발: 두 URL 모두 등록 (로컬 백엔드 + k8s 백엔드)
   webhookUrls:
     - "http://host.docker.internal:8000/api/v1/livekit/webhook"  # 로컬 백엔드
@@ -72,7 +64,6 @@ livekit:
 
 # JWT - Secret, ConfigMap에서 공유
 jwt:
-  secretKey: change-this-secret-key
   accessTokenExpireMinutes: 30
   refreshTokenExpireDays: 7
 
@@ -89,40 +80,7 @@ app:
 # BACKEND_API_URL은 백엔드가 Job 생성 시 동적으로 주입 (로컬/k8s 자동 감지)
 worker:
   clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
-  # Clova STT API 키 배열 (동적 할당용)
-  clovaSttSecrets:
-    - {{ env "CLOVA_STT_SECRET_0" | default "" }}
-    - {{ env "CLOVA_STT_SECRET_1" | default "" }}
-    - {{ env "CLOVA_STT_SECRET_2" | default "" }}
-    - {{ env "CLOVA_STT_SECRET_3" | default "" }}
-    - {{ env "CLOVA_STT_SECRET_4" | default "" }}
-  backendApiKey: {{ env "BACKEND_API_KEY" | default "" }}
-  ttsServerUrl: {{ env "TTS_SERVER_URL" | default "" }}
-  ttsVolumeScale: {{ env "TTS_VOLUME_SCALE" | default "0.70" }}
-
-# NCP Clova Studio
-ncp:
-  clovaStudioApiKey: {{ env "NCP_CLOVASTUDIO_API_KEY" | default "" }}
-  clovaRouterId: {{ env "CLOVA_ROUTER_ID" | default "" }}
-  clovaRouterVersion: {{ env "CLOVA_ROUTER_VERSION" | default "1" }}
-
-# Langfuse (LLM Observability)
-langfuse:
-  secretKey: {{ env "LANGFUSE_SECRET_KEY" | default "" }}
-  publicKey: {{ env "LANGFUSE_PUBLIC_KEY" | default "" }}
-  baseUrl: {{ env "LANGFUSE_BASE_URL" | default "https://cloud.langfuse.com" }}
-  tracingEnabled: {{ env "LANGFUSE_TRACING_ENABLED" | default "true" }}
-
-# OAuth - 외부 환경변수에서 주입
-oauth:
-  google:
-    clientId: {{ env "GOOGLE_CLIENT_ID" | default "" }}
-    clientSecret: {{ env "GOOGLE_CLIENT_SECRET" | default "" }}
-    redirectUri: {{ env "GOOGLE_REDIRECT_URI" | default "" }}
-  naver:
-    clientId: {{ env "NAVER_CLIENT_ID" | default "" }}
-    clientSecret: {{ env "NAVER_CLIENT_SECRET" | default "" }}
-    redirectUri: {{ env "NAVER_REDIRECT_URI" | default "" }}
+  ttsVolumeScale: "0.70"
 
 # Resources - 각 차트에서 공유
 resources:
@@ -167,7 +125,6 @@ observability:
     storage: 5Gi
   grafana:
     storage: 1Gi
-    adminPassword: admin
 
 # Cloudflare Tunnel (로컬에서는 비활성화)
 cloudflare:
