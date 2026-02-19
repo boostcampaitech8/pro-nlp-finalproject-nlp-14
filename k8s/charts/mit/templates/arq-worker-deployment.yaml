@@ -13,7 +13,6 @@ spec:
       labels:
         app: arq-worker
       annotations:
-        checksum/secret-ref: {{ include "mit.secretName" . | sha256sum }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- include "mit.imagePullSecrets" . | nindent 6 }}
@@ -42,7 +41,7 @@ spec:
             - configMapRef:
                 name: mit-config
             - secretRef:
-                name: {{ include "mit.secretName" . }}
+                name: mit-secrets
           resources:
             requests:
               memory: {{ .Values.resources.arqWorker.requests.memory | quote }}

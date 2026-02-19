@@ -1,0 +1,92 @@
+items:
+  - env: "prod"
+    appName: mit
+    releaseName: mit
+    namespace: mit
+    syncWave: "10"
+    sourceType: gitPath
+    repoURL: https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
+    path: k8s/charts/mit
+    targetRevision: main
+    valuesCommon: |
+      global:
+        namespace: mit
+      backend:
+        port: 8000
+      frontend:
+        port: 80
+      redis:
+        host: redis-master
+        port: 6379
+      livekit:
+        host: lk-server
+        port: 80
+      jwt:
+        accessTokenExpireMinutes: 30
+        refreshTokenExpireDays: 7
+      worker:
+        clovaSttEndpoint: "clovaspeech-gw.ncloud.com:50051"
+        ttsVolumeScale: "0.70"
+      resources:
+        backend:
+          requests: { memory: "512Mi", cpu: "200m" }
+          limits: { memory: "1Gi", cpu: "500m" }
+        frontend:
+          requests: { memory: "32Mi", cpu: "50m" }
+          limits: { memory: "128Mi", cpu: "200m" }
+    valuesProd: |
+      global:
+        environment: production
+        registry: "ghcr.io/teamatoi"
+      replicas:
+        backend: 1
+        frontend: 2
+        arqWorker: 2
+      images:
+        pullSecret: "ghcr-secret"
+      ingress:
+        className: traefik
+        host: "www.mit-hub.com"
+        tls: true
+        certManager: true
+        clusterIssuer: "letsencrypt-prod"
+      livekit:
+        externalUrl: "wss://www.mit-hub.com/livekit"
+      app:
+        debug: false
+        logLevel: INFO
+        corsOrigins:
+          - "https://mit-hub.com"
+          - "https://www.mit-hub.com"
+        frontendBaseUrl: "https://www.mit-hub.com"
+      resources:
+        arqWorker:
+          requests: { memory: "256Mi", cpu: "100m" }
+          limits: { memory: "512Mi", cpu: "500m" }
+    valuesLocal: |
+      global:
+        environment: development
+        registry: mit-registry:5000
+      replicas:
+        backend: 1
+        frontend: 1
+        arqWorker: 1
+      images:
+        pullSecret: ""
+      ingress:
+        className: traefik
+        host: ""
+        tls: false
+      livekit:
+        externalUrl: "ws://localhost/livekit"
+      app:
+        debug: true
+        logLevel: INFO
+        corsOrigins:
+          - "http://localhost"
+          - "http://127.0.0.1"
+        frontendBaseUrl: "http://localhost"
+      resources:
+        arqWorker:
+          requests: { memory: "512Mi", cpu: "200m" }
+          limits: { memory: "1Gi", cpu: "500m" }

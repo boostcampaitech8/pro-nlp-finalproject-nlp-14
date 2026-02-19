@@ -321,4 +321,4 @@ histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_buc
 ## 참고
 
 - 메트릭 정의: `backend/app/core/telemetry.py`, `backend/worker/src/telemetry.py`
-- Alloy 설정: `k8s/charts/mit/templates/alloy-configmap.yaml`
+- Alloy 설정: `k8s/argocd/applicationsets/prod-observability.yaml` (`grafana/alloy` inline values)

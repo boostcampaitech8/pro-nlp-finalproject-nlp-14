@@ -1,0 +1,331 @@
+items:
+  - env: "prod"
+    appName: prometheus
+    namespace: mit
+    syncWave: "20"
+    sourceType: helmRepo
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus
+    targetRevision: "28.7.0"
+    valuesCommon: |
+      alertmanager:
+        enabled: false
+      prometheus-pushgateway:
+        enabled: false
+      kube-state-metrics:
+        enabled: true
+      prometheus-node-exporter:
+        enabled: false
+    valuesProd: |
+      server:
+        extraFlags:
+          - web.enable-remote-write-receiver
+        persistentVolume:
+          enabled: true
+          size: 10Gi
+        nodeSelector:
+          mit/stateful: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+    valuesLocal: |
+      server:
+        extraFlags:
+          - web.enable-remote-write-receiver
+        persistentVolume:
+          enabled: true
+          size: 5Gi
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+
+  - env: "prod"
+    appName: loki
+    namespace: mit
+    syncWave: "21"
+    sourceType: helmRepo
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: "6.51.0"
+    valuesCommon: |
+      deploymentMode: SingleBinary
+      loki:
+        auth_enabled: false
+        commonConfig:
+          replication_factor: 1
+        storage:
+          type: filesystem
+        schemaConfig:
+          configs:
+            - from: "2024-01-01"
+              store: tsdb
+              object_store: filesystem
+              schema: v13
+              index:
+                prefix: index_
+                period: 24h
+      read:
+        replicas: 0
+      write:
+        replicas: 0
+      backend:
+        replicas: 0
+      gateway:
+        enabled: false
+      chunksCache:
+        enabled: false
+      resultsCache:
+        enabled: false
+      lokiCanary:
+        enabled: false
+      test:
+        enabled: false
+    valuesProd: |
+      singleBinary:
+        replicas: 1
+        persistence:
+          enabled: true
+          size: 10Gi
+        nodeSelector:
+          mit/stateful: "true"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+    valuesLocal: |
+      singleBinary:
+        replicas: 1
+        persistence:
+          enabled: true
+          size: 5Gi
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+  - env: "prod"
+    appName: alloy
+    namespace: mit
+    syncWave: "22"
+    sourceType: helmRepo
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: "1.5.3"
+    valuesCommon: |
+      alloy:
+        configMap:
+          create: true
+          content: |-
+            otelcol.receiver.otlp "default" {
+              grpc {
+                endpoint = "0.0.0.0:4317"
+              }
+              http {
+                endpoint = "0.0.0.0:4318"
+              }
+              output {
+                metrics = [otelcol.processor.batch.default.input]
+              }
+            }
+
+            otelcol.processor.batch "default" {
+              timeout = "5s"
+              send_batch_size = 1000
+              output {
+                metrics = [otelcol.exporter.prometheus.default.input]
+              }
+            }
+
+            otelcol.exporter.prometheus "default" {
+              forward_to = [prometheus.remote_write.default.receiver]
+            }
+
+            prometheus.remote_write "default" {
+              endpoint {
+                url = "http://prometheus-server:80/api/v1/write"
+              }
+            }
+
+            prometheus.exporter.unix "node" {}
+
+            prometheus.scrape "node" {
+              targets    = prometheus.exporter.unix.node.targets
+              forward_to = [prometheus.remote_write.default.receiver]
+            }
+
+            discovery.kubernetes "pods" {
+              role = "pod"
+              namespaces {
+                names = ["mit"]
+              }
+            }
+
+            discovery.relabel "pods" {
+              targets = discovery.kubernetes.pods.targets
+
+              rule {
+                source_labels = ["__meta_kubernetes_namespace"]
+                target_label  = "namespace"
+              }
+
+              rule {
+                source_labels = ["__meta_kubernetes_pod_name"]
+                target_label  = "pod"
+              }
+
+              rule {
+                source_labels = ["__meta_kubernetes_pod_container_name"]
+                target_label  = "container"
+              }
+
+              rule {
+                source_labels = ["__meta_kubernetes_pod_label_app"]
+                target_label  = "app"
+              }
+
+              rule {
+                source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+                separator     = "/"
+                target_label  = "__path__"
+                replacement   = "/var/log/pods/*$1/$2/*.log"
+              }
+            }
+
+            loki.source.kubernetes "pods" {
+              targets    = discovery.relabel.pods.output
+              forward_to = [loki.process.pods.receiver]
+            }
+
+            loki.process "pods" {
+              forward_to = [loki.write.default.receiver]
+
+              stage.json {
+                expressions = {
+                  level   = "levelname"
+                  message = "message"
+                }
+              }
+
+              stage.labels {
+                values = {
+                  level = ""
+                }
+              }
+            }
+
+            loki.write "default" {
+              endpoint {
+                url = "http://loki:3100/loki/api/v1/push"
+              }
+            }
+        extraPorts:
+          - name: otlp-grpc
+            port: 4317
+            targetPort: 4317
+            protocol: TCP
+          - name: otlp-http
+            port: 4318
+            targetPort: 4318
+            protocol: TCP
+        mounts:
+          varlog: true
+          dockercontainers: true
+      controller:
+        type: daemonset
+    valuesProd: |
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "50m"
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+    valuesLocal: |
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+        limits:
+          memory: "128Mi"
+          cpu: "100m"
+
+  - env: "prod"
+    appName: grafana
+    namespace: mit
+    syncWave: "23"
+    sourceType: helmRepo
+    repoURL: https://grafana.github.io/helm-charts
+    chart: grafana
+    targetRevision: "10.5.15"
+    valuesCommon: |
+      admin:
+        existingSecret: mit-secrets
+        userKey: GRAFANA_ADMIN_USER
+        passwordKey: GRAFANA_ADMIN_PASSWORD
+      datasources:
+        datasources.yaml:
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              url: http://prometheus-server:80
+              isDefault: true
+            - name: Loki
+              type: loki
+              url: http://loki:3100
+    valuesProd: |
+      persistence:
+        enabled: true
+        size: 5Gi
+      nodeSelector:
+        mit/stateful: "true"
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "50m"
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+    valuesLocal: |
+      persistence:
+        enabled: true
+        size: 1Gi
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+        limits:
+          memory: "128Mi"
+          cpu: "200m"
+
+  - env: "prod"
+    appName: cloudflared
+    namespace: mit
+    syncWave: "24"
+    sourceType: gitPath
+    repoURL: https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
+    path: k8s/charts/cloudflared
+    targetRevision: main
+    valuesCommon: |
+      global:
+        namespace: mit
+      secretName: mit-secrets
+      secretKey: CLOUDFLARE_TUNNEL_TOKEN
+    valuesProd: |
+      replicaCount: 1
+    valuesLocal: |
+      replicaCount: 0

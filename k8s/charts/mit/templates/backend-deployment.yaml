@@ -13,7 +13,6 @@ spec:
       labels:
         app: backend
       annotations:
-        checksum/secret-ref: {{ include "mit.secretName" . | sha256sum }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: backend
@@ -42,7 +41,7 @@ spec:
             - configMapRef:
                 name: mit-config
             - secretRef:
-                name: {{ include "mit.secretName" . }}
+                name: mit-secrets
           livenessProbe:
             httpGet:
               path: /health

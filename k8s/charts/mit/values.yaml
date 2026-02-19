@@ -1,4 +1,4 @@
-# 차트 기본값 (helmfile에서 오버라이드됨)
+# 차트 기본값
 # 이 파일은 helm lint용 스키마 정의
 
 global:
@@ -21,10 +21,6 @@ images:
   worker:
     tag: "latest"
   pullSecret: "ghcr-secret"  # GHCR 인증용 시크릿
-
-# 앱 환경변수 Secret 참조 설정
-secrets:
-  name: "mit-secrets"
 
 # 앱 포트
 backend:
@@ -65,10 +61,6 @@ ingress:
   clusterIssuer: ""
   tlsSecretName: ""
   annotations: {}
-
-# Cloudflare Tunnel (Grafana 접근용)
-cloudflare:
-  enabled: false
 
 resources:
   backend:

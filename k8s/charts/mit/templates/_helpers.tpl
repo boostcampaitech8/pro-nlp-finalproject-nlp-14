@@ -27,13 +27,6 @@ imagePullSecrets:
 {{- end -}}
 
 {{/*
-앱 Secret 이름
-*/}}
-{{- define "mit.secretName" -}}
-{{ .Values.secrets.name | default "mit-secrets" }}
-{{- end -}}
-
-{{/*
 Redis URL 생성
 */}}
 {{- define "mit.redisUrl" -}}

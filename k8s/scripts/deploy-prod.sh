@@ -1,26 +1,7 @@
 #!/bin/bash
-# MIT 프로덕션 K8s 배포 스크립트 (k3s 서버용)
-#
-# 사용법:
-#   ./k8s/scripts/deploy-prod.sh              # helmfile 배포 (설정 변경 시)
-#   ./k8s/scripts/deploy-prod.sh --restart    # backend, frontend 재시작 (이미지 pull)
-#   ./k8s/scripts/deploy-prod.sh --rollback   # 이전 버전으로 롤백
-#   ./k8s/scripts/deploy-prod.sh --status     # 현재 배포 상태 확인
-#   ./k8s/scripts/deploy-prod.sh --logs backend        # 로그 확인
-#   ./k8s/scripts/deploy-prod.sh --logs worker <id>    # worker 로그 확인
-#   ./k8s/scripts/deploy-prod.sh --migrate             # DB 마이그레이션 실행
-#   ./k8s/scripts/deploy-prod.sh --db-status           # DB 마이그레이션 상태
-#   ./k8s/scripts/deploy-prod.sh --neo4j-update        # Neo4j 스키마 업데이트
-#   ./k8s/scripts/deploy-prod.sh --setup-ghcr          # GHCR 인증 시크릿 (최초 1회)
-#   ./k8s/scripts/deploy-prod.sh --setup-network       # LiveKit 네트워크 설정 (노드 최초 1회)
-#   ./k8s/scripts/deploy-prod.sh --help                # 도움말
-#
-# 사전 요구사항:
-#   - kubectl이 k3s 클러스터에 연결된 상태
-#   - helmfile 설치 (https://github.com/helmfile/helmfile)
-#   - External Secret(예: ESO)로 app Secret 생성
-
-set -e
+# MIT 프로덕션 운영 유틸리티
+# 배포(rollout)는 Argo CD ApplicationSet 자동 sync가 수행합니다.
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(dirname "$SCRIPT_DIR")"
@@ -28,7 +9,6 @@ ROOT_DIR="$(dirname "$K8S_DIR")"
 
 NAMESPACE="mit"
 
-# 색상 정의
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -38,21 +18,23 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# GHCR 인증 시크릿 설정 (최초 1회)
+bootstrap_argocd() {
+    log_info "Argo CD root app bootstrap"
+    "$SCRIPT_DIR/bootstrap-argocd.sh"
+}
+
 setup_ghcr_secret() {
     log_info "GHCR 인증 시크릿 설정"
 
     echo "GitHub Personal Access Token (read:packages 권한):"
-    read -s GITHUB_TOKEN
+    read -rs GITHUB_TOKEN
     echo ""
 
     echo "GitHub 사용자명:"
-    read GITHUB_USERNAME
+    read -r GITHUB_USERNAME
 
-    # 네임스페이스 생성
-    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-    # 기존 시크릿 삭제 후 재생성
     kubectl delete secret ghcr-secret -n "$NAMESPACE" 2>/dev/null || true
     kubectl create secret docker-registry ghcr-secret \
         --namespace="$NAMESPACE" \
@@ -63,111 +45,68 @@ setup_ghcr_secret() {
     log_info "GHCR 시크릿 생성 완료"
 }
 
-# 배포 실행
-deploy() {
-    log_info "배포 시작"
-
-    local secret_name="mit-secrets"
-
-    # 네임스페이스 보장
-    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-
-    if ! kubectl get secret "$secret_name" -n "$NAMESPACE" >/dev/null 2>&1; then
-        log_error "Secret(${secret_name})이 없어 배포 불가"
-        log_error "해결: ESO/ExternalSecret로 ${secret_name} 생성 후 재시도"
-        exit 1
-    fi
-    log_info "Secret 확인 완료: $secret_name"
-
-    cd "$K8S_DIR"
-
-    # helmfile 배포
-    helmfile -f helmfile.yaml.gotmpl -e prod apply
-
-    log_info "배포 완료!"
-    echo ""
-    kubectl get pods -n "$NAMESPACE"
-}
-
-# 롤백
-rollback() {
-    log_info "이전 버전으로 롤백"
-    helm rollback mit -n "$NAMESPACE"
-    kubectl get pods -n "$NAMESPACE"
-}
-
-# 상태 확인
 status() {
-    log_info "Pod 상태:"
+    log_info "Argo CD 애플리케이션"
+    kubectl get applications -n argocd || true
+    echo ""
+    log_info "Pod 상태"
     kubectl get pods -n "$NAMESPACE"
-    echo ""
-    log_info "Helm 릴리즈:"
-    helm list -n "$NAMESPACE"
-    echo ""
-    log_info "현재 이미지:"
-    kubectl get deployment -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.template.spec.containers[0].image}{"\n"}{end}'
 }
 
-# 로그 확인
 logs() {
-    local SVC="${1:-backend}"
-    local MEETING_ID="$2"
+    local svc="${1:-backend}"
+    local meeting_id="${2:-}"
 
-    if [ "$SVC" = "worker" ]; then
-        if [ -z "$MEETING_ID" ]; then
+    if [ "$svc" = "worker" ]; then
+        if [ -z "$meeting_id" ]; then
             log_error "worker 로그는 meetingId가 필요합니다"
             echo "사용법: $0 --logs worker <meetingId>"
             exit 1
         fi
-        kubectl logs -n "$NAMESPACE" -f "job/realtime-worker-meeting-$MEETING_ID"
+        kubectl logs -n "$NAMESPACE" -f "job/realtime-worker-meeting-$meeting_id"
     else
-        kubectl logs -n "$NAMESPACE" -f deployment/"$SVC"
+        kubectl logs -n "$NAMESPACE" -f deployment/"$svc"
     fi
 }
 
-# 재시작
 restart() {
-    log_info "backend, frontend 재시작"
+    log_warn "GitOps 환경에서는 수동 재시작보다 Git 변경 + Argo sync를 권장합니다"
     kubectl rollout restart deployment backend frontend -n "$NAMESPACE"
     kubectl rollout status deployment backend frontend -n "$NAMESPACE"
 }
 
-# DB 마이그레이션
 migrate() {
     log_info "DB 마이그레이션 실행"
     kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/alembic upgrade head
 }
 
-# DB 마이그레이션 상태
 db_status() {
     log_info "DB 마이그레이션 상태"
     kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/alembic current
 }
 
-# LiveKit 네트워크 설정 (노드 최초 1회, sudo 필요)
-# - loopback에 외부 IP 바인딩 (GCP는 외부 IP가 NAT이라 LiveKit이 직접 감지 불가)
-# - reverse path filtering 완화 (loopback에 바인딩된 외부 IP로 패킷 수신 허용)
+neo4j_update() {
+    log_info "Neo4j 스키마 업데이트"
+    kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/python /app/neo4j/init_schema.py
+}
+
 setup_network() {
-    if [ -z "$LB_EXTERNAL_IP" ]; then
+    if [ -z "${LB_EXTERNAL_IP:-}" ]; then
         log_error "LB_EXTERNAL_IP 환경변수가 필요합니다"
         exit 1
     fi
 
     log_info "LiveKit 네트워크 설정: $LB_EXTERNAL_IP"
 
-    # 1) sysctl - reverse path filtering 완화
-    log_info "sysctl 설정 (rp_filter=2)"
-    sudo tee /etc/sysctl.d/99-livekit.conf > /dev/null <<EOF
+    sudo tee /etc/sysctl.d/99-livekit.conf >/dev/null <<EOC
 # LiveKit WebRTC: loopback에 바인딩된 외부 IP로 들어오는 패킷 허용
 net.ipv4.conf.all.rp_filter=2
 net.ipv4.conf.default.rp_filter=2
 net.ipv4.conf.ens4.rp_filter=2
-EOF
-    sudo sysctl --system > /dev/null
+EOC
+    sudo sysctl --system >/dev/null
 
-    # 2) systemd - loopback에 외부 IP 영구 바인딩
-    log_info "systemd 서비스 설정 (loopback IP)"
-    sudo tee /etc/systemd/system/livekit-loopback-ip.service > /dev/null <<EOF
+    sudo tee /etc/systemd/system/livekit-loopback-ip.service >/dev/null <<EOC
 [Unit]
 Description=Add LiveKit external IP to loopback
 After=network.target
@@ -180,35 +119,47 @@ ExecStop=/sbin/ip addr del ${LB_EXTERNAL_IP}/32 dev lo
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOC
+
     sudo systemctl daemon-reload
     sudo systemctl enable --now livekit-loopback-ip.service
 
     log_info "네트워크 설정 완료"
-    log_info "  sysctl: /etc/sysctl.d/99-livekit.conf"
-    log_info "  systemd: livekit-loopback-ip.service (enabled)"
-    ip addr show dev lo | grep "$LB_EXTERNAL_IP" && log_info "  loopback IP 확인: $LB_EXTERNAL_IP ✓"
+    ip addr show dev lo | grep "$LB_EXTERNAL_IP" && log_info "loopback IP 확인: $LB_EXTERNAL_IP"
 }
 
-# Neo4j 스키마 업데이트
-neo4j_update() {
-    log_info "Neo4j 스키마 업데이트"
-    kubectl exec -n "$NAMESPACE" deploy/backend -- /app/.venv/bin/python /app/neo4j/init_schema.py
+usage() {
+    cat <<EOU
+사용법: $0 [옵션]
+
+배포 방식:
+  - 프로덕션 배포는 Argo CD가 수행합니다.
+  - bootstrap: ./k8s/scripts/bootstrap-argocd.sh
+
+옵션:
+  --bootstrap-argocd       root app 적용
+  --status                 Argo app/Pod 상태 확인
+  --logs [svc]             로그 (backend|frontend)
+  --logs worker <id>       worker 로그
+  --restart                backend/frontend 재시작
+  --migrate                DB 마이그레이션 실행
+  --db-status              DB 마이그레이션 상태
+  --neo4j-update           Neo4j 스키마 업데이트
+  --setup-ghcr             GHCR 인증 시크릿 생성
+  --setup-network          LiveKit 네트워크 설정 (sudo 필요)
+  --help                   도움말
+EOU
 }
 
-# 메인
 case "${1:-}" in
-    --setup-ghcr)
-        setup_ghcr_secret
-        ;;
-    --rollback)
-        rollback
+    --bootstrap-argocd)
+        bootstrap_argocd
         ;;
     --status)
         status
         ;;
     --logs)
-        logs "$2" "$3"
+        logs "${2:-}" "${3:-}"
         ;;
     --restart)
         restart
@@ -222,38 +173,29 @@ case "${1:-}" in
     --neo4j-update)
         neo4j_update
         ;;
+    --setup-ghcr)
+        setup_ghcr_secret
+        ;;
     --setup-network)
-        # .env에서 LB_EXTERNAL_IP 로드
         ENV_FILE="$ROOT_DIR/.env"
         if [ -f "$ENV_FILE" ]; then
-            set -a; source "$ENV_FILE"; set +a
+            set -a
+            source "$ENV_FILE"
+            set +a
         fi
         setup_network
         ;;
     --help|-h)
-        echo "사용법: $0 [옵션]"
-        echo ""
-        echo "배포:"
-        echo "  (옵션 없음)               helmfile 배포 (설정 변경 시)"
-        echo "  --restart                 backend, frontend 재시작 (이미지 pull)"
-        echo "  --rollback                이전 버전으로 롤백"
-        echo ""
-        echo "상태 확인:"
-        echo "  --status                  현재 배포 상태"
-        echo "  --logs [svc]              로그 (backend|frontend)"
-        echo "  --logs worker <id>        worker 로그"
-        echo ""
-        echo "DB/스키마:"
-        echo "  --migrate                 DB 마이그레이션 실행"
-        echo "  --db-status               DB 마이그레이션 상태"
-        echo "  --neo4j-update            Neo4j 스키마 업데이트"
-        echo ""
-        echo "설정:"
-        echo "  --setup-ghcr              GHCR 인증 시크릿 (최초 1회)"
-        echo "  --setup-network           LiveKit 네트워크 설정 (노드 최초 1회, sudo 필요)"
-        echo "  (사전) app Secret 준비:   ESO/ExternalSecret로 mit-secrets 생성"
+        usage
+        ;;
+    "")
+        log_warn "직접 배포는 비활성화되었습니다. Argo CD reconcile을 사용하세요."
+        usage
+        exit 1
         ;;
     *)
-        deploy
+        log_error "알 수 없는 옵션: $1"
+        usage
+        exit 1
         ;;
 esac

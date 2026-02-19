@@ -1,7 +1,3 @@
-{{- if .Values.cloudflare.enabled }}
-# Cloudflare Tunnel - Grafana 외부 접근용
-# 라우팅 설정은 Cloudflare Zero Trust 대시보드에서 관리
-# Ref: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/deployment-guides/kubernetes/
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,7 +6,7 @@ metadata:
   labels:
     app: cloudflared
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       app: cloudflared
@@ -25,7 +21,8 @@ spec:
             value: "65532 65532"
       containers:
         - name: cloudflared
-          image: cloudflare/cloudflared:2026.1.2
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - cloudflared
             - tunnel
@@ -39,15 +36,15 @@ spec:
             - name: TUNNEL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "mit.secretName" . }}
-                  key: CLOUDFLARE_TUNNEL_TOKEN
+                  name: {{ .Values.secretName }}
+                  key: {{ .Values.secretKey }}
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
+              memory: {{ .Values.resources.requests.memory | quote }}
+              cpu: {{ .Values.resources.requests.cpu | quote }}
             limits:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: {{ .Values.resources.limits.memory | quote }}
+              cpu: {{ .Values.resources.limits.cpu | quote }}
           livenessProbe:
             httpGet:
               path: /ready
@@ -55,4 +52,3 @@ spec:
             failureThreshold: 1
             initialDelaySeconds: 10
             periodSeconds: 10
-{{- end }}

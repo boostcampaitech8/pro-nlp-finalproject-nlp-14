@@ -30,7 +30,7 @@ NEO4J_URI="${NEO4J_URI:-bolt://localhost:7687}"
 NEO4J_USER="${NEO4J_USER:-neo4j}"
 NEO4J_PASSWORD="${NEO4J_PASSWORD:-mitpassword}"
 JWT_SECRET_KEY="${JWT_SECRET_KEY:-${JWT_SECRET:-change-this-secret-key}}"
-# values/local.yaml.gotmpl의 livekit.apiKey와 반드시 동일해야 함
+# local infra/livekit 배포 설정과 동일한 고정값 유지
 LIVEKIT_API_KEY="mit-api-key"
 LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:-secret-change-in-production-min-32-chars}"
 CLOVA_ROUTER_ID="${CLOVA_ROUTER_ID:-}"

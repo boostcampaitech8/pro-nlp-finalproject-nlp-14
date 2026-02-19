@@ -36,7 +36,6 @@ data:
   WORKER_IMAGE: {{ include "mit.image" (dict "Values" .Values "name" "worker") | quote }}
   IMAGE_PULL_SECRET: {{ .Values.images.pullSecret | quote }}
   KUBERNETES_NAMESPACE: {{ .Values.global.namespace | quote }}
-  APP_SECRET_NAME: {{ include "mit.secretName" . | quote }}
 
   # OpenTelemetry (Service Name은 각 컴포넌트 코드에서 설정)
   # gRPC exporter는 scheme 없이 host:port 형식 권장

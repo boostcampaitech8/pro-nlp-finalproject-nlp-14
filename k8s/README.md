@@ -1,142 +1,136 @@
 # Kubernetes 가이드
 
-k3d(로컬) / k3s(서버) 환경용 Helm 기반 배포 구성.
+Argo CD ApplicationSet 기반 GitOps 구성입니다.
 
-## 사전 요구사항
+## 배포 원칙
 
-### macOS
+- `prod` 배포 실행 주체: Argo CD reconcile
+- `local` 개발 실행 주체: `make infra`, `make dev`
+- Secret SSOT
+  - `prod`: GCP Secret Manager -> ESO -> `Secret/mit-secrets`
+  - `local`: `k8s/scripts/sync-app-secret.sh`
+- values SSOT
+  - `k8s/argocd/catalogs/core-apps.yaml` (`mit`의 `valuesCommon/valuesProd/valuesLocal`)
+  - `k8s/argocd/catalogs/core-infra.yaml` (infra external chart values)
+  - `k8s/argocd/catalogs/prod-observability.yaml` (observability external chart values)
+  - `k8s/image-tags.yaml` (`mit` 이미지 태그 SSOT)
+- CI/CD
+  - `ci.yml`: 이미지 빌드 + `k8s/image-tags.yaml` 갱신
+  - 배포: Git 변경 후 Argo CD auto sync
+
+## Argo CD 구성
+
+### AppProject
+
+- `k8s/argocd/appprojects/apps.yaml`
+
+### ApplicationSet 3분할
+
+- `k8s/argocd/applicationsets/core-infra.yaml`
+  - redis, livekit
+- `k8s/argocd/applicationsets/core-apps.yaml`
+  - mit 차트 (backend/frontend/arq)
+- `k8s/argocd/applicationsets/prod-observability.yaml`
+  - prometheus, loki, alloy, grafana, cloudflared
+- 카탈로그(앱 목록/메타): `k8s/argocd/catalogs/*.yaml`
+
+### Sync 순서
+
+- core-infra -> core-apps -> prod-observability
+- sync-wave annotation으로 순서 보장
+
+### Bootstrap
 
 ```bash
-brew install k3d helm helmfile kubectl
-
-# helmfile 플러그인
-helm plugin install https://github.com/databus23/helm-diff --verify=false
+# Argo CD namespace/root app 적용
+./k8s/scripts/bootstrap-argocd.sh
 ```
 
-### Windows (WSL2 + Docker Desktop)
-
-Docker Desktop 설정:
-- Settings > Resources > WSL Integration > 사용할 distro 활성화
-- Settings > Kubernetes > Enable Kubernetes **비활성화** (k3d와 충돌 방지)
-
-WSL2 터미널에서:
+또는
 
 ```bash
-# k3d
-curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-
-# helm
-curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-# helmfile
-curl -fsSL -o /tmp/helmfile.tar.gz \
-  "https://github.com/helmfile/helmfile/releases/download/v1.2.3/helmfile_1.2.3_linux_amd64.tar.gz"
-sudo tar -xzf /tmp/helmfile.tar.gz -C /usr/local/bin helmfile
-rm -f /tmp/helmfile.tar.gz
-
-# kubectl (WSL2 내 Linux 바이너리 별도 설치 권장)
-curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-rm -f kubectl
-
-# helm-diff (Helm 플러그인: helmfile diff 등에 사용)
-helm plugin install https://github.com/databus23/helm-diff
-
+./k8s/scripts/deploy-prod.sh --bootstrap-argocd
 ```
 
 ## 로컬 개발 (k3d)
 
-k8s 전체 배포 후, fe/be는 로컬에서도 실행하여 실시간 개발.
-
 ```bash
-# postgresql, neo4j, livekit, redis, realtime worker (docker, k3s 도커 업로드)
+# 1) 인프라 준비 (DB + k3d + redis/livekit + worker image)
 make infra
 
-# frontend, backend, arq worker 실행
-make install
+# 2) 앱 개발 서버
 make dev
 ```
 
-### 상태 확인
+선택 배포:
 
 ```bash
-make k8s-status              # Pod 상태
-make k8s-logs svc=backend    # 서비스 별 로그
-make k8s-logs svc=frontend
-kubectl -n mit logs job/realtime-worker-meeting-<meetingid> # 워커 로그
+make k8s-infra     # redis/livekit
+make k8s-observe   # prometheus/loki/alloy/grafana
+make k8s-deploy    # local chart + infra/observability
 ```
 
-### 정리
+## 차트 역할
 
-```bash
-make k8s-clean
-```
+### `charts/mit`
 
-## 프로덕션 배포 (k3s)
+앱 전용 차트입니다.
 
-[deploy-prod.sh](scripts/deploy-prod.sh) 참고.
+- backend/frontend/arq
+- 앱 공통 ConfigMap/secretRef 소비
+- cloudflared/alloy-configmap 템플릿 없음
 
-- Secret은 차트가 생성하지 않음
-- prod Secret SSOT: `GCP Secret Manager -> ESO -> Secret/mit-secrets`
-- local Secret 동기화: `k8s/scripts/sync-app-secret.sh` (local 전용)
-- 비비밀 배포값 SSOT: `k8s/values/prod.yaml.gotmpl`
-- 이미지 태그 SSOT: `k8s/image-tags.yaml`
+### `charts/cloudflared`
 
-## Makefile 타겟 요약
+독립 차트입니다.
 
-| 타겟 | 설명 |
-|------|------|
-| `k8s-setup` | k3d 클러스터 생성 |
-| `k8s-infra` | 인프라 배포 (Redis, LiveKit) |
-| `k8s-deploy` | 로컬 배포 (빌드 + 배포) |
-| `k8s-push` | 전체 빌드 & 재시작 |
-| `k8s-push-be` | Backend 빌드 & 재시작 |
-| `k8s-push-fe` | Frontend 빌드 & 재시작 |
-| `k8s-push-worker` | Worker 빌드 & 재시작 |
-| `k8s-pf` | 포트 포워딩 (백그라운드) |
-| `k8s-status` | Pod 상태 확인 |
-| `k8s-logs svc=X` | 로그 보기 |
-| `k8s-clean` | 클러스터 삭제 |
+- `TUNNEL_TOKEN`은 values가 아니라 Secret 참조
+- 기본 참조
+  - `secretName: mit-secrets`
+  - `secretKey: CLOUDFLARE_TUNNEL_TOKEN`
+- prod-observability ApplicationSet에서만 배포
 
-## 아키텍처
+### Alloy 구성
 
-```
-[Client] --> [Traefik Ingress :80/:443] --> [frontend nginx]
-                                               |
-                                               +--> /api/*     --> backend:8000
-                                               +--> /livekit/* --> lk-server:80
-                                               +--> /*         --> static files
+- 별도 커스텀 chart 없이 `grafana/alloy` 공식 chart 사용
+- `alloy.configMap.create=true`
+- 설정 본문은 ApplicationSet `helm.values` inline에서 선언
 
-backend:8000 --> PostgreSQL (외부)
-               --> Neo4j (외부)
-               --> redis-master:6379  (k8s)
-               --> lk-server:80       (k8s)
-```
+## 스크립트 정책
+
+- `k8s/scripts/deploy.sh`: local Helm 유틸리티
+  - catalog에서 `valuesCommon + valuesLocal`을 읽어 로컬 Helm 배포
+- `k8s/scripts/deploy-prod.sh`: 프로덕션 운영 유틸리티(배포 자체는 비활성화)
+- `k8s/scripts/sync-app-secret.sh`: local 전용
 
 ## 디렉토리 구조
 
-```
+```text
 k8s/
-├── charts/mit/           # 앱 Helm 차트
-│   ├── templates/        # K8s 매니페스트 템플릿
-│   └── values.yaml       # 기본값
-├── values/
-│   ├── local.yaml.gotmpl # 로컬 환경 설정
-│   └── prod.yaml.gotmpl  # 프로덕션 환경 설정
-├── scripts/
-│   ├── setup-k3d.sh      # 클러스터 생성
-│   ├── build.sh          # 이미지 빌드
-│   ├── sync-app-secret.sh # 앱 Secret 동기화(local 전용)
-│   ├── deploy.sh         # 배포
-│   └── deploy-prod.sh    # 프로덕션 배포
-├── helmfile.yaml.gotmpl  # Helmfile 메인 설정
-├── image-tags.yaml       # 프로덕션 이미지 태그 SSOT
-└── k3d-config.yaml       # k3d 클러스터 설정
+├── charts/
+│   ├── mit/
+│   └── cloudflared/
+├── image-tags.yaml
+├── argocd/
+│   ├── appprojects/
+│   │   └── apps.yaml
+│   ├── applicationsets/
+│   │   ├── core-apps.yaml
+│   │   ├── core-infra.yaml
+│   │   └── prod-observability.yaml
+│   ├── catalogs/
+│   │   ├── core-apps.yaml
+│   │   ├── core-infra.yaml
+│   │   └── prod-observability.yaml
+│   └── bootstrap/
+│       └── root-app.yaml
+└── scripts/
+    ├── bootstrap-argocd.sh
+    ├── deploy.sh
+    ├── deploy-prod.sh
+    └── sync-app-secret.sh
 ```
 
-## 외부 차트
+## Deprecated
 
-| 차트 | 용도 |
-|------|------|
-| bitnami/redis | Redis 7 |
-| livekit/livekit-server | WebRTC SFU |
+- Helmfile 기반 배포 (`helmfile.yaml.gotmpl`)는 제거되었습니다.

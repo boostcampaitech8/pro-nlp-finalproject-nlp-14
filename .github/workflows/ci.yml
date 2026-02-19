@@ -7,6 +7,7 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - 'packages/**'
+      - 'k8s/argocd/catalogs/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
@@ -14,6 +15,7 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - 'packages/**'
+      - 'k8s/argocd/catalogs/**'
 
 permissions:
   contents: write
@@ -25,6 +27,18 @@ env:
   IMAGE_PREFIX: ghcr.io/teamatoi
 
 jobs:
+  validate-catalogs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Argo catalogs (prod only)
+        run: |
+          if grep -REn '^[[:space:]]*env:[[:space:]]*["'"'"']?local["'"'"']?[[:space:]]*$' k8s/argocd/catalogs/*.yaml; then
+            echo "❌ local env is not allowed in Argo prod catalogs"
+            exit 1
+          fi
+          echo "✅ Catalog env validation passed"
+
   # 변경된 서비스 감지
   changes:
     runs-on: ubuntu-latest
@@ -169,12 +183,17 @@ jobs:
   # ===========================================
   ci-success:
     name: CI Success
-    needs: [changes, build-backend, build-frontend, build-worker]
+    needs: [validate-catalogs, changes, build-backend, build-frontend, build-worker]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check build results
         run: |
+          if [ "${{ needs.validate-catalogs.result }}" != "success" ]; then
+            echo "❌ Catalog validation failed"
+            exit 1
+          fi
+
           # 빌드가 필요했는데 실패한 경우 체크
           if [ "${{ needs.changes.outputs.backend }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "failure" ]; then
             echo "❌ Backend build failed"
@@ -194,13 +213,14 @@ jobs:
   # 이미지 태그 업데이트 (main push 시에만)
   # ===========================================
   update-tags:
-    needs: [changes, build-backend, build-frontend, build-worker]
+    needs: [validate-catalogs, changes, build-backend, build-frontend, build-worker]
     # 모든 빌드가 성공하거나 skip된 경우에만 실행 (실패 시 배포 안 함)
     # Note: needs.*.result는 GitHub Actions 버그로 인해 명시적 체크 필요 (actions/runner#1540)
     if: |
       always() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
+      needs.validate-catalogs.result == 'success' &&
       needs.changes.result == 'success' &&
       needs.build-backend.result != 'failure' &&
       needs.build-frontend.result != 'failure' &&

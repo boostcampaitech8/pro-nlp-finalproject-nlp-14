@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: core-apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
+              revision: main
+              files:
+                - path: k8s/argocd/catalogs/core-apps.yaml
+          - list:
+              elementsYaml: '{{ .items | toJson }}'
+  template:
+    metadata:
+      name: '{{ .appName }}'
+      namespace: argocd
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{ .syncWave }}'
+    spec:
+      project: apps
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: '{{ .repoURL }}'
+        targetRevision: '{{ .targetRevision }}'
+        helm:
+          releaseName: '{{ .releaseName }}'
+          valueFiles:
+            - ../../image-tags.yaml
+          values: |
+            {{- $common := trim .valuesCommon -}}
+            {{- $specific := trim .valuesProd -}}
+            {{- if and $common $specific -}}
+            {{- printf "%s\n%s" $common $specific | nindent 12 -}}
+            {{- else if $common -}}
+            {{- $common | nindent 12 -}}
+            {{- else -}}
+            {{- $specific | nindent 12 -}}
+            {{- end }}
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+  templatePatch: |
+    spec:
+      source:
+        {{- if eq .sourceType "helmRepo" }}
+        chart: {{ .chart }}
+        {{- else }}
+        path: {{ .path }}
+        {{- end }}

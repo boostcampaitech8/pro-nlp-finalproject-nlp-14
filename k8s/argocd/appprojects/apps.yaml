@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  description: MIT core apps, infra, and observability
+  sourceRepos:
+    - https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
+    - https://charts.bitnami.com/bitnami
+    - https://helm.livekit.io
+    - https://grafana.github.io/helm-charts
+    - https://prometheus-community.github.io/helm-charts
+  destinations:
+    - namespace: mit
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
