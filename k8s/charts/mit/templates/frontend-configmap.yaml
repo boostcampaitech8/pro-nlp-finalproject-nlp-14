@@ -54,7 +54,7 @@ data:
             # LiveKit WebSocket 프록시
             # 포트: Helm 차트가 서비스 {{ .Values.livekit.port }} → 컨테이너 7880 매핑
             location /livekit/ {
-                proxy_pass http://{{ .Values.livekit.host }}:{{ .Values.livekit.port }}/;
+                proxy_pass http://{{ required "livekit.host is required" .Values.livekit.host }}:{{ required "livekit.port is required" .Values.livekit.port }}/;
                 proxy_http_version 1.1;
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
