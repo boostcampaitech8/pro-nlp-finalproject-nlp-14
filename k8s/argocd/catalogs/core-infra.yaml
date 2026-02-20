@@ -1,0 +1,133 @@
+items:
+  - env: "prod"
+    appName: redis
+    namespace: mit
+    syncWave: "0"
+    sourceType: helmRepo
+    # Optional: private values repo overlay (Argo multi-source)
+    valuesRepoURL: ""
+    valuesTargetRevision: ""
+    valuesRef: ""
+    valuesFile: ""
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: redis
+    targetRevision: "24.1.2"
+    valuesCommon: |
+      architecture: standalone
+      auth:
+        enabled: false
+      replica:
+        replicaCount: 0
+    valuesProd: |
+      master:
+        persistence:
+          enabled: true
+          size: 1Gi
+        nodeSelector:
+          mit/redis: "true"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        service:
+          type: ClusterIP
+    valuesLocal: |
+      master:
+        persistence:
+          enabled: true
+          size: 1Gi
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        service:
+          type: ClusterIP
+
+  - env: "prod"
+    appName: livekit
+    namespace: mit
+    syncWave: "1"
+    sourceType: helmRepo
+    # Argo multi-source (public chart + private values overlay)
+    valuesRepoURL: https://github.com/TeamAtoI/MIT-GitOps-Values.git
+    valuesTargetRevision: main
+    valuesRef: values
+    valuesFile: livekit/prod.nodeip.yaml
+    repoURL: https://helm.livekit.io
+    chart: livekit-server
+    targetRevision: "1.9.0"
+    valuesCommon: |
+      fullnameOverride: lk-server
+      deploymentStrategy:
+        type: Recreate
+      storeKeysInSecret:
+        enabled: true
+        existingSecret: mit-secrets
+      service:
+        type: ClusterIP
+      replicaCount: 1
+      turn:
+        enabled: false
+    valuesProd: |
+      livekit:
+        key_file: keys.yaml
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 51000
+          use_external_ip: false
+        logging:
+          level: info
+          json: false
+        room:
+          empty_timeout: 5
+          max_participants: 8
+        redis:
+          address: "redis-master:6379"
+        webhook:
+          api_key: mit-api-key
+          urls:
+            - "http://backend:8000/api/v1/livekit/webhook"
+      nodeSelector:
+        mit/livekit: "true"
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1000m"
+    valuesLocal: |
+      livekit:
+        key_file: keys.yaml
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50020
+          use_external_ip: false
+        logging:
+          level: info
+          json: false
+        room:
+          empty_timeout: 5
+          max_participants: 8
+        redis:
+          address: "redis-master:6379"
+        webhook:
+          api_key: mit-api-key
+          urls:
+            - "http://host.docker.internal:8000/api/v1/livekit/webhook"
+            - "http://backend:8000/api/v1/livekit/webhook"
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "100m"
+        limits:
+          memory: "256Mi"
+          cpu: "500m"

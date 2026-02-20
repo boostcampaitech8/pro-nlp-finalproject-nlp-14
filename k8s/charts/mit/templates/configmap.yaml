@@ -29,9 +29,6 @@ data:
   LIVEKIT_EXTERNAL_URL: {{ .Values.livekit.externalUrl | quote }}
   LIVEKIT_EMPTY_TIMEOUT: "0"
 
-  # Neo4j (외부 서버)
-  NEO4J_URI: {{ .Values.neo4j.uri | quote }}
-
   # Worker
   CLOVA_STT_ENDPOINT: {{ .Values.worker.clovaSttEndpoint | quote }}
   TTS_VOLUME_SCALE: {{ .Values.worker.ttsVolumeScale | quote }}
@@ -39,14 +36,6 @@ data:
   WORKER_IMAGE: {{ include "mit.image" (dict "Values" .Values "name" "worker") | quote }}
   IMAGE_PULL_SECRET: {{ .Values.images.pullSecret | quote }}
   KUBERNETES_NAMESPACE: {{ .Values.global.namespace | quote }}
-
-  # NCP Clova Studio Router
-  CLOVA_ROUTER_ID: {{ .Values.ncp.clovaRouterId | quote }}
-  CLOVA_ROUTER_VERSION: {{ .Values.ncp.clovaRouterVersion | quote }}
-
-  # Langfuse (LLM Observability)
-  LANGFUSE_BASE_URL: {{ .Values.langfuse.baseUrl | quote }}
-  LANGFUSE_TRACING_ENABLED: {{ .Values.langfuse.tracingEnabled | quote }}
 
   # OpenTelemetry (Service Name은 각 컴포넌트 코드에서 설정)
   # gRPC exporter는 scheme 없이 host:port 형식 권장

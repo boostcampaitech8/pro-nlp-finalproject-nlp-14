@@ -33,7 +33,15 @@ make dev
 - API 문서: http://localhost:8000/docs
 
 k8s 세부 설정은 [k8s/README.md](k8s/README.md) 참고.
-k3s 실제 production 배포 시 [deploy-prod.sh](k8s/deploy-prod.sh) 참고.
+
+## 배포 모델
+
+- `prod`: Argo CD `ApplicationSet` GitOps (`k8s/argocd/**`)
+- `local`: `make infra`, `make dev` 중심 개발 흐름 유지
+- CI는 이미지를 빌드하고 `k8s/image-tags.yaml`을 갱신하며, prod 배포는 Argo auto sync로 반영
+- Secret SSOT
+  - `prod`: GCP Secret Manager + ESO -> `Secret/mit-secrets`
+  - `local`: `k8s/scripts/sync-app-secret.sh`
 
 ## 환경변수
 
@@ -122,9 +130,11 @@ mit/
 │   └── worker/               # Realtime Worker (LiveKit)
 │
 └── k8s/                      # Kubernetes 배포
-    ├── charts/mit/           # Helm 차트
+    ├── charts/mit/           # 앱 전용 Helm 차트 (backend/frontend/arq)
+    ├── charts/cloudflared/   # Cloudflare Tunnel Helm 차트
+    ├── argocd/               # AppProject/ApplicationSet/root app
     ├── scripts/              # 배포 스크립트
-    └── values/               # 환경별 설정
+    └── image-tags.yaml       # CI 이미지 태그 SSOT
 ```
 
 ## API

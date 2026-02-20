@@ -1,4 +1,4 @@
-# 차트 기본값 (helmfile에서 오버라이드됨)
+# 차트 기본값
 # 이 파일은 helm lint용 스키마 정의
 
 global:
@@ -29,13 +29,6 @@ backend:
 frontend:
   port: 80
 
-database:
-  host: postgres-postgresql
-  port: 5432
-  name: mit
-  user: mit
-  password: ""
-
 redis:
   host: redis-master
   port: 6379
@@ -44,17 +37,9 @@ livekit:
   host: livekit
   port: 7880
   apiKey: ""
-  apiSecret: ""
   externalUrl: ""
 
-neo4j:
-  host: neo4j
-  boltPort: 7687
-  user: neo4j
-  password: ""
-
 jwt:
-  secretKey: ""
   accessTokenExpireMinutes: 30
   refreshTokenExpireDays: 7
 
@@ -62,29 +47,11 @@ app:
   debug: false
   logLevel: INFO
   corsOrigins: []
+  frontendBaseUrl: "http://localhost"
 
 worker:
   clovaSttEndpoint: ""
-  # API 키 배열 (동적 할당용) - helmfile에서 오버라이드
-  clovaSttSecrets: []
-  backendApiKey: ""
-  ttsServerUrl: ""
   ttsVolumeScale: 0.70
-
-# NCP Clova Studio
-ncp:
-  clovaStudioApiKey: ""
-
-# OAuth
-oauth:
-  google:
-    clientId: ""
-    clientSecret: ""
-    redirectUri: ""
-  naver:
-    clientId: ""
-    clientSecret: ""
-    redirectUri: ""
 
 ingress:
   className: ""
@@ -94,11 +61,6 @@ ingress:
   clusterIssuer: ""
   tlsSecretName: ""
   annotations: {}
-
-# Cloudflare Tunnel (Grafana 접근용)
-cloudflare:
-  enabled: false
-  tunnelToken: ""
 
 resources:
   backend:

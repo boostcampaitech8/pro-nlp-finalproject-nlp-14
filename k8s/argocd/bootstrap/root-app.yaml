@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mit-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
+    targetRevision: main
+    path: k8s/argocd
+    directory:
+      recurse: true
+      exclude: '{bootstrap/root-app.yaml,catalogs/*.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

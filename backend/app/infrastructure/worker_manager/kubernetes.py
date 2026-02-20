@@ -52,6 +52,7 @@ class K8sWorkerManager:
         self.namespace = namespace or os.getenv("KUBERNETES_NAMESPACE", "mit")
         self.worker_image = worker_image or os.getenv("WORKER_IMAGE") or self._get_default_worker_image()
         self.image_pull_secret = image_pull_secret or os.getenv("IMAGE_PULL_SECRET") or self._get_default_pull_secret()
+        self.app_secret_name = "mit-secrets"
         self._worker_prefix = "realtime-worker"
 
     def _is_running_in_k8s(self) -> bool:
@@ -155,7 +156,7 @@ class K8sWorkerManager:
                                         name="CLOVA_STT_SECRET",
                                         value_from=client.V1EnvVarSource(
                                             secret_key_ref=client.V1SecretKeySelector(
-                                                name="mit-secrets",
+                                                name=self.app_secret_name,
                                                 key=f"CLOVA_STT_SECRET_{api_key_index}",
                                             ),
                                         ),
@@ -165,11 +166,12 @@ class K8sWorkerManager:
                                     client.V1EnvFromSource(
                                         config_map_ref=client.V1ConfigMapEnvSource(
                                             name="mit-config",
+                                            optional=True,
                                         ),
                                     ),
                                     client.V1EnvFromSource(
                                         secret_ref=client.V1SecretEnvSource(
-                                            name="mit-secrets",
+                                            name=self.app_secret_name,
                                         ),
                                     ),
                                 ],
