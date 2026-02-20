@@ -98,6 +98,10 @@ class K8sWorkerManager:
         else:
             return "http://host.docker.internal:8000"
 
+    def _get_livekit_ws_url(self) -> str:
+        """LiveKit WebSocket URL (워커는 항상 k8s 내부에서 실행)"""
+        return os.getenv("LIVEKIT_WS_URL", "ws://lk-server")
+
     def _build_job(self, job_name: str, meeting_id: str, api_key_index: int) -> client.V1Job:
         """K8s Job 매니페스트 생성
 
@@ -150,6 +154,11 @@ class K8sWorkerManager:
                                     client.V1EnvVar(
                                         name="BACKEND_API_URL",
                                         value=self._get_backend_url(),
+                                    ),
+                                    # LiveKit URL 명시 주입 (mit-config 없는 환경 대응)
+                                    client.V1EnvVar(
+                                        name="LIVEKIT_WS_URL",
+                                        value=self._get_livekit_ws_url(),
                                     ),
                                     # 할당된 Clova STT API 키 (Secret에서 참조)
                                     client.V1EnvVar(
