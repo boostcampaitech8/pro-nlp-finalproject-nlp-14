@@ -4,6 +4,11 @@ items:
     namespace: mit
     syncWave: "0"
     sourceType: helmRepo
+    # Optional: private values repo overlay (Argo multi-source)
+    valuesRepoURL: ""
+    valuesTargetRevision: ""
+    valuesRef: ""
+    valuesFile: ""
     repoURL: https://charts.bitnami.com/bitnami
     chart: redis
     targetRevision: "24.1.2"
@@ -49,6 +54,11 @@ items:
     namespace: mit
     syncWave: "1"
     sourceType: helmRepo
+    # Argo multi-source (public chart + private values overlay)
+    valuesRepoURL: ssh://git@github.com/TeamAtoI/MIT-GitOps-Values.git
+    valuesTargetRevision: main
+    valuesRef: values
+    valuesFile: livekit/prod.nodeip.yaml
     repoURL: https://helm.livekit.io
     chart: livekit-server
     targetRevision: "1.9.0"
