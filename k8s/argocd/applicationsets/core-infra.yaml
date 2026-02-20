@@ -67,7 +67,7 @@ spec:
             values: |
               {{- $common := (fromYaml (trim .valuesCommon) | default dict) -}}
               {{- $prod := (fromYaml (trim .valuesProd) | default dict) -}}
-              {{- deepCopy $common | mergeOverwrite $prod | toYaml | nindent 14 -}}
+              {{- deepCopy $common | mergeOverwrite $prod | toYaml | nindent 14 }}
         - repoURL: {{ .valuesRepoURL }}
           targetRevision: {{ .valuesTargetRevision }}
           ref: {{ .valuesRef }}
