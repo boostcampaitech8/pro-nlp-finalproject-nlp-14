@@ -1,0 +1,60 @@
+paths:
+  /api/v1/meetings/{meetingId}/chat:
+    get:
+      summary: 회의 채팅 메시지 조회
+      description: |
+        회의의 채팅 메시지를 시간순으로 조회합니다.
+        - 페이지네이션 지원 (기본 100개, 최대 500개)
+        - 오래된 메시지부터 정렬
+      operationId: getChatMessages
+      tags:
+        - Chat
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            $ref: '../schemas/common.yaml#/components/schemas/UUID'
+          description: 회의 ID
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: 페이지 번호
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 500
+          description: 페이지당 메시지 수
+      responses:
+        '200':
+          description: 채팅 메시지 목록
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/chat.yaml#/components/schemas/ChatMessageListResponse'
+        '401':
+          description: 인증되지 않음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 회의 참여자가 아님
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 회의를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
