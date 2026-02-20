@@ -215,14 +215,14 @@ items:
 
               stage.json {
                 expressions = {
-                  level   = "levelname"
-                  message = "message"
+                  level   = "levelname",
+                  message = "message",
                 }
               }
 
               stage.labels {
                 values = {
-                  level = ""
+                  level = "",
                 }
               }
             }
