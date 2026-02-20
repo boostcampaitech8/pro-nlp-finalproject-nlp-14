@@ -6,7 +6,7 @@ items:
     syncWave: "10"
     sourceType: gitPath
     repoURL: https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
-    path: k8s/charts/mit
+    chartPath: k8s/charts/mit
     targetRevision: main
     valuesCommon: |
       global:

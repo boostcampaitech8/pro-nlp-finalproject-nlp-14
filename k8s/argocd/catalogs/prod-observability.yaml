@@ -318,7 +318,7 @@ items:
     syncWave: "24"
     sourceType: gitPath
     repoURL: https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
-    path: k8s/charts/cloudflared
+    chartPath: k8s/charts/cloudflared
     targetRevision: main
     valuesCommon: |
       global:

@@ -87,6 +87,6 @@ spec:
         {{- if eq .sourceType "helmRepo" }}
         chart: {{ .chart }}
         {{- else }}
-        path: {{ .path }}
+        path: {{ .chartPath }}
         {{- end }}
       {{- end }}
