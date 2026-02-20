@@ -13,7 +13,7 @@ spec:
     - https://helm.livekit.io
     - https://grafana.github.io/helm-charts
     - https://prometheus-community.github.io/helm-charts
-    - ssh://git@github.com/TeamAtoI/MIT-GitOps-Values.git
+    - https://github.com/TeamAtoI/MIT-GitOps-Values.git
   destinations:
     - namespace: mit
       server: https://kubernetes.default.svc

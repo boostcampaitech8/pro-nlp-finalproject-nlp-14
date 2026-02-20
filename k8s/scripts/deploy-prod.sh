@@ -23,16 +23,19 @@ bootstrap_argocd() {
     "$SCRIPT_DIR/bootstrap-argocd.sh"
 }
 
-setup_ghcr_secret() {
-    log_info "GHCR 인증 시크릿 설정"
-
-    echo "GitHub Personal Access Token (read:packages 권한):"
-    read -rs GITHUB_TOKEN
+setup_github() {
+    log_info "GitHub 인증 설정 (GHCR 이미지 pull + ArgoCD private repo)"
+    echo "  필요한 PAT 권한: read:packages, repo (또는 fine-grained: Contents Read)"
     echo ""
 
     echo "GitHub 사용자명:"
     read -r GITHUB_USERNAME
 
+    echo "GitHub Personal Access Token:"
+    read -rs GITHUB_TOKEN
+    echo ""
+
+    # 1) GHCR 이미지 pull용 (mit namespace)
     kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
     kubectl delete secret ghcr-secret -n "$NAMESPACE" 2>/dev/null || true
@@ -41,8 +44,26 @@ setup_ghcr_secret() {
         --docker-server=ghcr.io \
         --docker-username="$GITHUB_USERNAME" \
         --docker-password="$GITHUB_TOKEN"
+    log_info "GHCR 시크릿 생성 완료: $NAMESPACE/ghcr-secret"
 
-    log_info "GHCR 시크릿 생성 완료"
+    # 2) ArgoCD private repo 접근용 (argocd namespace)
+    kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+    kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mit-gitops-values-repo
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: git
+  url: https://github.com/TeamAtoI/MIT-GitOps-Values.git
+  username: "${GITHUB_USERNAME}"
+  password: "${GITHUB_TOKEN}"
+EOF
+    log_info "ArgoCD repo 시크릿 생성 완료: argocd/mit-gitops-values-repo"
 }
 
 status() {
@@ -145,7 +166,7 @@ usage() {
   --migrate                DB 마이그레이션 실행
   --db-status              DB 마이그레이션 상태
   --neo4j-update           Neo4j 스키마 업데이트
-  --setup-ghcr             GHCR 인증 시크릿 생성
+  --setup-github           GitHub 인증 (GHCR + ArgoCD repo)
   --setup-network          LiveKit 네트워크 설정 (sudo 필요)
   --help                   도움말
 EOU
@@ -173,8 +194,8 @@ case "${1:-}" in
     --neo4j-update)
         neo4j_update
         ;;
-    --setup-ghcr)
-        setup_ghcr_secret
+    --setup-github)
+        setup_github
         ;;
     --setup-network)
         ENV_FILE="$ROOT_DIR/.env"

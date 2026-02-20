@@ -55,7 +55,7 @@ items:
     syncWave: "1"
     sourceType: helmRepo
     # Argo multi-source (public chart + private values overlay)
-    valuesRepoURL: ssh://git@github.com/TeamAtoI/MIT-GitOps-Values.git
+    valuesRepoURL: https://github.com/TeamAtoI/MIT-GitOps-Values.git
     valuesTargetRevision: main
     valuesRef: values
     valuesFile: livekit/prod.nodeip.yaml
