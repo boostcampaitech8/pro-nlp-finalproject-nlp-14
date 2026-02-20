@@ -282,7 +282,31 @@ sum by (pod) (kube_pod_container_status_restarts_total{namespace="mit"})
 
 ---
 
-## 8. Grafana 대시보드용
+## 8. Node 리소스
+
+> `node_exporter` 메트릭 기준입니다.
+> 누적값이 아닌 현재값을 보려면 Prometheus/Grafana에서 `Instant` 쿼리 사용을 권장합니다.
+
+### 노드별 메모리 사용량 (bytes, 현재값)
+```
+sum by (instance) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+```
+
+### 노드별 메모리 사용량 (GiB, 현재값)
+```
+sum by (instance) ((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024)
+```
+
+### 노드별 메모리 사용률 (%, 현재값)
+```
+sum by (instance) (100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+```
+
+> `MemFree`보다 `MemAvailable` 기준이 실제 사용 가능 메모리를 반영하기에 더 적합합니다.
+
+---
+
+## 9. Grafana 대시보드용
 
 ### 활성 요청 수 (Stat 패널)
 ```
