@@ -1,0 +1,62 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: prod-observability
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/boostcampaitech8/pro-nlp-finalproject-nlp-14.git
+              revision: main
+              requeueAfterSeconds: 15
+              files:
+                - path: k8s/argocd/catalogs/prod-observability.yaml
+          - list:
+              elementsYaml: '{{ .items | toJson }}'
+  template:
+    metadata:
+      name: '{{ .appName }}'
+      namespace: argocd
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{ .syncWave }}'
+    spec:
+      project: apps
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: '{{ .repoURL }}'
+        targetRevision: '{{ .targetRevision }}'
+        helm:
+          releaseName: '{{ .appName }}'
+          values: |
+            {{- $common := (fromYaml (trim .valuesCommon) | default dict) -}}
+            {{- $prod := (fromYaml (trim .valuesProd) | default dict) -}}
+            {{- deepCopy $common | mergeOverwrite $prod | toYaml | nindent 12 -}}
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - CreateNamespace=true
+  templatePatch: |
+    spec:
+      source:
+        {{- if eq .sourceType "helmRepo" }}
+        chart: {{ .chart }}
+        {{- else }}
+        path: {{ .chartPath }}
+        {{- end }}

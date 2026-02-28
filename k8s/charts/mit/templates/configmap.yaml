@@ -1,0 +1,42 @@
+# 비민감 설정 (values 파일에서 주입)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mit-config
+  namespace: {{ .Values.global.namespace }}
+data:
+  # App 설정
+  APP_ENV: {{ .Values.global.environment | quote }}
+  DEBUG: {{ .Values.app.debug | quote }}
+  LOG_LEVEL: {{ .Values.app.logLevel | quote }}
+
+  # Redis
+  REDIS_URL: "{{ include "mit.redisUrl" . }}/0"
+  ARQ_REDIS_URL: "{{ include "mit.redisUrl" . }}/1"
+
+  # JWT (시크릿 제외)
+  ACCESS_TOKEN_EXPIRE_MINUTES: {{ .Values.jwt.accessTokenExpireMinutes | quote }}
+  REFRESH_TOKEN_EXPIRE_DAYS: {{ .Values.jwt.refreshTokenExpireDays | quote }}
+
+  # CORS
+  CORS_ORIGINS: {{ include "mit.corsOrigins" . | quote }}
+
+  # Frontend
+  FRONTEND_BASE_URL: {{ .Values.app.frontendBaseUrl | quote }}
+
+  # LiveKit
+  LIVEKIT_WS_URL: {{ include "mit.livekitWsUrl" . | quote }}
+  LIVEKIT_EXTERNAL_URL: {{ .Values.livekit.externalUrl | quote }}
+  LIVEKIT_EMPTY_TIMEOUT: "0"
+
+  # Worker
+  CLOVA_STT_ENDPOINT: {{ .Values.worker.clovaSttEndpoint | quote }}
+  TTS_VOLUME_SCALE: {{ .Values.worker.ttsVolumeScale | quote }}
+  BACKEND_API_URL: {{ include "mit.backendUrl" . | quote }}
+  WORKER_IMAGE: {{ include "mit.image" (dict "Values" .Values "name" "worker") | quote }}
+  IMAGE_PULL_SECRET: {{ .Values.images.pullSecret | quote }}
+  KUBERNETES_NAMESPACE: {{ .Values.global.namespace | quote }}
+
+  # OpenTelemetry (Service Name은 각 컴포넌트 코드에서 설정)
+  # gRPC exporter는 scheme 없이 host:port 형식 권장
+  OTEL_EXPORTER_OTLP_ENDPOINT: "alloy:4317"

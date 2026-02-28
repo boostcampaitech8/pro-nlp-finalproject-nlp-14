@@ -1,0 +1,208 @@
+openapi: 3.0.3
+info:
+  title: Mit API
+  description: |
+    Mit - Collaborative organization knowledge system API
+
+    Git이 코드의 진실을 관리하듯, 조직 회의의 진실을 관리하는 협업 기반 조직 지식 시스템
+  version: 0.1.0
+  contact:
+    name: Mit Team
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+
+tags:
+  - name: Auth
+    description: 인증 관련 API
+  - name: Teams
+    description: 팀 관련 API
+  - name: TeamMembers
+    description: 팀 멤버 관련 API
+  - name: Meetings
+    description: 회의 관련 API
+  - name: MeetingParticipants
+    description: 회의 참여자 관련 API
+  - name: WebRTC
+    description: 실시간 회의 관련 API (시그널링, 회의 시작/종료)
+  - name: Recordings
+    description: 회의 녹음 관련 API
+  - name: Transcripts
+    description: Worker segment 저장 및 조회 API
+  - name: Chat
+    description: 회의 채팅 관련 API
+
+# 공통 스키마 참조
+components:
+  schemas:
+    # Common
+    ErrorResponse:
+      $ref: './schemas/common.yaml#/components/schemas/ErrorResponse'
+    PaginationMeta:
+      $ref: './schemas/common.yaml#/components/schemas/PaginationMeta'
+    UUID:
+      $ref: './schemas/common.yaml#/components/schemas/UUID'
+    Timestamp:
+      $ref: './schemas/common.yaml#/components/schemas/Timestamp'
+
+    # Auth
+    AuthProvider:
+      $ref: './schemas/auth.yaml#/components/schemas/AuthProvider'
+    User:
+      $ref: './schemas/auth.yaml#/components/schemas/User'
+    NaverLoginUrlResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/NaverLoginUrlResponse'
+    GoogleLoginUrlResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/GoogleLoginUrlResponse'
+    TokenResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/TokenResponse'
+    AuthResponse:
+      $ref: './schemas/auth.yaml#/components/schemas/AuthResponse'
+    RefreshTokenRequest:
+      $ref: './schemas/auth.yaml#/components/schemas/RefreshTokenRequest'
+
+    # Team
+    TeamRole:
+      $ref: './schemas/team.yaml#/components/schemas/TeamRole'
+    Team:
+      $ref: './schemas/team.yaml#/components/schemas/Team'
+    TeamMember:
+      $ref: './schemas/team.yaml#/components/schemas/TeamMember'
+    TeamWithMembers:
+      $ref: './schemas/team.yaml#/components/schemas/TeamWithMembers'
+    CreateTeamRequest:
+      $ref: './schemas/team.yaml#/components/schemas/CreateTeamRequest'
+    UpdateTeamRequest:
+      $ref: './schemas/team.yaml#/components/schemas/UpdateTeamRequest'
+    TeamListResponse:
+      $ref: './schemas/team.yaml#/components/schemas/TeamListResponse'
+
+    # Meeting
+    MeetingStatus:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingStatus'
+    ParticipantRole:
+      $ref: './schemas/meeting.yaml#/components/schemas/ParticipantRole'
+    Meeting:
+      $ref: './schemas/meeting.yaml#/components/schemas/Meeting'
+    MeetingParticipant:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingParticipant'
+    MeetingWithParticipants:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingWithParticipants'
+    CreateMeetingRequest:
+      $ref: './schemas/meeting.yaml#/components/schemas/CreateMeetingRequest'
+    UpdateMeetingRequest:
+      $ref: './schemas/meeting.yaml#/components/schemas/UpdateMeetingRequest'
+    MeetingListResponse:
+      $ref: './schemas/meeting.yaml#/components/schemas/MeetingListResponse'
+
+    # TeamMember (merged into team.yaml)
+    InviteTeamMemberRequest:
+      $ref: './schemas/team.yaml#/components/schemas/InviteTeamMemberRequest'
+    UpdateTeamMemberRequest:
+      $ref: './schemas/team.yaml#/components/schemas/UpdateTeamMemberRequest'
+
+    # MeetingParticipant (merged into meeting.yaml)
+    AddMeetingParticipantRequest:
+      $ref: './schemas/meeting.yaml#/components/schemas/AddMeetingParticipantRequest'
+    UpdateMeetingParticipantRequest:
+      $ref: './schemas/meeting.yaml#/components/schemas/UpdateMeetingParticipantRequest'
+
+    # WebRTC
+    RoomParticipant:
+      $ref: './schemas/webrtc.yaml#/components/schemas/RoomParticipant'
+    IceServer:
+      $ref: './schemas/webrtc.yaml#/components/schemas/IceServer'
+    MeetingRoomResponse:
+      $ref: './schemas/webrtc.yaml#/components/schemas/MeetingRoomResponse'
+    StartMeetingResponse:
+      $ref: './schemas/webrtc.yaml#/components/schemas/StartMeetingResponse'
+    EndMeetingResponse:
+      $ref: './schemas/webrtc.yaml#/components/schemas/EndMeetingResponse'
+
+    # Recordings
+    RecordingStatus:
+      $ref: './schemas/recording.yaml#/components/schemas/RecordingStatus'
+    Recording:
+      $ref: './schemas/recording.yaml#/components/schemas/Recording'
+    RecordingListResponse:
+      $ref: './schemas/recording.yaml#/components/schemas/RecordingListResponse'
+    RecordingDownloadResponse:
+      $ref: './schemas/recording.yaml#/components/schemas/RecordingDownloadResponse'
+
+    # Chat
+    ChatMessage:
+      $ref: './schemas/chat.yaml#/components/schemas/ChatMessage'
+    ChatMessageListResponse:
+      $ref: './schemas/chat.yaml#/components/schemas/ChatMessageListResponse'
+
+  securitySchemes:
+    BearerAuth:
+      $ref: './schemas/auth.yaml#/components/securitySchemes/BearerAuth'
+
+# API 경로 참조
+paths:
+  /api/v1/auth/naver/login:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1naver~1login'
+  /api/v1/auth/naver/callback:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1naver~1callback'
+  /api/v1/auth/google/login:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1google~1login'
+  /api/v1/auth/google/callback:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1google~1callback'
+  /api/v1/auth/guest:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1guest'
+  /api/v1/auth/refresh:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1refresh'
+  /api/v1/auth/logout:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1logout'
+  /api/v1/auth/me:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1me'
+
+  # Teams
+  /api/v1/teams:
+    $ref: './paths/teams.yaml#/paths/~1api~1v1~1teams'
+  /api/v1/teams/{teamId}:
+    $ref: './paths/teams.yaml#/paths/~1api~1v1~1teams~1{teamId}'
+
+  # TeamMembers
+  /api/v1/teams/{teamId}/members:
+    $ref: './paths/team-members.yaml#/paths/~1api~1v1~1teams~1{teamId}~1members'
+  /api/v1/teams/{teamId}/members/{userId}:
+    $ref: './paths/team-members.yaml#/paths/~1api~1v1~1teams~1{teamId}~1members~1{userId}'
+
+  # Meetings
+  /api/v1/teams/{teamId}/meetings:
+    $ref: './paths/meetings.yaml#/paths/~1api~1v1~1teams~1{teamId}~1meetings'
+  /api/v1/meetings/{meetingId}:
+    $ref: './paths/meetings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}'
+
+  # MeetingParticipants
+  /api/v1/meetings/{meetingId}/participants:
+    $ref: './paths/meeting-participants.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1participants'
+  /api/v1/meetings/{meetingId}/participants/{userId}:
+    $ref: './paths/meeting-participants.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1participants~1{userId}'
+
+  # WebRTC
+  /api/v1/meetings/{meetingId}/room:
+    $ref: './paths/webrtc.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1room'
+  /api/v1/meetings/{meetingId}/start:
+    $ref: './paths/webrtc.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1start'
+  /api/v1/meetings/{meetingId}/end:
+    $ref: './paths/webrtc.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1end'
+
+  # Recordings
+  /api/v1/meetings/{meetingId}/recordings:
+    $ref: './paths/recordings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1recordings'
+  /api/v1/meetings/{meetingId}/recordings/{recordingId}/download:
+    $ref: './paths/recordings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1recordings~1{recordingId}~1download'
+  /api/v1/meetings/{meetingId}/recordings/{recordingId}/transcript:
+    $ref: './paths/recordings.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1recordings~1{recordingId}~1transcript'
+
+  # Transcripts
+  /api/v1/meetings/{meeting_id}/transcripts:
+    $ref: './paths/transcripts.yaml#/paths/~1api~1v1~1meetings~1{meeting_id}~1transcripts'
+
+  # Chat
+  /api/v1/meetings/{meetingId}/chat:
+    $ref: './paths/chat.yaml#/paths/~1api~1v1~1meetings~1{meetingId}~1chat'

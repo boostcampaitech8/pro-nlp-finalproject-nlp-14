@@ -1,0 +1,37 @@
+[project]
+name = "mit-realtime-worker"
+version = "0.1.0"
+description = "Mit Realtime Worker - LiveKit Bot + STT"
+requires-python = ">=3.12"
+dependencies = [
+    # LiveKit SDK
+    "livekit>=0.17.0",
+    "livekit-api>=0.7.0",
+    # gRPC (Clova Speech STT)
+    "grpcio-tools>=1.76.0",
+    # HTTP Client (Backend API 호출)
+    "httpx>=0.28.0",
+    # Settings & Validation
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    # OpenTelemetry
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp>=1.27.0",
+    "opentelemetry-instrumentation-httpx>=0.48b0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.8.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]

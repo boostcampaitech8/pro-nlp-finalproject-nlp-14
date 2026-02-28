@@ -1,0 +1,41 @@
+# 로컬 k3d 클러스터 설정
+# 사용: k3d cluster create --config k8s/k3d-config.yaml
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: mit
+kubeAPI:
+  host: "127.0.0.1"  # kubeconfig에 들어갈 주소
+  hostIP: "0.0.0.0"  # 실제 바인딩 주소
+  hostPort: "6550"
+servers: 1
+agents: 0
+image: rancher/k3s:v1.28.5-k3s1
+ports:
+  # Traefik Ingress (HTTP/HTTPS)
+  - port: 80:80
+    nodeFilters: [loadbalancer]
+  - port: 443:443
+    nodeFilters: [loadbalancer]
+  # LiveKit RTC TCP (WebRTC 미디어용 - 로컬 개발 전용)
+  - port: 7881:7881
+    nodeFilters: [server:0]
+options:
+  k3d:
+    wait: true
+    timeout: "120s"
+  k3s:
+    extraArgs: []  # Traefik 활성화 (k3s 기본 Ingress controller)
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
+registries:
+  create:
+    name: mit-registry
+    host: "0.0.0.0"
+    hostPort: "5111"
+  config: |
+    mirrors:
+      "k3d-mit-registry:5111":
+        endpoint:
+          - "http://k3d-mit-registry:5111"

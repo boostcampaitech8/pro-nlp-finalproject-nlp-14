@@ -1,0 +1,36 @@
+# Backend ServiceAccount + RBAC
+# K8sWorkerManager가 Job을 동적 생성/삭제하기 위한 권한
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend
+  namespace: {{ .Values.global.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-worker-manager
+  namespace: {{ .Values.global.namespace }}
+rules:
+  # Job 생성/삭제/조회 (회의별 워커 관리)
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+  # Pod 상태 조회 (워커 로그 확인용)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-worker-manager
+  namespace: {{ .Values.global.namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: backend
+    namespace: {{ .Values.global.namespace }}
+roleRef:
+  kind: Role
+  name: backend-worker-manager
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,188 @@
+/**
+ * 오디오 컨트롤 컴포넌트
+ * 마이크 음소거 토글 버튼 + 장치 선택
+ */
+
+import { useAudioDevices } from '@/hooks/useAudioDevices';
+import { DeviceSelector } from './DeviceSelector';
+
+interface AudioControlsProps {
+  isAudioMuted: boolean;
+  onToggleMute: () => void;
+  disabled?: boolean;
+  // 장치 선택
+  audioInputDeviceId: string | null;
+  audioOutputDeviceId: string | null;
+  onAudioInputChange: (deviceId: string) => void;
+  onAudioOutputChange: (deviceId: string) => void;
+  // 화면공유
+  isScreenSharing: boolean;
+  onToggleScreenShare: () => void;
+}
+
+export function AudioControls({
+  isAudioMuted,
+  onToggleMute,
+  disabled,
+  audioInputDeviceId,
+  audioOutputDeviceId,
+  onAudioInputChange,
+  onAudioOutputChange,
+  isScreenSharing,
+  onToggleScreenShare,
+}: AudioControlsProps) {
+  const {
+    audioInputDevices,
+    audioOutputDevices,
+    isSinkIdSupported,
+  } = useAudioDevices();
+
+  return (
+    <div className="flex items-center gap-6">
+      {/* 마이크 선택 */}
+      <DeviceSelector
+        label="마이크 선택"
+        devices={audioInputDevices}
+        selectedDeviceId={audioInputDeviceId}
+        onDeviceChange={onAudioInputChange}
+        disabled={disabled}
+        icon="mic"
+      />
+
+      {/* 음소거 버튼 */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onToggleMute}
+          disabled={disabled}
+          className={`
+            flex items-center justify-center w-14 h-14 rounded-full
+            transition-colors duration-200
+            ${
+              isAudioMuted
+                ? 'bg-red-500 hover:bg-red-600 text-white'
+                : 'bg-gray-700 hover:bg-gray-600 text-white'
+            }
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          `}
+          title={isAudioMuted ? '마이크 켜기' : '마이크 끄기'}
+        >
+          {isAudioMuted ? (
+            // 마이크 음소거 아이콘
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
+              />
+            </svg>
+          ) : (
+            // 마이크 아이콘
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+              />
+            </svg>
+          )}
+        </button>
+        <span className="text-sm text-gray-400 w-20">
+          {isAudioMuted ? '음소거됨' : '마이크 켜짐'}
+        </span>
+      </div>
+
+      {/* 스피커 선택 */}
+      <DeviceSelector
+        label="스피커 선택"
+        devices={audioOutputDevices}
+        selectedDeviceId={audioOutputDeviceId}
+        onDeviceChange={onAudioOutputChange}
+        disabled={disabled || !isSinkIdSupported}
+        disabledMessage={!isSinkIdSupported ? '이 브라우저에서는 출력 장치 선택을 지원하지 않습니다' : undefined}
+        icon="speaker"
+      />
+
+      {/* 화면공유 버튼 */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onToggleScreenShare}
+          disabled={disabled}
+          className={`
+            flex items-center justify-center w-14 h-14 rounded-full
+            transition-colors duration-200
+            ${
+              isScreenSharing
+                ? 'bg-green-500 hover:bg-green-600 text-white'
+                : 'bg-gray-700 hover:bg-gray-600 text-white'
+            }
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          `}
+          title={isScreenSharing ? '화면공유 중지' : '화면공유 시작'}
+        >
+          {isScreenSharing ? (
+            // 화면공유 중 아이콘 (중지 표시)
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          ) : (
+            // 화면공유 아이콘
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+          )}
+        </button>
+        <span className="text-sm text-gray-400 w-20">
+          {isScreenSharing ? '공유 중' : '화면공유'}
+        </span>
+      </div>
+    </div>
+  );
+}

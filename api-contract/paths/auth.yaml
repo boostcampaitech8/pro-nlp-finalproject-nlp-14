@@ -1,0 +1,200 @@
+paths:
+  /api/v1/auth/naver/login:
+    get:
+      tags:
+        - Auth
+      summary: 네이버 OAuth 로그인 URL
+      description: 네이버 OAuth 인증 페이지로 리다이렉트할 URL을 반환합니다.
+      operationId: getNaverLoginUrl
+      responses:
+        '200':
+          description: 네이버 OAuth URL 반환
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/auth.yaml#/components/schemas/NaverLoginUrlResponse'
+
+  /api/v1/auth/naver/callback:
+    get:
+      tags:
+        - Auth
+      summary: 네이버 OAuth 콜백
+      description: 네이버 OAuth 인증 완료 후 콜백을 처리하고 JWT 토큰을 발급합니다.
+      operationId: naverCallback
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 네이버에서 전달받은 인증 코드
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CSRF 방지용 상태 토큰
+      responses:
+        '200':
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/auth.yaml#/components/schemas/AuthResponse'
+        '400':
+          description: 유효하지 않은 인증 코드 또는 상태 토큰
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '401':
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/google/login:
+    get:
+      tags:
+        - Auth
+      summary: Google OAuth 로그인 URL
+      description: Google OAuth 인증 페이지로 리다이렉트할 URL을 반환합니다.
+      operationId: getGoogleLoginUrl
+      responses:
+        '200':
+          description: Google OAuth URL 반환
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/auth.yaml#/components/schemas/GoogleLoginUrlResponse'
+
+  /api/v1/auth/google/callback:
+    get:
+      tags:
+        - Auth
+      summary: Google OAuth 콜백
+      description: Google OAuth 인증 완료 후 콜백을 처리하고 JWT 토큰을 발급합니다.
+      operationId: googleCallback
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Google에서 전달받은 인증 코드
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CSRF 방지용 상태 토큰
+      responses:
+        '200':
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/auth.yaml#/components/schemas/AuthResponse'
+        '400':
+          description: 유효하지 않은 인증 코드 또는 상태 토큰
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '401':
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/guest:
+    post:
+      tags:
+        - Auth
+      summary: 게스트 로그인
+      description: 게스트 계정을 즉시 생성하고 JWT 토큰을 발급합니다. OAuth 인증 없이 바로 서비스를 체험할 수 있습니다.
+      operationId: guestLogin
+      responses:
+        '200':
+          description: 게스트 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/auth.yaml#/components/schemas/AuthResponse'
+        '500':
+          description: 서버 에러
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/refresh:
+    post:
+      tags:
+        - Auth
+      summary: 토큰 갱신
+      description: Refresh token으로 새 access token을 발급받습니다.
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/auth.yaml#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: 토큰 갱신 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/auth.yaml#/components/schemas/TokenResponse'
+        '401':
+          description: 유효하지 않은 refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: 로그아웃
+      description: 현재 세션을 종료합니다 (refresh token 무효화).
+      operationId: logout
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: 로그아웃 성공
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/me:
+    get:
+      tags:
+        - Auth
+      summary: 현재 사용자 정보
+      description: 현재 로그인한 사용자의 정보를 조회합니다.
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 사용자 정보 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/auth.yaml#/components/schemas/User'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
