@@ -14,9 +14,13 @@
 from functools import lru_cache
 
 from langchain_naver import ChatClovaX
+from langchain_openai import ChatOpenAI
 
+from app.core.config import get_settings
 from app.infrastructure.graph.config import NCP_CLOVASTUDIO_API_KEY
 
+_settings = get_settings()
+OPENAI_API_KEY = _settings.openai_api_key
 
 @lru_cache
 def get_base_llm(model: str = "HCX-003", **kwargs) -> ChatClovaX:
@@ -98,36 +102,60 @@ def get_pr_generator_llm() -> ChatClovaX:
     ).with_config(run_name="pr_generator")
 
 
-def get_keyword_extractor_llm() -> ChatClovaX:
+def get_keyword_extractor_llm():
     """Step 1: 키워드 추출 전용 LLM (정밀 추출).
 
-    Model: HCX-007
+    Model: gpt-4.1 (OpenAI)
     Use Case: 트랜스크립트에서 evidence span, 토픽 키워드, decision 구성요소 추출
     temperature: 0.15 (정밀 추출 — evidence span 매핑 정확도 최우선)
     max_tokens: 4096 (키워드 구조화 출력)
     """
-    return ChatClovaX(
-        model="HCX-007",
+    if not OPENAI_API_KEY:
+        raise ValueError(
+            "OPENAI_API_KEY가 설정되지 않았습니다. "
+            ".env 파일에 OPENAI_API_KEY를 설정해주세요."
+        )
+
+    # return ChatClovaX(
+    #     model="HCX-007",
+    #     temperature=0.15,
+    #     max_tokens=4096,
+    #     api_key=NCP_CLOVASTUDIO_API_KEY,
+    # ).with_config(run_name="keyword_extractor")
+    return ChatOpenAI(
+        model="gpt-4.1",
         temperature=0.15,
         max_tokens=4096,
-        api_key=NCP_CLOVASTUDIO_API_KEY,
+        api_key=OPENAI_API_KEY,
     ).with_config(run_name="keyword_extractor")
 
 
-def get_minutes_generator_llm() -> ChatClovaX:
+def get_minutes_generator_llm():
     """Step 2: 회의록 생성 전용 LLM (자연스러운 문장 생성).
 
-    Model: HCX-007
+    Model: gpt-4.1 (OpenAI)
     Use Case: 추출된 키워드 + 근거 원문 → 회의록 형식으로 작성
     temperature: 0.3 (자연스러운 한국어 문장 + 형식 준수 균형)
     max_tokens: 8192 (다수 Agenda 대응)
     """
-    return ChatClovaX(
-        model="HCX-007",
+    if not OPENAI_API_KEY:
+        raise ValueError(
+            "OPENAI_API_KEY가 설정되지 않았습니다. "
+            ".env 파일에 OPENAI_API_KEY를 설정해주세요."
+        )
+
+    # return ChatClovaX(
+    #     model="HCX-007",
+    #     temperature=0.3,
+    #     max_tokens=8192,
+    #     api_key=NCP_CLOVASTUDIO_API_KEY,
+    #     reasoning_effort="none",
+    # ).with_config(run_name="minutes_generator")
+    return ChatOpenAI(
+        model="gpt-4.1",
         temperature=0.3,
         max_tokens=8192,
-        api_key=NCP_CLOVASTUDIO_API_KEY,
-        reasoning_effort="none",
+        api_key=OPENAI_API_KEY,
     ).with_config(run_name="minutes_generator")
 
 
