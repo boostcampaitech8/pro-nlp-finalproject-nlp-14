@@ -96,3 +96,6 @@ AGENTS.md
 # worktree
 .worktreeinclude
 setup-worktree-claude.sh
+
+# data set
+*.pdf
