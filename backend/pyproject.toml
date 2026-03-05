@@ -54,6 +54,7 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.48b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
     "openai>=2.16.0",
+    "pdfplumber>=0.11.9",
 ]
 
 [dependency-groups]
