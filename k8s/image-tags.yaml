@@ -1,6 +1,6 @@
 images:
   backend:
-    tag: "f1b4ea3"
+    tag: "1aef256"
   frontend:
     tag: "ca4944e"
   worker:
