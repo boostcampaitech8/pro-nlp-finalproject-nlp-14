@@ -39,8 +39,31 @@ class ReviewService:
 
         approve: 원자적 트랜잭션으로 승인 + 전원승인 시 자동 머지
         reject: REJECTED_BY 관계 생성
+        
+        주의: approve 전 Decision의 Agenda들이 모두 confirmed 상태인지 확인
+        (needs_confirmation 상태인 아젠다가 있으면 거부)
         """
         if action == "approve":
+            # 1. 사전 체크: 해당 Decision의 Agenda가 연결된 Meeting의 모든 Agenda가 confirmed 상태인지 확인
+            decision = await self.kg_repo.get_decision(decision_id)
+            if not decision:
+                raise ValueError("DECISION_NOT_FOUND")
+
+            # 2. Unconfirmed agendas 확인
+            unconfirmed_agendas = await self.kg_repo.get_unconfirmed_agendas(
+                decision.meeting_id
+            )
+            if unconfirmed_agendas:
+                logger.warning(
+                    f"Cannot approve decision {decision_id}: "
+                    f"unconfirmed agendas found in meeting {decision.meeting_id}"
+                )
+                raise ValueError(
+                    "UNCONFIRMED_AGENDAS_IN_MEETING",
+                    f"Found {len(unconfirmed_agendas)} unconfirmed agendas. "
+                    "Please confirm agenda matches before approving.",
+                )
+
             result = await self.kg_repo.approve_and_merge_if_complete(
                 decision_id, user_id
             )

@@ -13,7 +13,7 @@ from app.core.neo4j import get_neo4j_driver
 from app.models.user import User
 from app.repositories.kg.repository import KGRepository
 from app.schemas import ErrorResponse
-from app.schemas.agenda import AgendaResponse, UpdateAgendaRequest
+from app.schemas.agenda import AgendaResponse, UpdateAgendaRequest, ConfirmAgendaMatchRequest, AgendaMatchResponse
 from app.services.minutes_events import minutes_event_manager
 
 logger = logging.getLogger(__name__)
@@ -99,3 +99,53 @@ async def delete_agenda(
             })
         except Exception as e:
             logger.warning(f"Failed to publish agenda_deleted event: {e}")
+
+
+@router.post(
+    "/{agenda_id}/confirm-match",
+    response_model=AgendaMatchResponse,
+    status_code=status.HTTP_200_OK,
+    summary="아젠다 매칭 확인",
+    description="하이브리드 아젠다 매칭 결과를 확인하거나 무시합니다.",
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+async def confirm_agenda_match(
+    agenda_id: str,
+    request: ConfirmAgendaMatchRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    repo: Annotated[KGRepository, Depends(get_kg_repo)],
+) -> AgendaMatchResponse:
+    try:
+        confirm = request.action == "confirm"
+        agenda = await repo.confirm_agenda_match(
+            agenda_id,
+            str(current_user.id),
+            confirm=confirm,
+            candidate_agenda_id=request.candidate_id,
+        )
+
+        # SSE 이벤트 발행
+        if agenda.meeting_id:
+            try:
+                await minutes_event_manager.publish(agenda.meeting_id, {
+                    "event": "agenda_match_confirmed",
+                    "agenda_id": agenda_id,
+                    "action": request.action,
+                })
+            except Exception as e:
+                logger.warning(f"Failed to publish agenda_match_confirmed event: {e}")
+
+        return AgendaMatchResponse(
+            id=agenda.id,
+            topic=agenda.topic,
+            description=agenda.description,
+            order=agenda.order,
+            match_status=agenda.match_status,
+            match_score=agenda.match_score,
+            candidate_agenda_id=agenda.candidate_agenda_id,
+        )
+    except ValueError as e:
+        handle_service_error(e)

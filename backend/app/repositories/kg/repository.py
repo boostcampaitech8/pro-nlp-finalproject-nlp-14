@@ -23,6 +23,7 @@ from app.models.kg import (
     KGSpanRef,
     KGSuggestion,
 )
+from app.services.agenda_matcher import AgendaInfo, AgendaMatcher
 from neo4j import READ_ACCESS, AsyncDriver
 
 
@@ -180,6 +181,71 @@ class KGRepository:
             for r in records
         ]
 
+    async def get_unconfirmed_agendas(self, meeting_id: str) -> list[KGAgenda]:
+        """회의에서 매칭 확인이 필요한 아젠다 조회.
+
+        Args:
+            meeting_id: 회의 ID
+
+        Returns:
+            match_status = 'needs_confirmation'인 아젠다 목록
+        """
+        query = """
+        MATCH (m:Meeting {id: $meeting_id})-[rel:CONTAINS]->(a:Agenda)
+        WHERE a.match_status = 'needs_confirmation'
+        RETURN a, rel.order AS order
+        ORDER BY rel.order
+        """
+        records = await self._execute_read(query, {"meeting_id": meeting_id})
+        return [
+            KGAgenda(
+                id=dict(r["a"])["id"],
+                topic=dict(r["a"]).get("topic", ""),
+                description=dict(r["a"]).get("description"),
+                order=r["order"] or 0,
+                meeting_id=meeting_id,
+                match_status=dict(r["a"]).get("match_status"),
+                match_score=dict(r["a"]).get("match_score"),
+                candidate_agenda_id=dict(r["a"]).get("candidate_agenda_id"),
+            )
+            for r in records
+        ]
+
+    # =========================================================================
+    # Minutes - 회의록
+    # =========================================================================
+
+    async def _get_team_agendas_for_matching(self, team_id: str) -> list[dict]:
+        """팀의 모든 회의에서 최근 30일 내 아젠다 조회 (매칭용).
+
+        Args:
+            team_id: 팀 ID
+
+        Returns:
+            아젠다 목록 (id, topic, description, meeting_id, created_at 포함)
+        """
+        query = """
+        MATCH (m:Meeting {team_id: $team_id})-[:CONTAINS]->(a:Agenda)
+        WHERE a.created_at > datetime() - duration('P30D')
+        RETURN a.id as id, a.topic as topic, 
+               coalesce(a.description, '') as description,
+               m.id as meeting_id,
+               a.created_at as created_at
+        ORDER BY a.created_at DESC
+        LIMIT 100
+        """
+        records = await self._execute_read(query, {"team_id": team_id})
+        return [
+            {
+                "id": r["id"],
+                "topic": r["topic"] or "",
+                "description": r["description"] or "",
+                "meeting_id": r["meeting_id"],
+                "created_at": _convert_neo4j_datetime(r["created_at"]),
+            }
+            for r in records
+        ]
+
     # =========================================================================
     # Minutes - 회의록
     # =========================================================================
@@ -196,6 +262,7 @@ class KGRepository:
         - Meeting.summary 업데이트
         - Meeting -[CONTAINS]-> Agenda 생성
         - Agenda -[HAS_DECISION]-> Decision 생성
+        - 하이브리드 아젠다 매칭: 팀 내 기존 아젠다와 유사도 검사 후 match_status 설정
 
         Args:
             meeting_id: 회의 ID
@@ -209,14 +276,48 @@ class KGRepository:
 
         now = datetime.now(timezone.utc).isoformat()
 
-        # evidence를 JSON 문자열로 직렬화
-        agendas_with_serialized_evidence = []
+        # 1. 회의의 team_id 조회
+        team_id_query = "MATCH (m:Meeting {id: $meeting_id}) RETURN m.team_id as team_id"
+        team_records = await self._execute_read(team_id_query, {"meeting_id": meeting_id})
+        team_id = team_records[0]["team_id"] if team_records else None
+
+        # 2. 팀 내 기존 아젠다 조회 (매칭용)
+        team_agendas = []
+        if team_id:
+            raw_agendas = await self._get_team_agendas_for_matching(team_id)
+            team_agendas = [
+                AgendaInfo(
+                    agenda_id=a["id"],
+                    topic=a["topic"],
+                    description=a["description"],
+                    meeting_id=a["meeting_id"],
+                    created_at=a["created_at"],
+                )
+                for a in raw_agendas
+            ]
+
+        # 3. 각 아젠다에 대해 매칭 수행
+        matcher = AgendaMatcher()
+        agendas_with_match = []
+
         for agenda in agendas:
+            # 기존 아젠다와 매칭
+            match_result = await matcher.compute_agenda_match(
+                new_agenda_topic=agenda.get("topic", ""),
+                new_agenda_description=agenda.get("description", ""),
+                team_agendas=team_agendas,
+            )
+
+            # 매칭 메타데이터 추가
             serialized = {
                 "topic": agenda.get("topic", ""),
                 "description": agenda.get("description", ""),
                 "evidence_json": json.dumps(agenda.get("evidence", []), ensure_ascii=False),
+                "match_status": match_result.match_status if match_result else "new",
+                "match_score": match_result.match_score if match_result else None,
+                "candidate_agenda_id": match_result.matched_agenda_id if match_result else None,
             }
+
             if agenda.get("decision"):
                 serialized["decision"] = {
                     "content": agenda["decision"].get("content", ""),
@@ -227,8 +328,10 @@ class KGRepository:
                 }
             else:
                 serialized["decision"] = None
-            agendas_with_serialized_evidence.append(serialized)
 
+            agendas_with_match.append(serialized)
+
+        # 4. Agenda + Decision 생성 (매칭 메타데이터 포함)
         query = """
         MATCH (m:Meeting {id: $meeting_id})
 
@@ -244,6 +347,9 @@ class KGRepository:
             topic: agenda_data.topic,
             description: coalesce(agenda_data.description, ''),
             evidence: agenda_data.evidence_json,
+            match_status: agenda_data.match_status,
+            match_score: agenda_data.match_score,
+            candidate_agenda_id: agenda_data.candidate_agenda_id,
             created_at: datetime($created_at)
         })
         CREATE (m)-[:CONTAINS {order: idx}]->(a)
@@ -274,7 +380,7 @@ class KGRepository:
                 "meeting_id": meeting_id,
                 "summary": summary,
                 "created_at": now,
-                "agendas": agendas_with_serialized_evidence,
+                "agendas": agendas_with_match,
             },
         )
 
@@ -1178,6 +1284,66 @@ class KGRepository:
             meeting_id=r["meeting_id"],
         )
 
+    async def confirm_agenda_match(
+        self,
+        agenda_id: str,
+        user_id: str,
+        confirm: bool,
+        candidate_agenda_id: str | None = None,
+    ) -> KGAgenda:
+        """아젠다 매칭 확인 (confirm) 또는 무시 (ignore).
+
+        Args:
+            agenda_id: 확인할 아젠다 ID
+            user_id: 확인하는 사용자 ID
+            confirm: True면 매칭 확인, False면 새 아젠다로 처리
+            candidate_agenda_id: 매칭 후보 아젠다 ID (confirm=True일 때 필수)
+
+        Returns:
+            업데이트된 KGAgenda
+        """
+        if confirm:
+            # 매칭 확인: match_status = 'matched', candidate_agenda_id 유지
+            query = """
+            MATCH (a:Agenda {id: $agenda_id})
+            SET a.match_status = 'matched'
+            OPTIONAL MATCH (m:Meeting)-[rel:CONTAINS]->(a)
+            RETURN a.id as id, a.topic as topic, a.description as description,
+                   a.match_status as match_status, a.match_score as match_score,
+                   a.candidate_agenda_id as candidate_agenda_id,
+                   rel.order as order, m.id as meeting_id
+            """
+            params = {"agenda_id": agenda_id}
+        else:
+            # 매칭 무시: match_status = 'new', candidate_agenda_id 제거
+            query = """
+            MATCH (a:Agenda {id: $agenda_id})
+            SET a.match_status = 'new', a.candidate_agenda_id = null
+            OPTIONAL MATCH (m:Meeting)-[rel:CONTAINS]->(a)
+            RETURN a.id as id, a.topic as topic, a.description as description,
+                   a.match_status as match_status, a.match_score as match_score,
+                   a.candidate_agenda_id as candidate_agenda_id,
+                   rel.order as order, m.id as meeting_id
+            """
+            params = {"agenda_id": agenda_id}
+
+        records = await self._execute_write(query, params)
+
+        if not records:
+            raise ValueError(f"Agenda not found: {agenda_id}")
+
+        r = records[0]
+        return KGAgenda(
+            id=r["id"],
+            topic=r["topic"] or "",
+            description=r["description"],
+            order=r["order"] or 0,
+            meeting_id=r["meeting_id"],
+            match_status=r.get("match_status"),
+            match_score=r.get("match_score"),
+            candidate_agenda_id=r.get("candidate_agenda_id"),
+        )
+
     async def delete_agenda(self, agenda_id: str, user_id: str) -> dict | None:
         """Agenda 삭제 (전체 CASCADE)
 
@@ -1408,7 +1574,8 @@ class KGRepository:
         # 2. Agendas 조회
         agenda_query = """
         MATCH (m:Meeting {id: $meeting_id})-[rel:CONTAINS]->(a:Agenda)
-        RETURN a.id as id, a.topic as topic, a.description as description, a.evidence as evidence, rel.order as order
+        RETURN a.id as id, a.topic as topic, a.description as description, a.evidence as evidence, rel.order as order,
+               a.match_status as match_status, a.match_score as match_score, a.candidate_agenda_id as candidate_agenda_id
         ORDER BY rel.order
         """
         agenda_records = await self._execute_read(agenda_query, {"meeting_id": meeting_id})
@@ -1557,6 +1724,9 @@ class KGRepository:
                 "order": a["order"] or 0,
                 "decisions": decisions,
                 "evidence": _parse_evidence(a.get("evidence")),
+                "match_status": a.get("match_status"),
+                "match_score": a.get("match_score"),
+                "candidate_agenda_id": a.get("candidate_agenda_id"),
             })
 
         # 7. ActionItems 조회

@@ -35,6 +35,11 @@ class IKGRepository(Protocol):
         """회의의 아젠다 목록 조회"""
         ...
 
+    async def get_unconfirmed_agendas(self, meeting_id: str) -> list[KGAgenda]:
+        """회의에서 매칭 확인이 필요한 (needs_confirmation) 아젠다 조회"""
+        ...
+
+
     async def create_minutes(
         self,
         meeting_id: str,
@@ -151,6 +156,16 @@ class IKGRepository(Protocol):
         self, agenda_id: str, user_id: str, data: dict
     ) -> KGAgenda:
         """Agenda 수정"""
+        ...
+
+    async def confirm_agenda_match(
+        self,
+        agenda_id: str,
+        user_id: str,
+        confirm: bool,
+        candidate_agenda_id: str | None = None,
+    ) -> KGAgenda:
+        """아젠다 매칭 확인 (confirm) 또는 무시 (ignore)"""
         ...
 
     async def delete_agenda(self, agenda_id: str, user_id: str) -> bool:

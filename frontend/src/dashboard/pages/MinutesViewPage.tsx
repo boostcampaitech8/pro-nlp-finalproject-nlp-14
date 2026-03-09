@@ -40,6 +40,7 @@ import { SuggestionItem } from '../components/review/suggestions';
 import { ActionItemList } from '../components/review/actionitems';
 import { EditableText } from '../components/review/EditableText';
 import { PRStatusBadge } from '../components/review/PRStatusBadge';
+import { AgendaMatchConfirmation } from '../components/review/AgendaMatchConfirmation';
 
 type EvidenceSource = 'agenda' | 'decision';
 
@@ -650,6 +651,26 @@ function AgendaSection({
           </div>
           {agenda.description && (
             <p className="mt-1 text-white/80">{agenda.description}</p>
+          )}
+          {/* Agenda Match Confirmation Badge */}
+          {agenda.matchStatus === 'needs_confirmation' && (
+            <div className="mt-3">
+              <AgendaMatchConfirmation
+                agenda={agenda}
+                onConfirm={async (agendaId) => {
+                  return await kgStore.confirmAgendaMatch(agendaId, {
+                    action: 'confirm',
+                    candidateId: agenda.candidateAgendaId,
+                  });
+                }}
+                onIgnore={async (agendaId) => {
+                  return await kgStore.confirmAgendaMatch(agendaId, {
+                    action: 'ignore',
+                  });
+                }}
+                isLoading={kgStore.actionLoading[`confirm-match-${agenda.id}`] || false}
+              />
+            </div>
           )}
         </div>
       </div>

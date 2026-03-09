@@ -8,6 +8,7 @@ import type {
   ActionItem,
   Agenda,
   Comment,
+  ConfirmAgendaMatchRequest,
   DecisionReviewResponse,
   MinutesResponse,
   PRStatus,
@@ -332,6 +333,28 @@ export const kgService = {
    */
   async deleteAgenda(agendaId: string): Promise<void> {
     await api.delete(`/agendas/${agendaId}`);
+  },
+
+  /**
+   * 아젠다 매칭 확인 (confirm) 또는 무시 (ignore)
+   */
+  async confirmAgendaMatch(
+    agendaId: string,
+    request: ConfirmAgendaMatchRequest
+  ): Promise<Agenda> {
+    const response = await api.post<AgendaRaw>(
+      `/agendas/${agendaId}/confirm-match`,
+      {
+        action: request.action,
+        candidate_id: request.candidateId,
+      }
+    );
+    return {
+      id: response.data.id,
+      topic: response.data.topic,
+      description: response.data.description,
+      order: response.data.order,
+    };
   },
 
   // === Decision ===

@@ -7,6 +7,7 @@
 import type {
   ActionItem,
   Comment,
+  ConfirmAgendaMatchRequest,
   DecisionReviewResponse,
   DecisionWithReview,
   MinutesResponse,
@@ -352,6 +353,43 @@ export const useKGStore = create<KGState>((set, get) => ({
       set((state) => ({
         error: message,
         actionLoading: { ...state.actionLoading, [`delete-agenda-${agendaId}`]: false },
+      }));
+      return false;
+    }
+  },
+
+  confirmAgendaMatch: async (agendaId: string, request: ConfirmAgendaMatchRequest) => {
+    set((state) => ({
+      actionLoading: { ...state.actionLoading, [`confirm-match-${agendaId}`]: true },
+    }));
+    try {
+      await kgService.confirmAgendaMatch(agendaId, request);
+
+      set((state) => {
+        if (!state.minutes) return state;
+        return {
+          minutes: {
+            ...state.minutes,
+            agendas: state.minutes.agendas.map((a) =>
+              a.id === agendaId
+                ? {
+                    ...a,
+                    matchStatus: request.action === 'confirm' ? 'matched' : 'new',
+                    candidateAgendaId: request.action === 'confirm' ? a.candidateAgendaId : null,
+                  }
+                : a
+            ),
+          },
+          actionLoading: { ...state.actionLoading, [`confirm-match-${agendaId}`]: false },
+        };
+      });
+
+      return true;
+    } catch (error) {
+      const message = getErrorMessage(error, '아젠다 매칭 확인에 실패했습니다.');
+      set((state) => ({
+        error: message,
+        actionLoading: { ...state.actionLoading, [`confirm-match-${agendaId}`]: false },
       }));
       return false;
     }

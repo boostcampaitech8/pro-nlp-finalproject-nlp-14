@@ -74,6 +74,14 @@ class AgendaWithDecisionsResponse(BaseModel):
     decisions: list[DecisionWithReviewResponse] = []
     evidence: list[SpanRefResponse] = []
 
+    # 하이브리드 아젠다 매칭 정보
+    match_status: str | None = Field(default=None, serialization_alias="matchStatus")  # "matched" | "needs_confirmation" | "new"
+    match_score: float | None = Field(default=None, serialization_alias="matchScore")
+    candidate_agenda_id: str | None = Field(default=None, serialization_alias="candidateAgendaId")
+
+    class Config:
+        populate_by_name = True
+
 
 class ActionItemBriefResponse(BaseModel):
     """ActionItem 간략 응답 (Minutes 내 표시용)"""

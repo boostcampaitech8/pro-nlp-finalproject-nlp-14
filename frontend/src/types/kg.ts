@@ -123,6 +123,11 @@ export interface UpdateAgendaRequest {
   description?: string | null;
 }
 
+export interface ConfirmAgendaMatchRequest {
+  action: 'confirm' | 'ignore';
+  candidateId?: string | null;
+}
+
 // === Decision with Review Types (for Minutes) ===
 
 export interface DecisionWithReview {
@@ -155,6 +160,10 @@ export interface AgendaWithDecisions {
   order: number;
   evidence: SpanRef[];
   decisions: DecisionWithReview[];
+  // 하이브리드 아젠다 매칭 정보
+  matchStatus?: 'matched' | 'needs_confirmation' | 'new' | null;
+  matchScore?: number | null;
+  candidateAgendaId?: string | null;
 }
 
 // === Minutes Response ===
