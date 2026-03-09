@@ -1,0 +1,71 @@
+name: mit-db
+
+services:
+  postgres:
+    profiles:
+      - db
+    image: postgres:15-alpine
+    container_name: mit-postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: mit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mitpassword}
+      POSTGRES_DB: mit
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mit -d mit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    profiles:
+      - db
+    image: neo4j:2025.12.1-community
+    container_name: mit-neo4j
+    restart: always
+    ports:
+      - "7474:7474"  # HTTP (브라우저 UI)
+      - "7687:7687"  # Bolt (드라이버 연결)
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-mitpassword}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_server_bolt_advertised__address: ${NEO4J_BOLT_HOST:-localhost}:443
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-mitpassword}", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    profiles:
+      - pgadmin
+    image: dpage/pgadmin4:latest
+    container_name: mit-pgadmin
+    restart: always
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mit.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-mitpassword}
+    volumes:
+      - ./data/pgadmin:/var/lib/pgadmin
+    depends_on:
+      - postgres
+
+  cloudflared:
+    profiles:
+      - cloudflare
+    image: cloudflare/cloudflared:2026.1.2
+    container_name: mit-cloudflared
+    restart: always
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}

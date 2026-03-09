@@ -1,0 +1,115 @@
+import type { ReactNode } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+
+import { useAuth } from '@/hooks/useAuth';
+import { MainLayout } from '@/app/layouts/MainLayout';
+import { MainPage } from '@/app/pages/MainPage';
+import { HomePage } from '@/dashboard/pages/HomePage';
+import { GoogleCallbackPage } from '@/pages/GoogleCallbackPage';
+import { LoginPage } from '@/pages/LoginPage';
+import { InviteAcceptPage } from '@/pages/InviteAcceptPage';
+import { NaverCallbackPage } from '@/pages/NaverCallbackPage';
+import { IntroducePage } from '@/pages/IntroducePage';
+import { MeetingDetailPage } from '@/dashboard/pages/MeetingDetailPage';
+import MeetingRoomPage from '@/dashboard/pages/MeetingRoomPage';
+import { MinutesViewPage } from '@/dashboard/pages/MinutesViewPage';
+import { TeamDetailPage } from '@/dashboard/pages/TeamDetailPage';
+import logger from '@/utils/logger';
+
+// 인증된 사용자만 접근 가능
+function PrivateRoute({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  const location = useLocation();
+
+  logger.log('[PrivateRoute] path:', location.pathname, 'isAuthenticated:', isAuthenticated);
+
+  if (!isAuthenticated) {
+    logger.log('[PrivateRoute] Redirecting to /introduce');
+    return <Navigate to="/introduce" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function App() {
+  return (
+    <Routes>
+      {/* 인증 페이지 */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/naver/callback" element={<NaverCallbackPage />} />
+      <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
+
+      {/* 소개 페이지 (비인증 접근 가능) */}
+      <Route path="/introduce" element={<IntroducePage />} />
+
+      {/* 초대 링크 수락 (비인증 상태에서도 미리보기 가능) */}
+      <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />
+
+      {/* 새 서비스 페이지 (Spotlight UI) - MainLayout 사용 */}
+      <Route
+        path="/"
+        element={
+          <PrivateRoute>
+            <MainLayout />
+          </PrivateRoute>
+        }
+      >
+        <Route index element={<MainPage />} />
+        {/* 세션 ID가 URL에 노출되는 라우트 */}
+        <Route path="spotlight/:sessionId" element={<MainPage />} />
+      </Route>
+
+      {/* 기존 Dashboard 페이지 */}
+      <Route
+        path="/dashboard"
+        element={
+          <PrivateRoute>
+            <HomePage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/dashboard/teams/:teamId"
+        element={
+          <PrivateRoute>
+            <TeamDetailPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/dashboard/meetings/:meetingId"
+        element={
+          <PrivateRoute>
+            <MeetingDetailPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/dashboard/meetings/:meetingId/room"
+        element={
+          <PrivateRoute>
+            <MeetingRoomPage />
+          </PrivateRoute>
+        }
+      />
+      {/* /review를 /minutes로 리다이렉트 (PRReviewPage와 MinutesViewPage 통합) */}
+      <Route
+        path="/dashboard/meetings/:meetingId/review"
+        element={<Navigate to="../minutes" replace />}
+      />
+      <Route
+        path="/dashboard/meetings/:meetingId/minutes"
+        element={
+          <PrivateRoute>
+            <MinutesViewPage />
+          </PrivateRoute>
+        }
+      />
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+export default App;

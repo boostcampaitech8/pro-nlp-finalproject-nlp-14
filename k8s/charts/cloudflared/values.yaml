@@ -1,0 +1,20 @@
+global:
+  namespace: mit
+
+replicaCount: 1
+
+image:
+  repository: cloudflare/cloudflared
+  tag: "2026.1.2"
+  pullPolicy: IfNotPresent
+
+secretName: mit-secrets
+secretKey: CLOUDFLARE_TUNNEL_TOKEN
+
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "50m"
+  limits:
+    memory: "128Mi"
+    cpu: "100m"

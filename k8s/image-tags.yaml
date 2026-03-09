@@ -1,0 +1,7 @@
+images:
+  backend:
+    tag: "6e632cf"
+  frontend:
+    tag: "ca4944e"
+  worker:
+    tag: "ca4944e"
