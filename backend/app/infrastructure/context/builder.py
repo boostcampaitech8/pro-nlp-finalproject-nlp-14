@@ -10,10 +10,21 @@ OrchestrationState에 주입할 컨텍스트를 생성
 - SEARCH: L1 (맥락) + L0 일부
 """
 
+from __future__ import annotations
+
+import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from app.infrastructure.context.manager import ContextManager
 from app.infrastructure.context.models import AgentCallType, AgentContext, Participant, TopicSegment
+from app.infrastructure.context.runtime import TopicUtteranceCache
+
+if TYPE_CHECKING:
+    from app.services.transcript_service import TranscriptService
+
+
+logger = logging.getLogger(__name__)
 
 
 class ContextBuilder:
@@ -213,17 +224,25 @@ class ContextBuilder:
         query: str | None,
         top_k: int | None = None,
         threshold: float | None = None,
+        meeting_id: str | None = None,
+        transcript_service: TranscriptService | None = None,
     ) -> str:
         """비동기 시맨틱 서치 기반 추가 컨텍스트 (L1 토픽 상세).
+
+        2-Step RAG 파이프라인:
+        - Step 1: Semantic Search로 관련 토픽 검색 (L1 요약 기반)
+        - Step 2: 검색된 토픽의 원문 발화를 DB/메모리에서 조회하여 주입
 
         Args:
             ctx: ContextManager 인스턴스
             query: 사용자 쿼리
             top_k: Top-K 토픽 개수 (None이면 config 사용)
             threshold: 최소 유사도 임계값 (None이면 config 사용)
+            meeting_id: 회의 ID (원문 조회용, None이면 요약본만)
+            transcript_service: TranscriptService 인스턴스 (원문 조회용)
 
         Returns:
-            str: L1 토픽 상세 컨텍스트
+            str: L1 토픽 상세 컨텍스트 ([요약 + 원문] 번들)
         """
         if not query:
             return ""
@@ -232,7 +251,7 @@ class ContextBuilder:
         if threshold is None:
             threshold = ctx.config.topic_search_threshold
 
-        # 비동기 시맨틱 서치
+        # Step 1: 비동기 시맨틱 서치
         topic_results: list[TopicSegment] = await ctx.search_similar_topics_async(
             query, top_k=top_k, threshold=threshold
         )
@@ -240,23 +259,134 @@ class ContextBuilder:
         if not topic_results:
             return ""
 
+        # Feature flag 확인
+        enable_raw = ctx.config.enable_raw_transcript_injection
+        can_fetch_raw = enable_raw and meeting_id and transcript_service
+
         lines: list[str] = ["## L1 토픽 상세 (Semantic Search)"]
+
         for segment in topic_results:
             lines.append(f"### {segment.name}")
-            lines.append(segment.summary)
+            lines.append(f"**요약**: {segment.summary}")
+
+            # Metadata
             if segment.key_points:
-                lines.append(f"Key Points: {', '.join(segment.key_points)}")
+                lines.append(f"**Key Points**: {', '.join(segment.key_points)}")
             if segment.key_decisions:
-                lines.append(f"Decisions: {', '.join(segment.key_decisions)}")
+                lines.append(f"**Decisions**: {', '.join(segment.key_decisions)}")
             if segment.pending_items:
-                lines.append(f"Pending: {', '.join(segment.pending_items)}")
+                lines.append(f"**Pending**: {', '.join(segment.pending_items)}")
             if segment.participants:
-                lines.append(f"Participants: {', '.join(segment.participants)}")
+                lines.append(f"**Participants**: {', '.join(segment.participants)}")
             if segment.keywords:
-                lines.append(f"Keywords: {', '.join(segment.keywords)}")
+                lines.append(f"**Keywords**: {', '.join(segment.keywords)}")
+
+            # Step 2: 원문 주입 (Feature flag + 조건 충족 시)
+            if can_fetch_raw:
+                raw_utterances = await self._fetch_raw_utterances(
+                    ctx,
+                    segment,
+                    meeting_id,
+                    transcript_service,
+                )
+                if raw_utterances:
+                    lines.append("")
+                    lines.append("**[원문 대화]**")
+                    for utt in raw_utterances:
+                        # 시간 포맷팅 (mm:ss)
+                        start_sec = utt["start_ms"] // 1000
+                        minutes = start_sec // 60
+                        seconds = start_sec % 60
+                        timestamp = f"{minutes:02d}:{seconds:02d}"
+
+                        lines.append(f"  [{timestamp}] {utt['speaker_name']}: {utt['text']}")
+
             lines.append("")
 
         return "\n".join(lines).strip()
+
+    async def _fetch_raw_utterances(
+        self,
+        ctx: ContextManager,
+        segment: TopicSegment,
+        meeting_id: str,
+        transcript_service: TranscriptService,
+    ) -> list[dict]:
+        """토픽의 원문 발화 조회 (메모리 → DB fallback)
+
+        Args:
+            ctx: ContextManager
+            segment: TopicSegment (start/end utterance_id 포함)
+            meeting_id: 회의 ID
+            transcript_service: TranscriptService
+
+        Returns:
+            list[dict]: 원문 발화 리스트 (최대 max_raw_utterances_per_topic개)
+        """
+        from uuid import UUID
+
+        cache_enabled = bool(ctx.config.enable_utterance_caching)
+        topic_cache = TopicUtteranceCache(ttl_seconds=ctx.config.utterance_cache_ttl_seconds)
+
+        # 1. 메모리에서 먼저 시도
+        memory_utterances = ctx.get_utterances_in_range(
+            segment.start_utterance_id,
+            segment.end_utterance_id,
+        )
+
+        if memory_utterances:
+            # 메모리에서 찾음 → 포맷 변환
+            raw_list = [
+                {
+                    "id": utt.id,
+                    "speaker_id": utt.speaker_id,
+                    "speaker_name": utt.speaker_name,
+                    "text": utt.text,
+                    "start_ms": utt.start_ms,
+                    "end_ms": utt.end_ms,
+                    "confidence": utt.confidence,
+                }
+                for utt in memory_utterances
+            ]
+
+            # 메모리 hit 데이터도 캐시에 반영 (best-effort)
+            if cache_enabled:
+                await topic_cache.set(meeting_id, segment.id, raw_list)
+        else:
+            # 2. 메모리에 없음 → 캐시 조회
+            raw_list: list[dict] | None = None
+            if cache_enabled:
+                raw_list = await topic_cache.get(meeting_id, segment.id)
+
+            # 3. 캐시 miss → DB 조회
+            if raw_list is None:
+                raw_list = []
+                # DB에서 조회
+                try:
+                    raw_list = await transcript_service.get_utterances_by_range(
+                        UUID(meeting_id),
+                        segment.start_utterance_id,
+                        segment.end_utterance_id,
+                    )
+
+                    # DB 결과를 캐시에 채움 (write-through)
+                    if cache_enabled and raw_list:
+                        await topic_cache.set(meeting_id, segment.id, raw_list)
+                except Exception as e:
+                    # DB 조회 실패 시 빈 리스트 (비치명적)
+                    logger.warning(
+                        "Failed to fetch raw utterances for segment %s: %s",
+                        segment.id,
+                        e,
+                    )
+                    raw_list = []
+
+        # 4. 토큰 제한 적용
+        max_utterances = ctx.config.max_raw_utterances_per_topic
+        if len(raw_list) > max_utterances:
+            raw_list = raw_list[:max_utterances]
+
+        return raw_list
 
     def build_additional_context_with_search(
         self,
@@ -279,37 +409,28 @@ class ContextBuilder:
         Returns:
             str: L1 토픽 상세 컨텍스트
         """
-        if not query:
+        # 하위 호환성을 위해 기존 동기 인터페이스 유지
+        # (현재 코드베이스에서는 async 버전 사용 권장)
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            # 이미 이벤트 루프가 실행 중이면 빈 문자열 반환 (비동기 버전 사용 유도)
+            logger.warning(
+                "build_additional_context_with_search called in running event loop; "
+                "use build_additional_context_with_search_async instead"
+            )
+            _ = loop  # unused variable 방지
             return ""
-
-        top_k = top_k or ctx.config.topic_search_top_k
-        if threshold is None:
-            threshold = ctx.config.topic_search_threshold
-
-        topic_results: list[TopicSegment] = ctx.search_similar_topics(
-            query, top_k=top_k, threshold=threshold
-        )
-
-        if not topic_results:
-            return ""
-
-        lines: list[str] = ["## L1 토픽 상세 (Semantic Search)"]
-        for segment in topic_results:
-            lines.append(f"### {segment.name}")
-            lines.append(segment.summary)
-            if segment.key_points:
-                lines.append(f"Key Points: {', '.join(segment.key_points)}")
-            if segment.key_decisions:
-                lines.append(f"Decisions: {', '.join(segment.key_decisions)}")
-            if segment.pending_items:
-                lines.append(f"Pending: {', '.join(segment.pending_items)}")
-            if segment.participants:
-                lines.append(f"Participants: {', '.join(segment.participants)}")
-            if segment.keywords:
-                lines.append(f"Keywords: {', '.join(segment.keywords)}")
-            lines.append("")
-
-        return "\n".join(lines).strip()
+        except RuntimeError:
+            return asyncio.run(
+                self.build_additional_context_with_search_async(
+                    ctx,
+                    query,
+                    top_k=top_k,
+                    threshold=threshold,
+                )
+            )
 
     def _build_immediate_context(
         self,

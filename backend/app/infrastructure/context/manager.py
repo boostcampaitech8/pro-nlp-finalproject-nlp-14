@@ -1136,3 +1136,51 @@ class ContextManager:
             self._last_summarized_utterance_id = utterances[-1].id
 
         logger.info(f"Queued {len(self._pending_l1_chunks)} L1 chunks for processing")
+
+    def get_utterances_in_range(
+        self,
+        start_utterance_id: int,
+        end_utterance_id: int,
+    ) -> list[Utterance]:
+        """utterance_id 범위로 원문 발화 조회 (메모리 버퍼 우선)
+
+        Args:
+            start_utterance_id: 시작 발화 ID (포함)
+            end_utterance_id: 종료 발화 ID (포함)
+
+        Returns:
+            list[Utterance]: 발화 리스트 (ID 오름차순)
+
+        Note:
+            - L0 버퍼와 L1 토픽 버퍼에서만 조회 (메모리 캐시)
+            - 메모리에 없으면 빈 리스트 반환 (DB fallback은 상위 레이어 책임)
+            - 2-Step RAG 파이프라인에서 사용
+        """
+        # 빈 범위 처리
+        if start_utterance_id > end_utterance_id:
+            return []
+
+        # L0 버퍼에서 검색
+        result: list[Utterance] = []
+        for utterance in self.l0_buffer:
+            if start_utterance_id <= utterance.id <= end_utterance_id:
+                result.append(utterance)
+
+        # L0 topic 버퍼에서도 검색 (중복 제거)
+        seen_ids = {u.id for u in result}
+        for utterance in self.l0_topic_buffer:
+            if (
+                start_utterance_id <= utterance.id <= end_utterance_id
+                and utterance.id not in seen_ids
+            ):
+                result.append(utterance)
+                seen_ids.add(utterance.id)
+
+        # ID 순 정렬
+        result.sort(key=lambda u: u.id)
+
+        logger.debug(
+            f"get_utterances_in_range({start_utterance_id}, {end_utterance_id}): "
+            f"found {len(result)} utterances in memory"
+        )
+        return result

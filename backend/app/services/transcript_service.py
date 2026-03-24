@@ -300,3 +300,66 @@ class TranscriptService:
             meeting_end=None,    # 현재 단계에서는 null
             created_at=rows[0][0].created_at,  # 첫 번째 transcript의 생성 시간
         )
+
+    async def get_utterances_by_range(
+        self,
+        meeting_id: UUID,
+        start_utterance_id: int,
+        end_utterance_id: int,
+    ) -> list[dict]:
+        """utterance_id 범위로 원문 발화 조회 (2-Step RAG용)
+
+        Args:
+            meeting_id: 회의 ID
+            start_utterance_id: 시작 발화 ID (포함)
+            end_utterance_id: 종료 발화 ID (포함)
+
+        Returns:
+            list[dict]: 발화 리스트 (utterance_id ASC 정렬)
+                - id: utterance_id (런타임 할당, DB id 아님)
+                - speaker_id: user_id
+                - speaker_name: 화자 이름
+                - text: transcript_text
+                - start_ms: 발화 시작 시간
+                - end_ms: 발화 종료 시간
+                - confidence: 신뢰도
+
+        Note:
+            - utterance_id는 런타임에서 할당한 순번 (DB id와 다름)
+            - start_ms로 정렬하여 순번 추정
+            - 성능: 인덱스 활용 (meeting_id, start_ms)
+        """
+        # 빈 범위 처리
+        if start_utterance_id > end_utterance_id:
+            return []
+
+        # DB에서 시간 범위 조회 (start_ms로 정렬)
+        result = await self.db.execute(
+            select(Transcript, User)
+            .join(User, Transcript.user_id == User.id, isouter=True)
+            .where(Transcript.meeting_id == meeting_id)
+            .order_by(Transcript.start_ms.asc(), Transcript.id.asc())
+        )
+        all_rows = result.all()
+
+        # utterance_id 범위로 필터 (런타임 순번 = 0부터 시작)
+        # Note: 정확한 utterance_id 매핑은 런타임 상태에서만 알 수 있음
+        # 여기서는 start_ms 정렬 순서가 utterance_id 순서와 동일하다고 가정
+        utterances = []
+        for idx, (transcript, user) in enumerate(all_rows):
+            # utterance_id는 0부터 시작하는 순번
+            utterance_id = idx
+            if start_utterance_id <= utterance_id <= end_utterance_id:
+                utterances.append(
+                    {
+                        "id": utterance_id,
+                        "speaker_id": str(transcript.user_id),
+                        "speaker_name": user.name if user else "Unknown",
+                        "text": transcript.transcript_text,
+                        "start_ms": transcript.start_ms,
+                        "end_ms": transcript.end_ms,
+                        "confidence": transcript.confidence,
+                    }
+                )
+
+        return utterances

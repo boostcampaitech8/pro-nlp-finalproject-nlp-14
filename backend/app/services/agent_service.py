@@ -132,12 +132,20 @@ class AgentService:
         )
 
         # Semantic Search 기반 추가 컨텍스트 구성 (비동기 배치 임베딩)
-        additional_context = await builder.build_additional_context_with_search_async(
-            ctx_manager,
-            user_input,
-            top_k=ctx_manager.config.topic_search_top_k,
-            threshold=ctx_manager.config.topic_search_threshold,
-        )
+        # 2-Step RAG: 원문 발화 주입을 위해 transcript_service 주입
+        from app.core.database import async_session_maker
+        from app.services.transcript_service import TranscriptService
+        
+        async with async_session_maker() as db_session:
+            transcript_service = TranscriptService(db_session)
+            additional_context = await builder.build_additional_context_with_search_async(
+                ctx_manager,
+                user_input,
+                top_k=ctx_manager.config.topic_search_top_k,
+                threshold=ctx_manager.config.topic_search_threshold,
+                meeting_id=meeting_id,
+                transcript_service=transcript_service,
+            )
 
         # 팀 컨텍스트 조회 (meeting → team)
         team_context = await self._get_team_context(meeting_id, user_id)
@@ -238,12 +246,20 @@ class AgentService:
         )
 
         # Semantic Search 기반 추가 컨텍스트 구성 (비동기 배치 임베딩)
-        additional_context = await builder.build_additional_context_with_search_async(
-            ctx_manager,
-            user_input,
-            top_k=ctx_manager.config.topic_search_top_k,
-            threshold=ctx_manager.config.topic_search_threshold,
-        )
+        # 2-Step RAG: 원문 발화 주입을 위해 transcript_service 주입
+        from app.core.database import async_session_maker
+        from app.services.transcript_service import TranscriptService
+        
+        async with async_session_maker() as db_session:
+            transcript_service = TranscriptService(db_session)
+            additional_context = await builder.build_additional_context_with_search_async(
+                ctx_manager,
+                user_input,
+                top_k=ctx_manager.config.topic_search_top_k,
+                threshold=ctx_manager.config.topic_search_threshold,
+                meeting_id=meeting_id,
+                transcript_service=transcript_service,
+            )
 
         # 팀 컨텍스트 조회 (meeting → team)
         team_context = await self._get_team_context(meeting_id, user_id)

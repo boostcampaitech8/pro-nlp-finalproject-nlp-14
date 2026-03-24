@@ -45,6 +45,17 @@ class ContextConfig(BaseSettings):
     topic_search_top_k: int = 5
     topic_search_threshold: float = 0.30
 
+    # === 2-Step RAG: Raw Transcript Injection 설정 ===
+    enable_raw_transcript_injection: bool = True  # 원문 주입 on/off
+    max_raw_utterances_per_topic: int = 30  # 토픽당 최대 원문 발화 수
+    raw_transcript_context_padding: int = 2  # 앞뒤 컨텍스트 발화 수
+    
+    # === Redis 캐싱 설정 (Voice Agent 지연 방지) ===
+    enable_utterance_caching: bool = True  # Redis 캐싱 on/off
+    utterance_cache_ttl_seconds: int = 3600  # 캐시 유지 시간 (1시간)
+    topic_scoped_cache_only: bool = True  # L1 토픽 범위만 캐싱 (OOM 방지)
+    max_topics_cached_per_meeting: int = 12  # 회의당 캐시 가능한 최대 토픽 수
+
     def get_context_turns(self, mode: str = "voice") -> int:
         """모드에 따른 컨텍스트 턴 수 반환 (L0/L1 공통)"""
         if mode == "chat":
