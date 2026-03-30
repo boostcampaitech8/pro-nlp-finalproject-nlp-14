@@ -21,13 +21,61 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.neo4j_sync import neo4j_sync
 from app.core.telemetry import get_mit_metrics
-from app.infrastructure.worker_manager import get_worker_manager
+from app.infrastructure.worker_manager import WorkerStatusEnum, get_worker_manager
 from app.models.meeting import Meeting, MeetingStatus
 from app.services.vad_event_service import vad_event_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/livekit", tags=["LiveKit Webhooks"])
+WORKER_DELETE_FALLBACK_JOB_ID_PREFIX = "cleanup_worker"
+
+
+async def _enqueue_worker_delete_fallback(
+    meeting_id: str,
+    worker_id: str,
+    *,
+    reason: str,
+) -> None:
+    """워커 삭제 실패 시 ARQ 재시도 태스크 큐잉."""
+    pool = None
+    try:
+        pool = await get_arq_pool()
+        job = await pool.enqueue_job(
+            "cleanup_realtime_worker_task",
+            meeting_id,
+            worker_id,
+            reason,
+            _job_id=f"{WORKER_DELETE_FALLBACK_JOB_ID_PREFIX}:{worker_id}",
+        )
+        if job is None:
+            logger.info(
+                "[LiveKit] Worker delete fallback already queued/running: meeting=%s worker=%s",
+                meeting_id,
+                worker_id,
+            )
+        else:
+            logger.warning(
+                "[LiveKit] Worker delete fallback queued: meeting=%s worker=%s reason=%s",
+                meeting_id,
+                worker_id,
+                reason,
+            )
+    except Exception as e:
+        logger.error(
+            "[LiveKit] Failed to enqueue worker delete fallback: meeting=%s worker=%s error=%s",
+            meeting_id,
+            worker_id,
+            e,
+        )
+    finally:
+        if pool is not None:
+            try:
+                await pool.close()
+            except Exception:
+                logger.warning(
+                    "[LiveKit] Failed to close ARQ pool after worker delete fallback enqueue"
+                )
 
 
 async def verify_and_parse_webhook(
@@ -274,11 +322,31 @@ async def handle_room_finished(body: dict, db: AsyncSession) -> None:
         await db.rollback()
 
     # Job 삭제 (항상 실행 — happy path / fallback 공통)
+    worker_id = f"realtime-worker-{meeting_id}"
     try:
         worker_manager = get_worker_manager()
-        worker_id = f"realtime-worker-{meeting_id}"
         stopped = await worker_manager.stop_worker(worker_id)
         if stopped:
             logger.info(f"[LiveKit] Realtime worker job deleted: {worker_id}")
+        else:
+            # 즉시 삭제 실패 시 상태 재확인 후 필요하면 fallback 재시도 큐잉
+            status = await worker_manager.get_status(worker_id)
+            if status.status in {WorkerStatusEnum.NOT_FOUND, WorkerStatusEnum.STOPPED}:
+                logger.info(
+                    "[LiveKit] Realtime worker already terminal: worker=%s status=%s",
+                    worker_id,
+                    status.status.value,
+                )
+            else:
+                await _enqueue_worker_delete_fallback(
+                    meeting_id,
+                    worker_id,
+                    reason=f"stop_worker_failed:{status.status.value}",
+                )
     except Exception as e:
         logger.error(f"[LiveKit] Failed to delete realtime worker job: {e}")
+        await _enqueue_worker_delete_fallback(
+            meeting_id,
+            worker_id,
+            reason=f"stop_worker_exception:{type(e).__name__}",
+        )
