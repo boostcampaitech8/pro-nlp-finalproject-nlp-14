@@ -1,0 +1,77 @@
+# 차트 기본값
+# 이 파일은 helm lint용 스키마 정의
+
+global:
+  namespace: mit
+  environment: development
+  registry: "ghcr.io/teamatoi"
+
+# 복제본 수
+replicas:
+  backend: 1
+  frontend: 1
+  arqWorker: 1
+
+# 이미지 태그 설정 (CI에서 SHA 기반 태그 사용)
+images:
+  backend:
+    tag: "latest"
+  frontend:
+    tag: "latest"
+  worker:
+    tag: "latest"
+  pullSecret: "ghcr-secret"  # GHCR 인증용 시크릿
+
+# 앱 포트
+backend:
+  port: 8000
+
+frontend:
+  port: 80
+
+redis:
+  host: redis-master
+  port: 6379
+
+livekit:
+  host: lk-server
+  port: 80
+  apiKey: ""
+  externalUrl: ""
+
+jwt:
+  accessTokenExpireMinutes: 30
+  refreshTokenExpireDays: 7
+
+app:
+  debug: false
+  logLevel: INFO
+  corsOrigins: []
+  frontendBaseUrl: "http://localhost"
+
+worker:
+  clovaSttEndpoint: ""
+  ttsVolumeScale: 0.70
+
+ingress:
+  className: ""
+  host: ""
+  tls: false
+  certManager: false
+  clusterIssuer: ""
+  tlsSecretName: ""
+  annotations: {}
+
+resources:
+  backend:
+    requests: { memory: "256Mi", cpu: "100m" }
+    limits: { memory: "512Mi", cpu: "500m" }
+  frontend:
+    requests: { memory: "64Mi", cpu: "50m" }
+    limits: { memory: "128Mi", cpu: "200m" }
+  worker:
+    requests: { memory: "128Mi", cpu: "100m" }
+    limits: { memory: "512Mi", cpu: "500m" }
+  arqWorker:
+    requests: { memory: "256Mi", cpu: "100m" }
+    limits: { memory: "512Mi", cpu: "500m" }

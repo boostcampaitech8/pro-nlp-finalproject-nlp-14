@@ -1,0 +1,203 @@
+paths:
+  /api/v1/teams:
+    post:
+      tags:
+        - Teams
+      summary: 팀 생성
+      description: 새로운 팀을 생성합니다. 생성자는 자동으로 owner가 됩니다.
+      operationId: createTeam
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/team.yaml#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: 팀 생성 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/team.yaml#/components/schemas/Team'
+        '400':
+          description: 유효하지 않은 입력
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+    get:
+      tags:
+        - Teams
+      summary: 내 팀 목록
+      description: 현재 사용자가 속한 팀 목록을 조회합니다.
+      operationId: listMyTeams
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: 팀 목록 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/team.yaml#/components/schemas/TeamListResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+  /api/v1/teams/{teamId}:
+    get:
+      tags:
+        - Teams
+      summary: 팀 상세 조회
+      description: 팀 상세 정보를 조회합니다. 팀 멤버만 조회 가능합니다.
+      operationId: getTeam
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 팀 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/team.yaml#/components/schemas/TeamWithMembers'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 팀을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Teams
+      summary: 팀 수정
+      description: 팀 정보를 수정합니다. owner 또는 admin만 수정 가능합니다.
+      operationId: updateTeam
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/team.yaml#/components/schemas/UpdateTeamRequest'
+      responses:
+        '200':
+          description: 팀 수정 성공
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/team.yaml#/components/schemas/Team'
+        '400':
+          description: 유효하지 않은 입력
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 팀을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Teams
+      summary: 팀 삭제
+      description: 팀을 삭제합니다. owner만 삭제 가능합니다.
+      operationId: deleteTeam
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 팀 삭제 성공
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '403':
+          description: 권한 없음 (owner만 삭제 가능)
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'
+        '404':
+          description: 팀을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/common.yaml#/components/schemas/ErrorResponse'

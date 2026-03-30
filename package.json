@@ -1,0 +1,27 @@
+{
+  "name": "mit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mit - Collaborative organization knowledge system",
+  "scripts": {
+    "dev": "concurrently \"pnpm run dev:fe\" \"pnpm run dev:be\"",
+    "dev:fe": "pnpm --filter frontend dev",
+    "dev:be": "cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:arq": "cd backend && uv run python -m app.workers.run_worker",
+    "dev:worker": "cd backend/worker && PYTHONPATH=.:build uv run python -m src.main",
+    "build": "pnpm --filter frontend build",
+    "generate:types": "pnpm --filter @mit/shared-types generate",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.1"
+}
