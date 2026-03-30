@@ -5,17 +5,13 @@
 - 이벤트 처리: egress_ended (성공/실패), participant_joined, room_finished
 """
 
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
-from httpx import AsyncClient
 
 from app.api.v1.endpoints.livekit_webhooks import verify_and_parse_webhook
-from app.main import app
-
+from app.infrastructure.worker_manager import WorkerStatusEnum
 
 # ===== 웹훅 서명 검증 테스트 =====
 
@@ -261,3 +257,61 @@ async def test_webhook_endpoint_room_finished(async_client):
 
             assert response.status_code == 200
             mock_vad.assert_called_once_with(meeting_id)
+
+
+@pytest.mark.asyncio
+async def test_room_finished_enqueues_worker_delete_fallback_on_stop_failure(async_client):
+    """워커 삭제 실패 시 cleanup_realtime_worker_task를 큐잉한다."""
+    meeting_id = uuid4()
+    room_name = f"meeting-{meeting_id}"
+    worker_id = f"realtime-worker-{room_name}"
+
+    mock_event = {
+        "event": "room_finished",
+        "room": {
+            "name": room_name,
+        },
+    }
+
+    mock_worker_manager = MagicMock()
+    mock_worker_manager.stop_worker = AsyncMock(return_value=False)
+    mock_worker_manager.get_status = AsyncMock(
+        return_value=MagicMock(status=WorkerStatusEnum.RUNNING)
+    )
+
+    mock_pool = MagicMock()
+    mock_pool.enqueue_job = AsyncMock()
+    mock_pool.close = AsyncMock()
+
+    with patch(
+        "app.api.v1.endpoints.livekit_webhooks.verify_and_parse_webhook",
+        return_value=mock_event,
+    ):
+        with patch(
+            "app.api.v1.endpoints.livekit_webhooks.vad_event_service.store_meeting_vad_metadata",
+            new_callable=AsyncMock,
+            return_value={"user-1": []},
+        ):
+            with patch(
+                "app.api.v1.endpoints.livekit_webhooks.get_worker_manager",
+                return_value=mock_worker_manager,
+            ):
+                with patch(
+                    "app.api.v1.endpoints.livekit_webhooks.get_arq_pool",
+                    new=AsyncMock(return_value=mock_pool),
+                ):
+                    response = await async_client.post(
+                        "/api/v1/livekit/webhook",
+                        json=mock_event,
+                        headers={"Authorization": "Bearer valid"},
+                    )
+
+    assert response.status_code == 200
+    mock_pool.enqueue_job.assert_called_once()
+    args, kwargs = mock_pool.enqueue_job.call_args
+    assert args[0] == "cleanup_realtime_worker_task"
+    assert args[1] == room_name
+    assert args[2] == worker_id
+    assert args[3] == "stop_worker_failed:running"
+    assert kwargs["_job_id"] == f"cleanup_worker:{worker_id}"
+    mock_pool.close.assert_called_once()

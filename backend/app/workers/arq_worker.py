@@ -1,5 +1,6 @@
 """ARQ Worker 설정 및 태스크 정의 (OTel 계측 포함)"""
 
+import asyncio
 import logging
 import time
 from functools import wraps
@@ -11,10 +12,10 @@ from arq.connections import RedisSettings
 from opentelemetry import trace
 
 from app.core.config import get_settings
-from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.core.database import async_session_maker
 from app.core.neo4j import get_neo4j_driver
 from app.core.telemetry import get_mit_metrics, get_tracer, setup_telemetry
+from app.infrastructure.graph.integration.langfuse import get_runnable_config
 from app.repositories.kg.repository import KGRepository
 from app.schemas.transcript import GetMeetingTranscriptsResponse
 from app.services.minutes_events import minutes_event_manager
@@ -23,6 +24,7 @@ from app.services.transcript_service import TranscriptService
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+WORKER_DELETE_RETRY_DELAYS_SEC = (5, 15, 30, 60)
 
 
 def traced_task(task_name: str) -> Callable[[Callable[..., T]], Callable[..., T]]:
@@ -567,6 +569,105 @@ async def process_mit_mention(
         }
 
 
+@traced_task("cleanup_realtime_worker_task")
+async def cleanup_realtime_worker_task(
+    ctx: dict,
+    meeting_id: str,
+    worker_id: str,
+    reason: str = "delete_failed",
+    max_attempts: int = 5,
+) -> dict:
+    """실시간 워커 삭제 재시도 태스크.
+
+    room_finished 처리 중 워커 삭제에 실패하면 큐잉된다.
+    여러 번 재시도해도 삭제되지 않으면 TTL 기반 자동 정리에 위임한다.
+    """
+    # 순환 import 방지 (worker_manager가 app 모듈을 다시 참조함)
+    from app.infrastructure.worker_manager import WorkerStatusEnum, get_worker_manager
+
+    worker_manager = get_worker_manager()
+    attempts = max(1, max_attempts)
+
+    logger.warning(
+        "[cleanup_realtime_worker_task] Start: meeting=%s worker=%s reason=%s max_attempts=%d",
+        meeting_id,
+        worker_id,
+        reason,
+        attempts,
+    )
+
+    for attempt in range(1, attempts + 1):
+        try:
+            deleted = await worker_manager.stop_worker(worker_id)
+            if deleted:
+                logger.info(
+                    "[cleanup_realtime_worker_task] Worker deleted: worker=%s attempt=%d/%d",
+                    worker_id,
+                    attempt,
+                    attempts,
+                )
+                return {
+                    "status": "success",
+                    "meeting_id": meeting_id,
+                    "worker_id": worker_id,
+                    "attempt": attempt,
+                    "reason": reason,
+                }
+
+            status = await worker_manager.get_status(worker_id)
+            if status.status in {WorkerStatusEnum.NOT_FOUND, WorkerStatusEnum.STOPPED}:
+                logger.info(
+                    "[cleanup_realtime_worker_task] Worker already terminal: worker=%s status=%s",
+                    worker_id,
+                    status.status.value,
+                )
+                return {
+                    "status": "already_terminal",
+                    "meeting_id": meeting_id,
+                    "worker_id": worker_id,
+                    "worker_status": status.status.value,
+                    "reason": reason,
+                }
+
+            logger.warning(
+                "[cleanup_realtime_worker_task] Delete failed: worker=%s "
+                "attempt=%d/%d status=%s",
+                worker_id,
+                attempt,
+                attempts,
+                status.status.value,
+            )
+        except Exception as e:
+            logger.warning(
+                "[cleanup_realtime_worker_task] Delete attempt exception: worker=%s "
+                "attempt=%d/%d error=%s",
+                worker_id,
+                attempt,
+                attempts,
+                e,
+            )
+
+        if attempt < attempts:
+            delay = WORKER_DELETE_RETRY_DELAYS_SEC[
+                min(attempt - 1, len(WORKER_DELETE_RETRY_DELAYS_SEC) - 1)
+            ]
+            await asyncio.sleep(delay)
+
+    logger.error(
+        "[cleanup_realtime_worker_task] Exhausted retries, delegate to TTL cleanup: "
+        "meeting=%s worker=%s",
+        meeting_id,
+        worker_id,
+    )
+    return {
+        "status": "ttl_fallback",
+        "meeting_id": meeting_id,
+        "worker_id": worker_id,
+        "reason": reason,
+        "attempts": attempts,
+    }
+
+
 def _get_redis_settings() -> RedisSettings:
     """Redis 연결 설정 생성"""
     settings = get_settings()
@@ -600,6 +701,7 @@ class WorkerSettings:
         mit_action_task,
         process_suggestion_task,
         process_mit_mention,
+        cleanup_realtime_worker_task,
     ]
 
     # Redis 연결 설정 (arq는 인스턴스를 기대)
